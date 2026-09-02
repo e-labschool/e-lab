@@ -22,6 +22,7 @@ import StudentAssess from "./pages/student/Assess.jsx";
 import TeacherSubjectLayout from "./pages/teacher/TeacherSubjectLayout.jsx";
 import TeacherTeach from "./pages/teacher/Teach.jsx";
 import TeacherQuiz from "./pages/teacher/Quiz.jsx";
+import TeacherQBuilder from "./pages/teacher/QBuilder.jsx";
 import TeacherResources from "./pages/teacher/Resources.jsx";
 
 // No route ever encodes a curriculum-specific label like "structure" or
@@ -59,6 +60,7 @@ const router = createBrowserRouter([
           { index: true, element: <Navigate to="teach" replace /> },
           { path: "teach", element: <TeacherTeach /> },
           { path: "quiz", element: <TeacherQuiz /> },
+          { path: "q-builder", element: <TeacherQBuilder /> },
           { path: "resources", element: <TeacherResources /> },
         ],
       },

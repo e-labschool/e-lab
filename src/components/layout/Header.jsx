@@ -14,6 +14,7 @@ const STUDENT_TABS = [
 const TEACHER_TABS = [
   { segment: "teach", label: "Teach" },
   { segment: "quiz", label: "Quiz" },
+  { segment: "q-builder", label: "Q Builder" },
   { segment: "resources", label: "Resources" },
 ];
 
