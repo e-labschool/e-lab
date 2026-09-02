@@ -39,6 +39,9 @@ export default function InteractivePage() {
           <h1 className="mt-3 font-[var(--font-display)] text-3xl font-semibold tracking-tight text-[var(--color-ink)]">
             {resource.title}
           </h1>
+          {resource.subtitle && (
+            <p className="mt-1 text-sm font-medium text-[var(--color-indigo)]">{resource.subtitle}</p>
+          )}
           <p className="mt-2 text-sm leading-relaxed text-[var(--color-ink-soft)]">{resource.description}</p>
         </div>
         <Badge tone={STATUS_TONE[resource.status]}>{STATUS_LABEL[resource.status]}</Badge>

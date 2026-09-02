@@ -19,6 +19,8 @@ export default function ConceptPage() {
   const concept = getConcept(conceptId);
   const coverage = getCoverageForConcept(conceptId);
   const resources = coverage.resourceIds.map((id) => getResource(id)).filter(Boolean);
+  const teacherResources = resources.filter((r) => r.audience === "teacher");
+  const otherResources = resources.filter((r) => r.audience !== "teacher");
   const primaryLiveResource = resources.find((r) => r.status === "live" && r.component);
   const locations = getCurriculumLocationsForConcept(conceptId);
   const PreviewComponent = getLazyResourceComponent(primaryLiveResource);
@@ -85,24 +87,54 @@ export default function ConceptPage() {
           <RelatedConcepts conceptIds={concept.relatedConcepts} />
         </div>
 
-        <div>
-          <h2 className="text-sm font-medium uppercase tracking-wide text-[var(--color-ink-faint)]">
-            Resources
-          </h2>
-          <div className="mt-3 flex flex-col gap-2">
-            {resources.length === 0 && (
-              <p className="text-sm text-[var(--color-ink-faint)]">No resource mapped yet.</p>
-            )}
-            {resources.map((resource) => (
-              <Link
-                key={resource.id}
-                to={`/interactives/${resource.id}`}
-                className="flex items-center justify-between gap-3 rounded-md border border-[var(--color-line)] px-3 py-2.5 text-sm transition-colors hover:border-[var(--color-ink)]"
-              >
-                <span className="text-[var(--color-ink)]">{resource.title}</span>
-                <Badge tone={STATUS_TONE[resource.status]}>{STATUS_LABEL[resource.status]}</Badge>
-              </Link>
-            ))}
+        <div className="flex flex-col gap-8">
+          {teacherResources.length > 0 && (
+            <div>
+              <h2 className="text-sm font-medium uppercase tracking-wide text-[var(--color-ink-faint)]">
+                Teacher Resources
+              </h2>
+              <div className="mt-3 flex flex-col gap-2">
+                {teacherResources.map((resource) => (
+                  <Link
+                    key={resource.id}
+                    to={`/interactives/${resource.id}`}
+                    className="flex items-center justify-between gap-3 rounded-md border border-[var(--color-line)] px-3 py-2.5 text-sm transition-colors hover:border-[var(--color-ink)]"
+                  >
+                    <span className="text-[var(--color-ink)]">
+                      {resource.title}
+                      {resource.subtitle && (
+                        <span className="block text-xs font-normal text-[var(--color-ink-faint)]">{resource.subtitle}</span>
+                      )}
+                    </span>
+                    <Badge tone={STATUS_TONE[resource.status]}>{STATUS_LABEL[resource.status]}</Badge>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div>
+            <h2 className="text-sm font-medium uppercase tracking-wide text-[var(--color-ink-faint)]">
+              Resources
+            </h2>
+            <div className="mt-3 flex flex-col gap-2">
+              {resources.length === 0 && (
+                <p className="text-sm text-[var(--color-ink-faint)]">No resource mapped yet.</p>
+              )}
+              {otherResources.length === 0 && teacherResources.length > 0 && (
+                <p className="text-sm text-[var(--color-ink-faint)]">See Teacher Resources above.</p>
+              )}
+              {otherResources.map((resource) => (
+                <Link
+                  key={resource.id}
+                  to={`/interactives/${resource.id}`}
+                  className="flex items-center justify-between gap-3 rounded-md border border-[var(--color-line)] px-3 py-2.5 text-sm transition-colors hover:border-[var(--color-ink)]"
+                >
+                  <span className="text-[var(--color-ink)]">{resource.title}</span>
+                  <Badge tone={STATUS_TONE[resource.status]}>{STATUS_LABEL[resource.status]}</Badge>
+                </Link>
+              ))}
+            </div>
           </div>
         </div>
       </div>

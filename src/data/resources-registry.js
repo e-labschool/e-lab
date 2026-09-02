@@ -32,6 +32,18 @@ const resources = [
     component: null,
   },
   {
+    id: "explore-matter-and-states",
+    title: "Explore Matter & States",
+    subtitle: "Teacher-led visual exploration",
+    audience: "teacher",
+    resourceType: "teacher-demonstration",
+    categories: ["visualize","explore","teach"],
+    status: "live", // live | in-development | planned
+    description: "A full teacher-led walkthrough for the States of Matter classroom: test mass and volume experimentally, build the definition of matter, then explore solid/liquid/gas macroscopic behaviour and particle-level reasoning step by step on a projector.",
+    conceptIds: ["states-of-matter","kinetic-molecular-theory"],
+    component: () => import("../engines/explore-matter-and-states/ExploreMatterAndStates.jsx"),
+  },
+  {
     id: "mixture-separation-explorer",
     title: "Mixture Separation Explorer",
     resourceType: "guided-inquiry",
