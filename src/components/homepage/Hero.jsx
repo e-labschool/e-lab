@@ -15,7 +15,7 @@ export default function Hero() {
           />
         </span>
         <p className="mt-8 text-xl text-[var(--color-ink-soft)] md:text-2xl">
-          Explore. Experiment. Understand.
+          Making Science Interactive.
         </p>
         <p className="mt-4 max-w-lg text-base leading-relaxed text-[var(--color-ink-soft)]">
           Interactive science learning that transforms complex concepts into visual
