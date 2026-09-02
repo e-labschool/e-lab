@@ -90,3 +90,24 @@ body {
     transition-duration: 0.001ms !important;
   }
 }
+
+/* Q Builder paper export: only used by the print-style Paper/Markscheme
+   preview. Hides all normal site chrome and shows just the printable
+   document, full width, in fixed black-on-white document styling
+   regardless of the site's light/dark theme. Purely additive — no
+   existing selector above is touched. */
+@media print {
+  header, footer, .qbuilder-chrome {
+    display: none !important;
+  }
+  .qbuilder-print-area {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    color: #111 !important;
+    background: #fff !important;
+  }
+  body {
+    background: #fff !important;
+  }
+}

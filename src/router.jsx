@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import Shell from "./components/layout/Shell.jsx";
 import Home from "./pages/Home.jsx";
@@ -22,8 +23,13 @@ import StudentAssess from "./pages/student/Assess.jsx";
 import TeacherSubjectLayout from "./pages/teacher/TeacherSubjectLayout.jsx";
 import TeacherTeach from "./pages/teacher/Teach.jsx";
 import TeacherQuiz from "./pages/teacher/Quiz.jsx";
-import TeacherQBuilder from "./pages/teacher/QBuilder.jsx";
 import TeacherResources from "./pages/teacher/Resources.jsx";
+
+// Q Builder pulls in PDF/Word export libraries (jsPDF, docx) that are only
+// needed once a teacher actually opens it — lazy-loaded so those libraries
+// never load on the rest of the site, same pattern already used for the
+// interactive engines' component loaders in resources-registry.js.
+const TeacherQBuilder = lazy(() => import("./pages/teacher/QBuilder.jsx"));
 
 // No route ever encodes a curriculum-specific label like "structure" or
 // "reactivity" — those live only in curriculum data. Likewise, no route
@@ -60,7 +66,7 @@ const router = createBrowserRouter([
           { index: true, element: <Navigate to="teach" replace /> },
           { path: "teach", element: <TeacherTeach /> },
           { path: "quiz", element: <TeacherQuiz /> },
-          { path: "q-builder", element: <TeacherQBuilder /> },
+          { path: "q-builder", element: <Suspense fallback={null}><TeacherQBuilder /></Suspense> },
           { path: "resources", element: <TeacherResources /> },
         ],
       },
