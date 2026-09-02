@@ -1,17 +1,16 @@
 import Hero from "../components/homepage/Hero.jsx";
-import LearnByInteracting from "../components/homepage/LearnByInteracting.jsx";
-import FeaturedInteractives from "../components/homepage/FeaturedInteractives.jsx";
-import AudienceSplit from "../components/homepage/AudienceSplit.jsx";
-import CurriculumShowcase from "../components/homepage/CurriculumShowcase.jsx";
+import RoleCards from "../components/homepage/RoleCards.jsx";
 
+// The homepage is identity + role selection only, deliberately — no
+// featured simulations, topic grids, or resource categories here. Existing
+// homepage sections (LearnByInteracting, FeaturedInteractives,
+// CurriculumShowcase) are preserved as files but no longer rendered on the
+// landing page per the navigation refactor.
 export default function Home() {
   return (
     <>
       <Hero />
-      <LearnByInteracting />
-      <FeaturedInteractives />
-      <AudienceSplit />
-      <CurriculumShowcase />
+      <RoleCards />
     </>
   );
 }

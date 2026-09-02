@@ -26,7 +26,7 @@ export default function Wordmark({ className = "", withTagline = false }) {
       </span>
       {withTagline && (
         <span className="mt-1.5 text-xs text-[var(--color-ink-faint)]">
-          Explore. Interact. Understand.
+          Explore. Experiment. Understand.
         </span>
       )}
     </Link>
