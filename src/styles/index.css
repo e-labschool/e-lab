@@ -1,0 +1,85 @@
+@import "tailwindcss";
+
+@theme {
+  /* ---- Typography ---- */
+  --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  /* ---- Light-mode base palette ---- */
+  --color-paper: #FAFAF8;
+  --color-paper-raised: #FFFFFF;
+  --color-ink: #12161C;
+  --color-ink-soft: #4A5160;
+  --color-ink-faint: #8A909C;
+  --color-line: #E3E1DA;
+
+  /* ---- Brand accents (shared both modes) ---- */
+  --color-indigo: #3654D6;
+  --color-indigo-soft: #EAEDFB;
+  --color-amber: #C96A21;
+  --color-amber-soft: #FBF0E4;
+  --color-teal: #2B7A6E;
+  --color-teal-soft: #E7F3F0;
+
+  /* ---- Block colors (periodic table / categorization) ---- */
+  --color-block-s: #3654D6;
+  --color-block-p: #2B7A6E;
+  --color-block-d: #C96A21;
+  --color-block-f: #8B4FB8;
+}
+
+/* ---- Dark mode overrides ---- */
+.dark {
+  --color-paper: #0C0F14;
+  --color-paper-raised: #12161D;
+  --color-ink: #EDEEF0;
+  --color-ink-soft: #A6ACB8;
+  --color-ink-faint: #666D7A;
+  --color-line: #262B34;
+
+  --color-indigo: #6C86EE;
+  --color-indigo-soft: #1B2140;
+  --color-amber: #E2872F;
+  --color-amber-soft: #2E2113;
+  --color-teal: #4FB3A3;
+  --color-teal-soft: #142522;
+
+  --color-block-s: #6C86EE;
+  --color-block-p: #4FB3A3;
+  --color-block-d: #E2872F;
+  --color-block-f: #B389DC;
+}
+
+html {
+  color-scheme: light;
+}
+html.dark {
+  color-scheme: dark;
+}
+
+body {
+  background-color: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+::selection {
+  background-color: var(--color-indigo-soft);
+  color: var(--color-indigo);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-indigo);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
