@@ -1,5 +1,12 @@
 @import "tailwindcss";
 
+/* The app toggles dark mode via a `.dark` class on <html> (see
+   ThemeContext.jsx), not OS preference — so Tailwind's `dark:` utility
+   variant needs to be pointed at that class explicitly. Without this,
+   `dark:` utilities (used on the header logo's contrast backing plate)
+   would silently follow the OS theme instead of the in-app toggle. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   /* ---- Typography ---- */
   --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
