@@ -58,6 +58,12 @@ export const SOURCE = "e-Lab Original";
 //   { type: "polymer", intro?, mode: "addition"|"condensation", monomerText, repeatingUnitText, byproductText? }
 //   { type: "sigma-pi", intro? }
 //   { type: "chromatogram", intro?, baselineToFront, spots: [{ label, distance }] }
+//   { type: "periodic-table-highlight", intro?, highlights: [{ period, group, label }] }
+//   { type: "colour-wheel", intro?, absorbed?, observed? }
+//   { type: "organic-structure", intro?, label?, atoms: [{ id, symbol, x, y, implicit? }], bonds: [{ from, to, order?, style?: "wedge"|"dash" }] } — skeletal (implicit carbons) or displayed (all atoms shown) depending on atom.implicit
+//   { type: "enantiomer-pair", intro?, left: organic-structure-shaped, right: organic-structure-shaped }
+//   { type: "ir-spectrum", intro?, bands: [{ wavenumber, strength? }] }
+//   { type: "nmr-spectrum", intro?, signals: [{ shift, integration, multiplicity: "singlet"|"doublet"|"triplet"|"quartet"|"multiplet" }] }
 //   { type: "integrated", intro?, blocks: [ ...any of the above, minus "integrated" itself ] }
 export const STIMULUS_TYPES = [
   "text", "table", "nuclide", "mass-spectrum", "bar-chart", "atom-diagram",
@@ -65,6 +71,8 @@ export const STIMULUS_TYPES = [
   "proportionality-graph", "gas-particle-diagram", "apparatus-diagram",
   "lewis-structure", "resonance", "vsepr", "dipole", "ion-grid", "electron-transfer",
   "bonding-triangle", "polymer", "sigma-pi", "chromatogram",
+  "periodic-table-highlight", "colour-wheel", "organic-structure", "enantiomer-pair",
+  "ir-spectrum", "nmr-spectrum",
   "integrated",
 ];
 

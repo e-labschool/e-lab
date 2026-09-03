@@ -44,6 +44,7 @@ export default function MassSpectrumChart({ xLabel = "m/z", yLabel = "Relative a
           <g key={i}>
             <line x1={x} y1={H - PAD_B} x2={x} y2={y} stroke="currentColor" strokeWidth="2" />
             <text x={x} y={H - PAD_B + 16} fontSize="10" textAnchor="middle" fill="currentColor">{p.mz}</text>
+            {p.molecularIon && <text x={x} y={y - 4} fontSize="8" textAnchor="middle" fill="var(--color-amber)">M+</text>}
           </g>
         );
       })}

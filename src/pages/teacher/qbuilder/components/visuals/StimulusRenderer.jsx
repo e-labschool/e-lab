@@ -20,6 +20,12 @@ import BondingTriangle from "./BondingTriangle.jsx";
 import PolymerDiagram from "./PolymerDiagram.jsx";
 import SigmaPiDiagram from "./SigmaPiDiagram.jsx";
 import Chromatogram from "./Chromatogram.jsx";
+import PeriodicTableHighlight from "./PeriodicTableHighlight.jsx";
+import ColourWheel from "./ColourWheel.jsx";
+import OrganicStructure from "./OrganicStructure.jsx";
+import EnantiomerPair from "./EnantiomerPair.jsx";
+import IRSpectrumChart from "./IRSpectrumChart.jsx";
+import NMRSpectrumChart from "./NMRSpectrumChart.jsx";
 
 // The one place that turns a `stimulus` data object into a rendered
 // visual — used identically by the Preview modal, the printed Paper
@@ -99,6 +105,18 @@ function StimulusBody({ stimulus }) {
       return <SigmaPiDiagram />;
     case "chromatogram":
       return <Chromatogram baselineToFront={stimulus.baselineToFront} spots={stimulus.spots} />;
+    case "periodic-table-highlight":
+      return <PeriodicTableHighlight highlights={stimulus.highlights} />;
+    case "colour-wheel":
+      return <ColourWheel absorbed={stimulus.absorbed} observed={stimulus.observed} />;
+    case "organic-structure":
+      return <OrganicStructure atoms={stimulus.atoms} bonds={stimulus.bonds} label={stimulus.label} />;
+    case "enantiomer-pair":
+      return <EnantiomerPair left={stimulus.left} right={stimulus.right} />;
+    case "ir-spectrum":
+      return <IRSpectrumChart bands={stimulus.bands} />;
+    case "nmr-spectrum":
+      return <NMRSpectrumChart signals={stimulus.signals} />;
     case "integrated":
       return (
         <div className="flex flex-col gap-4">

@@ -371,6 +371,38 @@ export function exportPdf({ draft, totalMarks, mode }) {
         doc.text(s.label, indent - 2, sy + 1, { align: "right" });
       }
       y += chH + 10;
+    } else if (stimulus.type === "periodic-table-highlight") {
+      ensureSpace(16);
+      const line = (stimulus.highlights || []).map((h) => `${h.label}: period ${h.period}, group ${h.group}`).join("; ");
+      writeLine(`[Periodic table, highlighted positions] ${line}`, { size: 8.5 });
+    } else if (stimulus.type === "colour-wheel") {
+      ensureSpace(30);
+      doc.setLineWidth(0.5);
+      doc.circle(indent + 15, y + 15, 14, "S");
+      doc.setFontSize(8);
+      doc.text(`Absorbed: ${stimulus.absorbed ?? "-"}   Observed: ${stimulus.observed ?? "-"}`, indent + 34, y + 17);
+      y += 36;
+    } else if (stimulus.type === "organic-structure" || stimulus.type === "enantiomer-pair") {
+      const describe = (s) => {
+        const atomList = s.atoms.filter((a) => !a.implicit).map((a) => a.symbol).join(", ");
+        const bondList = s.bonds.map((b) => `${b.from}-${b.to}${b.order > 1 ? ` (order ${b.order})` : ""}${b.style ? ` [${b.style}]` : ""}`).join("; ");
+        return `Shown atoms: ${atomList || "(skeletal — carbon vertices implicit)"}. Bonds: ${bondList}.`;
+      };
+      ensureSpace(20);
+      if (stimulus.type === "organic-structure") {
+        writeLine(`[Organic structure] ${describe(stimulus)}`, { size: 8.5 });
+      } else {
+        writeLine(`[Enantiomer pair — left] ${describe(stimulus.left)}`, { size: 8.5 });
+        writeLine(`[Enantiomer pair — right, mirror image] ${describe(stimulus.right)}`, { size: 8.5 });
+      }
+    } else if (stimulus.type === "ir-spectrum") {
+      ensureSpace(16);
+      const line = stimulus.bands.map((b) => `${b.wavenumber} cm\u207b\u00b9`).join(", ");
+      writeLine(`[IR spectrum] Absorption bands at: ${line}.`, { size: 8.5 });
+    } else if (stimulus.type === "nmr-spectrum") {
+      ensureSpace(16);
+      const line = stimulus.signals.map((s) => `${s.shift} ppm (${s.multiplicity}, ${s.integration}H)`).join("; ");
+      writeLine(`[\u00b9H NMR spectrum] Signals: ${line}.`, { size: 8.5 });
     }
   }
 
@@ -517,6 +549,29 @@ function stimulusParagraphs(stimulus) {
   } else if (stimulus.type === "chromatogram") {
     const line = stimulus.spots.map((s) => `${s.label}: ${s.distance} cm`).join("   ");
     paragraphs.push(new Paragraph({ children: [new TextRun({ text: `[Chromatogram; baseline to front = ${stimulus.baselineToFront} cm] ${line}`, italics: true, size: 18 })] }));
+  } else if (stimulus.type === "periodic-table-highlight") {
+    const line = (stimulus.highlights || []).map((h) => `${h.label}: period ${h.period}, group ${h.group}`).join("; ");
+    paragraphs.push(new Paragraph({ children: [new TextRun({ text: `[Periodic table, highlighted positions] ${line}`, italics: true, size: 18 })] }));
+  } else if (stimulus.type === "colour-wheel") {
+    paragraphs.push(new Paragraph({ children: [new TextRun({ text: `[Colour wheel] Absorbed: ${stimulus.absorbed ?? "-"}; Observed: ${stimulus.observed ?? "-"}`, italics: true, size: 18 })] }));
+  } else if (stimulus.type === "organic-structure" || stimulus.type === "enantiomer-pair") {
+    const describe = (s) => {
+      const atomList = s.atoms.filter((a) => !a.implicit).map((a) => a.symbol).join(", ");
+      const bondList = s.bonds.map((b) => `${b.from}-${b.to}${b.order > 1 ? ` (order ${b.order})` : ""}${b.style ? ` [${b.style}]` : ""}`).join("; ");
+      return `Shown atoms: ${atomList || "(skeletal)"}. Bonds: ${bondList}.`;
+    };
+    if (stimulus.type === "organic-structure") {
+      paragraphs.push(new Paragraph({ children: [new TextRun({ text: `[Organic structure] ${describe(stimulus)}`, italics: true, size: 18 })] }));
+    } else {
+      paragraphs.push(new Paragraph({ children: [new TextRun({ text: `[Enantiomer, left] ${describe(stimulus.left)}`, italics: true, size: 18 })] }));
+      paragraphs.push(new Paragraph({ children: [new TextRun({ text: `[Enantiomer, right — mirror image] ${describe(stimulus.right)}`, italics: true, size: 18 })] }));
+    }
+  } else if (stimulus.type === "ir-spectrum") {
+    const line = stimulus.bands.map((b) => `${b.wavenumber} cm\u207b\u00b9`).join(", ");
+    paragraphs.push(new Paragraph({ children: [new TextRun({ text: `[IR spectrum] Bands: ${line}`, italics: true, size: 18 })] }));
+  } else if (stimulus.type === "nmr-spectrum") {
+    const line = stimulus.signals.map((s) => `${s.shift} ppm (${s.multiplicity}, ${s.integration}H)`).join("; ");
+    paragraphs.push(new Paragraph({ children: [new TextRun({ text: `[\u00b9H NMR] Signals: ${line}`, italics: true, size: 18 })] }));
   } else if (stimulus.type === "integrated") {
     for (const block of stimulus.blocks) paragraphs.push(...stimulusParagraphs(block));
   }
