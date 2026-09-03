@@ -11,7 +11,8 @@ const ROLES = [
     icon: GraduationCap,
     description: "Learn concepts, explore visually and build confidence through practice.",
     cta: "Continue as Student",
-    accent: "var(--color-indigo)",
+    accent: "var(--color-role-student)",
+    accentSoft: "var(--color-role-student-soft)",
   },
   {
     id: "teacher",
@@ -19,7 +20,8 @@ const ROLES = [
     icon: Presentation,
     description: "Teach visually, engage your class and access classroom tools.",
     cta: "Continue as Teacher",
-    accent: "var(--color-amber)",
+    accent: "var(--color-role-teacher)",
+    accentSoft: "var(--color-role-teacher-soft)",
   },
 ];
 
@@ -33,18 +35,26 @@ export default function RoleCards() {
   }
 
   return (
-    <section className="pb-24">
+    <section className="pb-16 md:pb-20">
       <Container className="flex justify-center">
         <div className="grid w-full max-w-2xl gap-4 sm:grid-cols-2">
-          {ROLES.map(({ id, label, icon: Icon, description, cta, accent }) => (
+          {ROLES.map(({ id, label, icon: Icon, description, cta, accent, accentSoft }) => (
             <button key={id} type="button" onClick={() => choose(id)} className="text-left">
-              <Card className="group flex h-full flex-col justify-between p-8 transition-colors hover:border-[var(--color-ink)]">
+              <Card
+                className="group flex h-full flex-col justify-between overflow-hidden p-8 transition-all duration-150 hover:-translate-y-0.5 hover:border-[var(--color-line)] hover:shadow-md"
+                style={{ borderTopWidth: "3px", borderTopColor: accent }}
+              >
                 <div>
-                  <Icon size={24} strokeWidth={1.5} style={{ color: accent }} />
+                  <span
+                    className="inline-flex h-11 w-11 items-center justify-center rounded-lg"
+                    style={{ backgroundColor: accentSoft, color: accent }}
+                  >
+                    <Icon size={22} strokeWidth={1.5} />
+                  </span>
                   <h2 className="mt-5 text-lg font-medium text-[var(--color-ink)]">{label}</h2>
                   <p className="mt-2 text-sm leading-relaxed text-[var(--color-ink-soft)]">{description}</p>
                 </div>
-                <span className="mt-8 inline-flex items-center gap-1.5 text-sm font-medium text-[var(--color-ink)]">
+                <span className="mt-8 inline-flex items-center gap-1.5 text-sm font-medium" style={{ color: accent }}>
                   {cta}
                   <ArrowRight size={15} className="transition-transform group-hover:translate-x-0.5" />
                 </span>

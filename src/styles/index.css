@@ -28,6 +28,28 @@
   --color-amber-soft: #FBF0E4;
   --color-teal: #2B7A6E;
   --color-teal-soft: #E7F3F0;
+  --color-violet: #7A4FB0;
+  --color-violet-soft: #F0EAF8;
+  --color-green: #4B7A3D;
+  --color-green-soft: #EDF3E9;
+  --color-coral: #B85C4A;
+  --color-coral-soft: #F8ECE9;
+
+  /* ---- Functional roles (homepage + section accents) ----
+     student = indigo, teacher = amber, interactive/simulation = teal,
+     resources = violet, assess = green, warnings = coral. Same physical
+     colour tokens as above, named by role so consuming components read
+     intent rather than a raw hue. */
+  --color-role-student: var(--color-indigo);
+  --color-role-student-soft: var(--color-indigo-soft);
+  --color-role-teacher: var(--color-amber);
+  --color-role-teacher-soft: var(--color-amber-soft);
+  --color-role-interactive: var(--color-teal);
+  --color-role-interactive-soft: var(--color-teal-soft);
+  --color-role-resources: var(--color-violet);
+  --color-role-resources-soft: var(--color-violet-soft);
+  --color-role-assess: var(--color-green);
+  --color-role-assess-soft: var(--color-green-soft);
 
   /* ---- Block colors (periodic table / categorization) ---- */
   --color-block-s: #3654D6;
@@ -51,6 +73,12 @@
   --color-amber-soft: #2E2113;
   --color-teal: #4FB3A3;
   --color-teal-soft: #142522;
+  --color-violet: #B389DC;
+  --color-violet-soft: #221B33;
+  --color-green: #86C46E;
+  --color-green-soft: #1B2416;
+  --color-coral: #E0917E;
+  --color-coral-soft: #2E1D18;
 
   --color-block-s: #6C86EE;
   --color-block-p: #4FB3A3;
