@@ -27,6 +27,22 @@ export const CURRICULUM = "IB DP Chemistry";
 export const SYLLABUS_VERSION = "First assessment 2025";
 export const SOURCE = "e-Lab Original";
 
+// Stimulus / visual data — kept structurally separate from questionText,
+// parts, options and markscheme, per the batch-import spec: never a
+// screenshot, always the underlying data, rendered by
+// components/visuals/StimulusRenderer.jsx (and re-drawn as real vector
+// content in PDF export; approximated as text in Word export, since the
+// docx package has no arbitrary vector-drawing surface).
+//
+//   { type: "text", intro }
+//   { type: "table", intro?, table: { headers: string[], rows: string[][] } }
+//   { type: "nuclide", intro?, nuclides: [{ massNumber, atomicNumber, symbol, charge? }] }
+//   { type: "mass-spectrum", intro?, xLabel, yLabel, peaks: [{ mz, abundance }] }
+//   { type: "bar-chart", intro?, xLabel, yLabel, bars: [{ label, value }] }
+//   { type: "atom-diagram", intro? }  — generic illustrative schematic, no per-question data needed
+//   { type: "integrated", intro?, blocks: [ ...any of the above, minus "integrated" itself ] }
+export const STIMULUS_TYPES = ["text", "table", "nuclide", "mass-spectrum", "bar-chart", "atom-diagram", "integrated"];
+
 export const COLLECTION_LABEL = "e-Lab Practice Questions";
 export const COLLECTION_DISCLAIMER =
   "Original practice material aligned with the IB Diploma Chemistry curriculum. e-Lab is not affiliated with or endorsed by the International Baccalaureate Organization.";
@@ -114,7 +130,7 @@ export function normalizeQuestion(question) {
     syllabusVersion: SYLLABUS_VERSION,
     commandTerms: [],
     estimatedMinutes: null,
-    stimulus: null, // { type: "table"|"text"|"graph"|"diagram"|"image", intro, table?, graph?, diagram?, image? } — kept separate from questionText/parts so Paper 1B-style data (tables, graphs, spectra, images) can be rendered/exported independently of the question prompt itself.
+    stimulus: null, // See "Stimulus / visual data" doc block below for the full shape reference.
     parts: null,
     options: null,
     correctAnswer: null,

@@ -1,4 +1,5 @@
 import { getQuestionMarks } from "../../../../data/questions/schema.js";
+import StimulusRenderer from "./visuals/StimulusRenderer.jsx";
 
 export default function MarkschemePreview({ draft, totalMarks }) {
   const { details, questions } = draft;
@@ -19,6 +20,11 @@ export default function MarkschemePreview({ draft, totalMarks }) {
           return (
             <div key={q.id} className="border-b border-[#eee] pb-5">
               <p className="text-sm font-semibold">Question {index + 1}</p>
+              {q.stimulus && (
+                <div className="my-1.5">
+                  <StimulusRenderer stimulus={q.stimulus} />
+                </div>
+              )}
               {hasParts ? (
                 <div className="mt-1.5 flex flex-col gap-2">
                   {q.parts.map((part, i) => (

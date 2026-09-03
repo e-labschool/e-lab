@@ -17,6 +17,7 @@ export default function QuestionCard({
   const [markschemeOpen, setMarkschemeOpen] = useState(false);
   const marks = getQuestionMarks(question);
   const hasParts = Array.isArray(question.parts) && question.parts.length > 0;
+  const hasVisual = question.stimulus && question.stimulus.type !== "text";
 
   return (
     <Card className={`flex flex-col gap-3 p-5 transition-colors ${inDraft ? "border-[var(--color-teal)]/50" : ""}`}>
@@ -25,6 +26,7 @@ export default function QuestionCard({
           {getCurriculumCode(question)}
         </span>
         <div className="flex gap-1.5">
+          {hasVisual && <Badge tone="teal">Visual</Badge>}
           {question.status && question.status !== "published" && <Badge tone="amber">{question.status}</Badge>}
           {question.isCustom && <Badge tone="indigo">Custom</Badge>}
         </div>

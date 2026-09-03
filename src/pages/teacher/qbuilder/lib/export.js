@@ -60,6 +60,89 @@ export function exportPdf({ draft, totalMarks, mode }) {
     }
   }
 
+  // Draws a question's stimulus as real vector content (lines/circles/text),
+  // never a raster image — mirrors StimulusRenderer.jsx's data model exactly
+  // so the PDF always matches what the teacher saw on screen.
+  function drawStimulus(stimulus, indent = marginX + 14) {
+    if (!stimulus) return;
+    if (stimulus.intro) writeLine(stimulus.intro, { size: 9 });
+
+    if (stimulus.type === "table") {
+      ensureSpace(20);
+      const colWidth = (maxWidth - (indent - marginX)) / stimulus.table.headers.length;
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "bold");
+      stimulus.table.headers.forEach((h, i) => doc.text(String(h), indent + i * colWidth, y));
+      y += 12;
+      doc.setFont("helvetica", "normal");
+      for (const row of stimulus.table.rows) {
+        ensureSpace(12);
+        row.forEach((cell, i) => doc.text(String(cell), indent + i * colWidth, y));
+        y += 12;
+      }
+      y += 4;
+    } else if (stimulus.type === "nuclide") {
+      ensureSpace(34);
+      let x = indent;
+      for (const n of stimulus.nuclides) {
+        if (n.label) {
+          doc.setFontSize(8);
+          doc.text(n.label, x + 10, y - 20);
+        }
+        doc.setFontSize(9);
+        doc.text(String(n.massNumber), x, y - 8);
+        doc.text(String(n.atomicNumber), x, y + 6);
+        doc.setFontSize(14);
+        doc.setFont("helvetica", "bold");
+        doc.text(n.symbol, x + 14, y);
+        const symbolW = doc.getTextWidth(n.symbol);
+        doc.setFont("helvetica", "normal");
+        if (n.charge) {
+          doc.setFontSize(9);
+          doc.text(String(n.charge), x + 14 + symbolW + 2, y - 8);
+        }
+        x += 14 + symbolW + (n.charge ? 16 : 4) + 20;
+      }
+      y += 26;
+    } else if (stimulus.type === "mass-spectrum" || stimulus.type === "bar-chart") {
+      const isSpectrum = stimulus.type === "mass-spectrum";
+      const items = isSpectrum ? stimulus.peaks : stimulus.bars;
+      const chartH = 90;
+      ensureSpace(chartH + 30);
+      const chartW = 260;
+      const baseY = y + chartH;
+      doc.setLineWidth(0.75);
+      doc.line(indent, y, indent, baseY); // y-axis
+      doc.line(indent, baseY, indent + chartW, baseY); // x-axis
+      const maxVal = isSpectrum ? Math.max(...items.map((p) => p.abundance), 100) : Math.max(...items.map((b) => b.value), 100);
+      const n = items.length;
+      items.forEach((item, i) => {
+        const val = isSpectrum ? item.abundance : item.value;
+        const label = isSpectrum ? item.mz : item.label;
+        const barH = (val / maxVal) * chartH;
+        const x = indent + ((i + 1) / (n + 1)) * chartW;
+        doc.line(x, baseY, x, baseY - barH);
+        doc.setFontSize(7);
+        doc.text(String(label), x, baseY + 10, { align: "center" });
+      });
+      doc.setFontSize(7);
+      doc.text(stimulus.xLabel || "", indent + chartW / 2, baseY + 20, { align: "center" });
+      y = baseY + 26;
+    } else if (stimulus.type === "atom-diagram") {
+      ensureSpace(60);
+      const cx = indent + 30;
+      const cy = y + 25;
+      doc.setLineWidth(0.5);
+      doc.circle(cx, cy, 24, "S");
+      doc.circle(cx, cy, 8, "S");
+      doc.setFontSize(8);
+      doc.text("nucleus (protons + neutrons); outer shell: electrons", indent + 70, y + 25);
+      y += 56;
+    } else if (stimulus.type === "integrated") {
+      for (const block of stimulus.blocks) drawStimulus(block, indent);
+    }
+  }
+
   const headerLines = buildHeaderLines(details, mode);
   headerLines.forEach((line, i) => writeLine(line, { size: i === 0 ? 14 : 11, bold: i === 0, center: true }));
   y += 6;
@@ -75,6 +158,7 @@ export function exportPdf({ draft, totalMarks, mode }) {
       ensureSpace(20);
       const marks = getQuestionMarks(q);
       writeLine(`${index + 1}. ${q.questionText}`, { size: 10.5 });
+      if (q.stimulus) drawStimulus(q.stimulus);
       if (Array.isArray(q.parts) && q.parts.length > 0) {
         q.parts.forEach((part, i) => {
           writeLine(`(${part.id ?? String.fromCharCode(97 + i)}) ${part.questionText} [${part.marks}]`, { size: 9.5 });
@@ -92,6 +176,7 @@ export function exportPdf({ draft, totalMarks, mode }) {
       ensureSpace(20);
       const marks = getQuestionMarks(q);
       writeLine(`Question ${index + 1}`, { size: 11, bold: true });
+      if (q.stimulus) drawStimulus(q.stimulus);
       if (Array.isArray(q.parts) && q.parts.length > 0) {
         q.parts.forEach((part, i) => {
           writeLine(`(${part.id ?? String.fromCharCode(97 + i)}) ${part.markscheme} [${part.marks}]`, { size: 9.5 });
@@ -107,6 +192,44 @@ export function exportPdf({ draft, totalMarks, mode }) {
 
   const filename = `${(details.assessmentTitle || "question-paper").replace(/\s+/g, "-").toLowerCase()}-${mode}.pdf`;
   doc.save(filename);
+}
+
+// Word has no vector-drawing surface, so a stimulus becomes the clearest
+// faithful TEXT representation of the same underlying data — nuclide
+// notation via real Unicode super/subscript characters, spectra/bar charts
+// as a labelled data list, tables as plain rows. Same source data as the
+// PDF/on-screen versions; only the rendering technique differs.
+const SUPERSCRIPT_DIGITS = { "0": "\u2070", "1": "\u00b9", "2": "\u00b2", "3": "\u00b3", "4": "\u2074", "5": "\u2075", "6": "\u2076", "7": "\u2077", "8": "\u2078", "9": "\u2079", "+": "\u207a", "-": "\u207b" };
+const SUBSCRIPT_DIGITS = { "0": "\u2080", "1": "\u2081", "2": "\u2082", "3": "\u2083", "4": "\u2084", "5": "\u2085", "6": "\u2086", "7": "\u2087", "8": "\u2088", "9": "\u2089" };
+function toSuper(s) { return String(s).split("").map((c) => SUPERSCRIPT_DIGITS[c] ?? c).join(""); }
+function toSub(s) { return String(s).split("").map((c) => SUBSCRIPT_DIGITS[c] ?? c).join(""); }
+
+function stimulusParagraphs(stimulus) {
+  const paragraphs = [];
+  if (!stimulus) return paragraphs;
+  if (stimulus.intro) paragraphs.push(new Paragraph({ children: [new TextRun({ text: stimulus.intro, italics: true, size: 18 })] }));
+
+  if (stimulus.type === "table") {
+    paragraphs.push(new Paragraph({ children: [new TextRun({ text: stimulus.table.headers.join("  |  "), bold: true, size: 18 })] }));
+    for (const row of stimulus.table.rows) {
+      paragraphs.push(new Paragraph({ children: [new TextRun({ text: row.join("  |  "), size: 18 })] }));
+    }
+  } else if (stimulus.type === "nuclide") {
+    const text = stimulus.nuclides
+      .map((n) => `${n.label ? `${n.label}: ` : ""}${toSuper(n.massNumber)}${toSub(n.atomicNumber)}${n.symbol}${n.charge ? toSuper(n.charge) : ""}`)
+      .join("    ");
+    paragraphs.push(new Paragraph({ children: [new TextRun({ text, size: 24 })] }));
+  } else if (stimulus.type === "mass-spectrum" || stimulus.type === "bar-chart") {
+    const isSpectrum = stimulus.type === "mass-spectrum";
+    const items = isSpectrum ? stimulus.peaks : stimulus.bars;
+    const line = items.map((item) => (isSpectrum ? `m/z ${item.mz}: ${item.abundance}%` : `${item.label}: ${item.value}%`)).join("   ");
+    paragraphs.push(new Paragraph({ children: [new TextRun({ text: `[${isSpectrum ? "Mass spectrum" : "Bar chart"} data] ${line}`, size: 18 })] }));
+  } else if (stimulus.type === "atom-diagram") {
+    paragraphs.push(new Paragraph({ children: [new TextRun({ text: "[Diagram: central nucleus of protons and neutrons, surrounded by an electron shell]", italics: true, size: 18 })] }));
+  } else if (stimulus.type === "integrated") {
+    for (const block of stimulus.blocks) paragraphs.push(...stimulusParagraphs(block));
+  }
+  return paragraphs;
 }
 
 export async function exportDocx({ draft, totalMarks, mode }) {
@@ -149,6 +272,7 @@ export async function exportDocx({ draft, totalMarks, mode }) {
           children: [new TextRun({ text: `${index + 1}. `, bold: true }), new TextRun({ text: q.questionText })],
         })
       );
+      paragraphs.push(...stimulusParagraphs(q.stimulus));
       if (Array.isArray(q.parts) && q.parts.length > 0) {
         q.parts.forEach((part, i) => {
           paragraphs.push(
@@ -178,6 +302,7 @@ export async function exportDocx({ draft, totalMarks, mode }) {
     questions.forEach((q, index) => {
       const marks = getQuestionMarks(q);
       paragraphs.push(new Paragraph({ children: [new TextRun({ text: `Question ${index + 1}`, bold: true })] }));
+      paragraphs.push(...stimulusParagraphs(q.stimulus));
       if (Array.isArray(q.parts) && q.parts.length > 0) {
         q.parts.forEach((part, i) => {
           paragraphs.push(

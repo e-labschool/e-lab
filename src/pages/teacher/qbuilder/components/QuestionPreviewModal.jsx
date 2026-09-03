@@ -1,6 +1,7 @@
 import { X } from "lucide-react";
 import Badge from "../../../../components/ui/Badge.jsx";
 import { getQuestionMarks } from "../../../../data/questions/schema.js";
+import StimulusRenderer from "./visuals/StimulusRenderer.jsx";
 
 export default function QuestionPreviewModal({ question, onClose }) {
   if (!question) return null;
@@ -31,6 +32,12 @@ export default function QuestionPreviewModal({ question, onClose }) {
         </div>
 
         <p className="whitespace-pre-line text-sm leading-relaxed text-[var(--color-ink)]">{question.questionText}</p>
+
+        {question.stimulus && (
+          <div className="mt-3">
+            <StimulusRenderer stimulus={question.stimulus} />
+          </div>
+        )}
 
         {question.questionType === "MCQ" && Array.isArray(question.options) && (
           <ul className="mt-3 flex flex-col gap-1 text-sm text-[var(--color-ink-soft)]">
