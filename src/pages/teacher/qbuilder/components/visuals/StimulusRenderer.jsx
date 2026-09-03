@@ -26,6 +26,12 @@ import OrganicStructure from "./OrganicStructure.jsx";
 import EnantiomerPair from "./EnantiomerPair.jsx";
 import IRSpectrumChart from "./IRSpectrumChart.jsx";
 import NMRSpectrumChart from "./NMRSpectrumChart.jsx";
+import EnergyProfile from "./EnergyProfile.jsx";
+import CalorimeterDiagram from "./CalorimeterDiagram.jsx";
+import HessCycle from "./HessCycle.jsx";
+import BornHaberCycle from "./BornHaberCycle.jsx";
+import CarbonCycleDiagram from "./CarbonCycleDiagram.jsx";
+import ElectrochemicalCellDiagram from "./ElectrochemicalCellDiagram.jsx";
 
 // The one place that turns a `stimulus` data object into a rendered
 // visual — used identically by the Preview modal, the printed Paper
@@ -117,6 +123,18 @@ function StimulusBody({ stimulus }) {
       return <IRSpectrumChart bands={stimulus.bands} />;
     case "nmr-spectrum":
       return <NMRSpectrumChart signals={stimulus.signals} />;
+    case "energy-profile":
+      return <EnergyProfile reactantsEnergy={stimulus.reactantsEnergy} productsEnergy={stimulus.productsEnergy} hasHump={stimulus.hasHump} humpEnergy={stimulus.humpEnergy} catalysedHumpEnergy={stimulus.catalysedHumpEnergy} label={stimulus.label} />;
+    case "calorimeter-diagram":
+      return <CalorimeterDiagram labels={stimulus.labels} />;
+    case "hess-cycle":
+      return <HessCycle nodes={stimulus.nodes} arrows={stimulus.arrows} />;
+    case "born-haber-cycle":
+      return <BornHaberCycle steps={stimulus.steps} />;
+    case "carbon-cycle-diagram":
+      return <CarbonCycleDiagram stages={stimulus.stages} />;
+    case "electrochemical-cell":
+      return <ElectrochemicalCellDiagram mode={stimulus.mode} leftLabel={stimulus.leftLabel} rightLabel={stimulus.rightLabel} leftElectrode={stimulus.leftElectrode} rightElectrode={stimulus.rightElectrode} anodeSide={stimulus.anodeSide} />;
     case "integrated":
       return (
         <div className="flex flex-col gap-4">

@@ -64,6 +64,12 @@ export const SOURCE = "e-Lab Original";
 //   { type: "enantiomer-pair", intro?, left: organic-structure-shaped, right: organic-structure-shaped }
 //   { type: "ir-spectrum", intro?, bands: [{ wavenumber, strength? }] }
 //   { type: "nmr-spectrum", intro?, signals: [{ shift, integration, multiplicity: "singlet"|"doublet"|"triplet"|"quartet"|"multiplet" }] }
+//   { type: "energy-profile", intro?, reactantsEnergy, productsEnergy, hasHump?, humpEnergy?, catalysedHumpEnergy?, label? }
+//   { type: "calorimeter-diagram", intro?, labels?: [lid, thermometer, solution, cup] }
+//   { type: "hess-cycle", intro?, nodes: [{ id, label }], arrows: [{ from, to, label, labelOffsetX? }] }
+//   { type: "born-haber-cycle", intro?, steps: [{ label, value?, unknown? }] }
+//   { type: "carbon-cycle-diagram", intro?, stages: string[] }
+//   { type: "electrochemical-cell", intro?, mode: "voltaic"|"electrolytic"|"fuel-cell", leftLabel, rightLabel, leftElectrode?, rightElectrode?, anodeSide?: "left"|"right" }
 //   { type: "integrated", intro?, blocks: [ ...any of the above, minus "integrated" itself ] }
 export const STIMULUS_TYPES = [
   "text", "table", "nuclide", "mass-spectrum", "bar-chart", "atom-diagram",
@@ -73,6 +79,7 @@ export const STIMULUS_TYPES = [
   "bonding-triangle", "polymer", "sigma-pi", "chromatogram",
   "periodic-table-highlight", "colour-wheel", "organic-structure", "enantiomer-pair",
   "ir-spectrum", "nmr-spectrum",
+  "energy-profile", "calorimeter-diagram", "hess-cycle", "born-haber-cycle", "carbon-cycle-diagram", "electrochemical-cell",
   "integrated",
 ];
 

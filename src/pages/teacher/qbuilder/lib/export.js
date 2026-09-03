@@ -403,6 +403,26 @@ export function exportPdf({ draft, totalMarks, mode }) {
       ensureSpace(16);
       const line = stimulus.signals.map((s) => `${s.shift} ppm (${s.multiplicity}, ${s.integration}H)`).join("; ");
       writeLine(`[\u00b9H NMR spectrum] Signals: ${line}.`, { size: 8.5 });
+    } else if (stimulus.type === "energy-profile") {
+      ensureSpace(16);
+      writeLine(`[Energy profile] Reactants: ${stimulus.reactantsEnergy} kJ mol\u207b\u00b9; Products: ${stimulus.productsEnergy} kJ mol\u207b\u00b9.${stimulus.hasHump ? ` Activation barrier shown${stimulus.catalysedHumpEnergy != null ? " (catalysed and uncatalysed pathways compared)" : ""}.` : ""}`, { size: 8.5 });
+    } else if (stimulus.type === "calorimeter-diagram") {
+      ensureSpace(14);
+      writeLine(`[Calorimeter diagram] ${(stimulus.labels || []).join(", ")}`, { size: 8.5 });
+    } else if (stimulus.type === "hess-cycle") {
+      ensureSpace(16);
+      const line = stimulus.arrows.map((a) => `${a.from}\u2192${a.to}: ${a.label}`).join("; ");
+      writeLine(`[Hess cycle] ${line}`, { size: 8.5 });
+    } else if (stimulus.type === "born-haber-cycle") {
+      ensureSpace(16);
+      const line = stimulus.steps.map((s) => `${s.label}: ${s.unknown ? "?" : `${s.value} kJ mol\u207b\u00b9`}`).join("; ");
+      writeLine(`[Born-Haber cycle] ${line}`, { size: 8.5 });
+    } else if (stimulus.type === "carbon-cycle-diagram") {
+      ensureSpace(14);
+      writeLine(`[Carbon cycle] ${stimulus.stages.join(" \u2192 ")}`, { size: 8.5 });
+    } else if (stimulus.type === "electrochemical-cell") {
+      ensureSpace(16);
+      writeLine(`[${stimulus.mode} cell] ${stimulus.leftLabel} (${stimulus.leftElectrode ?? ""}) | ${stimulus.rightLabel} (${stimulus.rightElectrode ?? ""})`, { size: 8.5 });
     }
   }
 
@@ -572,6 +592,20 @@ function stimulusParagraphs(stimulus) {
   } else if (stimulus.type === "nmr-spectrum") {
     const line = stimulus.signals.map((s) => `${s.shift} ppm (${s.multiplicity}, ${s.integration}H)`).join("; ");
     paragraphs.push(new Paragraph({ children: [new TextRun({ text: `[\u00b9H NMR] Signals: ${line}`, italics: true, size: 18 })] }));
+  } else if (stimulus.type === "energy-profile") {
+    paragraphs.push(new Paragraph({ children: [new TextRun({ text: `[Energy profile] Reactants: ${stimulus.reactantsEnergy} kJ mol\u207b\u00b9; Products: ${stimulus.productsEnergy} kJ mol\u207b\u00b9`, italics: true, size: 18 })] }));
+  } else if (stimulus.type === "calorimeter-diagram") {
+    paragraphs.push(new Paragraph({ children: [new TextRun({ text: `[Calorimeter diagram] ${(stimulus.labels || []).join(", ")}`, italics: true, size: 18 })] }));
+  } else if (stimulus.type === "hess-cycle") {
+    const line = stimulus.arrows.map((a) => `${a.from}\u2192${a.to}: ${a.label}`).join("; ");
+    paragraphs.push(new Paragraph({ children: [new TextRun({ text: `[Hess cycle] ${line}`, italics: true, size: 18 })] }));
+  } else if (stimulus.type === "born-haber-cycle") {
+    const line = stimulus.steps.map((s) => `${s.label}: ${s.unknown ? "?" : `${s.value} kJ mol\u207b\u00b9`}`).join("; ");
+    paragraphs.push(new Paragraph({ children: [new TextRun({ text: `[Born-Haber cycle] ${line}`, italics: true, size: 18 })] }));
+  } else if (stimulus.type === "carbon-cycle-diagram") {
+    paragraphs.push(new Paragraph({ children: [new TextRun({ text: `[Carbon cycle] ${stimulus.stages.join(" \u2192 ")}`, italics: true, size: 18 })] }));
+  } else if (stimulus.type === "electrochemical-cell") {
+    paragraphs.push(new Paragraph({ children: [new TextRun({ text: `[${stimulus.mode} cell] ${stimulus.leftLabel} (${stimulus.leftElectrode ?? ""}) | ${stimulus.rightLabel} (${stimulus.rightElectrode ?? ""})`, italics: true, size: 18 })] }));
   } else if (stimulus.type === "integrated") {
     for (const block of stimulus.blocks) paragraphs.push(...stimulusParagraphs(block));
   }
