@@ -19,6 +19,8 @@ import StudentSubjectLayout from "./pages/student/StudentSubjectLayout.jsx";
 import StudentLearn from "./pages/student/Learn.jsx";
 import StudentPractice from "./pages/student/Practice.jsx";
 import StudentAssess from "./pages/student/Assess.jsx";
+import ResourcesLanding from "./pages/student/resources/ResourcesLanding.jsx";
+import ResourcesCategoryPage from "./pages/student/resources/CategoryPage.jsx";
 
 import TeacherSubjectLayout from "./pages/teacher/TeacherSubjectLayout.jsx";
 import TeacherTeach from "./pages/teacher/Teach.jsx";
@@ -54,6 +56,8 @@ const router = createBrowserRouter([
           { path: "learn", element: <StudentLearn /> },
           { path: "practice", element: <StudentPractice /> },
           { path: "assess", element: <StudentAssess /> },
+          { path: "resources", element: <ResourcesLanding /> },
+          { path: "resources/:categoryId", element: <ResourcesCategoryPage /> },
         ],
       },
 

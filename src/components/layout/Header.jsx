@@ -10,6 +10,7 @@ const STUDENT_TABS = [
   { segment: "learn", label: "Learn" },
   { segment: "practice", label: "Practice" },
   { segment: "assess", label: "Assess" },
+  { segment: "resources", label: "Resources" },
 ];
 const TEACHER_TABS = [
   { segment: "teach", label: "Teach" },
@@ -19,8 +20,10 @@ const TEACHER_TABS = [
 ];
 
 function linkClasses({ isActive }) {
-  return `text-sm transition-colors ${
-    isActive ? "text-[var(--color-ink)] font-medium" : "text-[var(--color-ink-soft)] hover:text-[var(--color-ink)]"
+  return `border-b-2 pb-1 text-sm transition-colors ${
+    isActive
+      ? "border-[var(--color-indigo)] font-medium text-[var(--color-ink)]"
+      : "border-transparent text-[var(--color-ink-soft)] hover:border-[var(--color-line)] hover:text-[var(--color-ink)]"
   }`;
 }
 

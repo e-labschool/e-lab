@@ -25,7 +25,7 @@ export default function Button({
   children,
   ...rest
 }) {
-  const classes = `inline-flex items-center justify-center gap-2 rounded-md font-medium transition-colors duration-150 ${VARIANTS[variant]} ${SIZES[size]} ${className}`;
+  const classes = `inline-flex items-center justify-center gap-2 rounded-md font-medium transition-all duration-150 active:scale-[0.98] ${VARIANTS[variant]} ${SIZES[size]} ${className}`;
 
   if (to) {
     return (

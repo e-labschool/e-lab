@@ -13,7 +13,7 @@ export default function InteractiveFrame({ title, subtitle, children, compact = 
   return (
     <div
       ref={frameRef}
-      className="rounded-lg border border-[var(--color-line)] bg-[var(--color-paper)] [&:fullscreen]:flex [&:fullscreen]:flex-col [&:fullscreen]:justify-center [&:fullscreen]:p-10"
+      className="rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] [&:fullscreen]:flex [&:fullscreen]:flex-col [&:fullscreen]:justify-center [&:fullscreen]:p-10"
     >
       {!compact && (
         <div className="flex items-center justify-between gap-3 border-b border-[var(--color-line)] px-5 py-3.5">

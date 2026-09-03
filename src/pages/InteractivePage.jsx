@@ -50,7 +50,7 @@ export default function InteractivePage() {
       {EngineComponent ? (
         <Suspense
           fallback={
-            <div className="flex h-96 items-center justify-center rounded-lg border border-[var(--color-line)] text-sm text-[var(--color-ink-faint)]">
+            <div className="flex h-96 items-center justify-center rounded-md border border-[var(--color-line)] text-sm text-[var(--color-ink-faint)]">
               Loading interactive&hellip;
             </div>
           }
@@ -59,7 +59,7 @@ export default function InteractivePage() {
         </Suspense>
       ) : (
         <InteractiveFrame title={resource.title} compact>
-          <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-[var(--color-line)] px-6 py-16 text-center">
+          <div className="flex flex-col items-center gap-3 rounded-md border border-dashed border-[var(--color-line)] px-6 py-16 text-center">
             <Clock size={22} className="text-[var(--color-ink-faint)]" />
             <p className="text-sm text-[var(--color-ink-soft)]">
               This {resource.resourceType.replace(/-/g, " ")} is {resource.status === "in-development" ? "in development" : "planned"} and not yet built.
