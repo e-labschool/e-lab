@@ -45,10 +45,14 @@ export const SOURCE = "e-Lab Original";
 //   { type: "orbital-shape", intro?, shapes: [{ id, kind: "s"|"px"|"py"|"pz", label }] }
 //   { type: "orbital-box", intro?, subshells: [{ label, boxes: [{ spins: ("up"|"down")[] }] }] }
 //   { type: "ionization-graph", intro?, points: [{ label, value }], xLabel, yLabel, logScale? }
+//   { type: "proportionality-graph", intro?, points: [{ x, y }], xLabel, yLabel, relationship?: "linear"|"inverse"|"points", highlightPoint?: { x, y, label } }
+//   { type: "gas-particle-diagram", intro?, containers: [{ label, relativeSize, particleCount, spread? }] }
+//   { type: "apparatus-diagram", intro?, items: [{ kind: "beaker"|"measuring-cylinder"|"volumetric-flask"|"conical-flask", label }] }
 //   { type: "integrated", intro?, blocks: [ ...any of the above, minus "integrated" itself ] }
 export const STIMULUS_TYPES = [
   "text", "table", "nuclide", "mass-spectrum", "bar-chart", "atom-diagram",
   "emission-spectrum", "energy-level-diagram", "orbital-shape", "orbital-box", "ionization-graph",
+  "proportionality-graph", "gas-particle-diagram", "apparatus-diagram",
   "integrated",
 ];
 
@@ -105,8 +109,8 @@ export function validateQuestion(question) {
   }
 
   if (question.questionType === "MCQ") {
-    if (!Array.isArray(question.options) || question.options.length !== 4) {
-      problems.push("MCQ requires exactly four options");
+    if (!Array.isArray(question.options) || question.options.length < 2) {
+      problems.push("MCQ requires at least two options");
     }
     if (!question.correctAnswer) {
       problems.push("MCQ requires a correctAnswer");

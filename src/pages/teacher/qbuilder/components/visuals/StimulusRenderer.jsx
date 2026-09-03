@@ -8,6 +8,9 @@ import EnergyLevelDiagram from "./EnergyLevelDiagram.jsx";
 import OrbitalShapeDiagram from "./OrbitalShapeDiagram.jsx";
 import OrbitalBoxDiagram from "./OrbitalBoxDiagram.jsx";
 import IonizationEnergyGraph from "./IonizationEnergyGraph.jsx";
+import ProportionalityGraph from "./ProportionalityGraph.jsx";
+import GasParticleDiagram from "./GasParticleDiagram.jsx";
+import ApparatusDiagram from "./ApparatusDiagram.jsx";
 
 // The one place that turns a `stimulus` data object into a rendered
 // visual — used identically by the Preview modal, the printed Paper
@@ -52,6 +55,12 @@ function StimulusBody({ stimulus }) {
       return <OrbitalBoxDiagram subshells={stimulus.subshells} />;
     case "ionization-graph":
       return <IonizationEnergyGraph points={stimulus.points} xLabel={stimulus.xLabel} yLabel={stimulus.yLabel} logScale={stimulus.logScale} />;
+    case "proportionality-graph":
+      return <ProportionalityGraph points={stimulus.points} xLabel={stimulus.xLabel} yLabel={stimulus.yLabel} relationship={stimulus.relationship} highlightPoint={stimulus.highlightPoint} />;
+    case "gas-particle-diagram":
+      return <GasParticleDiagram containers={stimulus.containers} />;
+    case "apparatus-diagram":
+      return <ApparatusDiagram items={stimulus.items} />;
     case "integrated":
       return (
         <div className="flex flex-col gap-4">

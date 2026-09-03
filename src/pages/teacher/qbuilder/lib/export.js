@@ -234,6 +234,60 @@ export function exportPdf({ draft, totalMarks, mode }) {
         doc.text(String(p.label), xFor(i), y + chartH + 10, { align: "center" });
       });
       y += chartH + 18;
+    } else if (stimulus.type === "proportionality-graph") {
+      const chartH = 90, chartW = 200;
+      ensureSpace(chartH + 20);
+      const allPts = stimulus.highlightPoint ? [...stimulus.points, stimulus.highlightPoint] : stimulus.points;
+      const maxX = Math.max(...allPts.map((p) => p.x), 1);
+      const maxY = Math.max(...allPts.map((p) => p.y), 1);
+      const xFor = (v) => indent + (v / maxX) * chartW;
+      const yFor = (v) => y + chartH - (v / maxY) * chartH;
+      doc.setLineWidth(0.75);
+      doc.line(indent, y, indent, y + chartH);
+      doc.line(indent, y + chartH, indent + chartW, y + chartH);
+      const sorted = [...stimulus.points].sort((a, b) => a.x - b.x);
+      for (let i = 0; i < sorted.length - 1; i += 1) {
+        doc.line(xFor(sorted[i].x), yFor(sorted[i].y), xFor(sorted[i + 1].x), yFor(sorted[i + 1].y));
+      }
+      for (const p of stimulus.points) doc.circle(xFor(p.x), yFor(p.y), 1.2, "F");
+      if (stimulus.highlightPoint) {
+        doc.setDrawColor(200, 130, 40);
+        doc.circle(xFor(stimulus.highlightPoint.x), yFor(stimulus.highlightPoint.y), 1.8, "S");
+        doc.setDrawColor(0, 0, 0);
+      }
+      y += chartH + 14;
+    } else if (stimulus.type === "gas-particle-diagram") {
+      ensureSpace(60);
+      let x = indent + 30;
+      doc.setFontSize(8);
+      for (const c of stimulus.containers) {
+        const size = 30 + (c.relativeSize ?? 1) * 20;
+        doc.setLineWidth(0.5);
+        doc.rect(x - size / 2, y, size, size, "S");
+        // simple deterministic scatter of dots
+        let seed = (c.particleCount || 1) * 7 + 3;
+        for (let i = 0; i < (c.particleCount || 0); i += 1) {
+          seed = (seed * 9301 + 49297) % 233280;
+          const px = x - size / 2 + (seed / 233280) * size;
+          seed = (seed * 9301 + 49297) % 233280;
+          const py = y + (seed / 233280) * size;
+          doc.circle(px, py, 0.9, "F");
+        }
+        doc.text(c.label ?? "", x, y + size + 10, { align: "center" });
+        x += size + 30;
+      }
+      y += 74;
+    } else if (stimulus.type === "apparatus-diagram") {
+      ensureSpace(50);
+      let x = indent + 20;
+      doc.setFontSize(8);
+      for (const item of stimulus.items) {
+        doc.setLineWidth(0.5);
+        doc.rect(x - 12, y, 24, 34, "S");
+        doc.text(item.label ?? item.kind, x, y + 42, { align: "center" });
+        x += 50;
+      }
+      y += 50;
     }
   }
 
@@ -340,6 +394,16 @@ function stimulusParagraphs(stimulus) {
   } else if (stimulus.type === "ionization-graph") {
     const line = stimulus.points.map((p) => `${p.label}: ${p.value}`).join("   ");
     paragraphs.push(new Paragraph({ children: [new TextRun({ text: `[Ionization energy graph]${stimulus.logScale ? " (log scale)" : ""} ${line}`, italics: true, size: 18 })] }));
+  } else if (stimulus.type === "proportionality-graph") {
+    const line = stimulus.points.map((p) => `(${p.x}, ${p.y})`).join("  ");
+    const highlight = stimulus.highlightPoint ? `   highlighted: (${stimulus.highlightPoint.x}, ${stimulus.highlightPoint.y})${stimulus.highlightPoint.label ? ` [${stimulus.highlightPoint.label}]` : ""}` : "";
+    paragraphs.push(new Paragraph({ children: [new TextRun({ text: `[Graph: ${stimulus.yLabel || "y"} vs ${stimulus.xLabel || "x"}] ${line}${highlight}`, italics: true, size: 18 })] }));
+  } else if (stimulus.type === "gas-particle-diagram") {
+    const line = stimulus.containers.map((c) => `${c.label ?? "container"}: ${c.particleCount} particles`).join("   ");
+    paragraphs.push(new Paragraph({ children: [new TextRun({ text: `[Gas particle diagram] ${line}`, italics: true, size: 18 })] }));
+  } else if (stimulus.type === "apparatus-diagram") {
+    const line = stimulus.items.map((i) => i.label ?? i.kind).join("   ");
+    paragraphs.push(new Paragraph({ children: [new TextRun({ text: `[Apparatus shown: ${line}]`, italics: true, size: 18 })] }));
   } else if (stimulus.type === "integrated") {
     for (const block of stimulus.blocks) paragraphs.push(...stimulusParagraphs(block));
   }
