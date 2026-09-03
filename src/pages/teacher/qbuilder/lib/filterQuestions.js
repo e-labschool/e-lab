@@ -1,12 +1,10 @@
 export const DEFAULT_FILTERS = {
   search: "",
-  level: "All",
-  paper: [],
-  syllabusSection: [],
-  topic: [],
-  subtopic: [], // stored as "Topic \u00b7 Subtopic" strings, matching FilterSidebar's option format
-  difficulty: [],
-  questionType: [],
+  paper: "All", // "All" | "Paper 1A" | "Paper 1B" | "Paper 2" — horizontal tab, single-select
+  section: "All", // "All" | "Structure" | "Reactivity"
+  code: "All", // a specific curriculum code, e.g. "S1.3", or "All"
+  difficulty: "All",
+  questionType: "All",
   marksMin: "",
   marksMax: "",
 };
@@ -15,13 +13,15 @@ export function filterQuestions(questions, filters) {
   const search = filters.search.trim().toLowerCase();
 
   return questions.filter((q) => {
-    if (filters.level !== "All" && q.level !== filters.level) return false;
-    if (filters.paper.length > 0 && !filters.paper.includes(q.paper)) return false;
-    if (filters.syllabusSection.length > 0 && !filters.syllabusSection.includes(q.syllabusSection)) return false;
-    if (filters.topic.length > 0 && !filters.topic.includes(q.topic)) return false;
-    if (filters.subtopic.length > 0 && !filters.subtopic.includes(`${q.topic} \u00b7 ${q.subtopic}`)) return false;
-    if (filters.difficulty.length > 0 && !filters.difficulty.includes(q.difficulty)) return false;
-    if (filters.questionType.length > 0 && !filters.questionType.includes(q.questionType)) return false;
+    if (filters.paper !== "All" && q.paper !== filters.paper) return false;
+    if (filters.section !== "All" && q.syllabusSection !== filters.section) return false;
+    if (filters.code !== "All") {
+      const letter = filters.code[0];
+      const sub = filters.code.slice(1);
+      if (q.syllabusSection[0] !== letter || q.subtopic !== sub) return false;
+    }
+    if (filters.difficulty !== "All" && q.difficulty !== filters.difficulty) return false;
+    if (filters.questionType !== "All" && q.questionType !== filters.questionType) return false;
     if (filters.marksMin !== "" && q.marks < Number(filters.marksMin)) return false;
     if (filters.marksMax !== "" && q.marks > Number(filters.marksMax)) return false;
     if (search) {

@@ -1,6 +1,7 @@
 import { Eye, Copy, Check, Plus, Pencil, Trash2 } from "lucide-react";
 import Card from "../../../../components/ui/Card.jsx";
 import Badge from "../../../../components/ui/Badge.jsx";
+import { getCurriculumCode } from "../lib/paperUtils.js";
 
 export default function QuestionCard({
   question,
@@ -12,25 +13,30 @@ export default function QuestionCard({
   onDelete,
 }) {
   return (
-    <Card className="flex flex-col gap-3 p-5">
+    <Card
+      className={`flex flex-col gap-3 p-5 transition-colors ${inDraft ? "border-[var(--color-teal)]/50" : ""}`}
+    >
       <div className="flex items-start justify-between gap-3">
-        <span className="font-[var(--font-mono)] text-xs text-[var(--color-ink-faint)]">{question.id}</span>
+        <span className="inline-flex items-center rounded-md bg-[var(--color-indigo-soft)] px-2 py-0.5 font-[var(--font-mono)] text-xs font-medium text-[var(--color-indigo)]">
+          {getCurriculumCode(question)}
+        </span>
         {question.isCustom && <Badge tone="indigo">Custom</Badge>}
       </div>
 
       <p className="whitespace-pre-line text-sm text-[var(--color-ink)]">
-        {question.questionText.length > 180 ? `${question.questionText.slice(0, 180)}\u2026` : question.questionText}
+        {question.questionText.length > 140 ? `${question.questionText.slice(0, 140)}\u2026` : question.questionText}
       </p>
 
-      <div className="flex flex-wrap gap-1.5 text-xs">
-        <Badge tone="neutral">{question.topic} \u00b7 {question.subtopic}</Badge>
-        <Badge tone="neutral">{question.level}</Badge>
-        <Badge tone="neutral">{question.paper}</Badge>
-        <Badge tone="neutral">{question.marks} {question.marks === 1 ? "Mark" : "Marks"}</Badge>
-        <Badge tone={question.difficulty === "Hard" ? "amber" : question.difficulty === "Medium" ? "indigo" : "teal"}>
-          {question.difficulty}
-        </Badge>
-        <Badge tone="neutral">{question.questionType}</Badge>
+      <div className="flex flex-wrap items-center gap-1.5 text-xs text-[var(--color-ink-faint)]">
+        <span>{question.paper}</span>
+        <span>&middot;</span>
+        <span className="font-medium text-[var(--color-ink-soft)]">{question.marks} mark{question.marks === 1 ? "" : "s"}</span>
+        <span>&middot;</span>
+        <span>{question.difficulty}</span>
+        <span>&middot;</span>
+        <span>{question.questionType}</span>
+        <span>&middot;</span>
+        <span>{question.level}</span>
       </div>
 
       <div className="mt-1 flex flex-wrap items-center gap-2 border-t border-[var(--color-line)] pt-3">
@@ -43,11 +49,11 @@ export default function QuestionCard({
             type="button"
             onClick={onAddToPaper}
             disabled={inDraft}
-            className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs transition-colors disabled:cursor-not-allowed ${
-              inDraft ? "border-[var(--color-teal)] text-[var(--color-teal)]" : "border-[var(--color-line)] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)]"
+            className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed ${
+              inDraft ? "border-[var(--color-teal)] text-[var(--color-teal)]" : "border-[var(--color-ink)] bg-[var(--color-ink)] text-[var(--color-paper)]"
             }`}
           >
-            {inDraft ? <Check size={13} /> : <Plus size={13} />} {inDraft ? "Added" : "Add to Paper"}
+            {inDraft ? <Check size={13} /> : <Plus size={13} />} {inDraft ? "Added" : "Add"}
           </button>
         )}
 

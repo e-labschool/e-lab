@@ -38,3 +38,27 @@ export function formatDateStamp(isoString) {
   const date = new Date(isoString);
   return date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
+
+// Derives a compact curriculum code (e.g. "S1.3", "R3.2") straight from the
+// question's own syllabusSection + subtopic fields — never hard-coded per
+// question. subtopic values already embed the topic number (e.g. "1.3" for
+// Structure 1's third subtopic), so this is just section-initial + subtopic.
+export function getCurriculumCode(question) {
+  const sectionLetter = question.syllabusSection?.[0] ?? "?";
+  return `${sectionLetter}${question.subtopic ?? ""}`;
+}
+
+// All curriculum codes that exist across the static topic/subtopic maps,
+// grouped by section — used to populate the compact subsection filter.
+export function getAllCurriculumCodes() {
+  const codes = [];
+  for (const [section, topics] of Object.entries({ Structure: TOPICS_BY_SECTION.Structure, Reactivity: TOPICS_BY_SECTION.Reactivity })) {
+    const letter = section[0];
+    for (const topic of topics) {
+      for (const sub of SUBTOPICS_BY_TOPIC[topic]) {
+        codes.push(`${letter}${sub}`);
+      }
+    }
+  }
+  return codes;
+}

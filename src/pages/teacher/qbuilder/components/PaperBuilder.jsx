@@ -1,9 +1,28 @@
-import { ArrowUp, ArrowDown, X, Pencil } from "lucide-react";
+import { useState } from "react";
+import { DndContext, PointerSensor, KeyboardSensor, closestCenter, useSensor, useSensors } from "@dnd-kit/core";
+import { SortableContext, verticalListSortingStrategy, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { useQBuilder } from "../context/QBuilderContext.jsx";
-import Card from "../../../../components/ui/Card.jsx";
+import DraftQuestionRow from "./DraftQuestionRow.jsx";
+import QuestionPreviewModal from "./QuestionPreviewModal.jsx";
 
+// Same drag-and-drop question list as the compact Paper Draft panel — one
+// ordering (draft.questions), two places it can be rearranged from.
 export default function PaperBuilder({ onEditQuestion }) {
   const { draft, draftTotalMarks, reorderDraft, removeFromDraft } = useQBuilder();
+  const [previewQuestion, setPreviewQuestion] = useState(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  function handleDragEnd(event) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = draft.questions.findIndex((q) => q.id === active.id);
+    const newIndex = draft.questions.findIndex((q) => q.id === over.id);
+    if (oldIndex !== -1 && newIndex !== -1) reorderDraft(oldIndex, newIndex);
+  }
 
   return (
     <div>
@@ -18,55 +37,24 @@ export default function PaperBuilder({ onEditQuestion }) {
           No questions added yet &mdash; add some from the Question Bank.
         </p>
       ) : (
-        <div className="flex flex-col gap-2.5">
-          {draft.questions.map((question, index) => (
-            <Card key={question.id} className="flex items-center gap-3 p-3.5">
-              <span className="w-8 shrink-0 text-sm font-medium text-[var(--color-ink-faint)]">Q{index + 1}</span>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm text-[var(--color-ink)]">
-                  {question.topic} \u00b7 {question.subtopic} \u2014 {question.marks} marks
-                </p>
-                <p className="truncate text-xs text-[var(--color-ink-faint)]">
-                  {question.questionText.slice(0, 90)}{question.questionText.length > 90 ? "\u2026" : ""}
-                </p>
-              </div>
-              <div className="flex shrink-0 items-center gap-1">
-                {question.isCustom && (
-                  <button type="button" onClick={() => onEditQuestion(question)} aria-label="Edit" className="rounded-md border border-[var(--color-line)] p-1.5 text-[var(--color-ink-soft)] hover:text-[var(--color-ink)]">
-                    <Pencil size={13} />
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => reorderDraft(index, index - 1)}
-                  disabled={index === 0}
-                  aria-label="Move up"
-                  className="rounded-md border border-[var(--color-line)] p-1.5 text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] disabled:opacity-30"
-                >
-                  <ArrowUp size={13} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => reorderDraft(index, index + 1)}
-                  disabled={index === draft.questions.length - 1}
-                  aria-label="Move down"
-                  className="rounded-md border border-[var(--color-line)] p-1.5 text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] disabled:opacity-30"
-                >
-                  <ArrowDown size={13} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => removeFromDraft(question.id)}
-                  aria-label="Remove"
-                  className="rounded-md border border-[var(--color-line)] p-1.5 text-[var(--color-amber)] hover:border-[var(--color-amber)]"
-                >
-                  <X size={13} />
-                </button>
-              </div>
-            </Card>
-          ))}
-        </div>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={draft.questions.map((q) => q.id)} strategy={verticalListSortingStrategy}>
+            <div className="flex flex-col gap-2">
+              {draft.questions.map((q, i) => (
+                <DraftQuestionRow
+                  key={q.id}
+                  question={q}
+                  index={i}
+                  onRemove={() => removeFromDraft(q.id)}
+                  onEdit={q.isCustom ? () => onEditQuestion(q) : undefined}
+                  onClick={() => setPreviewQuestion(q)}
+                />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
       )}
+      <QuestionPreviewModal question={previewQuestion} onClose={() => setPreviewQuestion(null)} />
     </div>
   );
 }
