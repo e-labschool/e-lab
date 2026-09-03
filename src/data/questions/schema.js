@@ -36,12 +36,21 @@ export const SOURCE = "e-Lab Original";
 //
 //   { type: "text", intro }
 //   { type: "table", intro?, table: { headers: string[], rows: string[][] } }
-//   { type: "nuclide", intro?, nuclides: [{ massNumber, atomicNumber, symbol, charge? }] }
+//   { type: "nuclide", intro?, nuclides: [{ massNumber, atomicNumber, symbol, charge?, label? }] }
 //   { type: "mass-spectrum", intro?, xLabel, yLabel, peaks: [{ mz, abundance }] }
 //   { type: "bar-chart", intro?, xLabel, yLabel, bars: [{ label, value }] }
 //   { type: "atom-diagram", intro? }  — generic illustrative schematic, no per-question data needed
+//   { type: "emission-spectrum", intro?, lines: [{ wavelength }], continuous?, label? }
+//   { type: "energy-level-diagram", intro?, levels: number[], transitions: [{ from, to, label }], converge? }
+//   { type: "orbital-shape", intro?, shapes: [{ id, kind: "s"|"px"|"py"|"pz", label }] }
+//   { type: "orbital-box", intro?, subshells: [{ label, boxes: [{ spins: ("up"|"down")[] }] }] }
+//   { type: "ionization-graph", intro?, points: [{ label, value }], xLabel, yLabel, logScale? }
 //   { type: "integrated", intro?, blocks: [ ...any of the above, minus "integrated" itself ] }
-export const STIMULUS_TYPES = ["text", "table", "nuclide", "mass-spectrum", "bar-chart", "atom-diagram", "integrated"];
+export const STIMULUS_TYPES = [
+  "text", "table", "nuclide", "mass-spectrum", "bar-chart", "atom-diagram",
+  "emission-spectrum", "energy-level-diagram", "orbital-shape", "orbital-box", "ionization-graph",
+  "integrated",
+];
 
 export const COLLECTION_LABEL = "e-Lab Practice Questions";
 export const COLLECTION_DISCLAIMER =

@@ -140,6 +140,100 @@ export function exportPdf({ draft, totalMarks, mode }) {
       y += 56;
     } else if (stimulus.type === "integrated") {
       for (const block of stimulus.blocks) drawStimulus(block, indent);
+    } else if (stimulus.type === "emission-spectrum") {
+      ensureSpace(40);
+      const chartW = 220;
+      const minNm = 380, maxNm = 750;
+      const xFor = (nm) => indent + ((nm - minNm) / (maxNm - minNm)) * chartW;
+      doc.setLineWidth(0.5);
+      doc.rect(indent, y, chartW, 22, "S");
+      if (stimulus.continuous) {
+        doc.setFillColor(150, 150, 150);
+        doc.rect(indent + 1, y + 1, chartW - 2, 20, "F");
+      } else {
+        doc.setLineWidth(1);
+        for (const l of stimulus.lines) {
+          const x = xFor(l.wavelength);
+          doc.line(x, y + 1, x, y + 21);
+        }
+        doc.setFontSize(7);
+        for (const l of stimulus.lines) doc.text(String(l.wavelength), xFor(l.wavelength), y + 32, { align: "center" });
+      }
+      y += 40;
+    } else if (stimulus.type === "energy-level-diagram") {
+      const chartH = 90, chartW = 180;
+      ensureSpace(chartH + 20);
+      const maxN = Math.max(...stimulus.levels);
+      const converge = stimulus.converge !== false;
+      const frac = (n) => (converge ? 1 - 1 / (n * n) : (n - 1) / (maxN - 1 || 1));
+      const minFrac = frac(1), maxFrac = frac(maxN);
+      const yFor = (n) => y + chartH - ((frac(n) - minFrac) / (maxFrac - minFrac || 1)) * chartH;
+      doc.setLineWidth(0.75);
+      doc.setFontSize(8);
+      for (const n of stimulus.levels) {
+        const ly = yFor(n);
+        doc.line(indent + 24, ly, indent + chartW, ly);
+        doc.text(`n=${n}`, indent, ly + 2);
+      }
+      (stimulus.transitions || []).forEach((t, i) => {
+        const tx = indent + 34 + i * ((chartW - 40) / Math.max((stimulus.transitions || []).length - 1, 1));
+        doc.line(tx, yFor(t.from), tx, yFor(t.to));
+        doc.text(t.label ?? "", tx + 3, (yFor(t.from) + yFor(t.to)) / 2);
+      });
+      y += chartH + 14;
+    } else if (stimulus.type === "orbital-shape") {
+      ensureSpace(60);
+      let x = indent + 20;
+      doc.setLineWidth(0.75);
+      doc.setFontSize(8);
+      for (const s of stimulus.shapes) {
+        if (s.kind === "s") {
+          doc.circle(x, y + 20, 14, "S");
+        } else {
+          doc.ellipse(x - 10, y + 20, 9, 5, "S");
+          doc.ellipse(x + 10, y + 20, 9, 5, "S");
+        }
+        doc.text(s.label ?? s.kind, x, y + 42, { align: "center" });
+        x += 44;
+      }
+      y += 52;
+    } else if (stimulus.type === "orbital-box") {
+      for (const s of stimulus.subshells) {
+        ensureSpace(16);
+        doc.setFontSize(9);
+        doc.text(s.label ?? "", indent, y + 8);
+        let bx = indent + 28;
+        doc.setLineWidth(0.5);
+        for (const b of s.boxes) {
+          doc.rect(bx, y, 14, 14, "S");
+          const arrows = (b.spins || []).map((sp) => (sp === "up" ? "\u2191" : "\u2193")).join("");
+          if (arrows) doc.text(arrows, bx + 7, y + 10, { align: "center" });
+          bx += 16;
+        }
+        y += 20;
+      }
+      y += 4;
+    } else if (stimulus.type === "ionization-graph") {
+      const chartH = 90, chartW = 220;
+      ensureSpace(chartH + 24);
+      const values = stimulus.points.map((p) => p.value);
+      const scale = (v) => (stimulus.logScale ? Math.log10(v) : v);
+      const minV = Math.min(...values.map(scale));
+      const maxV = Math.max(...values.map(scale));
+      const xFor = (i) => indent + (i / (stimulus.points.length - 1 || 1)) * chartW;
+      const yFor = (v) => y + chartH - ((scale(v) - minV) / (maxV - minV || 1)) * chartH;
+      doc.setLineWidth(0.75);
+      doc.line(indent, y, indent, y + chartH);
+      doc.line(indent, y + chartH, indent + chartW, y + chartH);
+      for (let i = 0; i < stimulus.points.length - 1; i += 1) {
+        doc.line(xFor(i), yFor(stimulus.points[i].value), xFor(i + 1), yFor(stimulus.points[i + 1].value));
+      }
+      doc.setFontSize(7);
+      stimulus.points.forEach((p, i) => {
+        doc.circle(xFor(i), yFor(p.value), 1.2, "F");
+        doc.text(String(p.label), xFor(i), y + chartH + 10, { align: "center" });
+      });
+      y += chartH + 18;
     }
   }
 
@@ -226,6 +320,26 @@ function stimulusParagraphs(stimulus) {
     paragraphs.push(new Paragraph({ children: [new TextRun({ text: `[${isSpectrum ? "Mass spectrum" : "Bar chart"} data] ${line}`, size: 18 })] }));
   } else if (stimulus.type === "atom-diagram") {
     paragraphs.push(new Paragraph({ children: [new TextRun({ text: "[Diagram: central nucleus of protons and neutrons, surrounded by an electron shell]", italics: true, size: 18 })] }));
+  } else if (stimulus.type === "emission-spectrum") {
+    const text = stimulus.continuous
+      ? "[Continuous spectrum \u2014 uninterrupted band]"
+      : `[Line spectrum] ${stimulus.lines.map((l) => `${l.wavelength} nm`).join("   ")}`;
+    paragraphs.push(new Paragraph({ children: [new TextRun({ text, italics: true, size: 18 })] }));
+  } else if (stimulus.type === "energy-level-diagram") {
+    const levelsText = `Levels: ${stimulus.levels.map((n) => `n=${n}`).join(", ")}`;
+    const transitionsText = (stimulus.transitions || []).map((t) => `${t.label ?? ""}: n=${t.from}\u2192n=${t.to}`).join("   ");
+    paragraphs.push(new Paragraph({ children: [new TextRun({ text: `[Energy level diagram] ${levelsText}${transitionsText ? `   ${transitionsText}` : ""}`, italics: true, size: 18 })] }));
+  } else if (stimulus.type === "orbital-shape") {
+    const text = stimulus.shapes.map((s) => `${s.label ?? s.kind} (${s.kind === "s" ? "spherical" : `dumbbell along ${s.kind.slice(1)}`})`).join("   ");
+    paragraphs.push(new Paragraph({ children: [new TextRun({ text: `[Orbital shapes] ${text}`, italics: true, size: 18 })] }));
+  } else if (stimulus.type === "orbital-box") {
+    for (const s of stimulus.subshells) {
+      const boxesText = s.boxes.map((b) => `[${(b.spins || []).map((sp) => (sp === "up" ? "\u2191" : "\u2193")).join("")}]`).join(" ");
+      paragraphs.push(new Paragraph({ children: [new TextRun({ text: `${s.label ?? ""}  ${boxesText}`, size: 22 })] }));
+    }
+  } else if (stimulus.type === "ionization-graph") {
+    const line = stimulus.points.map((p) => `${p.label}: ${p.value}`).join("   ");
+    paragraphs.push(new Paragraph({ children: [new TextRun({ text: `[Ionization energy graph]${stimulus.logScale ? " (log scale)" : ""} ${line}`, italics: true, size: 18 })] }));
   } else if (stimulus.type === "integrated") {
     for (const block of stimulus.blocks) paragraphs.push(...stimulusParagraphs(block));
   }
