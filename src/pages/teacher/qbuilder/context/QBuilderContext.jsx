@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import sampleQuestions from "../data/sampleQuestions.js";
+import { getVisibleQuestions } from "../../../../data/questions/index.js";
 import {
   loadMyQuestions,
   saveMyQuestions,
@@ -21,7 +21,10 @@ export function QBuilderProvider({ children }) {
   useEffect(() => saveMyPapers(myPapers), [myPapers]);
   useEffect(() => saveDraftPaper(draft), [draft]);
 
-  // The full searchable pool: bank questions + teacher's own questions.
+  // The central e-Lab Practice Questions bank (reviewed/published only —
+  // drafts are excluded from this default view; see status filter in
+  // FilterBar for reviewing drafts) plus the teacher's own questions.
+  const sampleQuestions = getVisibleQuestions();
   const allQuestions = [...sampleQuestions, ...myQuestions];
 
   function getQuestionById(id) {

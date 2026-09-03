@@ -2,6 +2,24 @@
 // exports — kept separate from both data and UI so the same logic can't
 // drift between components.
 
+import { LEVELS, PAPERS, SYLLABUS_SECTIONS, DIFFICULTIES, QUESTION_TYPES, STATUSES } from "../../../../data/questions/schema.js";
+import { UNITS, TOPICS } from "../../../../data/questions/unitMeta.js";
+
+// Re-exported from the central schema (single source of truth) so existing
+// imports throughout the Q Builder UI keep working unchanged.
+export { LEVELS, PAPERS, SYLLABUS_SECTIONS, DIFFICULTIES, QUESTION_TYPES, STATUSES };
+
+// Derived from unitMeta.js (itself derived from the curriculum data) rather
+// than hand-maintained here, so this can never drift from the syllabus map.
+export const TOPICS_BY_SECTION = SYLLABUS_SECTIONS.reduce((acc, section) => {
+  acc[section] = UNITS.filter((u) => u.section === section).map((u) => u.unit);
+  return acc;
+}, {});
+export const SUBTOPICS_BY_TOPIC = UNITS.reduce((acc, u) => {
+  acc[u.unit] = TOPICS.filter((t) => t.unit === u.unit).map((t) => t.subtopic);
+  return acc;
+}, {});
+
 export function calcTotalMarks(questions) {
   return questions.reduce((sum, q) => sum + (Number(q.marks) || 0), 0);
 }
@@ -14,24 +32,6 @@ export function generateCustomId(baseId) {
 export function generatePaperId() {
   return `PAPER-${Date.now().toString(36).toUpperCase()}`;
 }
-
-export const LEVELS = ["SL", "HL"];
-export const PAPERS = ["Paper 1A", "Paper 1B", "Paper 2"];
-export const SYLLABUS_SECTIONS = ["Structure", "Reactivity"];
-export const TOPICS_BY_SECTION = {
-  Structure: ["Structure 1", "Structure 2", "Structure 3"],
-  Reactivity: ["Reactivity 1", "Reactivity 2", "Reactivity 3"],
-};
-export const SUBTOPICS_BY_TOPIC = {
-  "Structure 1": ["1.1", "1.2", "1.3", "1.4", "1.5"],
-  "Structure 2": ["2.1", "2.2", "2.3", "2.4"],
-  "Structure 3": ["3.1", "3.2"],
-  "Reactivity 1": ["1.1", "1.2", "1.3", "1.4"],
-  "Reactivity 2": ["2.1", "2.2", "2.3"],
-  "Reactivity 3": ["3.1", "3.2", "3.3", "3.4"],
-};
-export const DIFFICULTIES = ["Easy", "Medium", "Hard"];
-export const QUESTION_TYPES = ["MCQ", "Calculation", "Short Response", "Extended Response", "Data-based"];
 
 export function formatDateStamp(isoString) {
   if (!isoString) return "";
@@ -48,17 +48,8 @@ export function getCurriculumCode(question) {
   return `${sectionLetter}${question.subtopic ?? ""}`;
 }
 
-// All curriculum codes that exist across the static topic/subtopic maps,
-// grouped by section — used to populate the compact subsection filter.
+// All curriculum codes that exist across the syllabus map — used to
+// populate the compact subtopic filter. Derived from unitMeta.js.
 export function getAllCurriculumCodes() {
-  const codes = [];
-  for (const [section, topics] of Object.entries({ Structure: TOPICS_BY_SECTION.Structure, Reactivity: TOPICS_BY_SECTION.Reactivity })) {
-    const letter = section[0];
-    for (const topic of topics) {
-      for (const sub of SUBTOPICS_BY_TOPIC[topic]) {
-        codes.push(`${letter}${sub}`);
-      }
-    }
-  }
-  return codes;
+  return TOPICS.map((t) => `${t.section[0]}${t.subtopic}`);
 }

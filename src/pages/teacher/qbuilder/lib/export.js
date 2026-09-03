@@ -1,5 +1,6 @@
 import { jsPDF } from "jspdf";
 import { Document, Packer, Paragraph, TextRun, AlignmentType } from "docx";
+import { getQuestionMarks } from "../../../../data/questions/schema.js";
 
 // PDF and Word export both build a real structured document from the paper
 // data directly (not a screenshot of the DOM), so text stays selectable and
@@ -72,8 +73,16 @@ export function exportPdf({ draft, totalMarks, mode }) {
     }
     questions.forEach((q, index) => {
       ensureSpace(20);
+      const marks = getQuestionMarks(q);
       writeLine(`${index + 1}. ${q.questionText}`, { size: 10.5 });
-      writeLine(`[${q.marks} mark${q.marks === 1 ? "" : "s"}]`, { size: 9 });
+      if (Array.isArray(q.parts) && q.parts.length > 0) {
+        q.parts.forEach((part, i) => {
+          writeLine(`(${part.id ?? String.fromCharCode(97 + i)}) ${part.questionText} [${part.marks}]`, { size: 9.5 });
+        });
+        writeLine(`[Total: ${marks}]`, { size: 9 });
+      } else {
+        writeLine(`[${marks} mark${marks === 1 ? "" : "s"}]`, { size: 9 });
+      }
       y += 6;
     });
   } else {
@@ -81,10 +90,17 @@ export function exportPdf({ draft, totalMarks, mode }) {
     y += 10;
     questions.forEach((q, index) => {
       ensureSpace(20);
+      const marks = getQuestionMarks(q);
       writeLine(`Question ${index + 1}`, { size: 11, bold: true });
-      writeLine(q.answer, { size: 10 });
-      writeLine(q.markscheme, { size: 9.5 });
-      writeLine(`[${q.marks} mark${q.marks === 1 ? "" : "s"}]`, { size: 9 });
+      if (Array.isArray(q.parts) && q.parts.length > 0) {
+        q.parts.forEach((part, i) => {
+          writeLine(`(${part.id ?? String.fromCharCode(97 + i)}) ${part.markscheme} [${part.marks}]`, { size: 9.5 });
+        });
+      } else {
+        writeLine(q.questionType === "MCQ" ? `Correct answer: ${q.correctAnswer}` : q.answer, { size: 10 });
+        writeLine(q.markscheme, { size: 9.5 });
+      }
+      writeLine(`[${marks} mark${marks === 1 ? "" : "s"}]`, { size: 9 });
       y += 8;
     });
   }
@@ -127,17 +143,31 @@ export async function exportDocx({ draft, totalMarks, mode }) {
     }
     paragraphs.push(new Paragraph({ text: "" }));
     questions.forEach((q, index) => {
+      const marks = getQuestionMarks(q);
       paragraphs.push(
         new Paragraph({
           children: [new TextRun({ text: `${index + 1}. `, bold: true }), new TextRun({ text: q.questionText })],
         })
       );
-      paragraphs.push(
-        new Paragraph({
-          alignment: AlignmentType.RIGHT,
-          children: [new TextRun({ text: `[${q.marks} mark${q.marks === 1 ? "" : "s"}]`, size: 18 })],
-        })
-      );
+      if (Array.isArray(q.parts) && q.parts.length > 0) {
+        q.parts.forEach((part, i) => {
+          paragraphs.push(
+            new Paragraph({
+              children: [new TextRun({ text: `(${part.id ?? String.fromCharCode(97 + i)}) ${part.questionText} [${part.marks}]`, size: 20 })],
+            })
+          );
+        });
+        paragraphs.push(
+          new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: `[Total: ${marks}]`, size: 18 })] })
+        );
+      } else {
+        paragraphs.push(
+          new Paragraph({
+            alignment: AlignmentType.RIGHT,
+            children: [new TextRun({ text: `[${marks} mark${marks === 1 ? "" : "s"}]`, size: 18 })],
+          })
+        );
+      }
       paragraphs.push(new Paragraph({ text: "" }));
     });
   } else {
@@ -146,10 +176,19 @@ export async function exportDocx({ draft, totalMarks, mode }) {
     );
     paragraphs.push(new Paragraph({ text: "" }));
     questions.forEach((q, index) => {
+      const marks = getQuestionMarks(q);
       paragraphs.push(new Paragraph({ children: [new TextRun({ text: `Question ${index + 1}`, bold: true })] }));
-      paragraphs.push(new Paragraph({ children: [new TextRun({ text: q.answer })] }));
-      paragraphs.push(new Paragraph({ children: [new TextRun({ text: q.markscheme, size: 20 })] }));
-      paragraphs.push(new Paragraph({ children: [new TextRun({ text: `[${q.marks} mark${q.marks === 1 ? "" : "s"}]`, size: 18 })] }));
+      if (Array.isArray(q.parts) && q.parts.length > 0) {
+        q.parts.forEach((part, i) => {
+          paragraphs.push(
+            new Paragraph({ children: [new TextRun({ text: `(${part.id ?? String.fromCharCode(97 + i)}) ${part.markscheme} [${part.marks}]`, size: 20 })] })
+          );
+        });
+      } else {
+        paragraphs.push(new Paragraph({ children: [new TextRun({ text: q.questionType === "MCQ" ? `Correct answer: ${q.correctAnswer}` : q.answer })] }));
+        paragraphs.push(new Paragraph({ children: [new TextRun({ text: q.markscheme, size: 20 })] }));
+      }
+      paragraphs.push(new Paragraph({ children: [new TextRun({ text: `[${marks} mark${marks === 1 ? "" : "s"}]`, size: 18 })] }));
       paragraphs.push(new Paragraph({ text: "" }));
     });
   }

@@ -95,6 +95,11 @@ function QBuilderWorkspace() {
         <h1 className="mt-2 font-[var(--font-display)] text-2xl font-semibold tracking-tight text-[var(--color-ink)]">
           Build a {subject.label} question paper
         </h1>
+        <p className="mt-1.5 text-xs text-[var(--color-ink-faint)]">
+          Drawing from <span className="font-medium text-[var(--color-ink-soft)]">e-Lab Practice Questions</span> &mdash; original
+          practice material aligned with the IB Diploma Chemistry curriculum. e-Lab is not affiliated with or
+          endorsed by the International Baccalaureate Organization.
+        </p>
       </div>
 
       <TopTabs activeTab={tab} onChangeTab={setTab} onCreateQuestion={openCreateEditor} />

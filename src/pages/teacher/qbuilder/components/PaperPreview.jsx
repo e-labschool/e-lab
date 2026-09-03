@@ -1,3 +1,5 @@
+import { getQuestionMarks } from "../../../../data/questions/schema.js";
+
 export default function PaperPreview({ draft, totalMarks }) {
   const { details, questions } = draft;
   const maxMarks = details.maxMarks !== "" ? details.maxMarks : totalMarks;
@@ -26,18 +28,46 @@ export default function PaperPreview({ draft, totalMarks }) {
       )}
 
       <div className="mt-8 flex flex-col gap-6">
-        {questions.map((q, index) => (
-          <div key={q.id}>
-            <div className="flex items-baseline justify-between gap-3">
+        {questions.map((q, index) => {
+          const marks = getQuestionMarks(q);
+          const hasParts = Array.isArray(q.parts) && q.parts.length > 0;
+          return (
+            <div key={q.id}>
               <p className="whitespace-pre-line text-sm leading-relaxed">
                 <span className="font-semibold">{index + 1}.</span> {q.questionText}
               </p>
+
+              {q.questionType === "MCQ" && Array.isArray(q.options) && (
+                <ul className="mt-1.5 flex flex-col gap-0.5 pl-5 text-sm">
+                  {q.options.map((opt) => (
+                    <li key={opt.id}>{opt.id}. {opt.text}</li>
+                  ))}
+                </ul>
+              )}
+
+              {hasParts ? (
+                <div className="mt-1.5 flex flex-col gap-1 pl-5">
+                  {q.parts.map((part, i) => (
+                    <p key={part.id ?? i} className="flex items-baseline justify-between gap-3 text-sm">
+                      <span>({part.id ?? String.fromCharCode(97 + i)}) {part.questionText}</span>
+                      <span className="shrink-0 font-medium">[{part.marks}]</span>
+                    </p>
+                  ))}
+                  <p className="mt-1 text-right text-xs font-medium">[Total: {marks}]</p>
+                </div>
+              ) : (
+                <p className="mt-1 text-right text-xs font-medium">[{marks} mark{marks === 1 ? "" : "s"}]</p>
+              )}
             </div>
-            <p className="mt-1 text-right text-xs font-medium">[{q.marks} mark{q.marks === 1 ? "" : "s"}]</p>
-          </div>
-        ))}
+          );
+        })}
         {questions.length === 0 && <p className="text-sm text-[#666]">No questions added to this paper yet.</p>}
       </div>
+
+      <p className="mt-10 border-t border-[#eee] pt-4 text-center text-[10px] text-[#999]">
+        e-Lab Practice Questions &mdash; original practice material aligned with the IB Diploma Chemistry
+        curriculum. e-Lab is not affiliated with or endorsed by the International Baccalaureate Organization.
+      </p>
     </div>
   );
 }

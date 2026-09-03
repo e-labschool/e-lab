@@ -1,8 +1,12 @@
 import { X } from "lucide-react";
 import Badge from "../../../../components/ui/Badge.jsx";
+import { getQuestionMarks } from "../../../../data/questions/schema.js";
 
 export default function QuestionPreviewModal({ question, onClose }) {
   if (!question) return null;
+
+  const marks = getQuestionMarks(question);
+  const hasParts = Array.isArray(question.parts) && question.parts.length > 0;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
@@ -18,26 +22,47 @@ export default function QuestionPreviewModal({ question, onClose }) {
         </div>
 
         <div className="mb-4 flex flex-wrap gap-1.5 text-xs">
-          <Badge tone="neutral">{question.topic} \u00b7 {question.subtopic}</Badge>
+          <Badge tone="neutral">{question.topicCode ?? `${question.topic} \u00b7 ${question.subtopic}`}</Badge>
           <Badge tone="neutral">{question.level}</Badge>
           <Badge tone="neutral">{question.paper}</Badge>
-          <Badge tone="neutral">{question.marks} {question.marks === 1 ? "Mark" : "Marks"}</Badge>
+          <Badge tone="neutral">{marks} {marks === 1 ? "Mark" : "Marks"}</Badge>
           <Badge tone="neutral">{question.difficulty}</Badge>
           <Badge tone="neutral">{question.questionType}</Badge>
         </div>
 
         <p className="whitespace-pre-line text-sm leading-relaxed text-[var(--color-ink)]">{question.questionText}</p>
 
-        <div className="mt-6 flex flex-col gap-4 border-t border-[var(--color-line)] pt-4">
-          <div>
-            <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-[var(--color-ink-faint)]">Answer</p>
-            <p className="whitespace-pre-line text-sm text-[var(--color-ink-soft)]">{question.answer}</p>
+        {question.questionType === "MCQ" && Array.isArray(question.options) && (
+          <ul className="mt-3 flex flex-col gap-1 text-sm text-[var(--color-ink-soft)]">
+            {question.options.map((opt) => (
+              <li key={opt.id}>{opt.id}. {opt.text}</li>
+            ))}
+          </ul>
+        )}
+
+        {hasParts ? (
+          <div className="mt-6 flex flex-col gap-4 border-t border-[var(--color-line)] pt-4">
+            {question.parts.map((part, i) => (
+              <div key={part.id ?? i}>
+                <p className="text-sm font-medium text-[var(--color-ink)]">
+                  ({part.id ?? String.fromCharCode(97 + i)}) {part.questionText} <span className="text-[var(--color-ink-faint)]">[{part.marks}]</span>
+                </p>
+                <p className="mt-1 whitespace-pre-line text-xs text-[var(--color-ink-soft)]">{part.markscheme}</p>
+              </div>
+            ))}
           </div>
-          <div>
-            <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-[var(--color-ink-faint)]">Markscheme</p>
-            <p className="whitespace-pre-line text-sm text-[var(--color-ink-soft)]">{question.markscheme}</p>
+        ) : (
+          <div className="mt-6 flex flex-col gap-4 border-t border-[var(--color-line)] pt-4">
+            <div>
+              <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-[var(--color-ink-faint)]">Answer</p>
+              <p className="whitespace-pre-line text-sm text-[var(--color-ink-soft)]">{question.correctAnswer ?? question.answer}</p>
+            </div>
+            <div>
+              <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-[var(--color-ink-faint)]">Markscheme</p>
+              <p className="whitespace-pre-line text-sm text-[var(--color-ink-soft)]">{question.markscheme}</p>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
