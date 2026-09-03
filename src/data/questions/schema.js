@@ -114,6 +114,7 @@ export function normalizeQuestion(question) {
     syllabusVersion: SYLLABUS_VERSION,
     commandTerms: [],
     estimatedMinutes: null,
+    stimulus: null, // { type: "table"|"text"|"graph"|"diagram"|"image", intro, table?, graph?, diagram?, image? } — kept separate from questionText/parts so Paper 1B-style data (tables, graphs, spectra, images) can be rendered/exported independently of the question prompt itself.
     parts: null,
     options: null,
     correctAnswer: null,
