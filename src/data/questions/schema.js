@@ -48,11 +48,23 @@ export const SOURCE = "e-Lab Original";
 //   { type: "proportionality-graph", intro?, points: [{ x, y }], xLabel, yLabel, relationship?: "linear"|"inverse"|"points", highlightPoint?: { x, y, label } }
 //   { type: "gas-particle-diagram", intro?, containers: [{ label, relativeSize, particleCount, spread? }] }
 //   { type: "apparatus-diagram", intro?, items: [{ kind: "beaker"|"measuring-cylinder"|"volumetric-flask"|"conical-flask", label }] }
+//   { type: "lewis-structure", intro?, label?, atoms: [{ id, symbol, x, y, lonePairs, formalCharge? }], bonds: [{ from, to, order: 1|2|3, coordinate? }], overallCharge? }
+//   { type: "resonance", intro?, structures: [ ...lewis-structure-shaped objects ] }
+//   { type: "vsepr", intro?, geometry: "linear"|"bent"|"trigonal-planar"|"trigonal-pyramidal"|"tetrahedral"|"trigonal-bipyramidal"|"octahedral", centralLabel?, domains: [{ type:"bond"|"lonePair", label? }] }
+//   { type: "dipole", intro?, geometry, centralLabel?, bondLabels: (string|null)[], netDipole: "present"|"absent" }
+//   { type: "ion-grid", intro?, mode: "ionic-alternating"|"metallic-sea"|"covalent-network", rows?, cols?, variant?: "pure"|"alloy" }
+//   { type: "electron-transfer", intro?, from: { symbol, electronsLost, resultLabel }, to: { symbol, electronsGained, resultLabel } }
+//   { type: "bonding-triangle", intro?, markers: [{ label, region: "ionic"|"covalent"|"metallic"|"center" }] }
+//   { type: "polymer", intro?, mode: "addition"|"condensation", monomerText, repeatingUnitText, byproductText? }
+//   { type: "sigma-pi", intro? }
+//   { type: "chromatogram", intro?, baselineToFront, spots: [{ label, distance }] }
 //   { type: "integrated", intro?, blocks: [ ...any of the above, minus "integrated" itself ] }
 export const STIMULUS_TYPES = [
   "text", "table", "nuclide", "mass-spectrum", "bar-chart", "atom-diagram",
   "emission-spectrum", "energy-level-diagram", "orbital-shape", "orbital-box", "ionization-graph",
   "proportionality-graph", "gas-particle-diagram", "apparatus-diagram",
+  "lewis-structure", "resonance", "vsepr", "dipole", "ion-grid", "electron-transfer",
+  "bonding-triangle", "polymer", "sigma-pi", "chromatogram",
   "integrated",
 ];
 

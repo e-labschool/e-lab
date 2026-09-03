@@ -288,6 +288,89 @@ export function exportPdf({ draft, totalMarks, mode }) {
         x += 50;
       }
       y += 50;
+    } else if (stimulus.type === "lewis-structure" || stimulus.type === "resonance") {
+      // Full bond/lone-pair vector reproduction is out of scope for this
+      // pass — a clear, honest text description instead (disclosed in the
+      // project report), listing exactly the same underlying data.
+      const describe = (s) => {
+        const atomList = s.atoms.map((a) => `${a.symbol}${a.lonePairs ? ` (${a.lonePairs} lone pair${a.lonePairs === 1 ? "" : "s"})` : ""}`).join(", ");
+        const bondList = s.bonds.map((b) => `${b.from}-${b.to} (order ${b.order}${b.coordinate ? ", coordinate" : ""})`).join("; ");
+        return `Atoms: ${atomList}. Bonds: ${bondList}.${s.overallCharge ? ` Overall charge: ${s.overallCharge}.` : ""}`;
+      };
+      ensureSpace(20);
+      if (stimulus.type === "lewis-structure") {
+        writeLine(`[Lewis structure] ${describe(stimulus)}`, { size: 8.5 });
+      } else {
+        stimulus.structures.forEach((s, i) => writeLine(`[Resonance structure ${i + 1}] ${describe(s)}`, { size: 8.5 }));
+      }
+      y += 4;
+    } else if (stimulus.type === "vsepr" || stimulus.type === "dipole") {
+      ensureSpace(16);
+      const domainText = stimulus.type === "vsepr"
+        ? (stimulus.domains || []).map((d) => d.type === "lonePair" ? "lone pair" : (d.label ?? "bond")).join(", ")
+        : (stimulus.bondLabels || []).filter(Boolean).join(", ");
+      writeLine(`[${stimulus.type === "vsepr" ? "VSEPR diagram" : "Dipole diagram"}] Geometry: ${stimulus.geometry}. Domains: ${domainText}.${stimulus.netDipole ? ` Net dipole: ${stimulus.netDipole}.` : ""}`, { size: 8.5 });
+    } else if (stimulus.type === "ion-grid") {
+      ensureSpace(60);
+      const rows = stimulus.rows ?? 3, cols = stimulus.cols ?? 4;
+      doc.setFontSize(9);
+      const cell = 14;
+      for (let r = 0; r < rows; r += 1) {
+        for (let c = 0; c < cols; c += 1) {
+          const cx = indent + c * cell + cell / 2, cy = y + r * cell + cell / 2;
+          doc.setLineWidth(0.4);
+          if (stimulus.mode === "covalent-network") {
+            if (c < cols - 1) doc.line(cx, cy, cx + cell, cy);
+            if (r < rows - 1) doc.line(cx, cy, cx, cy + cell);
+          }
+          doc.circle(cx, cy, 4, "S");
+          if (stimulus.mode === "ionic-alternating") doc.text((r + c) % 2 === 0 ? "+" : "\u2212", cx, cy + 1.5, { align: "center" });
+        }
+      }
+      y += rows * cell + 12;
+    } else if (stimulus.type === "electron-transfer") {
+      ensureSpace(40);
+      doc.setLineWidth(0.75);
+      doc.circle(indent + 16, y + 15, 12, "S");
+      doc.text(stimulus.from.symbol, indent + 16, y + 17, { align: "center" });
+      doc.circle(indent + 90, y + 15, 12, "S");
+      doc.text(stimulus.to.symbol, indent + 90, y + 17, { align: "center" });
+      doc.line(indent + 30, y + 12, indent + 76, y + 12);
+      doc.setFontSize(8);
+      doc.text(stimulus.from.resultLabel, indent + 16, y + 34, { align: "center" });
+      doc.text(stimulus.to.resultLabel, indent + 90, y + 34, { align: "center" });
+      y += 44;
+    } else if (stimulus.type === "bonding-triangle") {
+      ensureSpace(70);
+      const bx = indent + 30, by = y + 8;
+      doc.setLineWidth(0.75);
+      doc.line(bx, by, bx - 25, by + 55);
+      doc.line(bx - 25, by + 55, bx + 25, by + 55);
+      doc.line(bx + 25, by + 55, bx, by);
+      doc.setFontSize(7);
+      doc.text("Ionic", bx, by - 3, { align: "center" });
+      doc.text("Covalent", bx - 25, by + 62, { align: "center" });
+      doc.text("Metallic", bx + 25, by + 62, { align: "center" });
+      (stimulus.markers || []).forEach((m) => writeLine(`\u2022 ${m.label}: ${m.region}`, { size: 8 }));
+      y += 20;
+    } else if (stimulus.type === "polymer") {
+      ensureSpace(16);
+      writeLine(`${stimulus.monomerText}  \u2192  ${stimulus.repeatingUnitText}${stimulus.byproductText ? `  + ${stimulus.byproductText}` : ""}`, { size: 9.5 });
+    } else if (stimulus.type === "sigma-pi") {
+      ensureSpace(14);
+      writeLine("[Diagram: sigma (head-on orbital overlap) vs pi (lateral, above/below the bond axis) overlap]", { size: 8.5 });
+    } else if (stimulus.type === "chromatogram") {
+      ensureSpace(50);
+      const chH = 40;
+      doc.setLineWidth(0.5);
+      doc.rect(indent, y, 20, chH, "S");
+      doc.setFontSize(7);
+      for (const s of stimulus.spots) {
+        const sy = y + chH - (s.distance / stimulus.baselineToFront) * chH;
+        doc.circle(indent + 10, sy, 1.5, "F");
+        doc.text(s.label, indent - 2, sy + 1, { align: "right" });
+      }
+      y += chH + 10;
     }
   }
 
@@ -404,6 +487,36 @@ function stimulusParagraphs(stimulus) {
   } else if (stimulus.type === "apparatus-diagram") {
     const line = stimulus.items.map((i) => i.label ?? i.kind).join("   ");
     paragraphs.push(new Paragraph({ children: [new TextRun({ text: `[Apparatus shown: ${line}]`, italics: true, size: 18 })] }));
+  } else if (stimulus.type === "lewis-structure" || stimulus.type === "resonance") {
+    const describe = (s) => {
+      const atomList = s.atoms.map((a) => `${a.symbol}${a.lonePairs ? ` (${a.lonePairs} LP)` : ""}`).join(", ");
+      const bondList = s.bonds.map((b) => `${b.from}-${b.to} (order ${b.order}${b.coordinate ? ", coordinate" : ""})`).join("; ");
+      return `Atoms: ${atomList}. Bonds: ${bondList}.${s.overallCharge ? ` Charge: ${s.overallCharge}.` : ""}`;
+    };
+    if (stimulus.type === "lewis-structure") {
+      paragraphs.push(new Paragraph({ children: [new TextRun({ text: `[Lewis structure] ${describe(stimulus)}`, italics: true, size: 18 })] }));
+    } else {
+      stimulus.structures.forEach((s, i) => paragraphs.push(new Paragraph({ children: [new TextRun({ text: `[Resonance structure ${i + 1}] ${describe(s)}`, italics: true, size: 18 })] })));
+    }
+  } else if (stimulus.type === "vsepr" || stimulus.type === "dipole") {
+    const domainText = stimulus.type === "vsepr"
+      ? (stimulus.domains || []).map((d) => (d.type === "lonePair" ? "lone pair" : (d.label ?? "bond"))).join(", ")
+      : (stimulus.bondLabels || []).filter(Boolean).join(", ");
+    paragraphs.push(new Paragraph({ children: [new TextRun({ text: `[${stimulus.type === "vsepr" ? "VSEPR" : "Dipole"} diagram] Geometry: ${stimulus.geometry}. Domains: ${domainText}.${stimulus.netDipole ? ` Net dipole: ${stimulus.netDipole}.` : ""}`, italics: true, size: 18 })] }));
+  } else if (stimulus.type === "ion-grid") {
+    paragraphs.push(new Paragraph({ children: [new TextRun({ text: `[${stimulus.mode} particle grid, ${stimulus.rows ?? 3}\u00d7${stimulus.cols ?? 4}]`, italics: true, size: 18 })] }));
+  } else if (stimulus.type === "electron-transfer") {
+    paragraphs.push(new Paragraph({ children: [new TextRun({ text: `[Electron transfer] ${stimulus.from.symbol} \u2192 ${stimulus.to.symbol}: ${stimulus.from.resultLabel}, ${stimulus.to.resultLabel}`, italics: true, size: 18 })] }));
+  } else if (stimulus.type === "bonding-triangle") {
+    const line = (stimulus.markers || []).map((m) => `${m.label}: ${m.region}`).join("   ");
+    paragraphs.push(new Paragraph({ children: [new TextRun({ text: `[Bonding triangle] ${line}`, italics: true, size: 18 })] }));
+  } else if (stimulus.type === "polymer") {
+    paragraphs.push(new Paragraph({ children: [new TextRun({ text: `${stimulus.monomerText}  \u2192  ${stimulus.repeatingUnitText}${stimulus.byproductText ? `  + ${stimulus.byproductText}` : ""}`, size: 22 })] }));
+  } else if (stimulus.type === "sigma-pi") {
+    paragraphs.push(new Paragraph({ children: [new TextRun({ text: "[Diagram: sigma (head-on overlap) vs pi (lateral overlap, above/below bond axis)]", italics: true, size: 18 })] }));
+  } else if (stimulus.type === "chromatogram") {
+    const line = stimulus.spots.map((s) => `${s.label}: ${s.distance} cm`).join("   ");
+    paragraphs.push(new Paragraph({ children: [new TextRun({ text: `[Chromatogram; baseline to front = ${stimulus.baselineToFront} cm] ${line}`, italics: true, size: 18 })] }));
   } else if (stimulus.type === "integrated") {
     for (const block of stimulus.blocks) paragraphs.push(...stimulusParagraphs(block));
   }

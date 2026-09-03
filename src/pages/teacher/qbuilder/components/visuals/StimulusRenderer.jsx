@@ -11,6 +11,15 @@ import IonizationEnergyGraph from "./IonizationEnergyGraph.jsx";
 import ProportionalityGraph from "./ProportionalityGraph.jsx";
 import GasParticleDiagram from "./GasParticleDiagram.jsx";
 import ApparatusDiagram from "./ApparatusDiagram.jsx";
+import LewisStructure from "./LewisStructure.jsx";
+import VSEPRDiagram from "./VSEPRDiagram.jsx";
+import DipoleDiagram from "./DipoleDiagram.jsx";
+import IonGridDiagram from "./IonGridDiagram.jsx";
+import ElectronTransferDiagram from "./ElectronTransferDiagram.jsx";
+import BondingTriangle from "./BondingTriangle.jsx";
+import PolymerDiagram from "./PolymerDiagram.jsx";
+import SigmaPiDiagram from "./SigmaPiDiagram.jsx";
+import Chromatogram from "./Chromatogram.jsx";
 
 // The one place that turns a `stimulus` data object into a rendered
 // visual — used identically by the Preview modal, the printed Paper
@@ -61,6 +70,35 @@ function StimulusBody({ stimulus }) {
       return <GasParticleDiagram containers={stimulus.containers} />;
     case "apparatus-diagram":
       return <ApparatusDiagram items={stimulus.items} />;
+    case "lewis-structure":
+      return <LewisStructure atoms={stimulus.atoms} bonds={stimulus.bonds} overallCharge={stimulus.overallCharge} label={stimulus.label} />;
+    case "resonance":
+      return (
+        <div className="flex flex-wrap items-center gap-3">
+          {stimulus.structures.map((s, i) => (
+            <div key={i} className="flex items-center gap-3">
+              <LewisStructure atoms={s.atoms} bonds={s.bonds} overallCharge={s.overallCharge} label={s.label} />
+              {i < stimulus.structures.length - 1 && <span className="text-lg text-[var(--color-ink-faint)]">&harr;</span>}
+            </div>
+          ))}
+        </div>
+      );
+    case "vsepr":
+      return <VSEPRDiagram geometry={stimulus.geometry} centralLabel={stimulus.centralLabel} domains={stimulus.domains} />;
+    case "dipole":
+      return <DipoleDiagram geometry={stimulus.geometry} centralLabel={stimulus.centralLabel} bondLabels={stimulus.bondLabels} netDipole={stimulus.netDipole} />;
+    case "ion-grid":
+      return <IonGridDiagram mode={stimulus.mode} rows={stimulus.rows} cols={stimulus.cols} variant={stimulus.variant} />;
+    case "electron-transfer":
+      return <ElectronTransferDiagram from={stimulus.from} to={stimulus.to} />;
+    case "bonding-triangle":
+      return <BondingTriangle markers={stimulus.markers} />;
+    case "polymer":
+      return <PolymerDiagram mode={stimulus.mode} monomerText={stimulus.monomerText} repeatingUnitText={stimulus.repeatingUnitText} byproductText={stimulus.byproductText} />;
+    case "sigma-pi":
+      return <SigmaPiDiagram />;
+    case "chromatogram":
+      return <Chromatogram baselineToFront={stimulus.baselineToFront} spots={stimulus.spots} />;
     case "integrated":
       return (
         <div className="flex flex-col gap-4">
