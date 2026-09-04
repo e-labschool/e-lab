@@ -1,4 +1,10 @@
-import studentResources from "../../../../data/student-resources.js";
+// getResourcesByCategory/getResourceCounts now take the resource array as
+// a parameter (static entries + Supabase-backed ones merged by the
+// caller — see ResourcesLanding.jsx/CategoryPage.jsx) rather than only
+// ever reading the static student-resources.js import directly. This is
+// the smallest change that lets Supabase-published resources appear
+// alongside existing static ones without altering CATEGORIES, the filter
+// UI, or ResourceCard.
 
 export const CATEGORIES = {
   "ib-documents": {
@@ -15,14 +21,14 @@ export const CATEGORIES = {
 
 export const RESOURCE_TYPE_FILTERS = ["All", "Structure", "Reactivity", "PDF", "Worksheet", "Notes", "Revision"];
 
-export function getResourcesByCategory(categoryId) {
-  return studentResources.filter((r) => r.category === categoryId);
+export function getResourcesByCategory(categoryId, resources) {
+  return resources.filter((r) => r.category === categoryId);
 }
 
-export function getResourceCounts() {
+export function getResourceCounts(resources) {
   return {
-    "ib-documents": getResourcesByCategory("ib-documents").length,
-    "study-materials": getResourcesByCategory("study-materials").length,
+    "ib-documents": getResourcesByCategory("ib-documents", resources).length,
+    "study-materials": getResourcesByCategory("study-materials", resources).length,
   };
 }
 

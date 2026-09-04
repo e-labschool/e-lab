@@ -1,7 +1,9 @@
 import { useMemo, useState } from "react";
 import { useParams, Link, Navigate } from "react-router-dom";
-import { Search } from "lucide-react";
+import { Search, Loader2 } from "lucide-react";
 import { CATEGORIES, getResourcesByCategory, filterResources, RESOURCE_TYPE_FILTERS } from "./lib/resourceUtils.js";
+import { useVisibleResources } from "../../../lib/useVisibleResources.js";
+import staticResources from "../../../data/student-resources.js";
 import Container from "../../../components/ui/Container.jsx";
 import EmptyStatePanel from "../../../components/ui/EmptyStatePanel.jsx";
 import ResourceCard from "./components/ResourceCard.jsx";
@@ -12,9 +14,17 @@ export default function CategoryPage() {
   const category = CATEGORIES[categoryId];
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("All");
+  const { resources: supabaseResources, loading, error } = useVisibleResources();
 
-  const allResources = category ? getResourcesByCategory(categoryId) : [];
-  const filtered = useMemo(() => filterResources(allResources, { search, filter }), [allResources, search, filter]);
+  const allResources = useMemo(
+    () => [...staticResources, ...supabaseResources.filter((r) => r.audience === "student" || r.audience === "both")],
+    [supabaseResources]
+  );
+  const categoryResources = useMemo(
+    () => (category ? getResourcesByCategory(categoryId, allResources) : []),
+    [category, categoryId, allResources]
+  );
+  const filtered = useMemo(() => filterResources(categoryResources, { search, filter }), [categoryResources, search, filter]);
 
   if (!category) return <Navigate to=".." replace />;
 
@@ -30,7 +40,11 @@ export default function CategoryPage() {
         <p className="mt-3 text-sm text-[var(--color-ink-soft)]">{category.description}</p>
       </div>
 
-      {allResources.length === 0 ? (
+      {error && <p className="mt-6 text-sm text-[var(--color-coral)]">Some resources couldn't be loaded: {error}</p>}
+
+      {loading ? (
+        <div className="mt-16 flex justify-center"><Loader2 className="h-5 w-5 animate-spin text-[var(--color-ink-faint)]" /></div>
+      ) : categoryResources.length === 0 ? (
         <div className="mt-12">
           <EmptyStatePanel icon={FolderOpen} title="Resources will be added here soon." />
         </div>

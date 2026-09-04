@@ -1,11 +1,21 @@
+import { useMemo } from "react";
 import { Link } from "react-router-dom";
-import { FolderOpen, ArrowRight } from "lucide-react";
+import { FolderOpen, ArrowRight, Loader2 } from "lucide-react";
 import { CATEGORIES, getResourceCounts } from "./lib/resourceUtils.js";
+import { useVisibleResources } from "../../../lib/useVisibleResources.js";
+import staticResources from "../../../data/student-resources.js";
 import Container from "../../../components/ui/Container.jsx";
 import Card from "../../../components/ui/Card.jsx";
 
 export default function ResourcesLanding() {
-  const counts = getResourceCounts();
+  const { resources: supabaseResources, loading, error } = useVisibleResources();
+  // Merge existing static entries with Supabase-published ones — nothing
+  // that worked before this change stops working, per the brief.
+  const allResources = useMemo(
+    () => [...staticResources, ...supabaseResources.filter((r) => r.audience === "student" || r.audience === "both")],
+    [supabaseResources]
+  );
+  const counts = getResourceCounts(allResources);
 
   return (
     <Container className="py-14">
@@ -19,6 +29,8 @@ export default function ResourcesLanding() {
         </p>
       </div>
 
+      {error && <p className="mt-6 text-sm text-[var(--color-coral)]">Some resources couldn't be loaded: {error}</p>}
+
       <div className="mt-12 grid gap-4 sm:grid-cols-2">
         {Object.values(CATEGORIES).map((category) => (
           <Link key={category.id} to={category.id}>
@@ -30,7 +42,7 @@ export default function ResourcesLanding() {
               </div>
               <div className="mt-6 flex items-center justify-between text-sm">
                 <span className="text-[var(--color-ink-faint)]">
-                  {counts[category.id]} resource{counts[category.id] === 1 ? "" : "s"}
+                  {loading ? <Loader2 size={13} className="animate-spin" /> : `${counts[category.id]} resource${counts[category.id] === 1 ? "" : "s"}`}
                 </span>
                 <span className="inline-flex items-center gap-1.5 font-medium text-[var(--color-ink)]">
                   Open <ArrowRight size={14} />
