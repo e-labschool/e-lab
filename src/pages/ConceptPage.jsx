@@ -3,6 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { getConcept } from "../data/concepts/index.js";
 import { getCoverageForConcept } from "../data/coverage-map.js";
 import { getResource } from "../data/resources-registry.js";
+import ELabLoader from "../components/ui/ELabLoader.jsx";
 import { getCurriculumLocationsForConcept } from "../lib/curriculum-resolver.js";
 import { getLazyResourceComponent } from "../lib/lazy-resource.js";
 import Container from "../components/ui/Container.jsx";
@@ -74,7 +75,7 @@ export default function ConceptPage() {
               </div>
             </div>
             <div className="p-6">
-              <Suspense fallback={<div className="py-16 text-center text-sm text-[var(--color-ink-faint)]">Loading interactive&hellip;</div>}>
+              <Suspense fallback={<div className="flex h-40 items-center justify-center"><ELabLoader size="compact" /></div>}>
                 <PreviewComponent compact />
               </Suspense>
             </div>

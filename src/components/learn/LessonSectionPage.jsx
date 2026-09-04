@@ -1,6 +1,7 @@
 import { useEffect, lazy, Suspense } from "react";
 import { useOutletContext, Link } from "react-router-dom";
 import { ChevronLeft, ChevronRight, FlaskConical, HelpCircle } from "lucide-react";
+import ELabLoader from "../ui/ELabLoader.jsx";
 import { getConceptContext, getAdjacentConcepts } from "../../lib/learn-tree.js";
 import { getLessonCompletion } from "../../data/lessons/index.js";
 import { useLearningProgress } from "../../context/ProgressContext.jsx";
@@ -136,7 +137,7 @@ export default function LessonSectionPage({ section }) {
           {InteractiveComponent && (
             <div className="mt-8">
               <SectionLabel>Try it yourself{section.interactive.title ? ` — ${section.interactive.title}` : ""}</SectionLabel>
-              <Suspense fallback={<div className="flex h-48 items-center justify-center text-sm text-[var(--color-ink-faint)]">Loading interactive…</div>}>
+              <Suspense fallback={<div className="flex h-48 items-center justify-center"><ELabLoader size="compact" /></div>}>
                 <InteractiveComponent {...section.interactive} />
               </Suspense>
               {section.interactive.after && (

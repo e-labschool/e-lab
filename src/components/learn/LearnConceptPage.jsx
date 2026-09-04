@@ -1,6 +1,7 @@
 import { useEffect, Suspense } from "react";
 import { useParams, useOutletContext, Link, Navigate } from "react-router-dom";
 import { ChevronLeft, ChevronRight, Lightbulb, AlertTriangle, FlaskConical } from "lucide-react";
+import ELabLoader from "../ui/ELabLoader.jsx";
 import { getConcept } from "../../data/concepts/index.js";
 import { getConceptContext, getAdjacentConcepts } from "../../lib/learn-tree.js";
 import { getConceptContent } from "../../data/concept-content.js";
@@ -114,7 +115,7 @@ function RegularConceptPage({ conceptId }) {
       {InteractiveComponent && (
         <div className="mt-8 -mx-6 sm:mx-0">
           <p className="mb-2 px-6 text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)] sm:px-0">Explore</p>
-          <Suspense fallback={<div className="flex h-64 items-center justify-center text-sm text-[var(--color-ink-faint)]">Loading interactive…</div>}>
+          <Suspense fallback={<div className="flex h-64 items-center justify-center"><ELabLoader size="compact" /></div>}>
             <InteractiveComponent compact />
           </Suspense>
         </div>

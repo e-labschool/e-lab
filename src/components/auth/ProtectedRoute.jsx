@@ -1,5 +1,5 @@
 import { Navigate, useLocation } from "react-router-dom";
-import { Loader2 } from "lucide-react";
+import ELabLoader from "../ui/ELabLoader.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
 
 // Guards a route subtree: unauthenticated -> /auth (keeping the role they
@@ -32,7 +32,7 @@ export default function ProtectedRoute({ role, children }) {
   if (loadingSession || (user && loadingProfile) || stillResolvingProfile) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
-        <Loader2 className="h-5 w-5 animate-spin text-[var(--color-ink-faint)]" />
+        <ELabLoader />
       </div>
     );
   }

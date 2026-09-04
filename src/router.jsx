@@ -1,4 +1,5 @@
 import { lazy, Suspense } from "react";
+import ELabLoader from "./components/ui/ELabLoader.jsx";
 import { createBrowserRouter } from "react-router-dom";
 import Shell from "./components/layout/Shell.jsx";
 import Home from "./pages/Home.jsx";
@@ -98,7 +99,7 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <TeacherDashboard /> },
       { path: "teach", element: <TeacherTeach /> },
-      { path: "question-builder", element: <Suspense fallback={null}><TeacherQBuilder /></Suspense> },
+      { path: "question-builder", element: <Suspense fallback={<div className="flex min-h-[60vh] items-center justify-center"><ELabLoader /></div>}><TeacherQBuilder /></Suspense> },
       { path: "resources", element: <TeacherResources /> },
       { path: "profile", element: <TeacherProfilePage /> },
     ],

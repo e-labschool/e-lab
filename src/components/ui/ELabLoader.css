@@ -1,0 +1,78 @@
+/* e-Lab branded loader animations — kept in a plain CSS file rather than
+   inline styles so keyframes and the prefers-reduced-motion override stay
+   readable in one place, and nothing here depends on an animation library. */
+
+.elab-loader-liquid-surface {
+  animation: elab-wave 2.6s ease-in-out infinite;
+  transform-origin: center bottom;
+}
+
+@keyframes elab-wave {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-1.2px); }
+}
+
+.elab-loader-bubble {
+  animation-name: elab-bubble-rise;
+  animation-timing-function: ease-in;
+  animation-iteration-count: infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+@keyframes elab-bubble-rise {
+  0% { transform: translateY(0) scale(0.85); opacity: 0; }
+  12% { opacity: 0.9; }
+  85% { opacity: 0.55; }
+  100% { transform: translateY(-58px) scale(1.05); opacity: 0; }
+}
+
+.elab-loader-overflow-bubble {
+  animation: elab-overflow 1.6s ease-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+@keyframes elab-overflow {
+  0% { transform: translateY(6px) scale(0.6); opacity: 0; }
+  30% { opacity: 0.9; }
+  100% { transform: translateY(-16px) scale(1); opacity: 0; }
+}
+
+.elab-loader-fill {
+  transition: y 0.5s ease-out, height 0.5s ease-out;
+}
+
+.elab-loader-indeterminate .elab-loader-fill {
+  animation: elab-indeterminate-fill 3.2s ease-in-out infinite;
+}
+
+@keyframes elab-indeterminate-fill {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+.elab-loader-exit {
+  animation: elab-loader-exit 0.45s ease-in forwards;
+}
+
+@keyframes elab-loader-exit {
+  0% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(0.94); }
+}
+
+/* Respect prefers-reduced-motion: keep the loader informative (liquid
+   level still communicates progress) but remove continuous motion —
+   no bubble rise loop, no surface wave, no indeterminate oscillation. */
+@media (prefers-reduced-motion: reduce) {
+  .elab-loader-liquid-surface,
+  .elab-loader-bubble,
+  .elab-loader-overflow-bubble,
+  .elab-loader-indeterminate .elab-loader-fill {
+    animation: none !important;
+  }
+  .elab-loader-bubble,
+  .elab-loader-overflow-bubble {
+    opacity: 0.5;
+  }
+}
