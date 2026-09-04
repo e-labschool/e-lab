@@ -4,15 +4,29 @@ import { ChevronLeft, ChevronRight, Lightbulb, AlertTriangle, FlaskConical } fro
 import { getConcept } from "../../data/concepts/index.js";
 import { getConceptContext, getAdjacentConcepts } from "../../lib/learn-tree.js";
 import { getConceptContent } from "../../data/concept-content.js";
+import { getLessonSubsection } from "../../data/lessons/index.js";
 import { getCoverageForConcept } from "../../data/coverage-map.js";
 import { getResource } from "../../data/resources-registry.js";
 import { getLazyResourceComponent } from "../../lib/lazy-resource.js";
 import { useLearningProgress } from "../../context/ProgressContext.jsx";
 import { usePreferences } from "../../context/PreferencesContext.jsx";
 import CheckYourself from "./CheckYourself.jsx";
+import LessonSectionPage from "./LessonSectionPage.jsx";
 
 export default function LearnConceptPage() {
   const { conceptId } = useParams();
+
+  // A subtopic with a full e-Lab lesson sequence (see src/data/lessons)
+  // renders through LessonSectionPage instead — its IDs never exist in
+  // the regular concepts registry (getConcept below), so this check must
+  // come first, not as a fallback.
+  const lessonSection = getLessonSubsection(conceptId);
+  if (lessonSection) return <LessonSectionPage section={lessonSection} />;
+
+  return <RegularConceptPage conceptId={conceptId} />;
+}
+
+function RegularConceptPage({ conceptId }) {
   const { basePath } = useOutletContext();
   const concept = getConcept(conceptId);
   const ctx = getConceptContext(conceptId);

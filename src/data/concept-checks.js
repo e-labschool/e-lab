@@ -149,6 +149,44 @@ const conceptChecks = {
       explanation: "Peroxides are the standard exception to oxygen's usual −2 oxidation state — in a peroxide, oxygen is −1.",
     },
   ],
+  "s1-1-matter": [
+    {
+      id: "s11m-1", type: "mcq",
+      prompt: "Which statement best describes matter?",
+      options: ["Anything that can be seen", "Anything that has mass and occupies space", "Only solids and liquids"],
+      correctAnswer: "Anything that has mass and occupies space",
+      explanation: "Matter includes solids, liquids and gases. Matter has mass and occupies space.",
+    },
+    {
+      id: "s11m-2", type: "mcq",
+      prompt: "Why do chemists use particle models?",
+      options: ["To represent behaviour at scales difficult to observe directly", "Because matter contains no particles", "Because models are exact photographs of particles"],
+      correctAnswer: "To represent behaviour at scales difficult to observe directly",
+      explanation: "Models help chemists represent, explain and predict behaviour that cannot always be observed directly.",
+    },
+  ],
+  "s1-1-elements-compounds-mixtures": [
+    {
+      id: "s11ecm-1", type: "mcq",
+      prompt: "Salt water can contain different amounts of salt. Salt water is best classified as a:",
+      options: ["Element", "Compound", "Mixture"],
+      correctAnswer: "Mixture",
+      explanation: "Salt water has no fixed ratio of salt to water — that's a defining feature of a mixture, not a compound.",
+    },
+    {
+      id: "s11ecm-2", type: "true-false",
+      prompt: "True or false: O\u2082 must be a compound because it contains two atoms.",
+      correctAnswer: false,
+      explanation: "Both atoms are oxygen. Compounds contain different elements chemically bonded together.",
+    },
+    {
+      id: "s11ecm-3", type: "mcq",
+      prompt: "H\u2082O contains hydrogen and oxygen chemically bonded in a 2:1 ratio. H\u2082O is:",
+      options: ["An element", "A compound", "A mixture"],
+      correctAnswer: "A compound",
+      explanation: "Different elements (H and O), chemically bonded, in a fixed ratio — that's exactly the definition of a compound.",
+    },
+  ],
 };
 
 export function getConceptChecks(conceptId) {

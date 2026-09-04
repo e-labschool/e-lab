@@ -8,6 +8,7 @@
 // list for a subtopic changes, these codes shift accordingly and nothing
 // here needs to change.
 import { buildRoadmap } from "./curriculum-resolver.js";
+import { getLessonSubsections } from "../data/lessons/index.js";
 
 let cachedTree = null;
 
@@ -29,7 +30,13 @@ export function getLearnTree() {
       const subtopics = topic.subtopics.map((subtopic) => {
         const subtopicNumber = subtopic.id.split("-")[1]; // "structure-1.1" -> "1.1"
         const subtopicCode = `${sectionShort[0]}${subtopicNumber}`; // "S1.1"
-        const concepts = subtopic.concepts.map((concept, i) => {
+        // A subtopic with a full e-Lab lesson sequence (see
+        // src/data/lessons) uses its lesson subsections as the navigable
+        // items instead of the raw conceptIds list — everything below
+        // (codes, progress, sidebar, adjacent-nav) works identically
+        // either way, since both shapes provide { id, title }.
+        const sourceItems = getLessonSubsections(subtopic.id) ?? subtopic.concepts;
+        const concepts = sourceItems.map((concept, i) => {
           const code = `${subtopicCode}.${i + 1}`; // "S1.1.1"
           totalConcepts += 1;
           const entry = { concept, code, sectionLabel: sectionShort, topicLabel: topic.label, subtopicLabel: subtopic.label, subtopicCode, subtopicId: subtopic.id };
