@@ -10,7 +10,7 @@ import { useAuth } from "../../context/AuthContext.jsx";
 // security concern — a signed-out user should never even briefly see
 // protected content while Supabase's session check is still in flight).
 export default function ProtectedRoute({ role, children }) {
-  const { isConfigured, user, profile, loadingSession, loadingProfile } = useAuth();
+  const { isConfigured, user, profile, loadingSession, loadingProfile, authError } = useAuth();
   const location = useLocation();
 
   if (!isConfigured) {
@@ -23,7 +23,13 @@ export default function ProtectedRoute({ role, children }) {
     );
   }
 
-  if (loadingSession || (user && loadingProfile)) {
+  // Treat "signed in, no profile yet, no error" as still loading rather
+  // than "no profile" — covers the brief window right after `user`
+  // becomes truthy but before fetchProfile's own loading flag has flipped
+  // on, so a real user is never bounced back to /auth by a race condition.
+  const stillResolvingProfile = Boolean(user) && !profile && !authError;
+
+  if (loadingSession || (user && loadingProfile) || stillResolvingProfile) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
         <Loader2 className="h-5 w-5 animate-spin text-[var(--color-ink-faint)]" />
@@ -35,11 +41,16 @@ export default function ProtectedRoute({ role, children }) {
     return <Navigate to={`/auth?role=${role}&next=${encodeURIComponent(location.pathname)}`} replace />;
   }
 
-  // Signed in but profile not created yet (shouldn't normally happen given
-  // AuthPage creates the profile as part of sign-up, but a defensive
-  // fallback rather than a crash if it ever does).
+  // Signed in, profile genuinely failed to load (an error was recorded,
+  // not just "still fetching") — a recoverable error state, not a crash.
   if (!profile) {
-    return <Navigate to={`/auth?role=${role}`} replace />;
+    return (
+      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-2 px-6 text-center">
+        <p className="text-sm text-[var(--color-ink-soft)]">
+          We couldn't load your profile{authError ? `: ${authError}` : "."} Try refreshing the page.
+        </p>
+      </div>
+    );
   }
 
   if (profile.role !== role) {

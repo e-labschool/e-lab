@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, useCallback, useMemo } from "react";
-import { supabase } from "../lib/supabase.js";
+import { supabase } from "../lib/supabaseClient.js";
 import { useAuth } from "./AuthContext.jsx";
 import { getLearnTree } from "../lib/learn-tree.js";
 

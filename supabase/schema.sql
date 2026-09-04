@@ -2,28 +2,36 @@
 -- Run this once in the Supabase SQL Editor for your project (Dashboard →
 -- SQL Editor → New query → paste this whole file → Run).
 --
--- Tables: profiles, learning_progress, concept_attempts, user_preferences.
--- Every table is protected by Row Level Security: a signed-in user can only
--- read/write rows where user_id = auth.uid(). There is no public read
--- access to any of these tables — a student cannot see another student's
--- profile, progress, attempts, or preferences under any circumstance.
+-- NOTE: if you have already created the `profiles` table, its RLS
+-- policies, and an automatic profile-creation trigger yourself (as
+-- described when this file was last updated), you do NOT need to re-run
+-- the `profiles` section below — it's kept here as documentation so the
+-- rest of this file (and the application code, which assumes the exact
+-- shape described here) stays consistent with what your project expects.
+-- Every table is protected by Row Level Security — there is no public
+-- read access to any of these tables under any circumstance.
 
 -- ============================================================
 -- profiles
+-- One row per user, keyed by auth.users.id directly (id IS the foreign
+-- key — there is no separate user_id column on this table). This matches
+-- Supabase's own recommended pattern for a profiles table populated by an
+-- auth.users trigger.
 -- ============================================================
 create table if not exists public.profiles (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade unique,
-  role text not null check (role in ('student', 'teacher')),
+  id uuid primary key references auth.users(id) on delete cascade,
+  email text,
   full_name text not null,
+  role text not null check (role in ('student', 'teacher')),
   school text,
   country text,
-  programme text not null default 'IB Diploma Programme',
-  -- Student: 'SL' | 'HL'. Teacher: 'SL' | 'HL' | 'Both'. Enforced in the
-  -- application layer (kept as free text here so future programmes/levels
-  -- don't require a schema migration).
+  -- Only meaningful for students; null for teachers.
+  grade_or_class text,
+  curriculum text not null default 'IB Diploma Programme',
+  -- Student: 'SL' | 'HL'. Teacher: 'SL' | 'HL' | 'SL & HL'. Enforced in
+  -- the application layer (kept as free text here so future
+  -- curricula/levels don't require a schema migration).
   level text,
-  class_grade text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -32,16 +40,49 @@ alter table public.profiles enable row level security;
 
 create policy "Users can read own profile"
   on public.profiles for select
-  using (auth.uid() = user_id);
+  using (auth.uid() = id);
 
 create policy "Users can insert own profile"
   on public.profiles for insert
-  with check (auth.uid() = user_id);
+  with check (auth.uid() = id);
 
 create policy "Users can update own profile"
   on public.profiles for update
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+  using (auth.uid() = id)
+  with check (auth.uid() = id);
+
+-- Automatic profile creation trigger — reads the metadata passed to
+-- supabase.auth.signUp({ options: { data: {...} } }) from the client
+-- (see src/context/AuthContext.jsx) and creates the matching profiles
+-- row the moment a new auth.users row is inserted, so the client never
+-- has to (and never could, under RLS, before a session exists anyway).
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  insert into public.profiles (id, email, full_name, role, school, country, grade_or_class, curriculum, level)
+  values (
+    new.id,
+    new.email,
+    new.raw_user_meta_data ->> 'full_name',
+    coalesce(new.raw_user_meta_data ->> 'role', 'student'),
+    new.raw_user_meta_data ->> 'school',
+    new.raw_user_meta_data ->> 'country',
+    new.raw_user_meta_data ->> 'grade_or_class',
+    coalesce(new.raw_user_meta_data ->> 'curriculum', 'IB Diploma Programme'),
+    new.raw_user_meta_data ->> 'level'
+  )
+  on conflict (id) do nothing;
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();
 
 -- No delete policy: profile deletion happens via auth.users cascade only
 -- (e.g. an account-deletion flow calling Supabase admin APIs server-side),

@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, useCallback } from "react";
-import { supabase } from "../lib/supabase.js";
+import { supabase } from "../lib/supabaseClient.js";
 import { useAuth } from "./AuthContext.jsx";
 
 const PreferencesContext = createContext(null);

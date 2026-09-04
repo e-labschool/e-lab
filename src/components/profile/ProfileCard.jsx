@@ -43,9 +43,9 @@ export default function ProfileCard({ role, levelLabel, levelOptions, showClassG
         full_name: form.full_name,
         school: form.school,
         country: form.country,
-        programme: form.programme,
+        curriculum: form.curriculum,
         level: form.level,
-        class_grade: showClassGrade ? form.class_grade : null,
+        grade_or_class: showClassGrade ? form.grade_or_class : null,
       });
       setEditing(false);
     } catch (err) {
@@ -74,9 +74,9 @@ export default function ProfileCard({ role, levelLabel, levelOptions, showClassG
               ["Email", user?.email],
               ["School", profile.school || "\u2014"],
               ["Country", profile.country || "\u2014"],
-              ["Curriculum", profile.programme],
+              ["Curriculum", profile.curriculum],
               [levelLabel, profile.level || "\u2014"],
-              ...(showClassGrade ? [["Class / Grade", profile.class_grade || "\u2014"]] : []),
+              ...(showClassGrade ? [["Class / Grade", profile.grade_or_class || "\u2014"]] : []),
             ].map(([label, value]) => (
               <div key={label} className="flex items-center justify-between px-4 py-3 text-sm">
                 <dt className="text-[var(--color-ink-faint)]">{label}</dt>
@@ -106,7 +106,7 @@ export default function ProfileCard({ role, levelLabel, levelOptions, showClassG
           {showClassGrade && (
             <div>
               <label className={labelClasses} htmlFor="pc-grade">Class / Grade</label>
-              <input id="pc-grade" className={inputClasses} value={form.class_grade || ""} onChange={(e) => setForm({ ...form, class_grade: e.target.value })} />
+              <input id="pc-grade" className={inputClasses} value={form.grade_or_class || ""} onChange={(e) => setForm({ ...form, grade_or_class: e.target.value })} />
             </div>
           )}
           <div>

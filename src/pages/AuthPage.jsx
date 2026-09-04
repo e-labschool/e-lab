@@ -5,7 +5,6 @@ import { useAuth } from "../context/AuthContext.jsx";
 import Container from "../components/ui/Container.jsx";
 import Wordmark from "../components/layout/Wordmark.jsx";
 import Button from "../components/ui/Button.jsx";
-import { setPendingProfile } from "../lib/pending-profile.js";
 
 const inputClasses =
   "w-full rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] px-3 py-2.5 text-sm text-[var(--color-ink)] placeholder:text-[var(--color-ink-faint)] focus:border-[var(--color-indigo)] focus:outline-none focus:ring-2 focus:ring-[var(--color-indigo)]/30";
@@ -44,7 +43,6 @@ function PasswordInput({ id, value, onChange, autoComplete, placeholder }) {
 // AuthContext), never two parallel auth systems.
 export default function AuthPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const navigate = useNavigate();
   const role = searchParams.get("role") === "teacher" ? "teacher" : "student";
   const next = searchParams.get("next");
   const [tab, setTab] = useState(searchParams.get("tab") === "create-account" ? "create-account" : "sign-in");
@@ -100,7 +98,7 @@ export default function AuthPage() {
           {tab === "sign-in" ? (
             <SignInForm role={role} next={next} onSwitchTab={() => setTab("create-account")} />
           ) : (
-            <CreateAccountForm role={role} onDone={() => setTab("sign-in")} />
+            <CreateAccountForm role={role} />
           )}
         </div>
       </div>
@@ -109,7 +107,7 @@ export default function AuthPage() {
 }
 
 function SignInForm({ role, next, onSwitchTab }) {
-  const { signIn } = useAuth();
+  const { signIn, fetchProfile } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -121,12 +119,14 @@ function SignInForm({ role, next, onSwitchTab }) {
     setError(null);
     setLoading(true);
     try {
-      await signIn({ email, password });
-      // Profile-based redirect: navigate to the role this page was opened
-      // for; ProtectedRoute corrects course to the user's real role
-      // automatically if that guess turns out wrong (e.g. a teacher opened
-      // /auth?role=student by mistake).
-      navigate(next || `/${role}`, { replace: true });
+      const { user } = await signIn({ email, password });
+      // Load the authenticated user's row from public.profiles and read
+      // its role to decide where to land — not just the role this page
+      // happened to be opened for, which may be wrong (e.g. a teacher
+      // opening /auth?role=student by mistake still lands in /teacher).
+      const profile = await fetchProfile(user.id);
+      const destination = next || `/${profile?.role || role}`;
+      navigate(destination, { replace: true });
     } catch (err) {
       setError(err.message || "Something went wrong signing in.");
     } finally {
@@ -161,7 +161,7 @@ function SignInForm({ role, next, onSwitchTab }) {
 const LEVEL_OPTIONS = { student: ["SL", "HL"], teacher: ["SL", "HL", "SL & HL"] };
 
 function CreateAccountForm({ role }) {
-  const { signUp, upsertProfile, isConfigured } = useAuth();
+  const { signUp, fetchProfile, isConfigured } = useAuth();
   const navigate = useNavigate();
   const [fields, setFields] = useState({
     fullName: "", email: "", password: "", confirmPassword: "",
@@ -185,34 +185,36 @@ function CreateAccountForm({ role }) {
 
     setLoading(true);
     try {
-      const profileFields = {
-        role,
+      // Sent as Supabase auth user metadata (options.data) — your database
+      // trigger reads this from the new auth.users row and creates the
+      // matching profiles row automatically. The client never writes to
+      // profiles directly on sign-up.
+      const metadata = {
         full_name: fields.fullName,
+        role,
         school: fields.school,
         country: fields.country,
-        programme: "IB Diploma Programme",
+        curriculum: "IB Diploma Programme",
         level: fields.level,
-        class_grade: role === "student" ? fields.classGrade : null,
+        ...(role === "student" ? { grade_or_class: fields.classGrade } : {}),
       };
 
-      const { session } = await signUp({ email: fields.email, password: fields.password });
+      const { session, user } = await signUp({ email: fields.email, password: fields.password, metadata });
 
       if (session) {
         // Email confirmation is off for this project — a session exists
-        // immediately, so the profile can be created right now rather
-        // than waiting for the deferred sync below.
-        await upsertProfile(profileFields);
+        // immediately, and the trigger has already created the profile
+        // row as part of the same signUp transaction.
+        await fetchProfile(user.id);
         navigate(`/${role}`, { replace: true });
         return;
       }
 
-      // Email confirmation is required: there's no session yet, so RLS
-      // would reject writing the profile now. Stash the collected fields
-      // instead — PendingProfileSync (mounted app-wide) creates the
-      // profile automatically the first moment this browser DOES have an
-      // authenticated session for this user, i.e. right after they verify
-      // their email and sign in.
-      setPendingProfile(profileFields);
+      // Email confirmation is required: no session yet, so there's
+      // nothing more to do here — the trigger still fires (it's attached
+      // to auth.users, not to session creation), so the profile row will
+      // already exist by the time this user verifies their email and
+      // signs in.
       setCheckEmail(true);
     } catch (err) {
       setError(err.message || "Something went wrong creating your account.");
@@ -227,8 +229,8 @@ function CreateAccountForm({ role }) {
 
   if (checkEmail) {
     return (
-      <div className="space-y-3 text-sm text-[var(--color-ink-soft)]">
-        <p>Please check your email to verify your account. Once verified, sign in and you'll land straight in your {role} workspace.</p>
+      <div className="space-y-3 text-sm text-[var(--color-ink-soft)]" role="status">
+        <p>Account created successfully. Please check your email and confirm your email address before signing in.</p>
       </div>
     );
   }
