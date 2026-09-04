@@ -42,9 +42,10 @@ export default function AccountMenu() {
         <div className="absolute right-0 top-10 z-40 w-48 rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)] py-1.5 shadow-lg">
           <div className="border-b border-[var(--color-line)] px-3 py-2">
             <p className="truncate text-sm font-medium text-[var(--color-ink)]">{profile?.full_name || "Your account"}</p>
+            {profile?.role && <p className="text-xs capitalize text-[var(--color-ink-faint)]">{profile.role}</p>}
             <p className="truncate text-xs text-[var(--color-ink-faint)]">{user?.email}</p>
           </div>
-          <Link to="/profile" onClick={() => setOpen(false)} className="block px-3 py-2 text-sm text-[var(--color-ink-soft)] hover:bg-[var(--color-line)]/30 hover:text-[var(--color-ink)]">
+          <Link to={`/${profile?.role ?? "student"}/profile`} onClick={() => setOpen(false)} className="block px-3 py-2 text-sm text-[var(--color-ink-soft)] hover:bg-[var(--color-line)]/30 hover:text-[var(--color-ink)]">
             Profile
           </Link>
           <button

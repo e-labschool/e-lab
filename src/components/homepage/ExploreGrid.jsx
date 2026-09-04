@@ -25,14 +25,14 @@ const ITEMS = [
   {
     title: "Practice & Resources",
     description: "Guides, worksheets, tools",
-    to: "/student/ibdp/chemistry/resources",
+    to: "/student/resources",
     icon: FolderOpen,
     accent: "var(--color-role-resources)",
   },
   {
     title: "Assessment Support",
     description: "Check your understanding",
-    to: "/student/ibdp/chemistry/assess",
+    to: "/student/solve",
     icon: ClipboardCheck,
     accent: "var(--color-role-assess)",
   },

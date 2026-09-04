@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { GraduationCap, Presentation, ArrowRight } from "lucide-react";
-import { useRole } from "../../context/RoleContext.jsx";
+import { useAuth } from "../../context/AuthContext.jsx";
 import Container from "../ui/Container.jsx";
 import Card from "../ui/Card.jsx";
 
@@ -26,12 +26,19 @@ const ROLES = [
 ];
 
 export default function RoleCards() {
-  const { setRole } = useRole();
+  const { user, profile } = useAuth();
   const navigate = useNavigate();
 
+  // Already signed in as this exact role -> straight into the platform.
+  // Otherwise -> the dedicated auth page, opened on the right role's tab.
+  // This is the site's ONE authentication entry point; there is no second
+  // role-selection flow living anywhere else.
   function choose(roleId) {
-    setRole(roleId);
-    navigate(`/${roleId}`);
+    if (user && profile?.role === roleId) {
+      navigate(`/${roleId}`);
+    } else {
+      navigate(`/auth?role=${roleId}`);
+    }
   }
 
   return (

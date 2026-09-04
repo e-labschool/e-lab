@@ -12,10 +12,10 @@ import { usePreferences } from "../../context/PreferencesContext.jsx";
 // session (component state).
 export default function LearnLayout() {
   const { conceptId } = useParams();
-  const { subject, programmeId, subjectId } = useOutletContext();
+  const { subject } = useOutletContext();
   const { sidebarCollapsed, setSidebarCollapsed } = usePreferences();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const basePath = `/student/${programmeId}/${subjectId}/learn`;
+  const basePath = "/student/learn";
 
   return (
     <div className="relative flex min-h-[calc(100vh-4rem)]">
@@ -71,7 +71,7 @@ export default function LearnLayout() {
       )}
 
       <div className="min-w-0 flex-1">
-        <Outlet context={{ subject, programmeId, subjectId, basePath }} />
+        <Outlet context={{ subject, basePath }} />
       </div>
     </div>
   );
