@@ -273,6 +273,16 @@ const resources = [
     conceptIds: ["radical-substitution-mechanism","electrophiles-and-nucleophiles","reaction-mechanism-representation","nucleophilic-substitution-mechanism","addition-reactions","elimination-reactions"],
     component: null,
   },
+  {
+    id: "vsepr-explorer-3d",
+    title: "VSEPR Explorer (3D)",
+    resourceType: "simulation",
+    categories: ["simulate","visualize","explore","teach"],
+    status: "live", // live | in-development | planned
+    description: "A genuine rotatable 3D model of every VSEPR electron-domain geometry (linear through octahedral), with real, independently-verified bond angles — drag to rotate, scroll to zoom.",
+    conceptIds: ["vsepr-theory","molecular-geometry"],
+    component: () => import("../engines/vsepr-explorer-3d/VSEPRExplorer3D.jsx"),
+  },
 ];
 
 export const resourcesById = Object.fromEntries(resources.map((r) => [r.id, r]));
