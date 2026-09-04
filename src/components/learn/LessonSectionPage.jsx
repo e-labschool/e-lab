@@ -8,6 +8,7 @@ import { usePreferences } from "../../context/PreferencesContext.jsx";
 import { AnalogyBlock } from "../lesson/AnalogyBlock.jsx";
 import ZoomSequenceVisual from "../lesson/ZoomSequenceVisual.jsx";
 import ThreeWayParticlesVisual from "../lesson/ThreeWayParticlesVisual.jsx";
+import SideBySideVisual from "../lesson/SideBySideVisual.jsx";
 import CheckYourself from "./CheckYourself.jsx";
 
 // The 3D-backed interactives (Three.js/R3F/drei) are lazy-loaded, never
@@ -15,13 +16,14 @@ import CheckYourself from "./CheckYourself.jsx";
 // so a direct import would pull all of Three.js into every page load
 // instead of only when a student actually opens a 3D interactive (the
 // exact bundle-weight regression the brief's performance section warns
-// against). 2D-only visuals (ZoomSequenceVisual, ThreeWayParticlesVisual
-// above) have no such cost and stay as regular imports.
+// against). 2D-only visuals (ZoomSequenceVisual, ThreeWayParticlesVisual,
+// SideBySideVisual above) have no such cost and stay as regular imports.
 const MatterExplorerInteractive = lazy(() => import("../lesson/MatterExplorerInteractive.jsx"));
 const ContainerBuildInteractive = lazy(() => import("../lesson/ContainerBuildInteractive.jsx"));
+const MixtureBeakerInteractive = lazy(() => import("../lesson/MixtureBeakerInteractive.jsx"));
 
-const VISUAL_COMPONENTS = { "zoom-sequence": ZoomSequenceVisual, "three-way-particles": ThreeWayParticlesVisual };
-const INTERACTIVE_COMPONENTS = { "particle-box": MatterExplorerInteractive, "container-build": ContainerBuildInteractive };
+const VISUAL_COMPONENTS = { "zoom-sequence": ZoomSequenceVisual, "three-way-particles": ThreeWayParticlesVisual, "side-by-side": SideBySideVisual };
+const INTERACTIVE_COMPONENTS = { "particle-box": MatterExplorerInteractive, "container-build": ContainerBuildInteractive, "mixture-beaker": MixtureBeakerInteractive };
 
 function SectionLabel({ children }) {
   return <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">{children}</p>;

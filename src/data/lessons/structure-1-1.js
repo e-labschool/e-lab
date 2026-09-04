@@ -131,6 +131,38 @@ const structure11 = {
       id: "s1-1-mixture-types",
       title: "Homogeneous & Heterogeneous Mixtures",
       shortDescription: "Why some mixtures look completely uniform and others clearly don't.",
+      heading: "Do all mixtures look the same?",
+      simpleExplanation: [
+        "Compare salt water and sand + water.",
+        "Both are mixtures. But one looks uniform while the other clearly does not.",
+      ],
+      analogy: {
+        heading: "Think of it like this…",
+        body: [
+          "Think of two drinks. One drink looks completely uniform throughout.",
+          "Another contains visible pulp.",
+          "Both are mixtures, but their uniformity is different.",
+        ],
+        notice: "Analogy — real homogeneous/heterogeneous mixtures aren't about drinks specifically.",
+      },
+      visual: {
+        type: "side-by-side",
+        panels: [
+          { label: "SALT WATER", description: "Uniform appearance." },
+          { label: "SAND + WATER", description: "Visible separate material." },
+        ],
+      },
+      scientificExplanation: {
+        heading: "The chemistry",
+        body: [],
+        definitions: [
+          { term: "Homogeneous mixture", body: "A mixture with uniform composition throughout the sample.", examples: ["air", "salt solution"] },
+          { term: "Heterogeneous mixture", body: "A mixture whose composition is not uniform throughout the sample and may contain different visible regions or phases.", examples: ["sand + water", "oil + water"] },
+        ],
+      },
+      interactive: { type: "mixture-beaker", title: "Mixture Beaker" },
+      checkYourselfId: "s1-1-mixture-types",
+      nextLabel: "Separating Mixtures",
     },
     {
       id: "s1-1-separation",

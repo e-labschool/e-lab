@@ -187,6 +187,28 @@ const conceptChecks = {
       explanation: "Different elements (H and O), chemically bonded, in a fixed ratio — that's exactly the definition of a compound.",
     },
   ],
+  "s1-1-mixture-types": [
+    {
+      id: "s11mt-1", type: "mcq",
+      prompt: "Which of these is a heterogeneous mixture?",
+      options: ["Air", "Salt solution", "Sand + water"],
+      correctAnswer: "Sand + water",
+      explanation: "Sand + water has visibly separate regions (the sand settles) — its composition isn't uniform throughout.",
+    },
+    {
+      id: "s11mt-2", type: "true-false",
+      prompt: "True or false: air is a homogeneous mixture.",
+      correctAnswer: true,
+      explanation: "Air has uniform composition throughout the sample, even though it contains several different gases.",
+    },
+    {
+      id: "s11mt-3", type: "mcq",
+      prompt: "Oil and water form a mixture that is:",
+      options: ["Homogeneous — they mix completely", "Heterogeneous — they form separate layers", "Not a mixture at all"],
+      correctAnswer: "Heterogeneous — they form separate layers",
+      explanation: "Oil and water don't mix uniformly — they form two visible, distinct layers, which is the defining feature of a heterogeneous mixture.",
+    },
+  ],
 };
 
 export function getConceptChecks(conceptId) {

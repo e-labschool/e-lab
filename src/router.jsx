@@ -32,6 +32,10 @@ import TeacherTeach from "./pages/teacher/Teach.jsx";
 import TeacherResources from "./pages/teacher/Resources.jsx";
 import TeacherProfilePage from "./pages/teacher/TeacherProfilePage.jsx";
 
+import AdminLayout from "./pages/admin/AdminLayout.jsx";
+import AdminDashboard from "./pages/admin/AdminDashboard.jsx";
+import AdminComingSoon from "./pages/admin/AdminComingSoon.jsx";
+
 // Q Builder pulls in PDF/Word export libraries (jsPDF, docx) that are only
 // needed once a teacher actually opens it — lazy-loaded so those libraries
 // never load on the rest of the site, same pattern already used for the
@@ -96,6 +100,19 @@ const router = createBrowserRouter([
       { path: "question-builder", element: <Suspense fallback={null}><TeacherQBuilder /></Suspense> },
       { path: "resources", element: <TeacherResources /> },
       { path: "profile", element: <TeacherProfilePage /> },
+    ],
+  },
+  {
+    path: "/admin",
+    element: <AdminLayout />,
+    children: [
+      { index: true, element: <AdminDashboard /> },
+      { path: "learn-content", element: <AdminComingSoon title="Learn Content" description="Manage learning modules and lessons." /> },
+      { path: "resources", element: <AdminComingSoon title="Resources" description="Upload and manage learning resources." /> },
+      { path: "question-bank", element: <AdminComingSoon title="Question Bank" description="Manage e-Lab questions." /> },
+      { path: "users", element: <AdminComingSoon title="Users" description="View and manage platform users." /> },
+      { path: "access", element: <AdminComingSoon title="Access" description="Manage platform access and future plans." /> },
+      { path: "settings", element: <AdminComingSoon title="Settings" description="Platform settings." /> },
     ],
   },
 ]);
