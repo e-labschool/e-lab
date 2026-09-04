@@ -4,6 +4,7 @@ import { Menu, X, ArrowLeftRight } from "lucide-react";
 import Wordmark from "./Wordmark.jsx";
 import ThemeToggle from "./ThemeToggle.jsx";
 import Container from "../ui/Container.jsx";
+import AuthHeaderControl from "../auth/AuthHeaderControl.jsx";
 import { getProgramme, getSubject } from "../../data/programmes.js";
 
 const STUDENT_TABS = [
@@ -86,6 +87,7 @@ export default function Header() {
             </Link>
           )}
           <ThemeToggle />
+          <AuthHeaderControl />
         </div>
 
         {tabs.length > 0 && (
@@ -99,8 +101,9 @@ export default function Header() {
           </button>
         )}
         {tabs.length === 0 && (
-          <div className="md:hidden">
+          <div className="flex items-center gap-2 md:hidden">
             <ThemeToggle />
+            <AuthHeaderControl />
           </div>
         )}
       </Container>
@@ -133,6 +136,7 @@ export default function Header() {
               </Link>
               <ThemeToggle />
             </div>
+            <AuthHeaderControl />
           </Container>
         </div>
       )}

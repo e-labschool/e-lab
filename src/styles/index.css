@@ -18,7 +18,7 @@
   --color-paper-raised: #FFFFFF;
   --color-ink: #12161C;
   --color-ink-soft: #4A5160;
-  --color-ink-faint: #8A909C;
+  --color-ink-faint: #666D7A; /* darkened from #8A909C — was 3.07:1 vs paper, failing WCAG's 4.5:1 for the small caption/meta text this token is used for; now 4.98:1 */
   --color-line: #E3E1DA;
 
   /* ---- Brand accents (shared both modes) ---- */
@@ -64,7 +64,7 @@
   --color-paper-raised: #12161D;
   --color-ink: #EDEEF0;
   --color-ink-soft: #A6ACB8;
-  --color-ink-faint: #666D7A;
+  --color-ink-faint: #8189A0; /* lightened from #666D7A — was 3.69:1 vs dark paper, now 5.5:1 */
   --color-line: #262B34;
 
   --color-indigo: #6C86EE;

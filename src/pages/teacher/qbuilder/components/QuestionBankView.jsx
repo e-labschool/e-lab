@@ -1,32 +1,54 @@
 import { useMemo, useState } from "react";
-import { FileText, X } from "lucide-react";
+import { FileText, SlidersHorizontal, X } from "lucide-react";
 import { useQBuilder } from "../context/QBuilderContext.jsx";
-import { filterQuestions, DEFAULT_FILTERS } from "../lib/filterQuestions.js";
-import FilterBar from "./FilterBar.jsx";
+import { filterQuestions, DEFAULT_FILTERS, countActiveFilters } from "../lib/filterQuestions.js";
+import { QUESTION_TYPE_MATCHERS } from "../lib/paperUtils.js";
+import FilterPanel from "./FilterPanel.jsx";
 import QuestionCard from "./QuestionCard.jsx";
 import QuestionPreviewModal from "./QuestionPreviewModal.jsx";
 import PaperDraftPanel from "./PaperDraftPanel.jsx";
 
-// Split workspace: Question Bank (main, ~72%) + Paper Draft (side panel,
-// ~28%, sticky) on desktop, so a teacher never has to leave the bank to see
-// or reorder what they've added. On mobile the panel becomes a bottom
-// summary bar that opens a full-width drawer.
+// Three-column workspace on desktop: Filters (left, ~260px) + Question
+// Bank (main) + Paper Draft (right, sticky, ~28% of the bank+draft area —
+// preserved from before). Filters and Paper Draft both collapse to
+// full-width drawers on mobile/tablet rather than permanently splitting a
+// small screen three ways.
 export default function QuestionBankView({ onEditCopy, onViewPaper }) {
   const { sampleQuestions, isInDraft, addToDraft, draft, draftTotalMarks } = useQBuilder();
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
   const [previewQuestion, setPreviewQuestion] = useState(null);
   const [mobileDraftOpen, setMobileDraftOpen] = useState(false);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
-  const results = useMemo(() => filterQuestions(sampleQuestions, filters), [sampleQuestions, filters]);
+  const results = useMemo(
+    () => filterQuestions(sampleQuestions, filters, QUESTION_TYPE_MATCHERS),
+    [sampleQuestions, filters]
+  );
+  const activeFilterCount = countActiveFilters(filters);
 
   return (
-    <div className="lg:grid lg:grid-cols-[1fr_300px] lg:items-start lg:gap-8">
-      <div>
-        <FilterBar filters={filters} onChange={setFilters} onClear={() => setFilters(DEFAULT_FILTERS)} />
+    <div className="lg:grid lg:grid-cols-[240px_1fr_300px] lg:items-start lg:gap-6">
+      {/* Desktop: persistent left filter panel. */}
+      <aside className="hidden lg:sticky lg:top-20 lg:block lg:max-h-[calc(100vh-6rem)] lg:border-r lg:border-[var(--color-line)] lg:pr-5">
+        <FilterPanel
+          filters={filters}
+          onChange={setFilters}
+          onClear={() => setFilters(DEFAULT_FILTERS)}
+          allQuestions={sampleQuestions}
+          resultCount={results.length}
+        />
+      </aside>
 
-        <p className="my-4 text-xs text-[var(--color-ink-faint)]">
-          {results.length} question{results.length === 1 ? "" : "s"}
-        </p>
+      <div>
+        {/* Mobile/tablet: filters button opening a drawer. */}
+        <button
+          type="button"
+          onClick={() => setMobileFiltersOpen(true)}
+          className="mb-4 inline-flex items-center gap-1.5 rounded-md border border-[var(--color-line)] px-3 py-1.5 text-sm text-[var(--color-ink)] lg:hidden"
+        >
+          <SlidersHorizontal size={14} />
+          Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}
+        </button>
 
         <div className="grid gap-4 sm:grid-cols-2">
           {results.map((question) => (
@@ -67,6 +89,29 @@ export default function QuestionBankView({ onEditCopy, onViewPaper }) {
           </span>
         </button>
       </div>
+
+      {mobileFiltersOpen && (
+        <div className="fixed inset-0 z-40 flex items-stretch bg-black/40 lg:hidden" onClick={() => setMobileFiltersOpen(false)}>
+          <div
+            className="h-full w-full max-w-xs overflow-y-auto border-r border-[var(--color-line)] bg-[var(--color-paper)] p-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-sm font-medium text-[var(--color-ink)]">Filters</span>
+              <button type="button" onClick={() => setMobileFiltersOpen(false)} aria-label="Close" className="text-[var(--color-ink-faint)]">
+                <X size={18} />
+              </button>
+            </div>
+            <FilterPanel
+              filters={filters}
+              onChange={setFilters}
+              onClear={() => setFilters(DEFAULT_FILTERS)}
+              allQuestions={sampleQuestions}
+              resultCount={results.length}
+            />
+          </div>
+        </div>
+      )}
 
       {mobileDraftOpen && (
         <div className="fixed inset-0 z-40 flex items-end bg-black/40 lg:hidden" onClick={() => setMobileDraftOpen(false)}>

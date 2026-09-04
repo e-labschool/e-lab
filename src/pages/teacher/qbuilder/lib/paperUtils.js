@@ -9,6 +9,30 @@ import { UNITS, TOPICS } from "../../../../data/questions/unitMeta.js";
 // imports throughout the Q Builder UI keep working unchanged.
 export { LEVELS, PAPERS, SYLLABUS_SECTIONS, DIFFICULTIES, QUESTION_TYPES, STATUSES };
 
+// The Question Builder filter panel intentionally exposes a SMALL,
+// teacher-facing set of type categories rather than every internal
+// questionType value verbatim — "Visual / Diagram" isn't a questionType at
+// all in the schema, it's derived from whether a question carries a
+// non-text stimulus, so it needs its own matcher rather than a straight
+// field comparison. Existing internal types map onto this set 1:1 or
+// many:1 (Calculation is its own schema value; everything else maps
+// through here so a future new internal type doesn't silently vanish from
+// every filter option without a conscious mapping decision).
+export const QUESTION_TYPE_GROUPS = [
+  { id: "mcq", label: "MCQ", match: (q) => q.questionType === "MCQ" },
+  { id: "data-based", label: "Data-based", match: (q) => q.questionType === "Data-based" },
+  { id: "calculation", label: "Calculation", match: (q) => q.questionType === "Calculation" },
+  { id: "short-response", label: "Short response", match: (q) => q.questionType === "Short Response" },
+  { id: "extended-response", label: "Extended response", match: (q) => q.questionType === "Extended Response" },
+  { id: "visual", label: "Visual / Diagram", match: (q) => Boolean(q.stimulus) && q.stimulus.type !== "text" },
+];
+
+export const QUESTION_TYPE_MATCHERS = QUESTION_TYPE_GROUPS.reduce((acc, g) => {
+  acc[g.id] = g.match;
+  return acc;
+}, {});
+
+
 // Derived from unitMeta.js (itself derived from the curriculum data) rather
 // than hand-maintained here, so this can never drift from the syllabus map.
 export const TOPICS_BY_SECTION = SYLLABUS_SECTIONS.reduce((acc, section) => {

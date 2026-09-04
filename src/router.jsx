@@ -10,13 +10,17 @@ import Interactives from "./pages/Interactives.jsx";
 import InteractivePage from "./pages/InteractivePage.jsx";
 import Teachers from "./pages/Teachers.jsx";
 import About from "./pages/About.jsx";
+import Profile from "./pages/Profile.jsx";
+import ResetPassword from "./pages/ResetPassword.jsx";
 import NotFound from "./pages/NotFound.jsx";
 
 import ChooseProgramme from "./pages/onboarding/ChooseProgramme.jsx";
 import ChooseSubject from "./pages/onboarding/ChooseSubject.jsx";
 
 import StudentSubjectLayout from "./pages/student/StudentSubjectLayout.jsx";
-import StudentLearn from "./pages/student/Learn.jsx";
+import LearnLayout from "./components/learn/LearnLayout.jsx";
+import WelcomePage from "./components/learn/WelcomePage.jsx";
+import LearnConceptPage from "./components/learn/LearnConceptPage.jsx";
 import StudentPractice from "./pages/student/Practice.jsx";
 import StudentAssess from "./pages/student/Assess.jsx";
 import ResourcesLanding from "./pages/student/resources/ResourcesLanding.jsx";
@@ -53,7 +57,14 @@ const router = createBrowserRouter([
         element: <StudentSubjectLayout />,
         children: [
           { index: true, element: <Navigate to="learn" replace /> },
-          { path: "learn", element: <StudentLearn /> },
+          {
+            path: "learn",
+            element: <LearnLayout />,
+            children: [
+              { index: true, element: <WelcomePage /> },
+              { path: ":conceptId", element: <LearnConceptPage /> },
+            ],
+          },
           { path: "practice", element: <StudentPractice /> },
           { path: "assess", element: <StudentAssess /> },
           { path: "resources", element: <ResourcesLanding /> },
@@ -85,6 +96,8 @@ const router = createBrowserRouter([
       { path: "interactives/:interactiveId", element: <InteractivePage /> },
       { path: "teachers", element: <Teachers /> },
       { path: "about", element: <About /> },
+      { path: "profile", element: <Profile /> },
+      { path: "reset-password", element: <ResetPassword /> },
 
       { path: "*", element: <NotFound /> },
     ],
