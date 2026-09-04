@@ -32,6 +32,8 @@ import HessCycle from "./HessCycle.jsx";
 import BornHaberCycle from "./BornHaberCycle.jsx";
 import CarbonCycleDiagram from "./CarbonCycleDiagram.jsx";
 import ElectrochemicalCellDiagram from "./ElectrochemicalCellDiagram.jsx";
+import MaxwellBoltzmannDistribution from "./MaxwellBoltzmannDistribution.jsx";
+import MultistepEnergyProfile from "./MultistepEnergyProfile.jsx";
 
 // The one place that turns a `stimulus` data object into a rendered
 // visual — used identically by the Preview modal, the printed Paper
@@ -135,6 +137,10 @@ function StimulusBody({ stimulus }) {
       return <CarbonCycleDiagram stages={stimulus.stages} />;
     case "electrochemical-cell":
       return <ElectrochemicalCellDiagram mode={stimulus.mode} leftLabel={stimulus.leftLabel} rightLabel={stimulus.rightLabel} leftElectrode={stimulus.leftElectrode} rightElectrode={stimulus.rightElectrode} anodeSide={stimulus.anodeSide} />;
+    case "maxwell-boltzmann":
+      return <MaxwellBoltzmannDistribution temps={stimulus.temps} ea={stimulus.ea} labels={stimulus.labels} />;
+    case "multistep-energy-profile":
+      return <MultistepEnergyProfile points={stimulus.points} />;
     case "integrated":
       return (
         <div className="flex flex-col gap-4">

@@ -423,6 +423,13 @@ export function exportPdf({ draft, totalMarks, mode }) {
     } else if (stimulus.type === "electrochemical-cell") {
       ensureSpace(16);
       writeLine(`[${stimulus.mode} cell] ${stimulus.leftLabel} (${stimulus.leftElectrode ?? ""}) | ${stimulus.rightLabel} (${stimulus.rightElectrode ?? ""})`, { size: 8.5 });
+    } else if (stimulus.type === "maxwell-boltzmann") {
+      ensureSpace(14);
+      writeLine(`[Maxwell-Boltzmann distribution] Temperatures compared: ${stimulus.temps.join(", ")}${stimulus.ea != null ? `; Ea marked at ${stimulus.ea}` : ""}.`, { size: 8.5 });
+    } else if (stimulus.type === "multistep-energy-profile") {
+      ensureSpace(16);
+      const line = stimulus.points.map((p) => `${p.label} (${p.energy})`).join(" \u2192 ");
+      writeLine(`[Multi-step energy profile] ${line}`, { size: 8.5 });
     }
   }
 
@@ -606,6 +613,11 @@ function stimulusParagraphs(stimulus) {
     paragraphs.push(new Paragraph({ children: [new TextRun({ text: `[Carbon cycle] ${stimulus.stages.join(" \u2192 ")}`, italics: true, size: 18 })] }));
   } else if (stimulus.type === "electrochemical-cell") {
     paragraphs.push(new Paragraph({ children: [new TextRun({ text: `[${stimulus.mode} cell] ${stimulus.leftLabel} (${stimulus.leftElectrode ?? ""}) | ${stimulus.rightLabel} (${stimulus.rightElectrode ?? ""})`, italics: true, size: 18 })] }));
+  } else if (stimulus.type === "maxwell-boltzmann") {
+    paragraphs.push(new Paragraph({ children: [new TextRun({ text: `[Maxwell-Boltzmann distribution] Temperatures: ${stimulus.temps.join(", ")}${stimulus.ea != null ? `; Ea = ${stimulus.ea}` : ""}`, italics: true, size: 18 })] }));
+  } else if (stimulus.type === "multistep-energy-profile") {
+    const line = stimulus.points.map((p) => `${p.label} (${p.energy})`).join(" \u2192 ");
+    paragraphs.push(new Paragraph({ children: [new TextRun({ text: `[Multi-step energy profile] ${line}`, italics: true, size: 18 })] }));
   } else if (stimulus.type === "integrated") {
     for (const block of stimulus.blocks) paragraphs.push(...stimulusParagraphs(block));
   }

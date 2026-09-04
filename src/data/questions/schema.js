@@ -70,6 +70,8 @@ export const SOURCE = "e-Lab Original";
 //   { type: "born-haber-cycle", intro?, steps: [{ label, value?, unknown? }] }
 //   { type: "carbon-cycle-diagram", intro?, stages: string[] }
 //   { type: "electrochemical-cell", intro?, mode: "voltaic"|"electrolytic"|"fuel-cell", leftLabel, rightLabel, leftElectrode?, rightElectrode?, anodeSide?: "left"|"right" }
+//   { type: "maxwell-boltzmann", intro?, temps: number[], ea?, labels?: string[] }
+//   { type: "multistep-energy-profile", intro?, points: [{ label, energy, kind?: "ts"|"stable" }] }
 //   { type: "integrated", intro?, blocks: [ ...any of the above, minus "integrated" itself ] }
 export const STIMULUS_TYPES = [
   "text", "table", "nuclide", "mass-spectrum", "bar-chart", "atom-diagram",
@@ -80,6 +82,7 @@ export const STIMULUS_TYPES = [
   "periodic-table-highlight", "colour-wheel", "organic-structure", "enantiomer-pair",
   "ir-spectrum", "nmr-spectrum",
   "energy-profile", "calorimeter-diagram", "hess-cycle", "born-haber-cycle", "carbon-cycle-diagram", "electrochemical-cell",
+  "maxwell-boltzmann", "multistep-energy-profile",
   "integrated",
 ];
 

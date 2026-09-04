@@ -11,7 +11,7 @@ const PAD_B = 30;
 const PAD_T = 14;
 const PAD_R = 14;
 
-export default function ProportionalityGraph({ points, xLabel = "", yLabel = "", relationship = "linear", highlightPoint }) {
+export default function ProportionalityGraph({ points, xLabel = "", yLabel = "", relationship = "linear", highlightPoint, tangentAt }) {
   const plotW = W - PAD_L - PAD_R;
   const plotH = H - PAD_T - PAD_B;
   const allPoints = highlightPoint ? [...points, highlightPoint] : points;
@@ -40,6 +40,20 @@ export default function ProportionalityGraph({ points, xLabel = "", yLabel = "",
           {highlightPoint.label && <text x={xFor(highlightPoint.x)} y={yFor(highlightPoint.y) - 8} fontSize="8" textAnchor="middle" fill="var(--color-amber)">{highlightPoint.label}</text>}
         </g>
       )}
+
+      {tangentAt && (() => {
+        const dx = maxX * 0.15;
+        const dy = tangentAt.slope * dx;
+        const x1p = xFor(tangentAt.x - dx), y1p = yFor(tangentAt.y - dy);
+        const x2p = xFor(tangentAt.x + dx), y2p = yFor(tangentAt.y + dy);
+        return (
+          <g>
+            <line x1={x1p} y1={y1p} x2={x2p} y2={y2p} stroke="var(--color-teal)" strokeWidth="1.5" strokeDasharray="4 2" />
+            <circle cx={xFor(tangentAt.x)} cy={yFor(tangentAt.y)} r="3" fill="var(--color-teal)" />
+            {tangentAt.label && <text x={xFor(tangentAt.x)} y={yFor(tangentAt.y) - 8} fontSize="8" textAnchor="middle" fill="var(--color-teal)">{tangentAt.label}</text>}
+          </g>
+        );
+      })()}
 
       <text x={(PAD_L + W - PAD_R) / 2} y={H - 2} fontSize="9" textAnchor="middle" fill="currentColor">{xLabel}</text>
       <text x={10} y={PAD_T + plotH / 2} fontSize="9" textAnchor="middle" fill="currentColor" transform={`rotate(-90 10 ${PAD_T + plotH / 2})`}>{yLabel}</text>
