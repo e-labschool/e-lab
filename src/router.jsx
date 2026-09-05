@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import ELabLoader from "./components/ui/ELabLoader.jsx";
 import { createBrowserRouter } from "react-router-dom";
 import Shell from "./components/layout/Shell.jsx";
+import ProtectedRoute from "./components/auth/ProtectedRoute.jsx";
 import Home from "./pages/Home.jsx";
 import Explore from "./pages/Explore.jsx";
 import ExploreCurriculum from "./pages/ExploreCurriculum.jsx";
@@ -101,13 +102,29 @@ const router = createBrowserRouter([
       },
       { path: "solve", element: <SolveHome /> },
       { path: "solve/new", element: <Suspense fallback={<div className="flex min-h-[60vh] items-center justify-center"><ELabLoader /></div>}><ChallengeBuilder /></Suspense> },
-      { path: "solve/:challengeId", element: <Suspense fallback={<div className="flex min-h-[60vh] items-center justify-center"><ELabLoader /></div>}><ChallengeSession /></Suspense> },
       { path: "solve/:challengeId/report", element: <Suspense fallback={<div className="flex min-h-[60vh] items-center justify-center"><ELabLoader /></div>}><ChallengeReport /></Suspense> },
       { path: "resources", element: <ResourcesLanding /> },
       { path: "resources/:categoryId", element: <ResourcesCategoryPage /> },
       { path: "progress", element: <StudentProgressPage /> },
       { path: "profile", element: <StudentProfilePage /> },
     ],
+  },
+  {
+    // Deliberately OUTSIDE StudentLayout — a fresh top-level route with no
+    // header, no nav tabs, no account menu, rather than StudentLayout's
+    // chrome conditionally hidden. This is what actually makes "no normal
+    // e-Lab navigation during an active challenge" true architecturally,
+    // not just visually: there is no nav here to accidentally leave
+    // reachable via a missed condition. Still protected the same way as
+    // every other student route.
+    path: "/student/solve/:challengeId",
+    element: (
+      <ProtectedRoute role="student">
+        <Suspense fallback={<div className="flex min-h-screen items-center justify-center"><ELabLoader /></div>}>
+          <ChallengeSession />
+        </Suspense>
+      </ProtectedRoute>
+    ),
   },
   {
     path: "/teacher",

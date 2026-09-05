@@ -292,7 +292,7 @@ function markAnswer(question, studentAnswer) {
  * completion time, and updates the streak. Guards against duplicate
  * submission by checking status first.
  */
-export async function submitChallenge(challengeId, { questionsById, durationSeconds }) {
+export async function submitChallenge(challengeId, { questionsById, durationSeconds, terminationReason = "submitted", focusViolationCount }) {
   if (!supabase) throw new Error("Not connected to Supabase.");
 
   const { data: challenge, error: fetchError } = await supabase
@@ -328,6 +328,8 @@ export async function submitChallenge(challengeId, { questionsById, durationSeco
       duration_seconds: durationSeconds,
       score,
       max_score: maxScore,
+      termination_reason: terminationReason,
+      ...(focusViolationCount != null ? { focus_violation_count: focusViolationCount } : {}),
     })
     .eq("id", challengeId)
     .eq("status", "in_progress") // extra guard against a race producing a double submit
@@ -338,6 +340,22 @@ export async function submitChallenge(challengeId, { questionsById, durationSeco
   if (rows.length >= 5) await recordStreakDay();
 
   return updated;
+}
+
+/** "End & Leave" — terminates without scoring, distinct from a real
+ * submission. Uses the same in_progress guard to stay idempotent. */
+export async function abandonChallenge(challengeId, { focusViolationCount } = {}) {
+  if (!supabase) return;
+  const { error } = await supabase
+    .from("student_challenges")
+    .update({
+      status: "abandoned",
+      termination_reason: "manual_end",
+      ...(focusViolationCount != null ? { focus_violation_count: focusViolationCount } : {}),
+    })
+    .eq("id", challengeId)
+    .eq("status", "in_progress");
+  if (error) throw error;
 }
 
 // ============================================================

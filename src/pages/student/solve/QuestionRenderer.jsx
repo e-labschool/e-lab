@@ -9,9 +9,18 @@ import StimulusRenderer from "../../teacher/qbuilder/components/visuals/Stimulus
 // questions render each part as its own short-response field, keyed by
 // part id, which is the honest way to support them without inventing
 // per-part answer-type metadata the bank doesn't have yet.
-export default function QuestionRenderer({ question, answer, onAnswer }) {
+//
+// `questionNumber` is the challenge's own 1-based position — the ONLY
+// number ever shown to the student. The underlying Question Bank id
+// (question.id) is never rendered here.
+export default function QuestionRenderer({ question, questionNumber, answer, onAnswer, onFocusInput }) {
   return (
     <div>
+      <div className="mb-3 flex items-baseline justify-between">
+        <p className="font-[var(--font-display)] text-lg font-semibold text-[var(--color-ink)]">Question {questionNumber}</p>
+        {question.marks != null && <span className="text-xs text-[var(--color-ink-faint)]">[{question.marks} mark{question.marks === 1 ? "" : "s"}]</span>}
+      </div>
+
       {question.stimulus && (
         <div className="mb-5">
           <StimulusRenderer stimulus={question.stimulus} />
@@ -25,14 +34,15 @@ export default function QuestionRenderer({ question, answer, onAnswer }) {
           <div className="flex flex-col gap-4">
             {question.parts.map((part) => (
               <div key={part.id}>
-                <p className="text-sm text-[var(--color-ink-soft)]">
-                  <span className="font-medium text-[var(--color-ink)]">({part.id})</span> {part.questionText}
-                  {part.marks != null && <span className="ml-1.5 text-xs text-[var(--color-ink-faint)]">[{part.marks}]</span>}
+                <p className="flex items-baseline justify-between text-sm text-[var(--color-ink-soft)]">
+                  <span><span className="font-medium text-[var(--color-ink)]">({part.id})</span> {part.questionText}</span>
+                  {part.marks != null && <span className="ml-1.5 shrink-0 text-xs text-[var(--color-ink-faint)]">[{part.marks} mark{part.marks === 1 ? "" : "s"}]</span>}
                 </p>
                 <textarea
                   rows={2}
                   value={answer?.[part.id] ?? ""}
                   onChange={(e) => onAnswer({ ...(answer ?? {}), [part.id]: e.target.value })}
+                  onFocus={(e) => onFocusInput?.(e.target, (v) => onAnswer({ ...(answer ?? {}), [part.id]: v }))}
                   className="mt-1.5 w-full rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] px-3 py-2 text-sm text-[var(--color-ink)] focus:border-[var(--color-indigo)] focus:outline-none focus:ring-2 focus:ring-[var(--color-indigo)]/30"
                   aria-label={`Answer for part ${part.id}`}
                 />
@@ -63,6 +73,7 @@ export default function QuestionRenderer({ question, answer, onAnswer }) {
               inputMode="decimal"
               value={answer ?? ""}
               onChange={(e) => onAnswer(e.target.value)}
+              onFocus={(e) => onFocusInput?.(e.target, onAnswer)}
               placeholder="Enter your numerical answer"
               className="w-full max-w-xs rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] px-3 py-2 text-sm text-[var(--color-ink)] focus:border-[var(--color-indigo)] focus:outline-none focus:ring-2 focus:ring-[var(--color-indigo)]/30"
             />
@@ -72,6 +83,7 @@ export default function QuestionRenderer({ question, answer, onAnswer }) {
             rows={question.questionType === "Extended Response" ? 8 : 4}
             value={answer ?? ""}
             onChange={(e) => onAnswer(e.target.value)}
+            onFocus={(e) => onFocusInput?.(e.target, onAnswer)}
             placeholder="Write your response"
             className="w-full rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] px-3 py-2.5 text-sm text-[var(--color-ink)] focus:border-[var(--color-indigo)] focus:outline-none focus:ring-2 focus:ring-[var(--color-indigo)]/30"
             aria-label="Your response"

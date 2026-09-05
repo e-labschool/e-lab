@@ -15,10 +15,10 @@ export default function SolveHome() {
   const [streak, setStreak] = useState(null);
   const [history, setHistory] = useState([]);
   const [active, setActive] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(isConfigured);
 
   useEffect(() => {
-    if (!isConfigured) { setLoading(false); return; }
+    if (!isConfigured) return;
     Promise.all([getChallengeStats(), getStreak(), getChallengeHistory(5), getActiveChallenge()])
       .then(([s, streakData, h, a]) => {
         setStats(s);
