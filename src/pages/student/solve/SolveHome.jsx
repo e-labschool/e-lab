@@ -44,10 +44,10 @@ export default function SolveHome() {
       ) : (
         <>
           <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <StatCard label="Challenge Streak" value={`\uD83D\uDD25 ${streak?.current_streak ?? 0} Day${(streak?.current_streak ?? 0) === 1 ? "" : "s"}`} />
-            <StatCard label="Questions Solved" value={stats?.questionsSolved ?? 0} />
-            <StatCard label="Overall Accuracy" value={stats?.accuracy != null ? `${stats.accuracy}%` : "\u2014"} />
-            <StatCard label="Challenges Completed" value={stats?.challengesCompleted ?? 0} />
+            <StatCard tone="amber" label="Challenge Streak" value={`\uD83D\uDD25 ${streak?.current_streak ?? 0} Day${(streak?.current_streak ?? 0) === 1 ? "" : "s"}`} />
+            <StatCard tone="indigo" label="Questions Solved" value={stats?.questionsSolved ?? 0} />
+            <StatCard tone="teal" label="Overall Accuracy" value={stats?.accuracy != null ? `${stats.accuracy}%` : "\u2014"} />
+            <StatCard tone="violet" label="Challenges Completed" value={stats?.challengesCompleted ?? 0} />
           </div>
 
           {active ? (
@@ -58,10 +58,10 @@ export default function SolveHome() {
               <Button className="mt-3" size="sm" onClick={() => navigate(`/student/solve/${active.id}`)}>Continue <ArrowRight size={14} /></Button>
             </div>
           ) : (
-            <div className="mt-6 rounded-xl border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-5">
-              <p className="text-lg font-semibold text-[var(--color-ink)]">Take a Challenge</p>
+            <div className="mt-6 rounded-2xl border border-[var(--color-indigo)]/15 bg-gradient-to-br from-[var(--color-indigo-soft)] via-[var(--color-violet-soft)] to-[var(--color-paper-raised)] p-6 shadow-[0_2px_4px_rgba(20,30,80,0.06),0_8px_20px_-6px_rgba(20,30,80,0.12)]">
+              <p className="text-xl font-bold text-[var(--color-ink)]">Take a Challenge</p>
               <p className="mt-1 text-sm text-[var(--color-ink-soft)]">Choose your topics and build a focused chemistry challenge.</p>
-              <Button className="mt-3" onClick={() => navigate("/student/solve/new")}>Take a Challenge <ArrowRight size={15} /></Button>
+              <Button className="mt-4" onClick={() => navigate("/student/solve/new")}>Take a Challenge <ArrowRight size={15} /></Button>
             </div>
           )}
 
@@ -100,11 +100,17 @@ export default function SolveHome() {
   );
 }
 
-function StatCard({ label, value }) {
+function StatCard({ label, value, tone }) {
+  const TONES = {
+    amber: "bg-[var(--color-amber-soft)] text-[var(--color-amber)]",
+    indigo: "bg-[var(--color-indigo-soft)] text-[var(--color-indigo)]",
+    teal: "bg-[var(--color-teal-soft)] text-[var(--color-teal)]",
+    violet: "bg-[var(--color-violet-soft)] text-[var(--color-violet)]",
+  };
   return (
-    <div className="rounded-lg border border-[var(--color-line)] p-4">
-      <p className="text-lg font-semibold text-[var(--color-ink)]">{value}</p>
-      <p className="mt-0.5 text-xs text-[var(--color-ink-faint)]">{label}</p>
+    <div className={`rounded-xl border border-[var(--color-line)] p-4 shadow-[0_1px_2px_rgba(20,30,80,0.05)] ${TONES[tone] ?? ""}`}>
+      <p className="text-lg font-bold text-[var(--color-ink)]">{value}</p>
+      <p className="mt-0.5 text-xs font-medium opacity-80">{label}</p>
     </div>
   );
 }

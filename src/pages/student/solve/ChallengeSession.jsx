@@ -287,13 +287,15 @@ export default function ChallengeSession() {
       </header>
 
       <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-8">
-        <QuestionRenderer
-          question={current}
-          questionNumber={index + 1}
-          answer={answers[current.id]}
-          onAnswer={(value) => setAnswers((prev) => ({ ...prev, [current.id]: value }))}
-          onFocusInput={registerActiveInput}
-        />
+        <div className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-6 shadow-[0_1px_2px_rgba(20,30,80,0.05),0_4px_14px_-4px_rgba(20,30,80,0.08)] sm:p-8">
+          <QuestionRenderer
+            question={current}
+            questionNumber={index + 1}
+            answer={answers[current.id]}
+            onAnswer={(value) => setAnswers((prev) => ({ ...prev, [current.id]: value }))}
+            onFocusInput={registerActiveInput}
+          />
+        </div>
       </main>
 
       {(calculatorOpen || symbolsOpen) && (

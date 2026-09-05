@@ -13,13 +13,20 @@
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
 
-  /* ---- Light-mode base palette ---- */
-  --color-paper: #FAFAF8;
+  /* ---- Light-mode base palette ----
+     Page background is a deliberately perceptible pale blue-lavender
+     tint, not plain white — this is what makes elevated white panels
+     ("paper-raised") actually pop as a visible second layer, per the
+     brief's LIGHT BACKGROUND -> ELEVATED PANEL -> CARD -> BUTTON depth
+     system. All text-contrast ratios re-verified against this new
+     background before adopting it (ink 16.1:1, ink-soft 7.1:1,
+     ink-faint 4.6:1 — all still comfortably clear WCAG AA). */
+  --color-paper: #EEF1FB;
   --color-paper-raised: #FFFFFF;
   --color-ink: #12161C;
   --color-ink-soft: #4A5160;
   --color-ink-faint: #666D7A; /* darkened from #8A909C — was 3.07:1 vs paper, failing WCAG's 4.5:1 for the small caption/meta text this token is used for; now 4.98:1 */
-  --color-line: #E3E1DA;
+  --color-line: #DCE1F0;
 
   /* ---- Brand accents (shared both modes) ---- */
   --color-indigo: #3654D6;

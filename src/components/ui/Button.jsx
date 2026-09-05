@@ -1,18 +1,23 @@
 import { Link } from "react-router-dom";
 
+// Primary buttons are the app's main "dark contrasting button" per the
+// e-Lab visual system — a deep indigo fill with explicit white text
+// (deliberately NOT `text-[var(--color-paper)]`, since paper is now a
+// pale blue-lavender tint, not white — button text needs to stay white
+// regardless of what the page background tint happens to be).
 const VARIANTS = {
   primary:
-    "bg-[var(--color-ink)] text-[var(--color-paper)] hover:bg-[var(--color-indigo)] border border-transparent",
+    "bg-[#2647C4] text-white hover:bg-[#3654D6] border border-transparent shadow-[0_1px_2px_rgba(20,30,80,0.15),0_4px_10px_-2px_rgba(20,30,80,0.25)] hover:shadow-[0_2px_4px_rgba(20,30,80,0.18),0_8px_16px_-4px_rgba(20,30,80,0.3)] hover:-translate-y-px",
   secondary:
-    "bg-transparent text-[var(--color-ink)] border border-[var(--color-line)] hover:border-[var(--color-ink)]",
+    "bg-[var(--color-paper-raised)] text-[var(--color-ink)] border border-[var(--color-line)] shadow-[0_1px_2px_rgba(20,30,80,0.06)] hover:border-[var(--color-ink)]/40 hover:shadow-[0_2px_6px_rgba(20,30,80,0.1)] hover:-translate-y-px",
   ghost:
-    "bg-transparent text-[var(--color-ink-soft)] border border-transparent hover:text-[var(--color-ink)]",
+    "bg-transparent text-[var(--color-ink-soft)] border border-transparent hover:bg-[var(--color-ink)]/5 hover:text-[var(--color-ink)]",
   danger:
     // Fixed (not theme-adaptive) — --color-coral is a soft accent meant as
     // TEXT on light-tinted backgrounds, not a solid button fill; using it
     // directly here gave only 2.46:1 white-on-coral contrast in dark mode.
     // #A5362A keeps white-text contrast >=5.9:1 in both light and dark.
-    "bg-[#A5362A] text-white hover:bg-[#8C2E24] border border-transparent",
+    "bg-[#A5362A] text-white hover:bg-[#8C2E24] border border-transparent shadow-[0_1px_2px_rgba(20,30,80,0.15),0_4px_10px_-2px_rgba(20,30,80,0.2)] hover:-translate-y-px",
 };
 
 const SIZES = {
