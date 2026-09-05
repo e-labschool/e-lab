@@ -30,20 +30,20 @@ export default function SolveHome() {
   }, [isConfigured]);
 
   return (
-    <Container className="py-14">
-      <div className="max-w-2xl">
+    <Container className="py-8 md:py-10">
+      <div className="max-w-3xl">
         <p className="text-xs font-medium uppercase tracking-wide text-[var(--color-ink-faint)]">Solve</p>
-        <h1 className="mt-2 font-[var(--font-display)] text-3xl font-semibold tracking-tight text-[var(--color-ink)]">Solve</h1>
-        <p className="mt-3 text-sm text-[var(--color-ink-soft)]">Challenge yourself. Build a practice session from any part of IB DP Chemistry.</p>
+        <h1 className="mt-1.5 font-[var(--font-display)] text-[32px] font-bold tracking-tight text-[var(--color-ink)]">Solve</h1>
+        <p className="mt-2 text-[15px] text-[var(--color-ink-soft)]">Challenge yourself. Build a practice session from any part of IB DP Chemistry.</p>
       </div>
 
       {loading ? (
-        <div className="mt-12 flex justify-center"><Loader2 className="h-5 w-5 animate-spin text-[var(--color-ink-faint)]" /></div>
+        <div className="mt-8 flex justify-center"><Loader2 className="h-5 w-5 animate-spin text-[var(--color-ink-faint)]" /></div>
       ) : !isConfigured ? (
-        <div className="mt-12"><EmptyStatePanel icon={PenTool} title="Solve requires Supabase to be connected" /></div>
+        <div className="mt-8"><EmptyStatePanel icon={PenTool} title="Solve requires Supabase to be connected" /></div>
       ) : (
         <>
-          <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
             <StatCard label="Challenge Streak" value={`\uD83D\uDD25 ${streak?.current_streak ?? 0} Day${(streak?.current_streak ?? 0) === 1 ? "" : "s"}`} />
             <StatCard label="Questions Solved" value={stats?.questionsSolved ?? 0} />
             <StatCard label="Overall Accuracy" value={stats?.accuracy != null ? `${stats.accuracy}%` : "\u2014"} />
@@ -51,31 +51,31 @@ export default function SolveHome() {
           </div>
 
           {active ? (
-            <div className="mt-8 rounded-lg border border-[var(--color-indigo)]/30 bg-[var(--color-indigo-soft)] p-5">
+            <div className="mt-6 rounded-xl border border-[var(--color-indigo)]/30 bg-[var(--color-indigo-soft)] p-5">
               <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-indigo)]">Continue Challenge</p>
               <p className="mt-1 text-sm font-medium text-[var(--color-ink)]">{active.topic_codes.join(" + ")}</p>
               <p className="text-xs text-[var(--color-ink-faint)]">Question {(active.current_question_index ?? 0) + 1} of {active.question_count}</p>
               <Button className="mt-3" size="sm" onClick={() => navigate(`/student/solve/${active.id}`)}>Continue <ArrowRight size={14} /></Button>
             </div>
           ) : (
-            <div className="mt-8 rounded-lg border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-6">
+            <div className="mt-6 rounded-xl border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-5">
               <p className="text-lg font-semibold text-[var(--color-ink)]">Take a Challenge</p>
               <p className="mt-1 text-sm text-[var(--color-ink-soft)]">Choose your topics and build a focused chemistry challenge.</p>
-              <Button className="mt-4" onClick={() => navigate("/student/solve/new")}>Take a Challenge <ArrowRight size={15} /></Button>
+              <Button className="mt-3" onClick={() => navigate("/student/solve/new")}>Take a Challenge <ArrowRight size={15} /></Button>
             </div>
           )}
 
           {streak && streak.current_streak > 0 && (
-            <p className="mt-3 flex items-center gap-1.5 text-xs text-[var(--color-ink-faint)]">
+            <p className="mt-2.5 flex items-center gap-1.5 text-xs text-[var(--color-ink-faint)]">
               <Flame size={13} className="text-[var(--color-amber)]" /> Complete a challenge today to keep your streak going.
             </p>
           )}
 
-          <p className="mt-10 text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Recent Challenges</p>
+          <p className="mt-8 text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Recent Challenges</p>
           {history.length === 0 ? (
-            <p className="mt-3 text-sm text-[var(--color-ink-faint)]">No challenges yet — take your first one above.</p>
+            <p className="mt-2.5 text-sm text-[var(--color-ink-faint)]">No challenges yet — take your first one above.</p>
           ) : (
-            <div className="mt-3 flex flex-col gap-2">
+            <div className="mt-2.5 flex flex-col gap-2">
               {history.map((c) => {
                 const pct = c.max_score > 0 ? Math.round((c.score / c.max_score) * 100) : null;
                 return (
