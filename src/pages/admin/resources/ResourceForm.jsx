@@ -3,7 +3,7 @@ import { X, Loader2 } from "lucide-react";
 import { UNITS, TOPICS } from "../../../data/questions/unitMeta.js";
 import {
   uploadResourceFile, createResource, updateResource,
-  RESOURCE_TYPES, LEVEL_OPTIONS, STUDENT_CATEGORIES, TEACHER_CATEGORY,
+  RESOURCE_TYPES, LEVEL_OPTIONS, STUDENT_CATEGORIES, TEACHER_CATEGORIES,
 } from "../../../lib/resourceService.js";
 import Button from "../../../components/ui/Button.jsx";
 import ResourceUploader from "./ResourceUploader.jsx";
@@ -44,7 +44,7 @@ export default function ResourceForm({ resource, onClose, onSaved }) {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
-  const categoryOptions = form.audience === "teacher" ? [TEACHER_CATEGORY] : STUDENT_CATEGORIES;
+  const categoryOptions = form.audience === "teacher" ? TEACHER_CATEGORIES : STUDENT_CATEGORIES;
 
   async function handleSubmit(e) {
     e.preventDefault();

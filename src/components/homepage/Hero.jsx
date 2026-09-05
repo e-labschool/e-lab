@@ -5,7 +5,7 @@ import Container from "../ui/Container.jsx";
 // in RoleCards immediately below; no CTAs or cards live here.
 export default function Hero() {
   return (
-    <section className="relative overflow-hidden pt-16 pb-10 md:pt-20 md:pb-12">
+    <section className="relative overflow-hidden pt-12 pb-8 md:pt-14 md:pb-10">
       {/* Extremely faint radial tint behind the logo — depth without a busy background. */}
       <div
         aria-hidden="true"
@@ -21,15 +21,16 @@ export default function Hero() {
           <img
             src="/branding/e-lab-logo.png"
             alt="e-Lab"
-            className="h-16 w-auto object-contain sm:h-20 md:h-24"
+            className="h-14 w-auto object-contain sm:h-16 md:h-20"
           />
         </span>
-        <p className="mt-6 text-xl text-[var(--color-ink-soft)] md:text-2xl">
+        <p className="mt-4 text-xl text-[var(--color-ink-soft)] md:text-2xl">
           Making Science Interactive.
         </p>
-        <p className="mt-4 max-w-xl text-base leading-relaxed text-[var(--color-ink-soft)]">
-          Explore difficult science concepts through interactive models, simulations and
-          visual learning experiences designed for students and teachers.
+        <p className="mt-4 max-w-2xl text-[15.5px] leading-relaxed text-[var(--color-ink-soft)]">
+          e-Lab is a visual and interactive learning platform built for students and teachers.
+          Designed by educators, it brings together concept learning, assessment, progress
+          tracking, teaching tools and academic resources in one focused science learning environment.
         </p>
         <p className="mt-3 text-xs text-[var(--color-ink-faint)]">
           Currently featuring IB Diploma Chemistry

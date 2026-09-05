@@ -31,6 +31,7 @@ import ResourcesCategoryPage from "./pages/student/resources/CategoryPage.jsx";
 import TeacherLayout from "./pages/teacher/TeacherLayout.jsx";
 import TeacherDashboard from "./pages/teacher/TeacherDashboard.jsx";
 import TeacherTeach from "./pages/teacher/Teach.jsx";
+import ClassPlanner from "./pages/teacher/ClassPlanner.jsx";
 import TeacherResources from "./pages/teacher/Resources.jsx";
 import TeacherProfilePage from "./pages/teacher/TeacherProfilePage.jsx";
 
@@ -132,6 +133,7 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <TeacherDashboard /> },
       { path: "teach", element: <TeacherTeach /> },
+      { path: "class-planner", element: <ClassPlanner /> },
       { path: "question-builder", element: <Suspense fallback={<div className="flex min-h-[60vh] items-center justify-center"><ELabLoader /></div>}><TeacherQBuilder /></Suspense> },
       { path: "resources", element: <TeacherResources /> },
       { path: "profile", element: <TeacherProfilePage /> },

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useParams, useNavigate, useBlocker } from "react-router-dom";
-import { Flag, Loader2, Calculator as CalculatorIcon, Sigma, AlertTriangle, Maximize } from "lucide-react";
+import { Flag, Loader2, Calculator as CalculatorIcon, Sigma, AlertTriangle, Maximize, Table2, BookOpen, Clock } from "lucide-react";
 import { supabase } from "../../../lib/supabaseClient.js";
 import { getQuestionById } from "../../../data/questions/index.js";
 import { getChallengeQuestions, saveAnswer, updateChallengeProgress, submitChallenge, abandonChallenge } from "../../../lib/challengeService.js";
@@ -8,6 +8,8 @@ import { CUSTOM_CHALLENGE_CONFIG } from "../../../lib/assessmentConfig.js";
 import QuestionRenderer from "./QuestionRenderer.jsx";
 import Calculator from "./Calculator.jsx";
 import SymbolPalette, { insertAtCursor } from "./SymbolPalette.jsx";
+import PeriodicTableTool from "./PeriodicTableTool.jsx";
+import DataBooklet from "./DataBooklet.jsx";
 import ELabLoader from "../../../components/ui/ELabLoader.jsx";
 import Button from "../../../components/ui/Button.jsx";
 
@@ -30,7 +32,6 @@ export default function ChallengeSession() {
   const [index, setIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [showNavigator, setShowNavigator] = useState(false);
   const [confirmMode, setConfirmMode] = useState(null); // null | "submit" | "end"
   const [submitting, setSubmitting] = useState(false);
   const startedAtRef = useRef(null);
@@ -197,7 +198,6 @@ export default function ChallengeSession() {
   async function goTo(nextIndex) {
     if (currentRow) await saveAnswer(challenge.id, currentRow.question_id, answers[currentRow.question_id]);
     setIndex(nextIndex);
-    setShowNavigator(false);
     updateChallengeProgress(challenge.id, { currentQuestionIndex: nextIndex });
   }
 
@@ -218,6 +218,8 @@ export default function ChallengeSession() {
   // ---- Calculator / Symbols ----
   const [calculatorOpen, setCalculatorOpen] = useState(false);
   const [symbolsOpen, setSymbolsOpen] = useState(false);
+  const [periodicTableOpen, setPeriodicTableOpen] = useState(false);
+  const [dataBookletOpen, setDataBookletOpen] = useState(false);
   const activeInputRef = useRef(null);
   const activeSetterRef = useRef(null);
   function registerActiveInput(el, setter) {
@@ -259,105 +261,135 @@ export default function ChallengeSession() {
 
   return (
     <div className="flex min-h-screen flex-col bg-[var(--color-paper)]">
-      <header className="sticky top-0 z-30 border-b border-[var(--color-line)] bg-[var(--color-paper)]/95 px-4 py-3 backdrop-blur">
-        <div className="mx-auto flex max-w-3xl flex-wrap items-center justify-between gap-2">
-          <div>
-            <p className="text-sm font-semibold text-[var(--color-ink)]">e-Lab Challenge</p>
-            <p className="text-xs text-[var(--color-ink-faint)]">{challenge.topic_codes.join(" + ")} &middot; Question {index + 1} of {questions.length}</p>
-          </div>
-          <div className="flex items-center gap-1.5">
-            {remainingSeconds != null && (
-              <span role="timer" aria-live="polite" className={`mr-2 font-mono text-sm font-medium ${remainingSeconds < 60 ? "text-[var(--color-coral)]" : "text-[var(--color-ink)]"}`}>
-                {formatClock(remainingSeconds)} remaining
-              </span>
-            )}
+      {/* Top assessment toolbar */}
+      <header className="sticky top-0 z-30 border-b border-[var(--color-line)] bg-[var(--color-paper)]/95 px-4 py-2.5 backdrop-blur">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2">
+          <p className="text-sm font-semibold text-[var(--color-ink)]">e-Lab Challenge</p>
+          <div className="flex flex-wrap items-center gap-1.5">
             <ToolbarButton icon={CalculatorIcon} label="Calculator" onClick={() => { setCalculatorOpen((v) => !v); setSymbolsOpen(false); }} active={calculatorOpen} />
             <ToolbarButton icon={Sigma} label="Symbols" onClick={() => { setSymbolsOpen((v) => !v); setCalculatorOpen(false); }} active={symbolsOpen} />
-            <ToolbarButton icon={Flag} label="Navigator" onClick={() => setShowNavigator((v) => !v)} active={showNavigator} />
-            <button type="button" onClick={() => setConfirmMode("end")} className="ml-1 rounded-md border border-[var(--color-line)] px-3 py-1.5 text-xs font-medium text-[var(--color-ink-soft)] hover:border-[var(--color-coral)] hover:text-[var(--color-coral)]">
-              End Challenge
-            </button>
+            <ToolbarButton icon={Table2} label="Periodic Table" onClick={() => setPeriodicTableOpen(true)} />
+            <ToolbarButton icon={BookOpen} label="Data Booklet" onClick={() => setDataBookletOpen(true)} />
           </div>
         </div>
         {!fullscreenAvailable && (
-          <p className="mx-auto mt-2 flex max-w-3xl items-center gap-1.5 text-[11px] text-[var(--color-ink-faint)]">
+          <p className="mx-auto mt-1.5 flex max-w-6xl items-center gap-1.5 text-[11px] text-[var(--color-ink-faint)]">
             <Maximize size={11} /> Focused fullscreen mode isn't available on this device — the challenge still works normally.
           </p>
         )}
       </header>
 
-      <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-8">
-        <div className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-6 shadow-[0_1px_2px_rgba(20,30,80,0.05),0_4px_14px_-4px_rgba(20,30,80,0.08)] sm:p-8">
-          <QuestionRenderer
-            question={current}
-            questionNumber={index + 1}
-            answer={answers[current.id]}
-            onAnswer={(value) => setAnswers((prev) => ({ ...prev, [current.id]: value }))}
-            onFocusInput={registerActiveInput}
-          />
-        </div>
-      </main>
+      <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col lg:flex-row">
+        {/* LEFT — persistent, strongly-contrasting panel: timer, navigator, counts, end challenge.
+            Dark like the app's global sidebar (visual consistency), while the
+            question panel itself stays calm/light — reduces stimulation on the
+            content that actually matters, per the assessment-calm requirement,
+            without losing the "strongly contrasting" panel this brief asks for. */}
+        <aside className="w-full shrink-0 border-b border-[#1B2436] bg-[#0B1220] p-4 lg:w-[220px] lg:border-b-0 lg:border-r">
+          <div className="flex items-center gap-2 text-[#8C97B8]">
+            <Clock size={15} />
+            <span className="text-xs font-semibold uppercase tracking-wide">Time Remaining</span>
+          </div>
+          {remainingSeconds != null ? (
+            <p role="timer" aria-live="polite" className={`mt-1 font-mono text-3xl font-bold ${remainingSeconds < 60 ? "text-[#E0917E]" : "text-white"}`}>
+              {formatClock(remainingSeconds)}
+            </p>
+          ) : (
+            <p className="mt-1 text-sm text-[#8C97B8]">Untimed</p>
+          )}
+
+          <div className="mt-4 flex items-center justify-between text-xs text-[#8C97B8]">
+            <span className="font-semibold uppercase tracking-wide">Question Navigation</span>
+          </div>
+          <div className="mt-2 grid grid-cols-5 gap-1.5 lg:grid-cols-4">
+            {rows.map((r, i) => {
+              const isAnswered = answers[r.question_id] != null && answers[r.question_id] !== "";
+              const isFlagged = flagged.has(r.question_id);
+              return (
+                <button
+                  key={r.question_id} type="button" onClick={() => goTo(i)}
+                  aria-current={i === index ? "true" : undefined}
+                  aria-label={`Question ${i + 1}${isAnswered ? ", answered" : ", unanswered"}${isFlagged ? ", flagged" : ""}`}
+                  title={`Question ${i + 1}${isAnswered ? " \u2014 answered" : " \u2014 unanswered"}${isFlagged ? " \u2014 flagged" : ""}`}
+                  className={`relative flex h-9 items-center justify-center rounded border text-xs font-semibold ${
+                    i === index ? "border-white bg-white text-[#0B1220]" :
+                    isAnswered ? "border-[#4FB3A3]/50 bg-[#4FB3A3]/15 text-[#4FB3A3]" :
+                    "border-white/15 text-[#8C97B8]"
+                  }`}
+                >
+                  {i + 1}
+                  {isFlagged && <Flag size={9} className="absolute -right-1 -top-1 text-[#E2872F]" />}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="mt-4 rounded-md border border-white/10 bg-white/5 p-3 text-xs text-[#8C97B8]">
+            <p className="font-semibold text-white">{questions.length} Questions</p>
+            <p className="mt-1">Answered {answeredCount}</p>
+            <p>Unanswered {unansweredCount}</p>
+            <p>Flagged {flagged.size}</p>
+          </div>
+          {violationCount > 0 && (
+            <p className="mt-3 text-[11px] text-[#8C97B8]">Focus interruptions: {violationCount}</p>
+          )}
+
+          <button
+            type="button" onClick={() => setConfirmMode("end")}
+            className="mt-4 w-full rounded-md border border-white/15 px-3 py-2 text-xs font-semibold text-[#8C97B8] hover:border-[#E0917E] hover:text-[#E0917E]"
+          >
+            End Challenge
+          </button>
+        </aside>
+
+        {/* CENTRAL — the question itself, comfortably wide but never full-bleed */}
+        <main className="mx-auto w-full max-w-[880px] flex-1 px-4 py-6 sm:py-8">
+          <div className="mb-3 flex items-center justify-between text-xs text-[var(--color-ink-faint)]">
+            <span>{challenge.topic_codes.join(" + ")}</span>
+            <span>Question {index + 1} of {questions.length}</span>
+          </div>
+
+          <div className="rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-6 shadow-[0_1px_2px_rgba(20,30,80,0.05),0_4px_14px_-4px_rgba(20,30,80,0.08)] sm:p-8">
+            <QuestionRenderer
+              question={current}
+              questionNumber={index + 1}
+              answer={answers[current.id]}
+              onAnswer={(value) => setAnswers((prev) => ({ ...prev, [current.id]: value }))}
+              onFocusInput={registerActiveInput}
+            />
+          </div>
+
+          <div className="mt-4 flex items-center justify-between">
+            <button type="button" onClick={toggleFlag} className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm font-medium ${flagged.has(currentRow.question_id) ? "border-[var(--color-amber)] bg-[var(--color-amber-soft)] text-[var(--color-amber)]" : "border-[var(--color-line)] text-[var(--color-ink-soft)]"}`}>
+              <Flag size={14} /> {flagged.has(currentRow.question_id) ? "Flagged" : "Flag Question"}
+            </button>
+            <div className="flex items-center gap-2.5">
+              <Button variant="secondary" disabled={index === 0} onClick={() => goTo(index - 1)}>Previous</Button>
+              {index < questions.length - 1 ? (
+                <Button onClick={() => goTo(index + 1)}>Next</Button>
+              ) : (
+                <Button onClick={() => setConfirmMode("submit")} disabled={submitting}>
+                  {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Submit Challenge"}
+                </Button>
+              )}
+            </div>
+          </div>
+        </main>
+      </div>
 
       {(calculatorOpen || symbolsOpen) && (
-        <div className="fixed bottom-20 right-4 z-40 sm:bottom-24">
+        <div className="fixed bottom-6 right-4 z-40">
           {calculatorOpen && <Calculator onClose={() => setCalculatorOpen(false)} />}
           {symbolsOpen && <SymbolPalette onSelect={insertSymbol} onClose={() => setSymbolsOpen(false)} />}
         </div>
       )}
-
-      <footer className="sticky bottom-0 border-t border-[var(--color-line)] bg-[var(--color-paper)] px-4 py-3">
-        <div className="mx-auto flex max-w-3xl flex-col gap-3">
-          <div className="flex items-center justify-between">
-            <button type="button" onClick={toggleFlag} className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium ${flagged.has(currentRow.question_id) ? "border-[var(--color-amber)] bg-[var(--color-amber-soft)] text-[var(--color-amber)]" : "border-[var(--color-line)] text-[var(--color-ink-soft)]"}`}>
-              <Flag size={13} /> {flagged.has(currentRow.question_id) ? "Flagged" : "Flag"}
-            </button>
-            {violationCount > 0 && (
-              <span className="text-[11px] text-[var(--color-ink-faint)]">Focus interruptions: {violationCount}</span>
-            )}
-          </div>
-
-          {showNavigator && (
-            <div className="grid grid-cols-10 gap-1.5">
-              {rows.map((r, i) => {
-                const isAnswered = answers[r.question_id] != null && answers[r.question_id] !== "";
-                const isFlagged = flagged.has(r.question_id);
-                return (
-                  <button
-                    key={r.question_id} type="button" onClick={() => goTo(i)}
-                    aria-current={i === index ? "true" : undefined}
-                    aria-label={`Question ${i + 1}${isAnswered ? ", answered" : ", unanswered"}${isFlagged ? ", flagged" : ""}`}
-                    title={`Question ${i + 1}${isAnswered ? " \u2014 answered" : " \u2014 unanswered"}${isFlagged ? " \u2014 flagged" : ""}`}
-                    className={`relative flex h-8 items-center justify-center rounded-md border text-xs font-medium ${
-                      i === index ? "border-[var(--color-ink)] bg-[var(--color-ink)] text-[var(--color-paper)]" :
-                      isAnswered ? "border-[var(--color-teal)]/40 bg-[var(--color-teal-soft)] text-[var(--color-teal)]" :
-                      "border-[var(--color-line)] text-[var(--color-ink-faint)]"
-                    }`}
-                  >
-                    {i + 1}
-                    {isFlagged && <Flag size={9} className="absolute -right-1 -top-1 text-[var(--color-amber)]" />}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
-          <div className="flex items-center justify-between">
-            <Button variant="secondary" size="sm" disabled={index === 0} onClick={() => goTo(index - 1)}>Previous</Button>
-            {index < questions.length - 1 ? (
-              <Button size="sm" onClick={() => goTo(index + 1)}>Next</Button>
-            ) : (
-              <Button size="sm" onClick={() => setConfirmMode("submit")} disabled={submitting}>
-                {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Submit Challenge"}
-              </Button>
-            )}
-          </div>
-        </div>
-      </footer>
+      {periodicTableOpen && <PeriodicTableTool onClose={() => setPeriodicTableOpen(false)} />}
+      {dataBookletOpen && <DataBooklet onClose={() => setDataBookletOpen(false)} />}
 
       {/* Explicit End Challenge / Submit confirm — shared by both entry points */}
       {confirmMode && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setConfirmMode(null)}>
-          <div className="w-full max-w-sm rounded-lg border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-5" onClick={(e) => e.stopPropagation()}>
+          <div className="w-full max-w-sm rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-5" onClick={(e) => e.stopPropagation()}>
             <p className="text-sm font-medium text-[var(--color-ink)]">{confirmMode === "end" ? "End Challenge?" : "Submit Challenge?"}</p>
             <p className="mt-1 text-xs text-[var(--color-ink-faint)]">
               {unansweredCount > 0 ? `You still have ${unansweredCount} unanswered question${unansweredCount === 1 ? "" : "s"}.` : "Your current challenge is still in progress."}
@@ -375,7 +407,7 @@ export default function ChallengeSession() {
       {/* Blocked in-app navigation (Learn/Resources/etc link, back button within the SPA) */}
       {pendingBlockedNav && blocker.state === "blocked" && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-sm rounded-lg border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-5">
+          <div className="w-full max-w-sm rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-5">
             <p className="flex items-center gap-1.5 text-sm font-medium text-[var(--color-ink)]"><AlertTriangle size={15} className="text-[var(--color-amber)]" /> Challenge in progress</p>
             <p className="mt-1 text-xs text-[var(--color-ink-faint)]">Leaving this assessment will end your current challenge.</p>
             <div className="mt-4 flex gap-3">

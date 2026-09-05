@@ -126,8 +126,10 @@ export const STUDENT_CATEGORIES = [
   { id: "ib-documents", label: "IB Documents" },
   { id: "study-materials", label: "Study Materials" },
 ];
-// Teacher Resources currently has no existing category subdivision (see
-// src/pages/teacher/Resources.jsx before this change — just a single
-// placeholder), so a single flat category is used rather than inventing
-// a new hierarchy the product doesn't have yet.
-export const TEACHER_CATEGORY = { id: "teacher", label: "Teacher Resources" };
+// Teacher Resources now has two categories (IB Resources / Worksheets &
+// Other) rather than the single flat "teacher" bucket used previously —
+// extending the existing category list, not building a second CMS.
+export const TEACHER_CATEGORIES = [
+  { id: "ib-resources", label: "IB Resources" },
+  { id: "worksheets-other", label: "Worksheets & Other Resources" },
+];
