@@ -32,16 +32,16 @@ function StudentChrome() {
         <Container className="flex h-16 items-center justify-between gap-4">
           <div className="flex items-center gap-6">
             <Wordmark />
-            <nav className="hidden items-center gap-6 md:flex">
+            <nav className="hidden items-center gap-1.5 md:flex">
               {TABS.slice(1).map((tab) => (
                 <NavLink
                   key={tab.to}
                   to={tab.to}
                   className={({ isActive }) =>
-                    `border-b-2 pb-1 text-sm transition-colors ${
+                    `rounded-lg px-3.5 py-2 text-[15px] font-semibold transition-colors ${
                       isActive
-                        ? "border-[var(--color-indigo)] font-medium text-[var(--color-ink)]"
-                        : "border-transparent text-[var(--color-ink-soft)] hover:border-[var(--color-line)] hover:text-[var(--color-ink)]"
+                        ? "bg-[var(--color-indigo-soft)] text-[var(--color-indigo)]"
+                        : "text-[var(--color-ink-soft)] hover:bg-[var(--color-ink)]/5 hover:text-[var(--color-ink)]"
                     }`
                   }
                 >

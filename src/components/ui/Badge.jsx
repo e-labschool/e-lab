@@ -4,6 +4,7 @@ const TONES = {
   amber: "text-[var(--color-amber)] border-[var(--color-amber)]/30 bg-[var(--color-amber-soft)]",
   teal: "text-[var(--color-teal)] border-[var(--color-teal)]/30 bg-[var(--color-teal-soft)]",
   coral: "text-[var(--color-coral)] border-[var(--color-coral)]/30 bg-[var(--color-coral-soft)]",
+  violet: "text-[var(--color-violet)] border-[var(--color-violet)]/30 bg-[var(--color-violet-soft)]",
 };
 
 export default function Badge({ tone = "neutral", children, className = "" }) {
