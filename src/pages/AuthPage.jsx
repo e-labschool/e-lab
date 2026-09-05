@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useSearchParams, useNavigate, Link } from "react-router-dom";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { useAuth } from "../context/AuthContext.jsx";
+import { useSettings } from "../context/SettingsContext.jsx";
 import Container from "../components/ui/Container.jsx";
 import Wordmark from "../components/layout/Wordmark.jsx";
 import Button from "../components/ui/Button.jsx";
@@ -162,6 +163,8 @@ const LEVEL_OPTIONS = { student: ["SL", "HL"], teacher: ["SL", "HL", "SL & HL"] 
 
 function CreateAccountForm({ role }) {
   const { signUp, fetchProfile, isConfigured } = useAuth();
+  const { settings } = useSettings();
+  const registrationOpen = role === "teacher" ? settings.allow_teacher_registration : settings.allow_student_registration;
   const navigate = useNavigate();
   const [fields, setFields] = useState({
     fullName: "", email: "", password: "", confirmPassword: "",
@@ -225,6 +228,14 @@ function CreateAccountForm({ role }) {
 
   if (!isConfigured) {
     return <p className="text-sm text-[var(--color-ink-soft)]">Account creation isn't available yet — e-Lab isn't connected to an authentication service.</p>;
+  }
+
+  if (!registrationOpen) {
+    return (
+      <p className="text-sm text-[var(--color-ink-soft)]">
+        {role === "teacher" ? "Teacher" : "Student"} registration is currently unavailable. Please check back later, or sign in if you already have an account.
+      </p>
+    );
   }
 
   if (checkEmail) {

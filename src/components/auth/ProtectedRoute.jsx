@@ -1,7 +1,9 @@
 import { useEffect } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import ELabLoader from "../ui/ELabLoader.jsx";
+import MaintenanceScreen from "./MaintenanceScreen.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
+import { useSettings } from "../../context/SettingsContext.jsx";
 
 // Guards a route subtree: unauthenticated -> /auth (keeping the role they
 // were heading for as a query param so the auth page opens on the right
@@ -12,6 +14,7 @@ import { useAuth } from "../../context/AuthContext.jsx";
 // protected content while Supabase's session check is still in flight).
 export default function ProtectedRoute({ role, children }) {
   const { isConfigured, user, profile, loadingSession, loadingProfile, authError, signOut } = useAuth();
+  const { settings } = useSettings();
   const location = useLocation();
 
   // Real enforcement, not a cosmetic label: a suspended account is signed
@@ -76,6 +79,12 @@ export default function ProtectedRoute({ role, children }) {
 
   if (profile.role !== role) {
     return <Navigate to={`/${profile.role}`} replace />;
+  }
+
+  // Never checked for role="admin" — the admin console must always stay
+  // reachable to actually turn maintenance mode back off.
+  if (role !== "admin" && settings.maintenance_mode) {
+    return <MaintenanceScreen message={settings.maintenance_message} />;
   }
 
   return children;

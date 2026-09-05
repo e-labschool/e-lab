@@ -39,6 +39,7 @@ import AdminComingSoon from "./pages/admin/AdminComingSoon.jsx";
 import AdminResources from "./pages/admin/resources/AdminResources.jsx";
 import AdminUsers from "./pages/admin/users/AdminUsers.jsx";
 import AdminAccess from "./pages/admin/access/AdminAccess.jsx";
+import AdminSettings from "./pages/admin/settings/AdminSettings.jsx";
 
 // Q Builder pulls in PDF/Word export libraries (jsPDF, docx) that are only
 // needed once a teacher actually opens it — lazy-loaded so those libraries
@@ -116,7 +117,7 @@ const router = createBrowserRouter([
       { path: "question-bank", element: <AdminComingSoon title="Question Bank" description="Manage e-Lab questions." /> },
       { path: "users", element: <AdminUsers /> },
       { path: "access", element: <AdminAccess /> },
-      { path: "settings", element: <AdminComingSoon title="Settings" description="Platform settings." /> },
+      { path: "settings", element: <AdminSettings /> },
     ],
   },
 ]);
