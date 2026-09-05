@@ -86,6 +86,25 @@ export function getConceptIdsForTopic(topicId) {
   return [];
 }
 
+/**
+ * Best-effort "Learn This Concept" link target for a Question Bank
+ * question — questions are tagged to a subtopic (e.g. "Structure 1.2"),
+ * not a single specific concept, so this resolves to the FIRST concept
+ * within that subtopic rather than inventing a precise mapping the data
+ * doesn't support. Disclosed as an approximation, not exact.
+ */
+export function getFirstConceptIdForSubtopicCode(subtopicCode) {
+  const tree = getLearnTree();
+  if (!tree || !subtopicCode) return null;
+  for (const section of tree.sections) {
+    for (const topic of section.topics) {
+      const subtopic = topic.subtopics.find((s) => s.code === subtopicCode);
+      if (subtopic?.concepts.length) return subtopic.concepts[0].id;
+    }
+  }
+  return null;
+}
+
 /** Aggregate completed/total counts for an arbitrary list of concept IDs — used for topic/section rollups and milestones. Lives here (a plain data module) rather than in ProgressContext.jsx (a React provider) so pure logic never depends on a .jsx file. */
 export function summarizeProgress(progress, conceptIds) {
   let completed = 0, inProgress = 0;

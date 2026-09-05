@@ -21,7 +21,7 @@ import StudentDashboard from "./pages/student/StudentDashboard.jsx";
 import LearnLayout from "./components/learn/LearnLayout.jsx";
 import WelcomePage from "./components/learn/WelcomePage.jsx";
 import LearnConceptPage from "./components/learn/LearnConceptPage.jsx";
-import StudentPractice from "./pages/student/Practice.jsx";
+import SolveHome from "./pages/student/solve/SolveHome.jsx";
 import StudentProgressPage from "./pages/student/StudentProgressPage.jsx";
 import StudentProfilePage from "./pages/student/StudentProfilePage.jsx";
 import ResourcesLanding from "./pages/student/resources/ResourcesLanding.jsx";
@@ -46,6 +46,16 @@ import AdminSettings from "./pages/admin/settings/AdminSettings.jsx";
 // never load on the rest of the site, same pattern already used for the
 // interactive engines' component loaders in resources-registry.js.
 const TeacherQBuilder = lazy(() => import("./pages/teacher/QBuilder.jsx"));
+
+// Challenge Builder/Session/Report pull in QuestionRenderer ->
+// StimulusRenderer, which drags in every question-visual component the Q
+// Builder uses (VSEPR diagrams, spectra, etc.) — lazy-loaded so that
+// weight only loads when a student actually starts/resumes a challenge,
+// not on every page view. SolveHome itself stays eager (it's the direct
+// child of the main Solve route and has no such heavy dependency).
+const ChallengeBuilder = lazy(() => import("./pages/student/solve/ChallengeBuilder.jsx"));
+const ChallengeSession = lazy(() => import("./pages/student/solve/ChallengeSession.jsx"));
+const ChallengeReport = lazy(() => import("./pages/student/solve/ChallengeReport.jsx"));
 
 // /student and /teacher are deliberately SEPARATE top-level route trees,
 // not nested under the public Shell — StudentLayout/TeacherLayout render
@@ -89,7 +99,10 @@ const router = createBrowserRouter([
           { path: ":conceptId", element: <LearnConceptPage /> },
         ],
       },
-      { path: "solve", element: <StudentPractice /> },
+      { path: "solve", element: <SolveHome /> },
+      { path: "solve/new", element: <Suspense fallback={<div className="flex min-h-[60vh] items-center justify-center"><ELabLoader /></div>}><ChallengeBuilder /></Suspense> },
+      { path: "solve/:challengeId", element: <Suspense fallback={<div className="flex min-h-[60vh] items-center justify-center"><ELabLoader /></div>}><ChallengeSession /></Suspense> },
+      { path: "solve/:challengeId/report", element: <Suspense fallback={<div className="flex min-h-[60vh] items-center justify-center"><ELabLoader /></div>}><ChallengeReport /></Suspense> },
       { path: "resources", element: <ResourcesLanding /> },
       { path: "resources/:categoryId", element: <ResourcesCategoryPage /> },
       { path: "progress", element: <StudentProgressPage /> },
