@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import ELabLoader from "../ui/ELabLoader.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
@@ -10,8 +11,18 @@ import { useAuth } from "../../context/AuthContext.jsx";
 // security concern — a signed-out user should never even briefly see
 // protected content while Supabase's session check is still in flight).
 export default function ProtectedRoute({ role, children }) {
-  const { isConfigured, user, profile, loadingSession, loadingProfile, authError } = useAuth();
+  const { isConfigured, user, profile, loadingSession, loadingProfile, authError, signOut } = useAuth();
   const location = useLocation();
+
+  // Real enforcement, not a cosmetic label: a suspended account is signed
+  // out the moment its profile loads anywhere in a protected area — this
+  // runs on every ProtectedRoute (student, teacher, admin alike), so
+  // suspension takes effect on the very next navigation/refresh, not only
+  // where an admin happens to be looking.
+  const isSuspended = profile?.status === "suspended";
+  useEffect(() => {
+    if (isSuspended) signOut();
+  }, [isSuspended, signOut]);
 
   if (!isConfigured) {
     return (
@@ -48,6 +59,16 @@ export default function ProtectedRoute({ role, children }) {
       <div className="flex min-h-[60vh] flex-col items-center justify-center gap-2 px-6 text-center">
         <p className="text-sm text-[var(--color-ink-soft)]">
           We couldn't load your profile{authError ? `: ${authError}` : "."} Try refreshing the page.
+        </p>
+      </div>
+    );
+  }
+
+  if (isSuspended) {
+    return (
+      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-2 px-6 text-center">
+        <p className="text-sm text-[var(--color-ink-soft)]">
+          This account has been suspended. If you believe this is a mistake, please contact e-Lab support.
         </p>
       </div>
     );
