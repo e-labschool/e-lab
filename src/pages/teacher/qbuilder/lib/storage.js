@@ -1,12 +1,23 @@
-// Version 1 persistence: browser localStorage, since the project has no
-// backend/database yet (per the architecture, this is a static frontend).
-// Every function below is small and pure enough that swapping this file's
-// internals for real API calls later won't require touching any component.
+// localStorage is used for two things only now:
+//   1. "My Questions" (teacher's personal question bank) — unaffected by
+//      the paper-persistence change, still local-only.
+//   2. Draft paper METADATA (school name, class, date, etc.) — kept here
+//      because public.question_papers has no matching columns for these
+//      fields (only title/paper/level); adding them wasn't part of this
+//      change's approved scope. The actual paper QUESTIONS/ITEMS are
+//      Supabase-backed now (see paperService.js) — that's the part this
+//      change is about.
+//
+// The OLD keys (myPapers, draftPaper) are still READABLE here (never
+// written to anymore) purely so a one-time "Import your local papers"
+// prompt can detect and offer to migrate anything left over from before
+// this change — see QuestionBuilder's local-import flow.
 
 const KEYS = {
   myQuestions: "e-lab:qbuilder:my-questions",
-  myPapers: "e-lab:qbuilder:my-papers",
-  draftPaper: "e-lab:qbuilder:draft-paper",
+  draftDetails: "e-lab:qbuilder:draft-details",
+  legacyMyPapers: "e-lab:qbuilder:my-papers", // old key, read-only now
+  legacyDraftPaper: "e-lab:qbuilder:draft-paper", // old key, read-only now
 };
 
 function readJSON(key, fallback) {
@@ -24,8 +35,8 @@ function writeJSON(key, value) {
   try {
     window.localStorage.setItem(key, JSON.stringify(value));
   } catch {
-    // localStorage can throw (quota, private mode) — fail silently for V1,
-    // the in-memory React state still works for the current session.
+    // localStorage can throw (quota, private mode) — fail silently, the
+    // in-memory React state still works for the current session.
   }
 }
 
@@ -39,41 +50,44 @@ export function saveMyQuestions(questions) {
   writeJSON(KEYS.myQuestions, questions);
 }
 
-// ---- My Papers (saved question papers) ----
+// ---- Draft paper metadata only (school/class/date/etc — not questions) ----
 
-export function loadMyPapers() {
-  return readJSON(KEYS.myPapers, []);
-}
-
-export function saveMyPapers(papers) {
-  writeJSON(KEYS.myPapers, papers);
-}
-
-// ---- Draft paper (the "My Paper" currently being assembled) ----
-
-const DEFAULT_DRAFT = {
-  questions: [],
-  details: {
-    schoolName: "",
-    assessmentTitle: "",
-    subject: "Chemistry",
-    classGrade: "",
-    date: "",
-    duration: "",
-    maxMarks: "",
-    instructions: "Answer all questions.\nShow working for calculation questions.",
-  },
+const DEFAULT_DRAFT_DETAILS = {
+  schoolName: "",
+  assessmentTitle: "",
+  subject: "Chemistry",
+  classGrade: "",
+  date: "",
+  duration: "",
+  maxMarks: "",
+  instructions: "Answer all questions.\nShow working for calculation questions.",
 };
 
-export function loadDraftPaper() {
-  const draft = readJSON(KEYS.draftPaper, DEFAULT_DRAFT);
-  return { ...DEFAULT_DRAFT, ...draft, details: { ...DEFAULT_DRAFT.details, ...draft.details } };
+export function loadDraftDetails() {
+  return { ...DEFAULT_DRAFT_DETAILS, ...readJSON(KEYS.draftDetails, {}) };
 }
 
-export function saveDraftPaper(draft) {
-  writeJSON(KEYS.draftPaper, draft);
+export function saveDraftDetails(details) {
+  writeJSON(KEYS.draftDetails, details);
 }
 
-export function clearDraftPaper() {
-  writeJSON(KEYS.draftPaper, DEFAULT_DRAFT);
+// ---- One-time local-papers import support (read-only access to the
+// OLD combined localStorage format, never written to anymore) ----
+
+export function loadLegacyLocalPapers() {
+  return readJSON(KEYS.legacyMyPapers, []);
+}
+
+export function loadLegacyDraftPaper() {
+  return readJSON(KEYS.legacyDraftPaper, null);
+}
+
+export function clearLegacyLocalPapers() {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(KEYS.legacyMyPapers);
+    window.localStorage.removeItem(KEYS.legacyDraftPaper);
+  } catch {
+    // non-critical if this fails — worst case the import prompt reappears once more
+  }
 }
