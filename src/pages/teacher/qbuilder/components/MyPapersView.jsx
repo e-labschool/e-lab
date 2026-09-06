@@ -78,7 +78,7 @@ export default function MyPapersView({ onOpenPaper }) {
         <Card key={paper.id} className="flex flex-col gap-3 p-5">
           <div>
             <p className="text-base font-medium text-[var(--color-ink)]">{paper.title}</p>
-            <p className="text-xs text-[var(--color-ink-faint)]">{formatDateStamp(paper.createdAt)}</p>
+            <p className="text-xs text-[var(--color-ink-faint)]">{formatDateStamp(paper.created_at)}</p>
           </div>
           <div className="flex gap-4 text-sm text-[var(--color-ink-soft)]">
             <span>{paper.questions.length} questions</span>
