@@ -41,6 +41,7 @@ import AdminComingSoon from "./pages/admin/AdminComingSoon.jsx";
 import AdminResources from "./pages/admin/resources/AdminResources.jsx";
 import AdminQuestionBank from "./pages/admin/questions/AdminQuestionBank.jsx";
 import QuestionEditor from "./pages/admin/questions/QuestionEditor.jsx";
+import ImportQuestions from "./pages/admin/questions/ImportQuestions.jsx";
 import AdminUsers from "./pages/admin/users/AdminUsers.jsx";
 import AdminAccess from "./pages/admin/access/AdminAccess.jsx";
 import AdminSettings from "./pages/admin/settings/AdminSettings.jsx";
@@ -162,6 +163,7 @@ const router = createBrowserRouter([
       { path: "resources", element: <AdminResources /> },
       { path: "question-bank", element: <AdminQuestionBank /> },
       { path: "question-bank/new", element: <QuestionEditor /> },
+      { path: "question-bank/import", element: <ImportQuestions /> },
       { path: "question-bank/:questionId", element: <QuestionEditor /> },
       { path: "users", element: <AdminUsers /> },
       { path: "access", element: <AdminAccess /> },

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, Loader2, ChevronLeft, ChevronRight, Plus, HelpCircle } from "lucide-react";
+import { Search, Loader2, ChevronLeft, ChevronRight, Plus, HelpCircle, Upload } from "lucide-react";
 import { listQuestions } from "../../../lib/questionBankService.js";
 import Badge from "../../../components/ui/Badge.jsx";
 import Button from "../../../components/ui/Button.jsx";
@@ -45,7 +45,10 @@ export default function AdminQuestionBank() {
           <h1 className="font-[var(--font-display)] text-2xl font-semibold tracking-tight text-[var(--color-ink)]">Question Bank</h1>
           <p className="mt-1 text-sm text-[var(--color-ink-soft)]">Canonical e-Lab questions, shared across Assess, Question Builder, and Quick Assess.</p>
         </div>
-        <Button onClick={() => navigate("/admin/question-bank/new")}><Plus size={15} /> New Question</Button>
+        <div className="flex gap-2">
+          <Button variant="secondary" onClick={() => navigate("/admin/question-bank/import")}><Upload size={15} /> Import Questions</Button>
+          <Button onClick={() => navigate("/admin/question-bank/new")}><Plus size={15} /> New Question</Button>
+        </div>
       </div>
 
       <div className="mt-6 flex flex-wrap items-center gap-2">

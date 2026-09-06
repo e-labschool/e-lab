@@ -1,4 +1,5 @@
 import { supabase } from "./supabaseClient.js";
+import { SOURCE, SYLLABUS_VERSION } from "../data/questions/schema.js";
 
 // Centralizes every Admin Question Bank DB call. Saving ALWAYS goes
 // through save_question_with_secrets() — this file never does a direct
@@ -78,7 +79,64 @@ export async function saveQuestionWithSecrets(fields) {
     p_correct_answer_data: fields.correctAnswerData,
     p_markscheme: fields.markscheme,
     p_explanation: fields.explanation,
+    // Previously omitted entirely — see the migration note: this was the
+    // exact cause of the classify-always-says-UPDATE bug, since these
+    // two fields could never actually be persisted before.
+    p_source: fields.source ?? SOURCE,
+    p_syllabus_version: fields.syllabusVersion ?? SYLLABUS_VERSION,
   });
   if (error) throw error;
   return data;
+}
+
+/**
+ * Authoritative NEW/UNCHANGED/UPDATE classification, computed entirely
+ * server-side against the FULL canonical content + secrets — never a
+ * reduced public-fields-only comparison. Returns only a classification
+ * label per id; secret values themselves are never sent to the client.
+ */
+export async function classifyQuestionImport(questions) {
+  if (!supabase) return {};
+  const { data, error } = await supabase.rpc("classify_question_import", {
+    p_questions: questions.map((q) => ({
+      id: q.id, curriculumSection: q.curriculumSection, topicCode: q.topicCode, topicTitle: q.topicTitle,
+      unitCode: q.unitCode, unitTitle: q.unitTitle, concept: q.concept, level: q.level, paper: q.paper,
+      questionType: q.questionType, difficulty: q.difficulty, marks: q.marks,
+      commandTerms: q.commandTerms ?? [], tags: q.tags ?? [], questionContent: q.questionContent,
+      visualData: q.visualData ?? null, parts: q.parts ?? null, options: q.options ?? null,
+      estimatedMinutes: q.estimatedMinutes ?? null, dataBookletRequired: Boolean(q.dataBookletRequired),
+      calculatorRequired: Boolean(q.calculatorRequired), source: q.source, syllabusVersion: q.syllabusVersion,
+      correctAnswerData: q.correctAnswerData ?? null, markscheme: q.markscheme ?? null, explanation: q.explanation ?? null,
+    })),
+  });
+  if (error) throw error;
+  return Object.fromEntries(data.map((r) => [r.question_id, r.classification]));
+}
+
+/**
+ * Transactional batch import — calls the NEW bulk_import_questions RPC
+ * (see the separate SQL proposal; NOT yet created in the live database).
+ * The whole batch either fully succeeds or fully rolls back; there is no
+ * partial-import outcome. Internally, this RPC reuses
+ * save_question_with_secrets() per question — no separate insert/version
+ * logic is introduced anywhere.
+ */
+export async function bulkImportQuestions(questions) {
+  if (!supabase) throw new Error("Not connected to Supabase.");
+  const { data, error } = await supabase.rpc("bulk_import_questions", {
+    p_questions: questions.map((fields) => ({
+      p_question_id: fields.id, p_curriculum_section: fields.curriculumSection, p_topic_code: fields.topicCode,
+      p_topic_title: fields.topicTitle, p_unit_code: fields.unitCode, p_unit_title: fields.unitTitle,
+      p_concept: fields.concept, p_level: fields.level, p_paper: fields.paper, p_question_type: fields.questionType,
+      p_difficulty: fields.difficulty, p_marks: fields.marks, p_command_terms: fields.commandTerms ?? [],
+      p_tags: fields.tags ?? [], p_question_content: fields.questionContent, p_visual_data: fields.visualData ?? null,
+      p_parts: fields.parts ?? null, p_options: fields.options ?? null, p_estimated_minutes: fields.estimatedMinutes ?? null,
+      p_data_booklet_required: Boolean(fields.dataBookletRequired), p_calculator_required: Boolean(fields.calculatorRequired),
+      p_status: fields.status, p_correct_answer_data: fields.correctAnswerData ?? null,
+      p_markscheme: fields.markscheme ?? null, p_explanation: fields.explanation ?? null,
+      p_source: fields.source ?? SOURCE, p_syllabus_version: fields.syllabusVersion ?? SYLLABUS_VERSION,
+    })),
+  });
+  if (error) throw error;
+  return data; // { imported: [...ids] }
 }
