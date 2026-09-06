@@ -57,6 +57,24 @@ export async function updateUserProfile(id, fields) {
   return data;
 }
 
+/**
+ * role/status are protected columns as of the profiles column-grant
+ * lockdown — no direct .update() on them is possible anymore (the grant
+ * itself no longer permits it), so both go through the admin-only
+ * admin_update_profile_role_status() RPC instead. Pass only the field(s)
+ * actually changing; the RPC leaves the other one untouched via COALESCE.
+ */
+export async function updateUserRoleStatus(id, { role, status } = {}) {
+  if (!supabase) throw new Error("Not connected to Supabase.");
+  const { data, error } = await supabase.rpc("admin_update_profile_role_status", {
+    p_user_id: id,
+    p_role: role ?? null,
+    p_status: status ?? null,
+  });
+  if (error) throw error;
+  return data;
+}
+
 export async function setUserStatus(id, status) {
-  return updateUserProfile(id, { status });
+  return updateUserRoleStatus(id, { status });
 }

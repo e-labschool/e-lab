@@ -112,13 +112,31 @@ export function AuthProvider({ children }) {
   // Used by the Profile pages to save EDITS (name/school/country/level/
   // grade) after the row already exists — initial creation is the
   // database trigger's job, not this function's.
+  // Self-service profile edits only — explicitly whitelisted to the six
+  // fields a normal signed-in user is allowed to change themselves.
+  // role/status/email/id/created_at can never reach the database through
+  // this function, regardless of what a caller passes in, matching the
+  // profiles column-level grant lockdown (which would reject them at the
+  // database anyway — this is the same boundary enforced one layer
+  // earlier, not a substitute for it).
+  //
+  // Also switched from .upsert() to a plain .update(): after that same
+  // lockdown, upsert's insert-on-conflict path isn't the right shape for
+  // an editing operation on a row that (per the signup trigger) always
+  // already exists — this function only ever edits, it never creates.
+  const SELF_EDITABLE_FIELDS = ["full_name", "school", "country", "grade_or_class", "curriculum", "level"];
+
   async function upsertProfile(fields) {
     if (!supabase || !session?.user?.id) {
       throw new Error("You need to be signed in to save a profile.");
     }
+    const safeFields = Object.fromEntries(
+      Object.entries(fields).filter(([key]) => SELF_EDITABLE_FIELDS.includes(key))
+    );
     const { data, error } = await supabase
       .from("profiles")
-      .upsert({ id: session.user.id, ...fields }, { onConflict: "id" })
+      .update(safeFields)
+      .eq("id", session.user.id)
       .select()
       .single();
     if (error) throw error;

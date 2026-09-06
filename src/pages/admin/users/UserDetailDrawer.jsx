@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { X, Loader2, ShieldAlert, Lock, Sparkles, ArrowRight } from "lucide-react";
-import { updateUserProfile, setUserStatus } from "../../../lib/userService.js";
+import { updateUserProfile, updateUserRoleStatus, setUserStatus } from "../../../lib/userService.js";
 import { getUserAccess } from "../../../lib/accessService.js";
 import Button from "../../../components/ui/Button.jsx";
 import Badge from "../../../components/ui/Badge.jsx";
@@ -34,18 +34,27 @@ export default function UserDetailDrawer({ targetUser, currentUserId, onClose, o
     setSaving(true);
     setError(null);
     try {
-      const updated = await updateUserProfile(targetUser.id, {
+      // Ordinary editable fields go through the normal profile update —
+      // still a direct table UPDATE, still fine, since the new
+      // column-level grant explicitly permits exactly these columns.
+      let updated = await updateUserProfile(targetUser.id, {
         full_name: form.full_name,
         school: form.school,
         country: form.country,
         grade_or_class: form.grade_or_class,
         curriculum: form.curriculum,
         level: form.level,
-        // Role is only ever sent as student/teacher — never admin, and
-        // never at all when the target is already an admin (the field is
-        // simply not rendered in that case, see below).
-        ...(isTargetAdmin ? {} : { role: form.role }),
       });
+
+      // Role is a protected column — the profiles grant no longer
+      // permits a direct UPDATE on it at all, so any role change goes
+      // through the admin-only RPC as a separate call. Role is only ever
+      // sent as student/teacher — never admin, and never at all when
+      // the target is already an admin (the field isn't rendered then).
+      if (!isTargetAdmin && form.role !== targetUser.role) {
+        updated = await updateUserRoleStatus(targetUser.id, { role: form.role });
+      }
+
       onSaved(updated);
     } catch (err) {
       setError(err.message || "Something went wrong saving this user.");
