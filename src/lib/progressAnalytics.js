@@ -64,8 +64,40 @@ export async function getProgressOverview() {
   ]);
 
   const learn = learnRows ?? [];
-  const attempts = attemptRows ?? [];
+  const allAttempts = attemptRows ?? [];
   const challenges = challengeRows ?? [];
+
+  // Real bug fix while adding this breakdown: `challenge_questions` was
+  // being fetched for ALL the user's rows regardless of whether the
+  // parent challenge had actually been submitted — meaning an
+  // in-progress, unfinished challenge's partial answers were leaking
+  // into every progress calculation below. Per the brief's explicit
+  // rule ("a question is unattempted only when its challenge has been
+  // completed"), attempts are now scoped to submitted challenges only,
+  // for every calculation in this file, not just the new breakdown.
+  const submittedChallengeIds = new Set(challenges.map((c) => c.id));
+  const attempts = allAttempts.filter((a) => submittedChallengeIds.has(a.challenge_id));
+
+  // ---- Question outcome breakdown — the brief's precise definitions ----
+  // Attempted: a real answer was submitted. Correct/Wrong: attempted AND
+  // auto-marked (is_correct is a real boolean). Needs Review: attempted
+  // but couldn't be auto-marked (Short/Extended/Data-based responses —
+  // is_correct stays null by design, see challengeService.js). These are
+  // NEVER folded into "wrong" — that would misrepresent an ungraded
+  // response as a marked failure. Unattempted: no answer at all, but only
+  // within a SUBMITTED challenge (an unfinished challenge's blanks aren't
+  // "final" unattempted questions yet).
+  const hasAnswer = (a) => a.student_answer != null && a.student_answer !== "" && !(typeof a.student_answer === "object" && Object.values(a.student_answer).every((v) => !v));
+  const questionsAttempted = attempts.filter(hasAnswer).length;
+  const questionsCorrect = attempts.filter((a) => hasAnswer(a) && a.is_correct === true).length;
+  const questionsWrong = attempts.filter((a) => hasAnswer(a) && a.is_correct === false).length;
+  const questionsNeedsReview = attempts.filter((a) => hasAnswer(a) && a.is_correct == null && a.marks_awarded == null).length;
+  const questionsUnattempted = attempts.filter((a) => !hasAnswer(a)).length;
+  // Accuracy is correct / attempted-and-autogradable — NOT correct/total,
+  // and NOT diluted by unattempted or needs-review questions, per the
+  // brief's explicit warning against exactly that miscalculation.
+  const autoGradableAttempted = questionsCorrect + questionsWrong;
+  const accuracy = autoGradableAttempted > 0 ? Math.round((questionsCorrect / autoGradableAttempted) * 100) : null;
 
   // ---- Subtopic-level rollup ----
   const subtopicStats = subtopics.map((s) => {
@@ -96,8 +128,12 @@ export async function getProgressOverview() {
   const overallTotalConcepts = subtopicStats.reduce((s, x) => s + x.totalConcepts, 0);
   const overallCompletedConcepts = subtopicStats.reduce((s, x) => s + x.completedConcepts, 0);
   const overallLearnedPercent = overallTotalConcepts > 0 ? Math.round((overallCompletedConcepts / overallTotalConcepts) * 100) : 0;
+  // Deliberately kept separate from `accuracy` above, per the brief's
+  // explicit instruction not to treat score and accuracy as
+  // interchangeable: this is marks awarded/possible (used for topic-level
+  // "Assessment Performance" breakdowns already built), while `accuracy`
+  // is a plain correct/attempted count ratio.
   const overallAssessment = aggregateAssessment(attempts);
-  const questionsAttempted = attempts.filter((a) => a.answered_at != null).length;
   const avgChallengeScore = challenges.length > 0
     ? Math.round(challenges.reduce((s, c) => s + (c.max_score > 0 ? (c.score / c.max_score) * 100 : 0), 0) / challenges.length)
     : null;
@@ -130,6 +166,11 @@ export async function getProgressOverview() {
     overallLearnedPercent,
     overallAssessedPercent: overallAssessment.assessedPercent,
     questionsAttempted,
+    questionsCorrect,
+    questionsWrong,
+    questionsNeedsReview,
+    questionsUnattempted,
+    accuracy,
     avgChallengeScore,
     challengesCompleted: challenges.length,
     streak,
@@ -198,7 +239,8 @@ function emptyOverview(subtopics, topics) {
     subtopics: subtopicStats.filter((s) => s.topicCode === t.code),
   }));
   return {
-    overallLearnedPercent: 0, overallAssessedPercent: null, questionsAttempted: 0, avgChallengeScore: null, challengesCompleted: 0,
+    overallLearnedPercent: 0, overallAssessedPercent: null, questionsAttempted: 0, questionsCorrect: 0, questionsWrong: 0,
+    questionsNeedsReview: 0, questionsUnattempted: 0, accuracy: null, avgChallengeScore: null, challengesCompleted: 0,
     streak: { current_streak: 0 }, topicStats, subtopicStats, strengths: [], areasToStrengthen: [], recommendation: null, recentActivity: [], trend: [],
   };
 }

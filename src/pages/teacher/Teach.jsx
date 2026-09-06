@@ -1,11 +1,13 @@
-import { useState } from "react";
-import { useOutletContext, Link } from "react-router-dom";
-import { ArrowRight, Presentation, ChevronRight } from "lucide-react";
+import { useState, useEffect } from "react";
+import { useOutletContext, Link, useNavigate } from "react-router-dom";
+import { ArrowRight, Presentation, ChevronRight, Plus, Loader2 } from "lucide-react";
 import { getAllResources } from "../../data/resources-registry.js";
 import { getConcept } from "../../data/concepts/index.js";
 import { getLearnTree } from "../../lib/learn-tree.js";
+import { listClassPlans, createClassPlan, addLessonBlock, listLessonBlocks } from "../../lib/classPlannerService.js";
 import Container from "../../components/ui/Container.jsx";
 import Card from "../../components/ui/Card.jsx";
+import Button from "../../components/ui/Button.jsx";
 import EmptyStatePanel from "../../components/ui/EmptyStatePanel.jsx";
 
 const SECTION_ACCENT = { Structure: "#3654D6", Reactivity: "#C96A21" };
@@ -100,6 +102,7 @@ export default function Teach() {
             <div className="rounded-md border border-dashed border-[var(--color-line)] p-8 text-center">
               <p className="text-sm font-semibold text-[var(--color-ink)]">{selectedSubtopic.code} {selectedSubtopic.label}</p>
               <p className="mt-2 text-sm text-[var(--color-ink-faint)]">Teacher content for this topic will be added soon.</p>
+              <AddToClassButton subtopic={selectedSubtopic} />
             </div>
           ) : (
             <div className="flex flex-col gap-6">
@@ -131,5 +134,59 @@ export default function Teach() {
         </div>
       </div>
     </Container>
+  );
+}
+
+// The Teach -> Class Planner connection: a teacher never has to leave
+// Teach, search for this same content again, and manually recreate it —
+// they pick (or create) a plan right here, and a lesson block referencing
+// this subtopic is added immediately.
+function AddToClassButton({ subtopic }) {
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+  const [plans, setPlans] = useState(null);
+  const [creating, setCreating] = useState(false);
+
+  useEffect(() => {
+    if (open && plans === null) listClassPlans().then(setPlans);
+  }, [open, plans]);
+
+  async function addTo(planId) {
+    const existing = await listLessonBlocks(planId);
+    await addLessonBlock(planId, {
+      position: existing.length, blockType: "Explain", title: `${subtopic.code} ${subtopic.label}`,
+      content: { placeholder: true }, durationMinutes: 10, sourceType: "elab_teach", sourceRef: subtopic.code,
+    });
+    navigate(`/teacher/class-planner/${planId}`);
+  }
+
+  async function createAndAdd() {
+    setCreating(true);
+    const plan = await createClassPlan({ title: `${subtopic.code} ${subtopic.label}`, topicCode: subtopic.code, durationMinutes: 60 });
+    await addTo(plan.id);
+  }
+
+  return (
+    <div className="mt-4">
+      <Button size="sm" onClick={() => setOpen((v) => !v)}><Plus size={13} /> Add to Class</Button>
+      {open && (
+        <div className="mx-auto mt-3 max-w-xs rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-3 text-left">
+          {plans === null ? (
+            <div className="flex justify-center py-3"><Loader2 className="h-4 w-4 animate-spin text-[var(--color-ink-faint)]" /></div>
+          ) : (
+            <>
+              {plans.slice(0, 4).map((p) => (
+                <button key={p.id} type="button" onClick={() => addTo(p.id)} className="block w-full rounded-md px-2 py-1.5 text-left text-sm text-[var(--color-ink-soft)] hover:bg-[var(--color-line)]/20 hover:text-[var(--color-ink)]">
+                  {p.title}
+                </button>
+              ))}
+              <button type="button" onClick={createAndAdd} disabled={creating} className="mt-1 block w-full rounded-md px-2 py-1.5 text-left text-sm font-medium text-[var(--color-indigo)] hover:bg-[var(--color-indigo-soft)]">
+                {creating ? "Creating\u2026" : "+ Create New Class Plan"}
+              </button>
+            </>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

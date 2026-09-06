@@ -1,17 +1,17 @@
-import { Presentation, CalendarDays, FileEdit, Library, User } from "lucide-react";
+import { Presentation, CalendarDays, FileEdit, Library } from "lucide-react";
 import { getSubject } from "../../data/programmes.js";
 import AppSidebarLayout from "../../components/layout/AppSidebarLayout.jsx";
 
 const PROGRAMME_ID = "ibdp";
 const SUBJECT_ID = "chemistry";
 
+// Exactly the four tabs specified: Teach | Class Planner | Question
+// Builder | Resources. Profile is reached via the account menu.
 const TABS = [
-  { to: "/teacher", end: true, label: "Home", icon: Presentation },
   { to: "/teacher/teach", label: "Teach", icon: Presentation },
   { to: "/teacher/class-planner", label: "Class Planner", icon: CalendarDays },
   { to: "/teacher/question-builder", label: "Question Builder", icon: FileEdit },
   { to: "/teacher/resources", label: "Resources", icon: Library },
-  { to: "/teacher/profile", label: "Profile", icon: User },
 ];
 
 export default function TeacherLayout() {

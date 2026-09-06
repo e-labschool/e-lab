@@ -1,6 +1,6 @@
 import { lazy, Suspense } from "react";
 import ELabLoader from "./components/ui/ELabLoader.jsx";
-import { createBrowserRouter } from "react-router-dom";
+import { createBrowserRouter, Navigate } from "react-router-dom";
 import Shell from "./components/layout/Shell.jsx";
 import ProtectedRoute from "./components/auth/ProtectedRoute.jsx";
 import Home from "./pages/Home.jsx";
@@ -18,7 +18,6 @@ import ResetPassword from "./pages/ResetPassword.jsx";
 import NotFound from "./pages/NotFound.jsx";
 
 import StudentLayout from "./pages/student/StudentLayout.jsx";
-import StudentDashboard from "./pages/student/StudentDashboard.jsx";
 import LearnLayout from "./components/learn/LearnLayout.jsx";
 import WelcomePage from "./components/learn/WelcomePage.jsx";
 import LearnConceptPage from "./components/learn/LearnConceptPage.jsx";
@@ -29,9 +28,10 @@ import ResourcesLanding from "./pages/student/resources/ResourcesLanding.jsx";
 import ResourcesCategoryPage from "./pages/student/resources/CategoryPage.jsx";
 
 import TeacherLayout from "./pages/teacher/TeacherLayout.jsx";
-import TeacherDashboard from "./pages/teacher/TeacherDashboard.jsx";
 import TeacherTeach from "./pages/teacher/Teach.jsx";
 import ClassPlanner from "./pages/teacher/ClassPlanner.jsx";
+import ClassPlanWorkspace from "./pages/teacher/ClassPlanWorkspace.jsx";
+import PresentClass from "./pages/teacher/PresentClass.jsx";
 import TeacherResources from "./pages/teacher/Resources.jsx";
 import TeacherProfilePage from "./pages/teacher/TeacherProfilePage.jsx";
 
@@ -92,7 +92,7 @@ const router = createBrowserRouter([
     path: "/student",
     element: <StudentLayout />,
     children: [
-      { index: true, element: <StudentDashboard /> },
+      { index: true, element: <Navigate to="/student/learn" replace /> },
       {
         path: "learn",
         element: <LearnLayout />,
@@ -128,12 +128,24 @@ const router = createBrowserRouter([
     ),
   },
   {
+    // Same reasoning as the Challenge session above — Present Class hides
+    // the Teacher sidebar entirely, which only works architecturally by
+    // living outside TeacherLayout, not via a conditionally-hidden nav.
+    path: "/teacher/class-planner/:planId/present",
+    element: (
+      <ProtectedRoute role="teacher">
+        <PresentClass />
+      </ProtectedRoute>
+    ),
+  },
+  {
     path: "/teacher",
     element: <TeacherLayout />,
     children: [
-      { index: true, element: <TeacherDashboard /> },
+      { index: true, element: <Navigate to="/teacher/teach" replace /> },
       { path: "teach", element: <TeacherTeach /> },
       { path: "class-planner", element: <ClassPlanner /> },
+      { path: "class-planner/:planId", element: <ClassPlanWorkspace /> },
       { path: "question-builder", element: <Suspense fallback={<div className="flex min-h-[60vh] items-center justify-center"><ELabLoader /></div>}><TeacherQBuilder /></Suspense> },
       { path: "resources", element: <TeacherResources /> },
       { path: "profile", element: <TeacherProfilePage /> },

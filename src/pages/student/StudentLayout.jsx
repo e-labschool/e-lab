@@ -1,22 +1,18 @@
-import { BookOpen, PenLine, Library, TrendingUp, User } from "lucide-react";
+import { BookOpen, PenLine, Library, TrendingUp } from "lucide-react";
 import { getSubject } from "../../data/programmes.js";
 import AppSidebarLayout from "../../components/layout/AppSidebarLayout.jsx";
 
-// The subject is resolved internally (there is currently exactly one:
-// IB DP Chemistry) rather than taken from the URL — so /student/learn is a
-// stable, flat, bookmarkable route today, while the underlying
-// programmes.js data layer that WOULD support a subject picker if a
-// second subject is added later is left completely intact underneath.
 const PROGRAMME_ID = "ibdp";
 const SUBJECT_ID = "chemistry";
 
+// Exactly the four tabs specified: Learn | Assess | Resources | Progress.
+// Profile is reachable from the account menu in the header row instead of
+// being a fifth top tab.
 const TABS = [
-  { to: "/student", end: true, label: "Home", icon: BookOpen },
   { to: "/student/learn", label: "Learn", icon: BookOpen },
-  { to: "/student/solve", label: "Solve", icon: PenLine },
+  { to: "/student/solve", label: "Assess", icon: PenLine },
   { to: "/student/resources", label: "Resources", icon: Library },
   { to: "/student/progress", label: "Progress", icon: TrendingUp },
-  { to: "/student/profile", label: "Profile", icon: User },
 ];
 
 export default function StudentLayout() {

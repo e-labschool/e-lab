@@ -38,7 +38,7 @@ export default function StudentProgressPage() {
       {/* Top summary metrics */}
       <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <MetricCard tone="indigo" value={hasAnyLearn ? `${data.overallLearnedPercent}%` : "0%"} label="Learning Progress" />
-        <MetricCard tone="teal" value={hasAnySolve ? `${data.overallAssessedPercent}%` : "\u2014"} label="Assessment Performance" />
+        <MetricCard tone="teal" value={data.accuracy != null ? `${data.accuracy}%` : "\u2014"} label="Accuracy" />
         <MetricCard tone="violet" value={data.questionsAttempted} label="Questions Attempted" />
         <MetricCard tone="amber" value={`\uD83D\uDD25 ${data.streak?.current_streak ?? 0} Day${(data.streak?.current_streak ?? 0) === 1 ? "" : "s"}`} label="Challenge Streak" />
       </div>
@@ -209,6 +209,36 @@ export default function StudentProgressPage() {
         </div>
       </div>
 
+      {/* Question Outcomes — every value here reconciles exactly with the
+          top metrics above, since both come from the same computation in
+          progressAnalytics.js, not two separately-hand-calculated numbers. */}
+      <div className="mt-8 rounded-2xl border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-5">
+        <p className="text-sm font-bold text-[var(--color-ink)]">Question Outcomes</p>
+        <p className="text-[11px] text-[var(--color-ink-faint)]">
+          Across {data.questionsAttempted + data.questionsUnattempted} questions in your submitted challenges
+        </p>
+        <div className="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+          <OutcomeStat tone="teal" value={data.questionsCorrect} label="Correct" />
+          <OutcomeStat tone="coral" value={data.questionsWrong} label="Wrong" />
+          <OutcomeStat tone="amber" value={data.questionsNeedsReview} label="Needs Review" />
+          <OutcomeStat tone="neutral" value={data.questionsUnattempted} label="Unattempted" />
+        </div>
+        {data.questionsAttempted + data.questionsUnattempted > 0 && (
+          <div className="mt-3 flex h-3 overflow-hidden rounded-full bg-[var(--color-line)]" role="img" aria-label={`${data.questionsCorrect} correct, ${data.questionsWrong} wrong, ${data.questionsNeedsReview} needing review, ${data.questionsUnattempted} unattempted`}>
+            {[
+              { count: data.questionsCorrect, color: "var(--color-teal)" },
+              { count: data.questionsWrong, color: "var(--color-coral)" },
+              { count: data.questionsNeedsReview, color: "var(--color-amber)" },
+              { count: data.questionsUnattempted, color: "var(--color-line)" },
+            ].map((seg, i) => {
+              const total = data.questionsAttempted + data.questionsUnattempted;
+              const pct = total > 0 ? (seg.count / total) * 100 : 0;
+              return pct > 0 ? <div key={i} style={{ width: `${pct}%`, backgroundColor: seg.color }} /> : null;
+            })}
+          </div>
+        )}
+      </div>
+
       {/* Performance trend + Recent activity */}
       <div className="mt-8 grid gap-5 lg:grid-cols-2">
         <div className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-5">
@@ -259,6 +289,19 @@ function MiniStat({ value, label }) {
   );
 }
 
+function OutcomeStat({ tone, value, label }) {
+  const DOT = { teal: "var(--color-teal)", coral: "var(--color-coral)", amber: "var(--color-amber)", neutral: "var(--color-ink-faint)" };
+  return (
+    <div className="rounded-lg border border-[var(--color-line)] p-2.5">
+      <div className="flex items-center gap-1.5">
+        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: DOT[tone] }} />
+        <p className="text-lg font-bold text-[var(--color-ink)]">{value}</p>
+      </div>
+      <p className="mt-0.5 text-xs text-[var(--color-ink-faint)]">{label}</p>
+    </div>
+  );
+}
+
 function ProgressBar({ percent, colorHex, className = "" }) {
   return (
     <div className={`h-1.5 overflow-hidden rounded-full bg-[var(--color-line)] ${className}`}>
@@ -268,15 +311,36 @@ function ProgressBar({ percent, colorHex, className = "" }) {
 }
 
 function TrendChart({ points }) {
-  const w = 300, h = 80, pad = 6;
+  const w = 320, h = 110, padL = 28, padR = 8, padT = 8, padB = 20;
   const max = 100;
-  const stepX = (w - pad * 2) / (points.length - 1);
-  const coords = points.map((p, i) => [pad + i * stepX, h - pad - (p.percent / max) * (h - pad * 2)]);
+  const plotW = w - padL - padR;
+  const plotH = h - padT - padB;
+  const stepX = points.length > 1 ? plotW / (points.length - 1) : 0;
+  const coords = points.map((p, i) => [padL + i * stepX, padT + plotH - (p.percent / max) * plotH]);
   const path = coords.map(([x, y], i) => `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
+  const yTicks = [0, 50, 100];
+
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} className="mt-3 w-full" role="img" aria-label="Challenge performance trend over recent challenges">
-      <path d={path} fill="none" stroke="#3654D6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      {coords.map(([x, y], i) => <circle key={i} cx={x} cy={y} r="2.5" fill="#3654D6" />)}
-    </svg>
+    <div className="mt-1">
+      <p className="text-[11px] text-[var(--color-ink-faint)]">Score (%) over your last {points.length} submitted challenges</p>
+      <svg viewBox={`0 0 ${w} ${h}`} className="mt-1 w-full" role="img" aria-label={`Line chart of challenge score percentage over the last ${points.length} challenges, y-axis 0 to 100 percent`}>
+        {yTicks.map((t) => {
+          const y = padT + plotH - (t / max) * plotH;
+          return (
+            <g key={t}>
+              <line x1={padL} x2={w - padR} y1={y} y2={y} stroke="var(--color-line)" strokeWidth="1" />
+              <text x={padL - 5} y={y + 3} textAnchor="end" fontSize="8" fill="var(--color-ink-faint)">{t}%</text>
+            </g>
+          );
+        })}
+        <path d={path} fill="none" stroke="#3654D6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        {coords.map(([x, y], i) => (
+          <circle key={i} cx={x} cy={y} r="3" fill="#3654D6">
+            <title>{`Challenge ${i + 1}: ${points[i].percent}%${points[i].date ? ` \u2014 ${new Date(points[i].date).toLocaleDateString()}` : ""}`}</title>
+          </circle>
+        ))}
+        <text x={(padL + w - padR) / 2} y={h - 4} textAnchor="middle" fontSize="8" fill="var(--color-ink-faint)">Challenge (oldest \u2192 most recent)</text>
+      </svg>
+    </div>
   );
 }
