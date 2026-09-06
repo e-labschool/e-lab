@@ -14,7 +14,7 @@ import PaperDraftPanel from "./PaperDraftPanel.jsx";
 // full-width drawers on mobile/tablet rather than permanently splitting a
 // small screen three ways.
 export default function QuestionBankView({ onEditCopy, onViewPaper }) {
-  const { sampleQuestions, isInDraft, addToDraft, draft, draftTotalMarks } = useQBuilder();
+  const { sampleQuestions, loadingQuestions, isInDraft, addToDraft, draft, draftTotalMarks } = useQBuilder();
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
   const [previewQuestion, setPreviewQuestion] = useState(null);
   const [mobileDraftOpen, setMobileDraftOpen] = useState(false);
@@ -49,6 +49,10 @@ export default function QuestionBankView({ onEditCopy, onViewPaper }) {
           <SlidersHorizontal size={14} />
           Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}
         </button>
+
+        {loadingQuestions && (
+          <p className="mb-3 text-xs text-[var(--color-ink-faint)]">Loading the latest question bank\u2026</p>
+        )}
 
         <div className="grid gap-4 sm:grid-cols-2">
           {results.map((question) => (

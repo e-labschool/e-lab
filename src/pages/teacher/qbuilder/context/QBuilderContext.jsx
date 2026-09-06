@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { getVisibleQuestions } from "../../../../data/questions/index.js";
+import { getPublishedQuestionsForBuilder } from "../lib/supabaseQuestions.js";
 import {
   loadMyQuestions,
   saveMyQuestions,
@@ -16,15 +17,29 @@ export function QBuilderProvider({ children }) {
   const [myQuestions, setMyQuestions] = useState(() => loadMyQuestions());
   const [myPapers, setMyPapers] = useState(() => loadMyPapers());
   const [draft, setDraft] = useState(() => loadDraftPaper());
+  const [supabaseQuestions, setSupabaseQuestions] = useState([]);
+  const [loadingQuestions, setLoadingQuestions] = useState(true);
 
   useEffect(() => saveMyQuestions(myQuestions), [myQuestions]);
   useEffect(() => saveMyPapers(myPapers), [myPapers]);
   useEffect(() => saveDraftPaper(draft), [draft]);
 
-  // The central e-Lab Practice Questions bank (reviewed/published only —
-  // drafts are excluded from this default view; see status filter in
-  // FilterBar for reviewing drafts) plus the teacher's own questions.
-  const sampleQuestions = getVisibleQuestions();
+  useEffect(() => {
+    getPublishedQuestionsForBuilder()
+      .then(setSupabaseQuestions)
+      .catch(() => setSupabaseQuestions([])) // legacy bank still works even if Supabase is unreachable
+      .finally(() => setLoadingQuestions(false));
+  }, []);
+
+  // The central e-Lab Practice Questions bank: legacy JS (reviewed/
+  // published only) merged with published Supabase questions, plus the
+  // teacher's own questions. Supabase takes precedence whenever the same
+  // id exists in both — the intended path once a legacy question is
+  // superseded by its finalized Supabase version — so no id is ever
+  // duplicated in the combined pool.
+  const legacyQuestions = getVisibleQuestions();
+  const supabaseIds = new Set(supabaseQuestions.map((q) => q.id));
+  const sampleQuestions = [...legacyQuestions.filter((q) => !supabaseIds.has(q.id)), ...supabaseQuestions];
   const allQuestions = [...sampleQuestions, ...myQuestions];
 
   function getQuestionById(id) {
@@ -132,6 +147,7 @@ export function QBuilderProvider({ children }) {
 
   const value = {
     sampleQuestions,
+    loadingQuestions,
     myQuestions,
     myPapers,
     draft,
