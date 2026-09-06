@@ -39,6 +39,8 @@ import AdminLayout from "./pages/admin/AdminLayout.jsx";
 import AdminDashboard from "./pages/admin/AdminDashboard.jsx";
 import AdminComingSoon from "./pages/admin/AdminComingSoon.jsx";
 import AdminResources from "./pages/admin/resources/AdminResources.jsx";
+import AdminQuestionBank from "./pages/admin/questions/AdminQuestionBank.jsx";
+import QuestionEditor from "./pages/admin/questions/QuestionEditor.jsx";
 import AdminUsers from "./pages/admin/users/AdminUsers.jsx";
 import AdminAccess from "./pages/admin/access/AdminAccess.jsx";
 import AdminSettings from "./pages/admin/settings/AdminSettings.jsx";
@@ -158,7 +160,9 @@ const router = createBrowserRouter([
       { index: true, element: <AdminDashboard /> },
       { path: "learn-content", element: <AdminComingSoon title="Learn Content" description="Manage learning modules and lessons." /> },
       { path: "resources", element: <AdminResources /> },
-      { path: "question-bank", element: <AdminComingSoon title="Question Bank" description="Manage e-Lab questions." /> },
+      { path: "question-bank", element: <AdminQuestionBank /> },
+      { path: "question-bank/new", element: <QuestionEditor /> },
+      { path: "question-bank/:questionId", element: <QuestionEditor /> },
       { path: "users", element: <AdminUsers /> },
       { path: "access", element: <AdminAccess /> },
       { path: "settings", element: <AdminSettings /> },
