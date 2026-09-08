@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Flame, ArrowRight, Loader2, PenTool } from "lucide-react";
+import { Flame, ArrowRight, Loader2, PenTool, AlertTriangle } from "lucide-react";
 import { useAuth } from "../../../context/AuthContext.jsx";
-import { getChallengeStats, getChallengeHistory, getActiveChallenge } from "../../../lib/challengeService.js";
+import { getChallengeStats, getChallengeHistory, getActiveChallenge, getChallengeQuestions, abandonChallenge } from "../../../lib/challengeService.js";
 import { getStreak } from "../../../lib/challengeService.js";
+import { hydrateChallengeQuestions } from "../../../lib/canonicalQuestions.js";
 import Container from "../../../components/ui/Container.jsx";
 import Button from "../../../components/ui/Button.jsx";
 import EmptyStatePanel from "../../../components/ui/EmptyStatePanel.jsx";
@@ -15,19 +16,51 @@ export default function SolveHome() {
   const [streak, setStreak] = useState(null);
   const [history, setHistory] = useState([]);
   const [active, setActive] = useState(null);
+  // null = not checked yet, true = can safely resume, false = stale/unresolvable
+  const [activeResumable, setActiveResumable] = useState(null);
+  const [discarding, setDiscarding] = useState(false);
   const [loading, setLoading] = useState(isConfigured);
 
   useEffect(() => {
     if (!isConfigured) return;
     Promise.all([getChallengeStats(), getStreak(), getChallengeHistory(5), getActiveChallenge()])
-      .then(([s, streakData, h, a]) => {
+      .then(async ([s, streakData, h, a]) => {
         setStats(s);
         setStreak(streakData);
         setHistory(h);
         setActive(a);
+        if (a) {
+          // A "Continue Challenge" is only ever offered if every one of
+          // its questions can actually be hydrated — the same rule
+          // ChallengeSession itself enforces. This is what stops an
+          // obsolete pre-pinning pilot session from trapping the student
+          // behind a card that leads to a dead end.
+          try {
+            const rows = await getChallengeQuestions(a.id);
+            const hydrated = await hydrateChallengeQuestions(rows);
+            setActiveResumable(rows.length > 0 && rows.every((r) => hydrated.get(r.id)));
+          } catch {
+            setActiveResumable(false);
+          }
+        }
       })
       .finally(() => setLoading(false));
   }, [isConfigured]);
+
+  async function handleDiscardStaleChallenge() {
+    if (!active) return;
+    setDiscarding(true);
+    try {
+      // Reuses the existing abandon path exactly as-is — same RLS-backed
+      // update ("Users can update own challenges"), same terminal status,
+      // same ownership scoping. No new permission or write path.
+      await abandonChallenge(active.id);
+      setActive(null);
+      setActiveResumable(null);
+    } finally {
+      setDiscarding(false);
+    }
+  }
 
   return (
     <Container className="py-8 md:py-10">
@@ -50,13 +83,27 @@ export default function SolveHome() {
             <StatCard tone="violet" label="Challenges Completed" value={stats?.challengesCompleted ?? 0} />
           </div>
 
-          {active ? (
+          {active && activeResumable ? (
             <div className="mt-6 rounded-xl border border-[var(--color-indigo)]/30 bg-[var(--color-indigo-soft)] p-5">
               <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-indigo)]">Continue Challenge</p>
               <p className="mt-1 text-sm font-medium text-[var(--color-ink)]">{active.topic_codes.join(" + ")}</p>
               <p className="text-xs text-[var(--color-ink-faint)]">Question {(active.current_question_index ?? 0) + 1} of {active.question_count}</p>
               <Button className="mt-3" size="sm" onClick={() => navigate(`/student/solve/${active.id}`)}>Continue <ArrowRight size={14} /></Button>
             </div>
+          ) : active && activeResumable === false ? (
+            <div className="mt-6 rounded-xl border border-[var(--color-coral)]/30 bg-[var(--color-coral-soft)] p-5">
+              <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-coral)]"><AlertTriangle size={13} /> Challenge unavailable</p>
+              <p className="mt-1.5 text-sm font-medium text-[var(--color-ink)]">This earlier challenge can no longer be resumed.</p>
+              <p className="text-xs text-[var(--color-ink-faint)]">Some of its questions are no longer available. This can happen with sessions started before a recent update.</p>
+              <div className="mt-3 flex gap-2">
+                <Button size="sm" variant="secondary" onClick={handleDiscardStaleChallenge} disabled={discarding}>
+                  {discarding ? <Loader2 className="h-4 w-4 animate-spin" /> : "Discard Challenge"}
+                </Button>
+                <Button size="sm" onClick={() => navigate("/student/solve/new")}>Start New Challenge <ArrowRight size={14} /></Button>
+              </div>
+            </div>
+          ) : active && activeResumable === null ? (
+            <div className="mt-6 flex justify-center"><Loader2 className="h-5 w-5 animate-spin text-[var(--color-ink-faint)]" /></div>
           ) : (
             <div className="mt-6 rounded-2xl border border-[var(--color-indigo)]/15 bg-gradient-to-br from-[var(--color-indigo-soft)] via-[var(--color-violet-soft)] to-[var(--color-paper-raised)] p-6 shadow-[0_2px_4px_rgba(20,30,80,0.06),0_8px_20px_-6px_rgba(20,30,80,0.12)]">
               <p className="text-xl font-bold text-[var(--color-ink)]">Take a Challenge</p>

@@ -72,6 +72,21 @@ export default function ChallengeSession() {
         // legacy JS bank merely because an id matches — so what the
         // student sees can never diverge from what was securely marked.
         const hydrated = await hydrateChallengeQuestions(qRows);
+
+        // Every row MUST resolve to a real question before this challenge
+        // is considered loadable. This is deliberately strict: a single
+        // unresolved row previously caused index misalignment between
+        // rows[] and a separately-filtered questions[] array, since both
+        // were indexed positionally but only one of them shrank. Failing
+        // loudly here, with the row/question id named, replaces what was
+        // previously a silent blank page.
+        const unresolved = qRows.filter((r) => !hydrated.get(r.id));
+        if (unresolved.length > 0) {
+          throw new Error(
+            `Couldn't load ${unresolved.length} question${unresolved.length === 1 ? "" : "s"} in this challenge (e.g. "${unresolved[0].question_id}"). Please contact support if this persists.`
+          );
+        }
+
         setQuestionsMap(hydrated);
         setChallenge(c);
         setRows(qRows);
@@ -89,7 +104,11 @@ export default function ChallengeSession() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [challengeId]);
 
-  const questions = useMemo(() => rows.map((r) => questionsMap.get(r.id)).filter(Boolean), [rows, questionsMap]);
+  // Positional alignment with rows[] is guaranteed by construction now
+  // (every row resolved or the load already failed above) — looking each
+  // one up by its own row id, never filtering, so index-based access
+  // (questions[index] / rows[index]) can never drift apart.
+  const questions = useMemo(() => rows.map((r) => questionsMap.get(r.id)), [rows, questionsMap]);
   const current = questions[index];
   const currentRow = rows[index];
 
@@ -252,7 +271,13 @@ export default function ChallengeSession() {
 
   if (loading) return <div className="flex min-h-screen items-center justify-center bg-[var(--color-paper)]"><ELabLoader /></div>;
   if (error) return <p className="p-10 text-center text-sm text-[var(--color-coral)]">{error}</p>;
-  if (!challenge || !current) return null;
+  if (!challenge || !current) {
+    // Defense in depth: the loading effect above should already have
+    // set `error` for any resolution failure before reaching this point,
+    // but this state should never silently render nothing either way —
+    // a blank page with no diagnostic is exactly the bug being fixed here.
+    return <p className="p-10 text-center text-sm text-[var(--color-coral)]">This challenge couldn't be loaded. Please go back and try again, or contact support if this persists.</p>;
+  }
 
   if (!readyScreenDismissed) {
     return (
