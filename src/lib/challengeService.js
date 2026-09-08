@@ -1,6 +1,7 @@
 import { getVisibleQuestions } from "../data/questions/index.js";
 import { getCurriculumCode } from "../pages/teacher/qbuilder/lib/paperUtils.js";
 import { supabase } from "./supabaseClient.js";
+import { resolveLatestVersionIds } from "./canonicalQuestions.js";
 
 // ============================================================
 // Question eligibility + curation (pure logic, no DB) — kept separate
@@ -50,17 +51,12 @@ function shuffle(array) {
 const EXAM_READY_TYPE_WEIGHT = { "Extended Response": 3, "Data-based": 3, Calculation: 2, "Short Response": 1, MCQ: 0.5 };
 
 /**
- * Selects a balanced, non-duplicate set of questions for a challenge.
- * excludeQuestionIds: recently-seen question ids to deprioritize (not
- * hard-exclude, unless there's no alternative) — this is the hook a
- * future "avoid recently seen" feature plugs into; V1 uses it lightly.
- * Returns { questions, insufficientReason } — questions is [] and
- * insufficientReason is set when the pool can't satisfy the request.
+ * Builds a challenge selection from an ALREADY-eligible, single-origin
+ * pool (either all-canonical or all-legacy — never mixed) — this is the
+ * exact selection algorithm that existed before, just parameterized so
+ * it can be tried against two separate pools without ever combining them.
  */
-export function curateChallenge({ topicCodes, level, mode, questionCount, timeLimitMinutes, style, excludeQuestionIds = [] }) {
-  const all = getVisibleQuestions();
-  const eligible = all.filter((q) => isEligibleForSolve(q, level) && topicCodes.includes(getCurriculumCode(q)));
-
+function buildFromEligiblePool(eligible, { topicCodes, questionCount, timeLimitMinutes, mode, style, excludeQuestionIds }) {
   if (eligible.length === 0) {
     return { questions: [], insufficientReason: "Not enough questions are currently available for this combination." };
   }
@@ -146,6 +142,45 @@ export function curateChallenge({ topicCodes, level, mode, questionCount, timeLi
   return { questions: selected, insufficientReason: null };
 }
 
+/**
+ * Selects a balanced, non-duplicate set of questions for a challenge —
+ * ALWAYS from a single homogeneous source, never mixed. Canonical
+ * Supabase questions are tried first (if enough exist for the request,
+ * the whole challenge is built from them); otherwise genuine legacy-only
+ * questions are tried (any legacy id that also exists in Supabase is
+ * already excluded from this pool by mergeWithSupabasePrecedence — the
+ * caller-supplied questionPool never contains a colliding legacy id at
+ * all, so no extra collision-filtering is needed here). If neither pool
+ * alone can satisfy the request, a clear insufficient-questions result is
+ * returned — a mixed challenge is never created.
+ * excludeQuestionIds: recently-seen question ids to deprioritize (not
+ * hard-exclude, unless there's no alternative) — this is the hook a
+ * future "avoid recently seen" feature plugs into; V1 uses it lightly.
+ * Returns { questions, insufficientReason } — questions is [] and
+ * insufficientReason is set when neither pool can satisfy the request.
+ */
+export function curateChallenge({ topicCodes, level, mode, questionCount, timeLimitMinutes, style, excludeQuestionIds = [], questionPool }) {
+  const all = questionPool ?? getVisibleQuestions();
+  const canonicalPool = all.filter((q) => q.isSupabaseQuestion);
+  const legacyPool = all.filter((q) => !q.isSupabaseQuestion);
+
+  const buildArgs = { topicCodes, questionCount, timeLimitMinutes, mode, style, excludeQuestionIds };
+
+  const canonicalEligible = canonicalPool.filter((q) => isEligibleForSolve(q, level) && topicCodes.includes(getCurriculumCode(q)));
+  const canonicalResult = buildFromEligiblePool(canonicalEligible, buildArgs);
+  if (!canonicalResult.insufficientReason) {
+    return canonicalResult;
+  }
+
+  const legacyEligible = legacyPool.filter((q) => isEligibleForSolve(q, level) && topicCodes.includes(getCurriculumCode(q)));
+  const legacyResult = buildFromEligiblePool(legacyEligible, buildArgs);
+  if (!legacyResult.insufficientReason) {
+    return legacyResult;
+  }
+
+  return { questions: [], insufficientReason: "Not enough questions are currently available for this combination." };
+}
+
 // ============================================================
 // Supabase persistence
 // ============================================================
@@ -155,6 +190,20 @@ export async function createChallenge({ topicCodes, level, mode, timeLimitSecond
   const { data: userData } = await supabase.auth.getUser();
   const userId = userData?.user?.id;
   if (!userId) throw new Error("You need to be signed in to start a challenge.");
+
+  // Resolve every canonical Supabase question's immutable version BEFORE
+  // any row is inserted — all-or-nothing from the student's perspective.
+  // A canonical question with no resolvable version fails the whole
+  // challenge creation loudly here, rather than either inserting an
+  // unpinned row (which the database trigger would reject anyway) or
+  // silently falling back to treating it as legacy content it isn't.
+  const canonicalIds = questions.filter((q) => q.isSupabaseQuestion).map((q) => q.id);
+  const versionIdByQuestionId = await resolveLatestVersionIds(canonicalIds);
+  for (const q of questions) {
+    if (q.isSupabaseQuestion && !versionIdByQuestionId[q.id]) {
+      throw new Error(`"${q.id}" is a canonical question with no published version — this challenge can't be started safely. Please try again or contact support.`);
+    }
+  }
 
   const { data: challenge, error } = await supabase
     .from("student_challenges")
@@ -178,6 +227,10 @@ export async function createChallenge({ topicCodes, level, mode, timeLimitSecond
     position: i,
     topic_code: getCurriculumCode(q),
     marks_possible: q.marks ?? 1,
+    // Legacy JS questions correctly stay null here — the database
+    // trigger only requires a pin when question_id matches a canonical
+    // Supabase row, which legacy ids never do.
+    question_version_id: q.isSupabaseQuestion ? versionIdByQuestionId[q.id] : null,
   }));
   const { error: qError } = await supabase.from("challenge_questions").insert(rows);
   if (qError) throw qError;
@@ -305,37 +358,68 @@ export async function submitChallenge(challengeId, { questionsById, durationSeco
 
   const rows = await getChallengeQuestions(challengeId);
 
-  let score = 0;
-  let maxScore = 0;
-  for (const row of rows) {
-    const question = questionsById[row.question_id];
-    if (!question) continue;
-    const marksPossible = question.marks ?? 1;
-    maxScore += marksPossible;
-    const { is_correct, marks_awarded } = markAnswer(question, row.student_answer);
-    if (marks_awarded != null) score += marks_awarded;
-    await supabase
-      .from("challenge_questions")
-      .update({ is_correct, marks_awarded })
-      .eq("id", row.id);
-  }
+  const pinnedCount = rows.filter((r) => r.question_version_id != null).length;
+  const isAllCanonical = pinnedCount === rows.length && rows.length > 0;
+  const isAllLegacy = pinnedCount === 0;
 
-  const { data: updated, error: updateError } = await supabase
-    .from("student_challenges")
-    .update({
-      status: "submitted",
-      submitted_at: new Date().toISOString(),
-      duration_seconds: durationSeconds,
-      score,
-      max_score: maxScore,
-      termination_reason: terminationReason,
-      ...(focusViolationCount != null ? { focus_violation_count: focusViolationCount } : {}),
-    })
-    .eq("id", challengeId)
-    .eq("status", "in_progress") // extra guard against a race producing a double submit
-    .select()
-    .single();
-  if (updateError) throw updateError;
+  let updated;
+
+  if (isAllCanonical) {
+    // Canonical challenge: server-side marking is authoritative. The
+    // browser never computes is_correct/marks_awarded/score/max_score
+    // itself, and markAnswer() is never called for these questions —
+    // it can't be, since correctAnswer is never fetched to the client
+    // for a canonical question in the first place.
+    const { data, error } = await supabase.rpc("submit_and_mark_challenge", {
+      p_challenge_id: challengeId,
+      p_duration_seconds: durationSeconds,
+      p_termination_reason: terminationReason,
+      p_focus_violation_count: focusViolationCount ?? null,
+    });
+    if (error) throw error;
+    updated = data;
+  } else if (isAllLegacy) {
+    // Existing legacy path — entirely unchanged in behavior.
+    let score = 0;
+    let maxScore = 0;
+    for (const row of rows) {
+      const question = questionsById[row.question_id];
+      if (!question) continue;
+      const marksPossible = question.marks ?? 1;
+      maxScore += marksPossible;
+      const { is_correct, marks_awarded } = markAnswer(question, row.student_answer);
+      if (marks_awarded != null) score += marks_awarded;
+      await supabase
+        .from("challenge_questions")
+        .update({ is_correct, marks_awarded })
+        .eq("id", row.id);
+    }
+
+    const { data, error: updateError } = await supabase
+      .from("student_challenges")
+      .update({
+        status: "submitted",
+        submitted_at: new Date().toISOString(),
+        duration_seconds: durationSeconds,
+        score,
+        max_score: maxScore,
+        termination_reason: terminationReason,
+        ...(focusViolationCount != null ? { focus_violation_count: focusViolationCount } : {}),
+      })
+      .eq("id", challengeId)
+      .eq("status", "in_progress") // extra guard against a race producing a double submit
+      .select()
+      .single();
+    if (updateError) throw updateError;
+    updated = data;
+  } else {
+    // A mixture of pinned and unpinned rows should never happen — the
+    // curation step guarantees a homogeneous challenge. If it's somehow
+    // encountered anyway, fail clearly rather than silently falling back
+    // to client-side marking for the canonical rows (which would be
+    // unmarkable anyway, since they carry no correctAnswer client-side).
+    throw new Error("This challenge contains an invalid mixture of canonical and legacy questions and cannot be submitted safely. Please contact support.");
+  }
 
   if (rows.length >= 5) await recordStreakDay();
 

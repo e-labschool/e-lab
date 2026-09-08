@@ -2,8 +2,8 @@ import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useParams, useNavigate, useBlocker } from "react-router-dom";
 import { Flag, Loader2, Calculator as CalculatorIcon, Sigma, AlertTriangle, Maximize, Table2, BookOpen, Clock } from "lucide-react";
 import { supabase } from "../../../lib/supabaseClient.js";
-import { getQuestionById } from "../../../data/questions/index.js";
 import { getChallengeQuestions, saveAnswer, updateChallengeProgress, submitChallenge, abandonChallenge } from "../../../lib/challengeService.js";
+import { hydrateChallengeQuestions } from "../../../lib/canonicalQuestions.js";
 import { CUSTOM_CHALLENGE_CONFIG } from "../../../lib/assessmentConfig.js";
 import QuestionRenderer from "./QuestionRenderer.jsx";
 import Calculator from "./Calculator.jsx";
@@ -27,6 +27,7 @@ export default function ChallengeSession() {
   const navigate = useNavigate();
   const [challenge, setChallenge] = useState(null);
   const [rows, setRows] = useState([]);
+  const [questionsMap, setQuestionsMap] = useState(new Map());
   const [answers, setAnswers] = useState({});
   const [flagged, setFlagged] = useState(new Set());
   const [index, setIndex] = useState(0);
@@ -60,12 +61,18 @@ export default function ChallengeSession() {
       supabase.from("student_challenges").select("*").eq("id", challengeId).single(),
       getChallengeQuestions(challengeId),
     ])
-      .then(([{ data: c, error: cErr }, qRows]) => {
+      .then(async ([{ data: c, error: cErr }, qRows]) => {
         if (cErr) throw cErr;
         if (c.status !== "in_progress") {
           navigate(`/student/solve/${challengeId}/report`, { replace: true });
           return;
         }
+        // Pinned rows are hydrated from their exact question_versions
+        // snapshot here — never the live canonical row, never the
+        // legacy JS bank merely because an id matches — so what the
+        // student sees can never diverge from what was securely marked.
+        const hydrated = await hydrateChallengeQuestions(qRows);
+        setQuestionsMap(hydrated);
         setChallenge(c);
         setRows(qRows);
         setIndex(c.current_question_index ?? 0);
@@ -82,7 +89,7 @@ export default function ChallengeSession() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [challengeId]);
 
-  const questions = useMemo(() => rows.map((r) => getQuestionById(r.question_id)).filter(Boolean), [rows]);
+  const questions = useMemo(() => rows.map((r) => questionsMap.get(r.id)).filter(Boolean), [rows, questionsMap]);
   const current = questions[index];
   const currentRow = rows[index];
 

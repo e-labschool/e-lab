@@ -1,9 +1,11 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { ChevronLeft, Loader2, AlertTriangle } from "lucide-react";
 import { useAuth } from "../../../context/AuthContext.jsx";
 import CurriculumCheckboxTree from "../../../components/curriculum/CurriculumCheckboxTree.jsx";
 import { curateChallenge, estimateMinutesFor, createChallenge } from "../../../lib/challengeService.js";
+import { getPublishedCanonicalQuestions, mergeWithSupabasePrecedence } from "../../../lib/canonicalQuestions.js";
+import { getVisibleQuestions } from "../../../data/questions/index.js";
 import Button from "../../../components/ui/Button.jsx";
 
 const QUESTION_COUNT_OPTIONS = [5, 10, 15, 20];
@@ -27,18 +29,38 @@ export default function ChallengeBuilder() {
   const [style, setStyle] = useState("balanced");
   const [starting, setStarting] = useState(false);
   const [buildError, setBuildError] = useState(null);
+  const [pool, setPool] = useState(null); // null while loading; merged legacy+Supabase pool once ready
+  const [poolError, setPoolError] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getPublishedCanonicalQuestions()
+      .then((supabaseQuestions) => {
+        if (cancelled) return;
+        setPool(mergeWithSupabasePrecedence(getVisibleQuestions(), supabaseQuestions));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        // Legacy content still works even if Supabase is unreachable —
+        // never block Assess entirely over this.
+        setPool(getVisibleQuestions());
+        setPoolError("Some newer questions may not be available right now.");
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   const effectiveCount = mode === "questions" ? (Number(customCount) || questionCount) : null;
 
   const preview = useMemo(() => {
-    if (topicCodes.length === 0) return null;
+    if (topicCodes.length === 0 || !pool) return null;
     return curateChallenge({
       topicCodes, level, mode,
       questionCount: effectiveCount,
       timeLimitMinutes: timeMinutes,
       style,
+      questionPool: pool,
     });
-  }, [topicCodes, level, mode, effectiveCount, timeMinutes, style]);
+  }, [topicCodes, level, mode, effectiveCount, timeMinutes, style, pool]);
 
   async function handleStart() {
     if (!preview || preview.questions.length === 0) return;
@@ -167,6 +189,7 @@ export default function ChallengeBuilder() {
           </div>
         )}
         {buildError && <p className="mt-2 text-xs text-[var(--color-coral)]">{buildError}</p>}
+        {poolError && <p className="mt-2 text-xs text-[var(--color-ink-faint)]">{poolError}</p>}
       </div>
     </div>
   );

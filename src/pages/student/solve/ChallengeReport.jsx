@@ -2,8 +2,8 @@ import { useState, useEffect, useMemo } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { CheckCircle2, XCircle, HelpCircle, ArrowRight } from "lucide-react";
 import { supabase } from "../../../lib/supabaseClient.js";
-import { getQuestionById } from "../../../data/questions/index.js";
 import { getChallengeQuestions } from "../../../lib/challengeService.js";
+import { hydrateChallengeQuestions, getCanonicalReviewContent } from "../../../lib/canonicalQuestions.js";
 import { getFirstConceptIdForSubtopicCode } from "../../../lib/learn-tree.js";
 import ELabLoader from "../../../components/ui/ELabLoader.jsx";
 import Button from "../../../components/ui/Button.jsx";
@@ -20,6 +20,7 @@ export default function ChallengeReport() {
   const navigate = useNavigate();
   const [challenge, setChallenge] = useState(null);
   const [rows, setRows] = useState([]);
+  const [questionsMap, setQuestionsMap] = useState(new Map());
   const [loading, setLoading] = useState(true);
   const [reviewing, setReviewing] = useState(false);
 
@@ -28,7 +29,38 @@ export default function ChallengeReport() {
     Promise.all([
       supabase.from("student_challenges").select("*").eq("id", challengeId).single(),
       getChallengeQuestions(challengeId),
-    ]).then(([{ data: c }, qRows]) => {
+    ]).then(async ([{ data: c }, qRows]) => {
+      // Same rule as ChallengeSession: pinned rows are hydrated from
+      // their exact question_versions snapshot, never the legacy JS bank
+      // merely because an id matches — the report must show exactly what
+      // server-side marking actually marked, not a coincidentally
+      // similar current question.
+      const hydrated = await hydrateChallengeQuestions(qRows);
+
+      // For a SUBMITTED canonical challenge, merge in the secure
+      // post-submission review content (correct answer + explanation) —
+      // fetched once via the RPC, never by querying
+      // question_version_secrets directly. Pre-submission or for legacy
+      // rows, this is skipped entirely and the hydrated (secret-free)
+      // content stands as-is.
+      const isCanonical = qRows.length > 0 && qRows.every((r) => r.question_version_id != null);
+      if (isCanonical && c.status === "submitted") {
+        const reviewRows = await getCanonicalReviewContent(challengeId);
+        const reviewByQuestionId = Object.fromEntries(reviewRows.map((r) => [r.question_id, r]));
+        for (const row of qRows) {
+          const review = reviewByQuestionId[row.question_id];
+          if (!review) continue;
+          const existing = hydrated.get(row.id);
+          if (!existing) continue;
+          hydrated.set(row.id, {
+            ...existing,
+            correctAnswer: review.correct_answer_data?.value ?? existing.correctAnswer,
+            explanation: review.explanation ?? existing.explanation,
+          });
+        }
+      }
+
+      setQuestionsMap(hydrated);
       setChallenge(c);
       setRows(qRows);
       setLoading(false);
@@ -55,7 +87,7 @@ export default function ChallengeReport() {
   const pct = challenge.max_score > 0 ? Math.round((challenge.score / challenge.max_score) * 100) : null;
 
   if (reviewing) {
-    return <ReviewAnswers rows={rows} onBack={() => setReviewing(false)} />;
+    return <ReviewAnswers rows={rows} questionsMap={questionsMap} onBack={() => setReviewing(false)} />;
   }
 
   return (
@@ -109,7 +141,7 @@ export default function ChallengeReport() {
   );
 }
 
-function ReviewAnswers({ rows, onBack }) {
+function ReviewAnswers({ rows, questionsMap, onBack }) {
   return (
     <div className="mx-auto max-w-2xl px-6 py-10">
       <button type="button" onClick={onBack} className="text-sm text-[var(--color-ink-faint)] hover:text-[var(--color-ink)]">&larr; Back to report</button>
@@ -117,7 +149,7 @@ function ReviewAnswers({ rows, onBack }) {
 
       <div className="mt-6 flex flex-col gap-5">
         {rows.map((row) => {
-          const q = getQuestionById(row.question_id);
+          const q = questionsMap.get(row.id);
           if (!q) return null;
           const conceptId = getFirstConceptIdForSubtopicCode(row.topic_code);
           const status = row.is_correct === true ? "correct" : row.is_correct === false ? "incorrect" : "review";
