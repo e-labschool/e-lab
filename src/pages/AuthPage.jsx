@@ -6,6 +6,7 @@ import { useSettings } from "../context/SettingsContext.jsx";
 import Container from "../components/ui/Container.jsx";
 import Wordmark from "../components/layout/Wordmark.jsx";
 import Button from "../components/ui/Button.jsx";
+import CountrySelect from "../components/ui/CountrySelect.jsx";
 
 const inputClasses =
   "w-full rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] px-3 py-2.5 text-sm text-[var(--color-ink)] placeholder:text-[var(--color-ink-faint)] focus:border-[var(--color-indigo)] focus:outline-none focus:ring-2 focus:ring-[var(--color-indigo)]/30";
@@ -159,8 +160,6 @@ function SignInForm({ role, next, onSwitchTab }) {
   );
 }
 
-const LEVEL_OPTIONS = { student: ["SL", "HL"], teacher: ["SL", "HL", "SL & HL"] };
-
 function CreateAccountForm({ role }) {
   const { signUp, fetchProfile, isConfigured } = useAuth();
   const { settings } = useSettings();
@@ -168,7 +167,7 @@ function CreateAccountForm({ role }) {
   const navigate = useNavigate();
   const [fields, setFields] = useState({
     fullName: "", email: "", password: "", confirmPassword: "",
-    school: "", country: "", classGrade: "", level: "",
+    school: "", country: "", classGrade: "",
   });
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -184,7 +183,6 @@ function CreateAccountForm({ role }) {
 
     if (fields.password.length < 8) return setError("Password must be at least 8 characters.");
     if (fields.password !== fields.confirmPassword) return setError("Passwords don't match.");
-    if (!fields.level) return setError(role === "teacher" ? "Please select a teaching level." : "Please select a level.");
 
     setLoading(true);
     try {
@@ -198,8 +196,7 @@ function CreateAccountForm({ role }) {
         school: fields.school,
         country: fields.country,
         curriculum: "IB Diploma Programme",
-        level: fields.level,
-        ...(role === "student" ? { grade_or_class: fields.classGrade } : {}),
+        grade_or_class: fields.classGrade,
       };
 
       const { session, user } = await signUp({ email: fields.email, password: fields.password, metadata });
@@ -274,36 +271,19 @@ function CreateAccountForm({ role }) {
         </div>
         <div className="mt-3">
           <label className={labelClasses} htmlFor="su-country">Country</label>
-          <input id="su-country" className={inputClasses} value={fields.country} onChange={(e) => set("country", e.target.value)} />
+          <CountrySelect id="su-country" value={fields.country} onChange={(v) => set("country", v)} />
         </div>
-        {role === "student" && (
-          <div className="mt-3">
-            <label className={labelClasses} htmlFor="su-grade">Class / Grade</label>
-            <input id="su-grade" className={inputClasses} value={fields.classGrade} onChange={(e) => set("classGrade", e.target.value)} />
-          </div>
-        )}
+        <div className="mt-3">
+          <label className={labelClasses} htmlFor="su-grade">Class</label>
+          <select id="su-grade" className={inputClasses} value={fields.classGrade} onChange={(e) => set("classGrade", e.target.value)}>
+            <option value="">Select class</option>
+            <option value="DP1">DP1</option>
+            <option value="DP2">DP2</option>
+          </select>
+        </div>
         <div className="mt-3">
           <span className={labelClasses}>Curriculum</span>
           <p className="rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] px-3 py-2.5 text-sm text-[var(--color-ink-soft)]">IB Diploma Programme</p>
-        </div>
-        <div className="mt-3">
-          <span className={labelClasses}>{role === "teacher" ? "Teaching Level" : "Level"} <span className="text-[var(--color-coral)]">*</span></span>
-          <div className="flex flex-wrap gap-2">
-            {LEVEL_OPTIONS[role].map((opt) => (
-              <button
-                key={opt}
-                type="button"
-                onClick={() => set("level", opt)}
-                className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
-                  fields.level === opt
-                    ? "border-[var(--color-indigo)] bg-[var(--color-indigo-soft)] text-[var(--color-indigo)]"
-                    : "border-[var(--color-line)] text-[var(--color-ink-soft)] hover:border-[var(--color-ink)]"
-                }`}
-              >
-                {opt}
-              </button>
-            ))}
-          </div>
         </div>
       </div>
 

@@ -154,6 +154,14 @@ export default function ChallengeSession() {
     if (!readyScreenDismissed || submittedRef.current) return;
 
     function registerLeave() {
+      // The one guard that actually matters here: submittedRef flips to
+      // true synchronously at the very start of doSubmit(), before its
+      // own exitFullscreen() call — which is exactly what fires this
+      // listener a moment later. The effect's own top-level "return" only
+      // ran once at setup time; it can't react to a ref changing later,
+      // so this check has to live inside the handler itself. This is the
+      // fix for the "Assessment Interrupted" flash on a normal submit.
+      if (submittedRef.current) return;
       if (!hasFocusRef.current) return; // already counted this departure
       hasFocusRef.current = false;
       const next = violationCountRef.current + 1;

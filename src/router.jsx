@@ -18,6 +18,7 @@ import ResetPassword from "./pages/ResetPassword.jsx";
 import NotFound from "./pages/NotFound.jsx";
 
 import StudentLayout from "./pages/student/StudentLayout.jsx";
+import CurriculumSubjectSelect from "./pages/student/CurriculumSubjectSelect.jsx";
 import LearnLayout from "./components/learn/LearnLayout.jsx";
 import WelcomePage from "./components/learn/WelcomePage.jsx";
 import LearnConceptPage from "./components/learn/LearnConceptPage.jsx";
@@ -95,7 +96,7 @@ const router = createBrowserRouter([
     path: "/student",
     element: <StudentLayout />,
     children: [
-      { index: true, element: <Navigate to="/student/learn" replace /> },
+      { index: true, element: <CurriculumSubjectSelect /> },
       {
         path: "learn",
         element: <LearnLayout />,

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext.jsx";
 import Button from "../ui/Button.jsx";
+import CountrySelect from "../ui/CountrySelect.jsx";
 
 function initialsFor(name, email) {
   if (name) {
@@ -17,9 +18,11 @@ const labelClasses = "mb-1 block text-xs font-medium text-[var(--color-ink-soft)
 
 // One reusable profile view/edit card for both roles — role itself is
 // never an editable field here (per the brief, role changes aren't a
-// normal profile edit), only shown for context. `levelOptions` and
-// `levelLabel` are the one real difference between the two roles' forms.
-export default function ProfileCard({ role, levelLabel, levelOptions, showClassGrade }) {
+// normal profile edit), only shown for context. Both roles now show the
+// same Country/Class fields; Level is no longer shown or editable here
+// (existing profile rows that already have a level value keep it in the
+// database untouched — this form simply never displays or writes it).
+export default function ProfileCard({ role }) {
   const { user, profile, upsertProfile } = useAuth();
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState(null);
@@ -44,8 +47,7 @@ export default function ProfileCard({ role, levelLabel, levelOptions, showClassG
         school: form.school,
         country: form.country,
         curriculum: form.curriculum,
-        level: form.level,
-        grade_or_class: showClassGrade ? form.grade_or_class : null,
+        grade_or_class: form.grade_or_class,
       });
       setEditing(false);
     } catch (err) {
@@ -75,8 +77,7 @@ export default function ProfileCard({ role, levelLabel, levelOptions, showClassG
               ["School", profile.school || "\u2014"],
               ["Country", profile.country || "\u2014"],
               ["Curriculum", profile.curriculum],
-              [levelLabel, profile.level || "\u2014"],
-              ...(showClassGrade ? [["Class / Grade", profile.grade_or_class || "\u2014"]] : []),
+              ["Class", profile.grade_or_class || "\u2014"],
             ].map(([label, value]) => (
               <div key={label} className="flex items-center justify-between px-4 py-3 text-sm">
                 <dt className="text-[var(--color-ink-faint)]">{label}</dt>
@@ -101,36 +102,19 @@ export default function ProfileCard({ role, levelLabel, levelOptions, showClassG
           </div>
           <div>
             <label className={labelClasses} htmlFor="pc-country">Country</label>
-            <input id="pc-country" className={inputClasses} value={form.country || ""} onChange={(e) => setForm({ ...form, country: e.target.value })} />
+            <CountrySelect id="pc-country" value={form.country || ""} onChange={(v) => setForm({ ...form, country: v })} />
           </div>
-          {showClassGrade && (
-            <div>
-              <label className={labelClasses} htmlFor="pc-grade">Class / Grade</label>
-              <input id="pc-grade" className={inputClasses} value={form.grade_or_class || ""} onChange={(e) => setForm({ ...form, grade_or_class: e.target.value })} />
-            </div>
-          )}
+          <div>
+            <label className={labelClasses} htmlFor="pc-grade">Class</label>
+            <select id="pc-grade" className={inputClasses} value={form.grade_or_class || ""} onChange={(e) => setForm({ ...form, grade_or_class: e.target.value })}>
+              <option value="">Select class</option>
+              <option value="DP1">DP1</option>
+              <option value="DP2">DP2</option>
+            </select>
+          </div>
           <div>
             <span className={labelClasses}>Curriculum</span>
             <p className="rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] px-3 py-2 text-sm text-[var(--color-ink-soft)]">IB Diploma Programme</p>
-          </div>
-          <div>
-            <span className={labelClasses}>{levelLabel}</span>
-            <div className="flex flex-wrap gap-2">
-              {levelOptions.map((opt) => (
-                <button
-                  key={opt}
-                  type="button"
-                  onClick={() => setForm({ ...form, level: opt })}
-                  className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
-                    form.level === opt
-                      ? "border-[var(--color-indigo)] bg-[var(--color-indigo-soft)] text-[var(--color-indigo)]"
-                      : "border-[var(--color-line)] text-[var(--color-ink-soft)] hover:border-[var(--color-ink)]"
-                  }`}
-                >
-                  {opt}
-                </button>
-              ))}
-            </div>
           </div>
           {error && <p role="alert" className="text-xs text-[var(--color-coral)]">{error}</p>}
           <div className="flex gap-3">
