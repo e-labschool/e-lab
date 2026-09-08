@@ -34,78 +34,31 @@ import CarbonCycleDiagram from "./CarbonCycleDiagram.jsx";
 import ElectrochemicalCellDiagram from "./ElectrochemicalCellDiagram.jsx";
 import MaxwellBoltzmannDistribution from "./MaxwellBoltzmannDistribution.jsx";
 import MultistepEnergyProfile from "./MultistepEnergyProfile.jsx";
+import BondPolarityDiagram from "./BondPolarityDiagram.jsx";
+import LineGraph from "./LineGraph.jsx";
+import BondComparison from "./BondComparison.jsx";
+import DipoleComparison from "./DipoleComparison.jsx";
+import HydrogenBond from "./HydrogenBond.jsx";
+import { validateStimulus } from "../../../../../lib/stimulusSchema.js";
+import { normalizeStimulus } from "../../../../../lib/normalizeStimulus.js";
 
 // The one place that turns a `stimulus` data object into a rendered
 // visual — used identically by the Preview modal, the printed Paper
 // Preview, and the Markscheme Preview, so a question's visual is defined
-// once and rendered consistently everywhere it appears.
-export default function StimulusRenderer({ stimulus }) {
+// once and rendered consistently everywhere it appears. Normalization
+// happens here, once, at the single entry point every rendering path
+// goes through — not scattered across the various places that fetch and
+// map a question's visual_data.
+export default function StimulusRenderer({ stimulus: rawStimulus, questionId }) {
+  const stimulus = normalizeStimulus(rawStimulus);
   if (!stimulus) return null;
 
   return (
     <div className="flex flex-col gap-2">
       {stimulus.intro && <p className="text-sm text-[var(--color-ink-soft)]">{stimulus.intro}</p>}
-      <StimulusBody stimulus={stimulus} />
+      <StimulusBody stimulus={stimulus} questionId={questionId} rawType={typeof rawStimulus === "string" ? "(was a JSON string)" : rawStimulus?.type} />
     </div>
   );
-}
-
-// Root-cause fix: every sub-renderer below assumes its array props are
-// always present arrays and calls .map()/.filter() on them directly with
-// no guard of its own — that assumption held for every hand-authored
-// question, but a canonical Question Bank record imported with a missing
-// or differently-shaped field (e.g. "resonance" with no `structures`, or
-// "integrated" with no `blocks`) reaches these components with undefined
-// props and crashes exactly as reported: "Cannot read properties of
-// undefined (reading 'map')". Rather than edit 34 files individually,
-// this table declares which fields each stimulus type actually requires
-// to be arrays, checked ONCE, centrally, before any sub-renderer is ever
-// invoked — an invalid/incomplete stimulus falls back to a neutral
-// message instead of reaching code that assumes the data is well-formed.
-const REQUIRED_ARRAY_FIELDS = {
-  table: ["table.headers", "table.rows"],
-  nuclide: ["nuclides"],
-  "mass-spectrum": ["peaks"],
-  "bar-chart": ["bars"],
-  "emission-spectrum": ["lines"],
-  "energy-level-diagram": ["levels", "transitions"],
-  "orbital-shape": ["shapes"],
-  "orbital-box": ["subshells"],
-  "ionization-graph": ["points"],
-  "proportionality-graph": ["points"],
-  "gas-particle-diagram": ["containers"],
-  "apparatus-diagram": ["items"],
-  "lewis-structure": ["atoms", "bonds"],
-  resonance: ["structures"],
-  "ion-grid": [],
-  "electron-transfer": [],
-  "bonding-triangle": ["markers"],
-  chromatogram: ["spots"],
-  "periodic-table-highlight": ["highlights"],
-  "organic-structure": ["atoms", "bonds"],
-  "enantiomer-pair": [],
-  "ir-spectrum": ["bands"],
-  "nmr-spectrum": ["signals"],
-  "calorimeter-diagram": [],
-  "hess-cycle": ["nodes", "arrows"],
-  "born-haber-cycle": ["steps"],
-  "carbon-cycle-diagram": ["stages"],
-  "maxwell-boltzmann": ["temps"],
-  "multistep-energy-profile": ["points"],
-  integrated: ["blocks"],
-};
-
-function getNestedValue(obj, path) {
-  return path.split(".").reduce((acc, key) => acc?.[key], obj);
-}
-
-/** Returns true only if every array field this stimulus type requires is
- * genuinely present and is an array (Array.isArray, not just truthy —
- * a malformed non-array value must fail this check too). */
-function hasValidRequiredArrays(stimulus) {
-  const requiredFields = REQUIRED_ARRAY_FIELDS[stimulus.type];
-  if (requiredFields === undefined) return true; // unknown type — the switch's own `default: null` handles it safely
-  return requiredFields.every((path) => Array.isArray(getNestedValue(stimulus, path)));
 }
 
 function VisualUnavailable() {
@@ -116,12 +69,16 @@ function VisualUnavailable() {
   );
 }
 
-function StimulusBody({ stimulus }) {
-  // Central guard — see REQUIRED_ARRAY_FIELDS above. Runs before any
-  // sub-renderer is reached, for every case in this switch.
-  if (!hasValidRequiredArrays(stimulus)) {
+function StimulusBody({ stimulus, questionId, rawType }) {
+  // Central guard — see stimulusSchema.js. Runs before any sub-renderer
+  // is reached, for every case in this switch.
+  const { valid, missingField } = validateStimulus(stimulus);
+  if (!valid) {
     if (import.meta.env.DEV) {
-      console.warn(`[StimulusRenderer] Invalid stimulus for type "${stimulus.type}" — a required array field is missing or malformed.`, stimulus);
+      console.warn(
+        `[StimulusRenderer]\nQuestion: ${questionId ?? "unknown"}\nRaw type: ${rawType ?? stimulus.type}\nNormalized type: ${stimulus.type}\nValidation failure — missing/invalid required field: ${missingField}`,
+        stimulus
+      );
     }
     return <VisualUnavailable />;
   }
@@ -177,7 +134,23 @@ function StimulusBody({ stimulus }) {
     case "vsepr":
       return <VSEPRDiagram geometry={stimulus.geometry} centralLabel={stimulus.centralLabel} domains={stimulus.domains} />;
     case "dipole":
-      return <DipoleDiagram geometry={stimulus.geometry} centralLabel={stimulus.centralLabel} bondLabels={stimulus.bondLabels} netDipole={stimulus.netDipole} />;
+      // Two proven modes in the live data — branch on which fields are
+      // actually present, per the validated union in stimulusSchema.js.
+      // Never mixed: a record either has geometry (molecular mode) or
+      // bond + partialCharges (bond-polarity mode).
+      return stimulus.geometry != null ? (
+        <DipoleDiagram geometry={stimulus.geometry} centralLabel={stimulus.centralLabel} bondLabels={stimulus.bondLabels} netDipole={stimulus.netDipole} />
+      ) : (
+        <BondPolarityDiagram bond={stimulus.bond} partialCharges={stimulus.partialCharges} />
+      );
+    case "line-graph":
+      return <LineGraph trend={stimulus.trend} xLabel={stimulus.xLabel} yLabel={stimulus.yLabel} context={stimulus.context} extrapolation={stimulus.extrapolation} />;
+    case "bond-comparison":
+      return <BondComparison bonds={stimulus.bonds} />;
+    case "dipole-comparison":
+      return <DipoleComparison bonds={stimulus.bonds} />;
+    case "hydrogen-bond":
+      return <HydrogenBond molecules={stimulus.molecules} showIntermolecular={stimulus.showIntermolecular} showIntramolecular={stimulus.showIntramolecular} />;
     case "ion-grid":
       return <IonGridDiagram mode={stimulus.mode} rows={stimulus.rows} cols={stimulus.cols} variant={stimulus.variant} />;
     case "electron-transfer":
@@ -222,7 +195,7 @@ function StimulusBody({ stimulus }) {
       return (
         <div className="flex flex-col gap-4">
           {stimulus.blocks.map((block, i) => (
-            <StimulusBody key={i} stimulus={block} />
+            <StimulusBody key={i} stimulus={block} questionId={questionId} />
           ))}
         </div>
       );

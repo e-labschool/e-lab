@@ -25,7 +25,7 @@ export default function QuestionRenderer({ question, questionNumber, answer, onA
       {question.stimulus && (
         <div className="mb-5">
           <StimulusErrorBoundary questionId={question.id}>
-            <StimulusRenderer stimulus={question.stimulus} />
+            <StimulusRenderer stimulus={question.stimulus} questionId={question.id} />
           </StimulusErrorBoundary>
         </div>
       )}

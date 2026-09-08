@@ -1,5 +1,7 @@
 import { LEVELS, PAPERS, SYLLABUS_SECTIONS, DIFFICULTIES, QUESTION_TYPES, STATUSES } from "../data/questions/schema.js";
 import { getLearnTree } from "./learn-tree.js";
+import { validateStimulus } from "./stimulusSchema.js";
+import { normalizeStimulus } from "./normalizeStimulus.js";
 
 // Reuses the app's real enum lists rather than a second, drifting copy.
 // The DB's status check constraint also allows "archived" (schema.js's
@@ -53,6 +55,16 @@ export function validateQuestion(q, { allConceptIds, idsInThisBatch }) {
   }
 
   if (!q.markscheme && q.questionType !== "MCQ") errors.push("Missing markscheme");
+
+  // Reuses the EXACT same schema StimulusRenderer itself validates
+  // against — a malformed visualData is rejected here, before the
+  // question ever enters the canonical bank, rather than silently
+  // importing and only surfacing as "Visual unavailable" in Assess later.
+  if (q.visualData) {
+    const normalized = normalizeStimulus(q.visualData);
+    const { valid, missingField } = validateStimulus(normalized);
+    if (!valid) errors.push(`Invalid visualData for ${normalized?.type}: missing or invalid "${missingField}"`);
+  }
   if (!q.correctAnswerData && q.questionType === "MCQ") errors.push("Missing correct answer data");
 
   return errors;
