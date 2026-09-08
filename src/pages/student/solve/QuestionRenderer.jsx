@@ -1,4 +1,5 @@
 import StimulusRenderer from "../../teacher/qbuilder/components/visuals/StimulusRenderer.jsx";
+import StimulusErrorBoundary from "../../../components/ui/StimulusErrorBoundary.jsx";
 
 // Renders a question during an active challenge — no correctness
 // feedback, no explanations, no hints, ever (enforced by simply never
@@ -23,7 +24,9 @@ export default function QuestionRenderer({ question, questionNumber, answer, onA
 
       {question.stimulus && (
         <div className="mb-5">
-          <StimulusRenderer stimulus={question.stimulus} />
+          <StimulusErrorBoundary questionId={question.id}>
+            <StimulusRenderer stimulus={question.stimulus} />
+          </StimulusErrorBoundary>
         </div>
       )}
 

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Outlet, useParams, useOutletContext } from "react-router-dom";
 import { PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
-import CurriculumSidebar from "./CurriculumSidebar.jsx";
+import CurriculumSidebar from "./LearnCmsSidebar.jsx";
 import { usePreferences } from "../../context/PreferencesContext.jsx";
 
 // Desktop: a 260px collapsible sidebar that slides out (not just fades) —

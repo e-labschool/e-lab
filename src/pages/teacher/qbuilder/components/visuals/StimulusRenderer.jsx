@@ -50,7 +50,82 @@ export default function StimulusRenderer({ stimulus }) {
   );
 }
 
+// Root-cause fix: every sub-renderer below assumes its array props are
+// always present arrays and calls .map()/.filter() on them directly with
+// no guard of its own — that assumption held for every hand-authored
+// question, but a canonical Question Bank record imported with a missing
+// or differently-shaped field (e.g. "resonance" with no `structures`, or
+// "integrated" with no `blocks`) reaches these components with undefined
+// props and crashes exactly as reported: "Cannot read properties of
+// undefined (reading 'map')". Rather than edit 34 files individually,
+// this table declares which fields each stimulus type actually requires
+// to be arrays, checked ONCE, centrally, before any sub-renderer is ever
+// invoked — an invalid/incomplete stimulus falls back to a neutral
+// message instead of reaching code that assumes the data is well-formed.
+const REQUIRED_ARRAY_FIELDS = {
+  table: ["table.headers", "table.rows"],
+  nuclide: ["nuclides"],
+  "mass-spectrum": ["peaks"],
+  "bar-chart": ["bars"],
+  "emission-spectrum": ["lines"],
+  "energy-level-diagram": ["levels", "transitions"],
+  "orbital-shape": ["shapes"],
+  "orbital-box": ["subshells"],
+  "ionization-graph": ["points"],
+  "proportionality-graph": ["points"],
+  "gas-particle-diagram": ["containers"],
+  "apparatus-diagram": ["items"],
+  "lewis-structure": ["atoms", "bonds"],
+  resonance: ["structures"],
+  "ion-grid": [],
+  "electron-transfer": [],
+  "bonding-triangle": ["markers"],
+  chromatogram: ["spots"],
+  "periodic-table-highlight": ["highlights"],
+  "organic-structure": ["atoms", "bonds"],
+  "enantiomer-pair": [],
+  "ir-spectrum": ["bands"],
+  "nmr-spectrum": ["signals"],
+  "calorimeter-diagram": [],
+  "hess-cycle": ["nodes", "arrows"],
+  "born-haber-cycle": ["steps"],
+  "carbon-cycle-diagram": ["stages"],
+  "maxwell-boltzmann": ["temps"],
+  "multistep-energy-profile": ["points"],
+  integrated: ["blocks"],
+};
+
+function getNestedValue(obj, path) {
+  return path.split(".").reduce((acc, key) => acc?.[key], obj);
+}
+
+/** Returns true only if every array field this stimulus type requires is
+ * genuinely present and is an array (Array.isArray, not just truthy —
+ * a malformed non-array value must fail this check too). */
+function hasValidRequiredArrays(stimulus) {
+  const requiredFields = REQUIRED_ARRAY_FIELDS[stimulus.type];
+  if (requiredFields === undefined) return true; // unknown type — the switch's own `default: null` handles it safely
+  return requiredFields.every((path) => Array.isArray(getNestedValue(stimulus, path)));
+}
+
+function VisualUnavailable() {
+  return (
+    <p className="rounded-md border border-dashed border-[var(--color-line)] bg-[var(--color-paper)] px-3 py-2 text-xs text-[var(--color-ink-faint)]">
+      Visual unavailable
+    </p>
+  );
+}
+
 function StimulusBody({ stimulus }) {
+  // Central guard — see REQUIRED_ARRAY_FIELDS above. Runs before any
+  // sub-renderer is reached, for every case in this switch.
+  if (!hasValidRequiredArrays(stimulus)) {
+    if (import.meta.env.DEV) {
+      console.warn(`[StimulusRenderer] Invalid stimulus for type "${stimulus.type}" — a required array field is missing or malformed.`, stimulus);
+    }
+    return <VisualUnavailable />;
+  }
+
   switch (stimulus.type) {
     case "text":
       return null; // intro already rendered above; no separate visual
@@ -89,12 +164,14 @@ function StimulusBody({ stimulus }) {
     case "resonance":
       return (
         <div className="flex flex-wrap items-center gap-3">
-          {stimulus.structures.map((s, i) => (
-            <div key={i} className="flex items-center gap-3">
-              <LewisStructure atoms={s.atoms} bonds={s.bonds} overallCharge={s.overallCharge} label={s.label} />
-              {i < stimulus.structures.length - 1 && <span className="text-lg text-[var(--color-ink-faint)]">&harr;</span>}
-            </div>
-          ))}
+          {stimulus.structures.map((s, i) =>
+            Array.isArray(s?.atoms) && Array.isArray(s?.bonds) ? (
+              <div key={i} className="flex items-center gap-3">
+                <LewisStructure atoms={s.atoms} bonds={s.bonds} overallCharge={s.overallCharge} label={s.label} />
+                {i < stimulus.structures.length - 1 && <span className="text-lg text-[var(--color-ink-faint)]">&harr;</span>}
+              </div>
+            ) : null
+          )}
         </div>
       );
     case "vsepr":

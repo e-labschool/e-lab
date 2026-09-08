@@ -20,8 +20,8 @@ import NotFound from "./pages/NotFound.jsx";
 import StudentLayout from "./pages/student/StudentLayout.jsx";
 import CurriculumSubjectSelect from "./pages/student/CurriculumSubjectSelect.jsx";
 import LearnLayout from "./components/learn/LearnLayout.jsx";
-import WelcomePage from "./components/learn/WelcomePage.jsx";
-import LearnConceptPage from "./components/learn/LearnConceptPage.jsx";
+import LearnCmsHome from "./components/learn/LearnCmsHome.jsx";
+import LearnLessonPage from "./components/learn/LearnLessonPage.jsx";
 import SolveHome from "./pages/student/solve/SolveHome.jsx";
 import StudentProgressPage from "./pages/student/StudentProgressPage.jsx";
 import StudentProfilePage from "./pages/student/StudentProfilePage.jsx";
@@ -38,8 +38,9 @@ import TeacherProfilePage from "./pages/teacher/TeacherProfilePage.jsx";
 
 import AdminLayout from "./pages/admin/AdminLayout.jsx";
 import AdminDashboard from "./pages/admin/AdminDashboard.jsx";
-import AdminComingSoon from "./pages/admin/AdminComingSoon.jsx";
 import AdminResources from "./pages/admin/resources/AdminResources.jsx";
+import AdminLearnContent from "./pages/admin/learn/AdminLearnContent.jsx";
+import LessonEditor from "./pages/admin/learn/LessonEditor.jsx";
 import AdminQuestionBank from "./pages/admin/questions/AdminQuestionBank.jsx";
 import QuestionEditor from "./pages/admin/questions/QuestionEditor.jsx";
 import ImportQuestions from "./pages/admin/questions/ImportQuestions.jsx";
@@ -101,8 +102,8 @@ const router = createBrowserRouter([
         path: "learn",
         element: <LearnLayout />,
         children: [
-          { index: true, element: <WelcomePage /> },
-          { path: ":conceptId", element: <LearnConceptPage /> },
+          { index: true, element: <LearnCmsHome /> },
+          { path: ":conceptId", element: <LearnLessonPage /> },
         ],
       },
       { path: "solve", element: <SolveHome /> },
@@ -160,7 +161,9 @@ const router = createBrowserRouter([
     element: <AdminLayout />,
     children: [
       { index: true, element: <AdminDashboard /> },
-      { path: "learn-content", element: <AdminComingSoon title="Learn Content" description="Manage learning modules and lessons." /> },
+      { path: "learn-content", element: <AdminLearnContent /> },
+      { path: "learn-content/new", element: <LessonEditor /> },
+      { path: "learn-content/:pageId", element: <LessonEditor /> },
       { path: "resources", element: <AdminResources /> },
       { path: "question-bank", element: <AdminQuestionBank /> },
       { path: "question-bank/new", element: <QuestionEditor /> },
