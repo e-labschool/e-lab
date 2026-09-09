@@ -36,7 +36,7 @@ export default function Resources() {
             type="button"
             onClick={() => setActiveCategory(c.id)}
             className={`rounded-md px-4 py-2 text-[15px] font-semibold transition-colors ${
-              activeCategory === c.id ? "bg-[var(--color-ink)] text-white" : "text-[var(--color-ink-soft)] hover:bg-[var(--color-ink)]/5"
+              activeCategory === c.id ? "bg-white text-[#12161C] shadow-sm" : "text-[var(--color-ink-soft)] hover:bg-[var(--color-ink)]/5"
             }`}
           >
             {c.label}

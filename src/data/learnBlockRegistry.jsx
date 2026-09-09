@@ -1,4 +1,5 @@
 import DOMPurify from "dompurify";
+import LearnMediaInput from "../components/admin/LearnMediaInput.jsx";
 import {
   Type, Image as ImageIcon, Video, FlaskConical, Box, PlayCircle,
   Lightbulb, BookMarked, AlertTriangle, Globe2, ListChecks, BarChart3,
@@ -16,7 +17,7 @@ export const BLOCK_CATEGORIES = [
 ];
 
 export const BLOCK_TYPES = {
-  rich_text: { label: "Rich Text", category: "content", icon: Type, defaultContent: { html: "" } },
+  rich_text: { label: "Rich Text", category: "content", icon: Type, defaultContent: { title: "", titleColor: "", html: "" } },
   image: { label: "Image", category: "content", icon: ImageIcon, defaultContent: { url: "", caption: "", alt: "", alignment: "center", width: "full" } },
   video: { label: "Video", category: "content", icon: Video, defaultContent: { url: "", caption: "" } },
   equation: { label: "Chemical Equation / Chemistry", category: "chemistry", icon: FlaskConical, defaultContent: { markup: "" } },
@@ -89,6 +90,12 @@ export function RichTextEditor({ value, onChange }) {
         <button type="button" title="Align left" onMouseDown={(e) => e.preventDefault()} onClick={() => exec("justifyLeft")} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">\u2261L</button>
         <button type="button" title="Align center" onMouseDown={(e) => e.preventDefault()} onClick={() => exec("justifyCenter")} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">\u2261C</button>
         <button type="button" title="Link" onMouseDown={(e) => e.preventDefault()} onClick={handleLink} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">Link</button>
+        <span className="mx-1 h-5 w-px bg-[var(--color-line)]" />
+        <label className="flex items-center gap-1 px-1 text-[11px] text-[var(--color-ink-soft)]" title="Text colour">
+          Colour
+          <input type="color" defaultValue="#12161c" onChange={(e) => exec("foreColor", e.target.value)} className="h-6 w-7 cursor-pointer rounded border border-[var(--color-line)] bg-transparent p-0.5" />
+        </label>
+        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => exec("removeFormat")} className="rounded px-2 py-1 text-[11px] text-[var(--color-ink-soft)] hover:bg-[var(--color-line)]/40">Clear style</button>
       </div>
       <div
         contentEditable
@@ -105,17 +112,31 @@ export function RichTextEditor({ value, onChange }) {
 // Per-type editors — compact forms, not elaborate. Given `content` and
 // `onChange(nextContent)`.
 // ============================================================
-export function BlockEditor({ blockType, content, onChange }) {
+export function BlockEditor({ blockType, content, onChange, pageId, blockId }) {
   const set = (key, value) => onChange({ ...content, [key]: value });
 
   switch (blockType) {
     case "rich_text":
-      return <RichTextEditor value={content.html} onChange={(html) => set("html", html)} />;
+      return (
+        <div className="space-y-3">
+          <div>
+            <label className={labelCls}>Title <span className="text-[var(--color-ink-faint)]">(optional)</span></label>
+            <div className="flex gap-2">
+              <input className={inputCls} value={content.title ?? ""} onChange={(e) => set("title", e.target.value)} placeholder="Section title" />
+              <label className="flex shrink-0 items-center gap-1 text-xs text-[var(--color-ink-soft)]">Colour <input type="color" value={content.titleColor || "#12161c"} onChange={(e) => set("titleColor", e.target.value)} className="h-9 w-10 rounded border border-[var(--color-line)] bg-transparent p-1" /></label>
+            </div>
+          </div>
+          <div>
+            <label className={labelCls}>Text</label>
+            <RichTextEditor value={content.html ?? ""} onChange={(html) => set("html", html)} />
+          </div>
+        </div>
+      );
 
     case "image":
       return (
         <div className="space-y-2">
-          <div><label className={labelCls}>Image URL</label><input className={inputCls} value={content.url} onChange={(e) => set("url", e.target.value)} placeholder="https://... or Supabase Storage URL" /></div>
+          <LearnMediaInput kind="image" pageId={pageId} blockId={blockId} url={content.url ?? ""} onUrlChange={(url) => set("url", url)} label="Image" />
           <div><label className={labelCls}>Caption</label><input className={inputCls} value={content.caption} onChange={(e) => set("caption", e.target.value)} /></div>
           <div><label className={labelCls}>Alt text</label><input className={inputCls} value={content.alt} onChange={(e) => set("alt", e.target.value)} /></div>
           <div className="grid grid-cols-2 gap-2">
@@ -128,7 +149,7 @@ export function BlockEditor({ blockType, content, onChange }) {
     case "video":
       return (
         <div className="space-y-2">
-          <div><label className={labelCls}>Video URL (YouTube/Vimeo embed, or direct file)</label><input className={inputCls} value={content.url} onChange={(e) => set("url", e.target.value)} placeholder="https://www.youtube.com/embed/..." /></div>
+          <LearnMediaInput kind="video" pageId={pageId} blockId={blockId} url={content.url ?? ""} onUrlChange={(url) => set("url", url)} label="Video" />
           <div><label className={labelCls}>Caption</label><input className={inputCls} value={content.caption} onChange={(e) => set("caption", e.target.value)} /></div>
         </div>
       );
@@ -181,7 +202,7 @@ export function BlockEditor({ blockType, content, onChange }) {
         <div className="space-y-2">
           <div><label className={labelCls}>Title</label><input className={inputCls} value={content.title} onChange={(e) => set("title", e.target.value)} /></div>
           <div><label className={labelCls}>Content</label><textarea className={inputCls} rows={3} value={content.content} onChange={(e) => set("content", e.target.value)} /></div>
-          <div><label className={labelCls}>Optional image URL</label><input className={inputCls} value={content.imageUrl} onChange={(e) => set("imageUrl", e.target.value)} /></div>
+          <LearnMediaInput kind="image" pageId={pageId} blockId={blockId} url={content.imageUrl ?? ""} onUrlChange={(url) => set("imageUrl", url)} label="Optional image" />
         </div>
       );
 
@@ -289,5 +310,5 @@ function CompareContrastEditor({ content, set }) {
 }
 
 export function sanitizeHtml(html) {
-  return DOMPurify.sanitize(html || "");
+  return DOMPurify.sanitize(html || "", { ADD_ATTR: ["style", "color"] });
 }

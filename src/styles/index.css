@@ -146,3 +146,28 @@ body {
     background: #fff !important;
   }
 }
+
+/* Explicit light content surface used inside the dark app shell (question
+   cards, scientific previews, etc.). It resets semantic tokens locally so
+   descendants that use var(--color-ink/line/paper) stay readable instead of
+   inheriting dark-mode light text onto a fixed white background. */
+.light-surface {
+  --color-paper: #EEF1FB;
+  --color-paper-raised: #FFFFFF;
+  --color-ink: #12161C;
+  --color-ink-soft: #4A5160;
+  --color-ink-faint: #666D7A;
+  --color-line: #DCE1F0;
+  --color-indigo: #3654D6;
+  --color-indigo-soft: #EAEDFB;
+  --color-amber: #C96A21;
+  --color-amber-soft: #FBF0E4;
+  --color-teal: #2B7A6E;
+  --color-teal-soft: #E7F3F0;
+  --color-violet: #7A4FB0;
+  --color-violet-soft: #F0EAF8;
+  --color-coral: #B85C4A;
+  --color-coral-soft: #F8ECE9;
+  color-scheme: light;
+  color: #12161C;
+}

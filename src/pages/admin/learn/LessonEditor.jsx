@@ -1,13 +1,14 @@
 import { useState, useEffect } from "react";
 import { useParams, useSearchParams, useNavigate } from "react-router-dom";
 import {
-  ChevronLeft, Plus, Loader2, GripVertical, Copy, Eye, EyeOff, Trash2, Search, X,
+  ChevronLeft, Plus, Loader2, GripVertical, Copy, Eye, EyeOff, Trash2, Search, X, ArrowUp, ArrowDown, Pencil,
 } from "lucide-react";
 import { getFlatParentTopics } from "../../../data/learnCmsCurriculum.js";
 import {
   getLesson, createLesson, updateLesson, publishLesson, saveLessonAsDraft,
   listBlocks, createBlock, updateBlock, deleteBlock, reorderBlocks,
-  listCheckQuestions, addCheckQuestion, removeCheckQuestion,
+  listCheckQuestions, addCheckQuestion, addManualCheckQuestion, updateManualCheckQuestion,
+  removeCheckQuestion, reorderCheckQuestions, getAdminManualCheckSecret,
 } from "../../../lib/learnContentService.js";
 import { listQuestions } from "../../../lib/questionBankService.js";
 import { resolveLatestVersionIds } from "../../../lib/canonicalQuestions.js";
@@ -156,9 +157,45 @@ export default function LessonEditor() {
     setCheckQuestions((prev) => [...prev, created]);
   }
 
-  async function handleRemoveCheckQuestion(rowId) {
-    setCheckQuestions((prev) => prev.filter((q) => q.id !== rowId));
-    await removeCheckQuestion(rowId);
+  async function handleRemoveCheckQuestion(item) {
+    setCheckQuestions((prev) => prev.filter((q) => q.id !== item.id));
+    await removeCheckQuestion(item);
+  }
+
+  async function handleAddManualQuestion(question) {
+    setError(null);
+    try {
+      const created = await addManualCheckQuestion(currentPageId, question, checkQuestions.length);
+      setCheckQuestions((prev) => [...prev, created]);
+    } catch (err) {
+      setError(err.message || "Could not add the manual question.");
+      throw err;
+    }
+  }
+
+  async function handleUpdateManualQuestion(item, question) {
+    setError(null);
+    try {
+      const updated = await updateManualCheckQuestion(item.id, currentPageId, question);
+      setCheckQuestions((prev) => prev.map((q) => q.id === item.id ? { ...q, ...updated } : q));
+    } catch (err) {
+      setError(err.message || "Could not update the manual question.");
+      throw err;
+    }
+  }
+
+  async function handleMoveCheckQuestion(index, direction) {
+    const target = index + direction;
+    if (target < 0 || target >= checkQuestions.length) return;
+    const next = [...checkQuestions];
+    [next[index], next[target]] = [next[target], next[index]];
+    next.forEach((item, i) => { item.position = i; });
+    setCheckQuestions(next);
+    try {
+      await reorderCheckQuestions(next);
+    } catch (err) {
+      setError(err.message || "Could not reorder questions.");
+    }
   }
 
   if (loading) return <div className="flex min-h-[50vh] items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-[var(--color-ink-faint)]" /></div>;
@@ -175,7 +212,7 @@ export default function LessonEditor() {
         <div className="mt-6 space-y-5">
           {blocks.filter((b) => b.visible).map((block) => <LearnBlockRenderer key={block.id} block={block} />)}
         </div>
-        <CheckYourUnderstanding checkQuestions={checkQuestions} />
+        <CheckYourUnderstanding pageId={currentPageId} checkQuestions={checkQuestions} />
       </div>
     );
   }
@@ -252,7 +289,7 @@ export default function LessonEditor() {
                 </div>
                 {expandedBlockId === block.id && (
                   <div className="p-3">
-                    <BlockEditor blockType={block.block_type} content={block.content} onChange={(content) => handleUpdateBlockContent(block.id, content)} />
+                    <BlockEditor blockType={block.block_type} content={block.content} pageId={currentPageId} blockId={block.id} onChange={(content) => handleUpdateBlockContent(block.id, content)} />
                   </div>
                 )}
               </div>
@@ -281,10 +318,18 @@ export default function LessonEditor() {
 
           {/* Check Your Understanding config */}
           <div className="mt-8 rounded-md border border-[var(--color-indigo)]/25 bg-[var(--color-indigo-soft)] p-4">
-            <p className="text-sm font-bold text-[var(--color-ink)]">\ud83d\udca1 Check Your Understanding</p>
-            <p className="mt-0.5 text-xs text-[var(--color-ink-faint)]">Mandatory system section \u2014 cannot be removed, only configured.</p>
+            <p className="text-sm font-bold text-[var(--color-ink)]">💡 Check Your Understanding</p>
+            <p className="mt-0.5 text-xs text-[var(--color-ink-faint)]">Mandatory system section — cannot be removed, only configured.</p>
             {error && <p role="alert" className="mt-2 text-xs text-[var(--color-coral)]">{error}</p>}
-            <CheckQuestionPicker selected={checkQuestions} onAdd={handleAddCheckQuestion} onRemove={handleRemoveCheckQuestion} />
+            <CheckQuestionPicker
+              selected={checkQuestions}
+              pageId={currentPageId}
+              onAdd={handleAddCheckQuestion}
+              onAddManual={handleAddManualQuestion}
+              onUpdateManual={handleUpdateManualQuestion}
+              onRemove={handleRemoveCheckQuestion}
+              onMove={handleMoveCheckQuestion}
+            />
           </div>
         </div>
       )}
@@ -292,10 +337,12 @@ export default function LessonEditor() {
   );
 }
 
-function CheckQuestionPicker({ selected, onAdd, onRemove }) {
+function CheckQuestionPicker({ selected, pageId, onAdd, onAddManual, onUpdateManual, onRemove, onMove }) {
+  const [mode, setMode] = useState("bank");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [searching, setSearching] = useState(false);
+  const [editingManual, setEditingManual] = useState(null);
 
   async function handleSearch() {
     setSearching(true);
@@ -307,32 +354,171 @@ function CheckQuestionPicker({ selected, onAdd, onRemove }) {
     }
   }
 
+  async function editManual(item) {
+    try {
+      const secret = await getAdminManualCheckSecret(item.id);
+      setEditingManual({
+        item,
+        initial: {
+          questionType: item.question_type,
+          questionText: item.question_text,
+          options: Array.isArray(item.options) ? item.options : [],
+          correctAnswerData: secret?.correctAnswerData ?? (item.question_type === "mcq" ? { type: "mcq", value: "" } : { type: "text", value: "", alternatives: [] }),
+          explanation: secret?.explanation ?? "",
+        },
+      });
+      setMode("manual");
+    } catch (err) {
+      // The page-level error handler is reserved for persistence errors;
+      // a missing secret is rare and the form can still be recreated safely.
+      setEditingManual({ item, initial: null });
+      setMode("manual");
+    }
+  }
+
   return (
     <div className="mt-3">
       {selected.length > 0 && (
         <div className="mb-3 space-y-1.5">
-          {selected.map((q) => (
-            <div key={q.id} className="flex items-center justify-between rounded-md bg-white px-3 py-1.5 text-xs">
-              <span className="font-mono text-[var(--color-ink)]">{q.question_id}</span>
-              <button type="button" onClick={() => onRemove(q.id)} className="text-[var(--color-coral)]"><X size={13} /></button>
+          {selected.map((q, index) => (
+            <div key={`${q.source_type}-${q.id}`} className="light-surface flex items-center gap-2 rounded-md bg-white px-3 py-2 text-xs text-[#12161C]">
+              <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${q.source_type === "manual" ? "bg-[#F0EAF8] text-[#6D3FA3]" : "bg-[#EAEDFB] text-[#3654D6]"}`}>{q.source_type === "manual" ? "Manual" : "Question Bank"}</span>
+              <span className="min-w-0 flex-1 truncate">
+                {q.source_type === "manual" ? q.question_text : <span className="font-mono">{q.question_id}</span>}
+              </span>
+              <div className="flex shrink-0 items-center gap-1">
+                <button type="button" disabled={index === 0} onClick={() => onMove(index, -1)} title="Move up" className="rounded p-1 text-[#4A5160] hover:bg-[#EEF1FB] disabled:opacity-25"><ArrowUp size={12} /></button>
+                <button type="button" disabled={index === selected.length - 1} onClick={() => onMove(index, 1)} title="Move down" className="rounded p-1 text-[#4A5160] hover:bg-[#EEF1FB] disabled:opacity-25"><ArrowDown size={12} /></button>
+                {q.source_type === "manual" && <button type="button" onClick={() => editManual(q)} title="Edit manual question" className="rounded p-1 text-[#3654D6] hover:bg-[#EAEDFB]"><Pencil size={12} /></button>}
+                <button type="button" onClick={() => onRemove(q)} title="Remove" className="rounded p-1 text-[#B85C4A] hover:bg-[#F8ECE9]"><X size={13} /></button>
+              </div>
             </div>
           ))}
         </div>
       )}
-      <div className="flex gap-2">
-        <input className={inputCls} placeholder="Search question bank by ID or text" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleSearch()} />
-        <Button size="sm" variant="secondary" onClick={handleSearch} disabled={searching}>{searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search size={14} />}</Button>
+
+      <div className="mb-3 flex gap-2">
+        <button type="button" onClick={() => { setMode("bank"); setEditingManual(null); }} className={`rounded-md px-3 py-2 text-xs font-semibold ${mode === "bank" ? "bg-[#3654D6] text-white" : "border border-[var(--color-line)] text-[var(--color-ink-soft)]"}`}>From Question Bank</button>
+        <button type="button" onClick={() => { setMode("manual"); setEditingManual(null); }} className={`rounded-md px-3 py-2 text-xs font-semibold ${mode === "manual" ? "bg-[#3654D6] text-white" : "border border-[var(--color-line)] text-[var(--color-ink-soft)]"}`}>+ Add Manual Question</button>
       </div>
-      {results.length > 0 && (
-        <div className="mt-2 divide-y divide-[var(--color-line)] rounded-md border border-[var(--color-line)] bg-white">
-          {results.map((q) => (
-            <button key={q.id} type="button" onClick={() => onAdd(q)} className="flex w-full items-center justify-between px-3 py-2 text-left text-xs hover:bg-[var(--color-indigo-soft)]">
-              <span><span className="font-mono">{q.id}</span> \u2014 {q.question_content?.slice(0, 60)}</span>
-              <Plus size={13} className="text-[var(--color-indigo)]" />
-            </button>
-          ))}
-        </div>
+
+      {mode === "bank" ? (
+        <>
+          <div className="flex gap-2">
+            <input className={inputCls} placeholder="Search question bank by ID or text" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleSearch()} />
+            <Button size="sm" variant="secondary" onClick={handleSearch} disabled={searching}>{searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search size={14} />}</Button>
+          </div>
+          {results.length > 0 && (
+            <div className="light-surface mt-2 divide-y divide-[#DCE1F0] rounded-md border border-[#DCE1F0] bg-white text-[#12161C]">
+              {results.map((q) => (
+                <button key={q.id} type="button" onClick={() => onAdd(q)} className="flex w-full items-center justify-between px-3 py-2 text-left text-xs text-[#12161C] hover:bg-[#EAEDFB]">
+                  <span><span className="font-mono">{q.id}</span> — {q.question_content?.slice(0, 80)}</span>
+                  <Plus size={13} className="text-[#3654D6]" />
+                </button>
+              ))}
+            </div>
+          )}
+        </>
+      ) : (
+        <ManualQuestionForm
+          key={editingManual?.item?.id || "new"}
+          initial={editingManual?.initial}
+          editing={Boolean(editingManual?.item)}
+          onCancel={() => { setEditingManual(null); setMode("bank"); }}
+          onSave={async (question) => {
+            if (editingManual?.item) await onUpdateManual(editingManual.item, question);
+            else await onAddManual(question);
+            setEditingManual(null);
+            setMode("bank");
+          }}
+        />
       )}
+    </div>
+  );
+}
+
+function ManualQuestionForm({ initial, editing, onSave, onCancel }) {
+  const defaultOptions = ["A", "B", "C", "D"].map((id) => ({ id, text: "" }));
+  const [questionType, setQuestionType] = useState(initial?.questionType || "mcq");
+  const [questionText, setQuestionText] = useState(initial?.questionText || "");
+  const [options, setOptions] = useState(initial?.options?.length ? initial.options : defaultOptions);
+  const [correct, setCorrect] = useState(initial?.correctAnswerData?.value || "");
+  const [alternatives, setAlternatives] = useState((initial?.correctAnswerData?.alternatives || []).join("; "));
+  const [explanation, setExplanation] = useState(initial?.explanation || "");
+  const [saving, setSaving] = useState(false);
+  const [localError, setLocalError] = useState("");
+
+  function updateOption(index, text) {
+    setOptions((prev) => prev.map((opt, i) => i === index ? { ...opt, text } : opt));
+  }
+
+  async function submit() {
+    if (!questionText.trim()) { setLocalError("Enter the question text."); return; }
+    if (questionType === "mcq") {
+      const validOptions = options.filter((o) => o.text.trim());
+      if (validOptions.length < 2) { setLocalError("Add at least two options."); return; }
+      if (!correct || !validOptions.some((o) => o.id === correct)) { setLocalError("Select the correct option."); return; }
+    } else if (!correct.trim()) { setLocalError("Enter the accepted answer."); return; }
+
+    setSaving(true); setLocalError("");
+    try {
+      await onSave({
+        questionType,
+        questionText,
+        options: questionType === "mcq" ? options.filter((o) => o.text.trim()) : [],
+        correctAnswerData: questionType === "mcq"
+          ? { type: "mcq", value: correct }
+          : { type: "text", value: correct.trim(), alternatives: alternatives.split(";").map((v) => v.trim()).filter(Boolean) },
+        explanation,
+      });
+    } catch (err) {
+      setLocalError(err.message || "Could not save this question.");
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <div className="rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-4">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <label className={labelCls}>Question Type</label>
+          <select className={inputCls} value={questionType} onChange={(e) => { setQuestionType(e.target.value); setCorrect(""); }}>
+            <option value="mcq">Multiple Choice</option>
+            <option value="short_answer">Short Answer</option>
+          </select>
+        </div>
+        <div className="sm:col-span-2">
+          <label className={labelCls}>Question</label>
+          <textarea className={inputCls} rows={3} value={questionText} onChange={(e) => setQuestionText(e.target.value)} placeholder="Type the quick-check question" />
+        </div>
+
+        {questionType === "mcq" ? (
+          <div className="space-y-2 sm:col-span-2">
+            <label className={labelCls}>Options</label>
+            {options.map((opt, i) => (
+              <div key={opt.id} className="flex items-center gap-2">
+                <label className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] text-xs font-semibold text-[var(--color-ink)]">
+                  <input type="radio" className="sr-only" name="manual-correct" checked={correct === opt.id} onChange={() => setCorrect(opt.id)} />
+                  {opt.id}{correct === opt.id ? " ✓" : ""}
+                </label>
+                <input className={inputCls} value={opt.text} onChange={(e) => updateOption(i, e.target.value)} placeholder={`Option ${opt.id}`} />
+              </div>
+            ))}
+            <p className="text-[11px] text-[var(--color-ink-faint)]">Click A/B/C/D to mark the correct answer.</p>
+          </div>
+        ) : (
+          <>
+            <div className="sm:col-span-2"><label className={labelCls}>Accepted Answer</label><input className={inputCls} value={correct} onChange={(e) => setCorrect(e.target.value)} /></div>
+            <div className="sm:col-span-2"><label className={labelCls}>Alternative Accepted Answers <span className="text-[var(--color-ink-faint)]">(optional, separate with ;)</span></label><input className={inputCls} value={alternatives} onChange={(e) => setAlternatives(e.target.value)} placeholder="e.g. solid; solid state" /></div>
+          </>
+        )}
+
+        <div className="sm:col-span-2"><label className={labelCls}>Explanation / Feedback <span className="text-[var(--color-ink-faint)]">(optional)</span></label><textarea className={inputCls} rows={2} value={explanation} onChange={(e) => setExplanation(e.target.value)} /></div>
+      </div>
+      {localError && <p className="mt-2 text-xs text-[var(--color-coral)]">{localError}</p>}
+      <div className="mt-3 flex gap-2">
+        <Button size="sm" onClick={submit} disabled={saving}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : editing ? "Update Manual Question" : "Add Manual Question"}</Button>
+        <Button size="sm" variant="secondary" onClick={onCancel}>Cancel</Button>
+      </div>
     </div>
   );
 }

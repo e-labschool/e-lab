@@ -29,7 +29,7 @@ function LivePreview({ content, questionId }) {
     return <p className="text-xs text-[var(--color-amber)]">Complete the required visual fields to preview.</p>;
   }
   return (
-    <div className="rounded-md border border-[var(--color-line)] bg-white p-4">
+    <div className="light-surface rounded-md border border-[#DCE1F0] bg-white p-4">
       <StimulusRenderer stimulus={content} questionId={questionId} />
     </div>
   );
@@ -232,7 +232,7 @@ export default function VisualEditor({ questionId, content, onChange }) {
       {uploadError && <p className="mt-2 text-xs text-[var(--color-coral)]">{uploadError}</p>}
 
       {picking && (
-        <div className="mt-3 max-h-72 overflow-y-auto rounded-md border border-[var(--color-line)] bg-white p-3">
+        <div className="rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-3 mt-3 max-h-72 overflow-y-auto">
           {getVisualTypeCategories().map((cat) => (
             <div key={cat.id} className="mb-2 last:mb-0">
               <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">{cat.label}</p>

@@ -6,7 +6,6 @@ export const CURRICULA = [
     id: "ib-dp",
     name: "IB Diploma Programme",
     available: true,
-    logo: "/branding/ib-dp-logo.png",
     subjects: [
       {
         id: "chemistry",

@@ -15,7 +15,12 @@ export default function LearnBlockRenderer({ block }) {
 
   switch (block.block_type) {
     case "rich_text":
-      return <div className="prose-sm max-w-none text-[var(--color-ink-soft)] [&_h3]:text-lg [&_h3]:font-bold [&_h3]:text-[var(--color-ink)] [&_h4]:text-base [&_h4]:font-semibold [&_h4]:text-[var(--color-ink)] [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-[var(--color-indigo)] [&_a]:underline" dangerouslySetInnerHTML={{ __html: sanitizeHtml(c.html) }} />;
+      return (
+        <section>
+          {c.title && <h2 className="mb-2 text-xl font-semibold tracking-tight" style={c.titleColor ? { color: c.titleColor } : { color: "var(--color-ink)" }}>{c.title}</h2>}
+          <div className="prose-sm max-w-none text-[var(--color-ink-soft)] [&_h3]:text-lg [&_h3]:font-bold [&_h3]:text-[var(--color-ink)] [&_h4]:text-base [&_h4]:font-semibold [&_h4]:text-[var(--color-ink)] [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-[var(--color-indigo)] [&_a]:underline" dangerouslySetInnerHTML={{ __html: sanitizeHtml(c.html) }} />
+        </section>
+      );
 
     case "image":
       return (
@@ -25,15 +30,24 @@ export default function LearnBlockRenderer({ block }) {
         </figure>
       );
 
-    case "video":
+    case "video": {
+      const url = c.url || "";
+      const isDirectVideo = /\.(mp4|webm|mov)(\?|#|$)/i.test(url) || url.includes("/storage/v1/object/public/learn-media/");
+      const embedUrl = toEmbedVideoUrl(url);
+      if (!url) return <PlaceholderBlock label="Video not yet configured" />;
       return (
         <figure>
           <div className="aspect-video w-full overflow-hidden rounded-md bg-black">
-            <iframe src={c.url} title={c.caption || "Lesson video"} className="h-full w-full" allowFullScreen sandbox="allow-scripts allow-same-origin allow-presentation" />
+            {isDirectVideo ? (
+              <video src={url} controls preload="metadata" className="h-full w-full object-contain" aria-label={c.caption || "Lesson video"} />
+            ) : (
+              <iframe src={embedUrl} title={c.caption || "Lesson video"} className="h-full w-full" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen sandbox="allow-scripts allow-same-origin allow-presentation" />
+            )}
           </div>
           {c.caption && <figcaption className="mt-1.5 text-xs text-[var(--color-ink-faint)]">{c.caption}</figcaption>}
         </figure>
       );
+    }
 
     case "equation":
       return <p className="rounded-md bg-[var(--color-paper)] px-4 py-3 text-center font-mono text-base text-[var(--color-ink)]" dangerouslySetInnerHTML={{ __html: renderChemMarkup(c.markup) }} />;
@@ -171,7 +185,7 @@ function RevealThinkBlock({ content }) {
       {!revealed ? (
         <button type="button" onClick={() => setRevealed(true)} className="mt-3 rounded-md border border-[var(--color-violet)] px-3 py-1.5 text-xs font-medium text-[var(--color-violet)]">Reveal</button>
       ) : (
-        <p className="mt-3 rounded-md bg-white/60 px-3 py-2 text-sm text-[var(--color-ink-soft)]">{content.reveal}</p>
+        <p className="mt-3 rounded-md bg-[var(--color-paper-raised)] px-3 py-2 text-sm text-[var(--color-ink-soft)]">{content.reveal}</p>
       )}
     </div>
   );
@@ -193,4 +207,25 @@ function PracticalBlock({ content }) {
       </div>
     </div>
   );
+}
+
+
+function toEmbedVideoUrl(url) {
+  if (!url) return "";
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname.includes("youtube.com")) {
+      if (parsed.pathname.startsWith("/embed/")) return url;
+      const id = parsed.searchParams.get("v");
+      if (id) return `https://www.youtube.com/embed/${id}`;
+    }
+    if (parsed.hostname === "youtu.be") return `https://www.youtube.com/embed/${parsed.pathname.slice(1)}`;
+    if (parsed.hostname.includes("vimeo.com") && !parsed.hostname.includes("player.")) {
+      const id = parsed.pathname.split("/").filter(Boolean).pop();
+      if (id) return `https://player.vimeo.com/video/${id}`;
+    }
+  } catch {
+    return url;
+  }
+  return url;
 }
