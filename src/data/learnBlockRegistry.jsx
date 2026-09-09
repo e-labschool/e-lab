@@ -33,6 +33,7 @@ export const BLOCK_TYPES = {
   reveal_think: { label: "Reveal / Think", category: "teaching", icon: HelpCircle, defaultContent: { prompt: "", reveal: "" } },
   practical: { label: "Practical / Experiment", category: "teaching", icon: Beaker, defaultContent: { aim: "", apparatus: "", variables: "", method: "", safety: "", observations: "", data: "", analysis: "" } },
   page_break: { label: "Page Break", category: "content", icon: Files, defaultContent: { label: "" } },
+  check_understanding: { label: "Check Your Understanding", category: "teaching", icon: ListChecks, defaultContent: {} },
 };
 
 // Curated presets — Admin selects, never writes raw geometry config.
@@ -201,8 +202,16 @@ export function BlockEditor({ blockType, content, onChange, pageId, blockId }) {
       return (
         <div className="rounded-md border border-dashed border-[var(--color-indigo)]/40 bg-[var(--color-indigo-soft)] p-3">
           <p className="text-xs font-semibold text-[var(--color-indigo)]">Starts a new student page</p>
-          <p className="mt-1 text-[11px] text-[var(--color-ink-faint)]">Students will see page numbers (1, 2, 3…) and Previous/Next Page controls. Check Your Understanding stays on the final page.</p>
+          <p className="mt-1 text-[11px] text-[var(--color-ink-faint)]">Students will see page numbers (1, 2, 3…) and Previous/Next Page controls. Add content blocks after this break to continue on the new page.</p>
           <div className="mt-2"><label className={labelCls}>Optional page label</label><input className={inputCls} value={content.label ?? ""} onChange={(e) => set("label", e.target.value)} placeholder="e.g. Classification of matter" /></div>
+        </div>
+      );
+
+    case "check_understanding":
+      return (
+        <div className="rounded-md border border-dashed border-[var(--color-amber)]/40 bg-[var(--color-amber-soft)] p-3">
+          <p className="text-xs font-semibold text-[var(--color-amber)]">Optional quick check</p>
+          <p className="mt-1 text-[11px] text-[var(--color-ink-faint)]">Configure Question Bank or manual questions in this block. Drag this block anywhere in the lesson, including between Page Breaks.</p>
         </div>
       );
 

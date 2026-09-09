@@ -109,10 +109,14 @@ export default function LearnLessonPage() {
       )}
 
       <div className="mt-6 space-y-5">
-        {activePage.blocks.map((block) => <LearnBlockRenderer key={block.id} block={block} />)}
+        {activePage.blocks.map((block) =>
+          block.block_type === "check_understanding" ? (
+            <CheckYourUnderstanding key={block.id} pageId={pageId} checkQuestions={lesson.checkQuestions} />
+          ) : (
+            <LearnBlockRenderer key={block.id} block={block} />
+          )
+        )}
       </div>
-
-      {isLastContentPage && <CheckYourUnderstanding pageId={pageId} checkQuestions={lesson.checkQuestions} />}
 
       {pages.length > 1 && (
         <div className="mt-8 flex items-center justify-between border-t border-[var(--color-line)] pt-5">

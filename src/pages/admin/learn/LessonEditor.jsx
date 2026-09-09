@@ -104,6 +104,10 @@ export default function LessonEditor() {
       setError("Save this lesson as a draft first, then add blocks.");
       return;
     }
+    if (blockType === "check_understanding" && blocks.some((b) => b.block_type === "check_understanding")) {
+      setError("This lesson already has a Check Your Understanding block. Move the existing block to the position you want.");
+      return;
+    }
     const created = await createBlock(currentPageId, { blockType, content: BLOCK_TYPES[blockType].defaultContent, position: blocks.length });
     setBlocks((prev) => [...prev, created]);
     setExpandedBlockId(created.id);
@@ -121,6 +125,10 @@ export default function LessonEditor() {
   }
 
   async function handleDuplicate(block) {
+    if (block.block_type === "check_understanding") {
+      setError("A lesson can contain one Check Your Understanding block. Move the existing block instead of duplicating it.");
+      return;
+    }
     const created = await createBlock(currentPageId, { blockType: block.block_type, content: block.content, position: blocks.length });
     setBlocks((prev) => [...prev, created]);
   }
@@ -229,9 +237,14 @@ export default function LessonEditor() {
           </div>
         )}
         <div className="mt-6 space-y-5">
-          {activePreviewPage.blocks.map((block) => <LearnBlockRenderer key={block.id} block={block} />)}
+          {activePreviewPage.blocks.map((block) =>
+            block.block_type === "check_understanding" ? (
+              <CheckYourUnderstanding key={block.id} pageId={currentPageId} checkQuestions={checkQuestions} />
+            ) : (
+              <LearnBlockRenderer key={block.id} block={block} />
+            )
+          )}
         </div>
-        {safePreviewPage === previewPages.length - 1 && <CheckYourUnderstanding pageId={currentPageId} checkQuestions={checkQuestions} />}
         {previewPages.length > 1 && (
           <div className="mt-6 flex justify-between border-t border-[var(--color-line)] pt-4">
             <Button size="sm" variant="secondary" disabled={safePreviewPage === 0} onClick={() => setPreviewPage((p) => Math.max(0, p - 1))}>Previous Page</Button>
@@ -305,6 +318,7 @@ export default function LessonEditor() {
                 <div className="flex items-center gap-2 border-b border-[var(--color-line)] px-3 py-2">
                   <GripVertical size={14} className="cursor-grab text-[var(--color-ink-faint)]" />
                   <span className="text-xs font-semibold text-[var(--color-ink-soft)]">{BLOCK_TYPES[block.block_type]?.label ?? block.block_type}</span>
+                  {block.block_type === "check_understanding" && <span className="rounded bg-[var(--color-indigo-soft)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-indigo)]">{checkQuestions.length} question{checkQuestions.length === 1 ? "" : "s"}</span>}
                   <div className="ml-auto flex items-center gap-1">
                     <button type="button" onClick={() => setExpandedBlockId(expandedBlockId === block.id ? null : block.id)} className="rounded px-2 py-1 text-xs text-[var(--color-indigo)] hover:bg-[var(--color-indigo-soft)]">{expandedBlockId === block.id ? "Close" : "Edit"}</button>
                     <button type="button" title="Duplicate" onClick={() => handleDuplicate(block)} className="rounded p-1.5 text-[var(--color-ink-faint)] hover:bg-[var(--color-line)]/40"><Copy size={13} /></button>
@@ -314,7 +328,25 @@ export default function LessonEditor() {
                 </div>
                 {expandedBlockId === block.id && (
                   <div className="p-3">
-                    <BlockEditor blockType={block.block_type} content={block.content} pageId={currentPageId} blockId={block.id} onChange={(content) => handleUpdateBlockContent(block.id, content)} />
+                    {block.block_type === "check_understanding" ? (
+                      <div className="rounded-md border border-[var(--color-indigo)]/25 bg-[var(--color-indigo-soft)] p-4">
+                        <div className="mb-3">
+                          <p className="text-sm font-bold text-[var(--color-ink)]">💡 Check Your Understanding</p>
+                          <p className="mt-0.5 text-xs text-[var(--color-ink-faint)]">Optional block — drag it anywhere in the lesson. Add questions from the bank or create manual questions with an optional uploaded image.</p>
+                        </div>
+                        <CheckQuestionPicker
+                          selected={checkQuestions}
+                          pageId={currentPageId}
+                          onAdd={handleAddCheckQuestion}
+                          onAddManual={handleAddManualQuestion}
+                          onUpdateManual={handleUpdateManualQuestion}
+                          onRemove={handleRemoveCheckQuestion}
+                          onMove={handleMoveCheckQuestion}
+                        />
+                      </div>
+                    ) : (
+                      <BlockEditor blockType={block.block_type} content={block.content} pageId={currentPageId} blockId={block.id} onChange={(content) => handleUpdateBlockContent(block.id, content)} />
+                    )}
                   </div>
                 )}
               </div>
@@ -341,21 +373,6 @@ export default function LessonEditor() {
             )}
           </div>
 
-          {/* Check Your Understanding config */}
-          <div className="mt-8 rounded-md border border-[var(--color-indigo)]/25 bg-[var(--color-indigo-soft)] p-4">
-            <p className="text-sm font-bold text-[var(--color-ink)]">💡 Check Your Understanding</p>
-            <p className="mt-0.5 text-xs text-[var(--color-ink-faint)]">Mandatory system section — cannot be removed, only configured.</p>
-            {error && <p role="alert" className="mt-2 text-xs text-[var(--color-coral)]">{error}</p>}
-            <CheckQuestionPicker
-              selected={checkQuestions}
-              pageId={currentPageId}
-              onAdd={handleAddCheckQuestion}
-              onAddManual={handleAddManualQuestion}
-              onUpdateManual={handleUpdateManualQuestion}
-              onRemove={handleRemoveCheckQuestion}
-              onMove={handleMoveCheckQuestion}
-            />
-          </div>
         </div>
       )}
     </div>

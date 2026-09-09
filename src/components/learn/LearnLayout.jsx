@@ -21,11 +21,11 @@ export default function LearnLayout() {
     <div className="relative flex min-h-[calc(100vh-4rem)]">
       {/* Desktop/tablet collapsible panel */}
       <aside
-        className={`hidden shrink-0 overflow-hidden border-r border-[var(--color-line)] bg-[var(--color-paper)] transition-[width] duration-200 ease-out md:block ${
+        className={`sticky top-0 hidden h-screen shrink-0 self-start overflow-hidden border-r border-[var(--color-line)] bg-[var(--color-paper)] transition-[width] duration-200 ease-out md:block ${
           sidebarCollapsed ? "w-0 border-r-0" : "w-[260px]"
         }`}
       >
-        <div className="h-full w-[260px] overflow-y-auto px-3 py-5">
+        <div className="h-screen w-[260px] overflow-y-auto overscroll-contain px-3 py-5">
           <CurriculumSidebar activeConceptId={conceptId} basePath={basePath} />
         </div>
       </aside>

@@ -4,14 +4,15 @@ import { submitLearnCheckAnswers } from "../../lib/learnContentService.js";
 import QuestionRenderer from "../../pages/student/solve/QuestionRenderer.jsx";
 import Button from "../ui/Button.jsx";
 
-// Mandatory system section at the bottom of every Learn lesson. It is
-// intentionally stateless with respect to Assess/Progress.
+// Optional Learn block. It is intentionally stateless with respect to Assess/Progress.
 export default function CheckYourUnderstanding({ pageId, checkQuestions = [] }) {
   const [started, setStarted] = useState(false);
   const [answers, setAnswers] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [results, setResults] = useState(null); // Map keyed by assignment item_id
   const [submitError, setSubmitError] = useState("");
+
+  if (checkQuestions.length === 0) return null;
 
   async function handleSubmit() {
     setSubmitting(true);
@@ -39,9 +40,7 @@ export default function CheckYourUnderstanding({ pageId, checkQuestions = [] }) 
         <p className="text-lg font-bold text-[var(--color-ink)]">Check Your Understanding</p>
       </div>
 
-      {checkQuestions.length === 0 ? (
-        <p className="mt-2 text-sm text-[var(--color-ink-faint)]">No check questions have been added to this lesson yet.</p>
-      ) : !started ? (
+      {!started ? (
         <>
           <p className="mt-2 text-sm text-[var(--color-ink-soft)]">Ready to test the concept?</p>
           <Button className="mt-3" onClick={() => setStarted(true)}>Start Check</Button>

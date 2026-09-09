@@ -9,6 +9,8 @@ export function splitLearnBlocksIntoPages(blocks = []) {
       pages[pages.length - 1].blocks.push(block);
     }
   }
-  if (pages.length > 1 && pages[pages.length - 1].blocks.length === 0) pages.pop();
+  // Preserve an explicitly-created trailing page even when it has no blocks yet.
+  // Admins expect a newly-added Page Break to immediately create Page 2/3 in
+  // Preview and Student Learn, so an empty final page is intentional.
   return pages.length ? pages : [{ label: "", blocks: [] }];
 }
