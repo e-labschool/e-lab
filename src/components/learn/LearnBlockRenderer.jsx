@@ -88,7 +88,7 @@ export default function LearnBlockRenderer({ block }) {
     case "common_mistake":
       return (
         <div className="rounded-md border-l-4 border-[var(--color-amber)] bg-[var(--color-amber-soft)] p-4">
-          <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-amber)]"><AlertTriangle size={13} /> Common Mistake</p>
+          <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-amber)]"><AlertTriangle size={13} /> Common Mistakes / Misunderstandings</p>
           <p className="mt-1.5 text-sm text-[var(--color-ink)]">{c.text}</p>
         </div>
       );
@@ -126,6 +126,15 @@ export default function LearnBlockRenderer({ block }) {
 
     case "practical":
       return <PracticalBlock content={c} />;
+
+    case "page_break":
+      return (
+        <div className="my-2 flex items-center gap-3" aria-label="Page break">
+          <div className="h-px flex-1 bg-[var(--color-line)]" />
+          <span className="rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Page Break</span>
+          <div className="h-px flex-1 bg-[var(--color-line)]" />
+        </div>
+      );
 
     default:
       return null;

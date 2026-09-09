@@ -16,7 +16,9 @@ import { BLOCK_TYPES, BLOCK_CATEGORIES, BlockEditor } from "../../../data/learnB
 import LearnBlockRenderer from "../../../components/learn/LearnBlockRenderer.jsx";
 import CheckYourUnderstanding from "../../../components/learn/CheckYourUnderstanding.jsx";
 import Button from "../../../components/ui/Button.jsx";
+import LearnMediaInput from "../../../components/admin/LearnMediaInput.jsx";
 import Badge from "../../../components/ui/Badge.jsx";
+import { splitLearnBlocksIntoPages } from "../../../lib/learnPagination.js";
 
 const inputCls = "w-full rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] px-3 py-2 text-sm text-[var(--color-ink)] focus:border-[var(--color-indigo)] focus:outline-none";
 const labelCls = "mb-1 block text-xs font-medium text-[var(--color-ink-soft)]";
@@ -40,6 +42,7 @@ export default function LessonEditor() {
   const [error, setError] = useState(null);
   const [showPicker, setShowPicker] = useState(false);
   const [previewing, setPreviewing] = useState(false);
+  const [previewPage, setPreviewPage] = useState(0);
   const [expandedBlockId, setExpandedBlockId] = useState(null);
   const [currentPageId, setCurrentPageId] = useState(pageId ?? null);
 
@@ -201,6 +204,9 @@ export default function LessonEditor() {
   if (loading) return <div className="flex min-h-[50vh] items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-[var(--color-ink-faint)]" /></div>;
 
   if (previewing) {
+    const previewPages = splitLearnBlocksIntoPages(blocks.filter((b) => b.visible));
+    const safePreviewPage = Math.min(previewPage, previewPages.length - 1);
+    const activePreviewPage = previewPages[safePreviewPage];
     return (
       <div className="mx-auto max-w-2xl px-6 py-10">
         <button type="button" onClick={() => setPreviewing(false)} className="mb-4 inline-flex items-center gap-1 text-sm text-[var(--color-ink-faint)] hover:text-[var(--color-ink)]">
@@ -209,10 +215,29 @@ export default function LessonEditor() {
         <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-amber)]">Preview as Student</p>
         <p className="font-mono text-xs text-[var(--color-indigo)]">{form.lessonCode}</p>
         <h1 className="mt-1 font-[var(--font-display)] text-[26px] font-bold text-[var(--color-ink)]">{form.title}</h1>
+        {previewPages.length > 1 && (
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-y border-[var(--color-line)] py-3">
+            <div>
+              <p className="text-xs font-semibold text-[var(--color-ink-soft)]">Page {safePreviewPage + 1} of {previewPages.length}</p>
+              {activePreviewPage.label && <p className="mt-0.5 text-sm font-medium text-[var(--color-ink)]">{activePreviewPage.label}</p>}
+            </div>
+            <div className="flex items-center gap-1.5">
+              {previewPages.map((_, index) => (
+                <button key={index} type="button" onClick={() => setPreviewPage(index)} className={`h-8 min-w-8 rounded-md px-2 text-xs font-semibold ${safePreviewPage === index ? "bg-[var(--color-indigo)] text-white" : "border border-[var(--color-line)] bg-[var(--color-paper-raised)] text-[var(--color-ink-soft)]"}`}>{index + 1}</button>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="mt-6 space-y-5">
-          {blocks.filter((b) => b.visible).map((block) => <LearnBlockRenderer key={block.id} block={block} />)}
+          {activePreviewPage.blocks.map((block) => <LearnBlockRenderer key={block.id} block={block} />)}
         </div>
-        <CheckYourUnderstanding pageId={currentPageId} checkQuestions={checkQuestions} />
+        {safePreviewPage === previewPages.length - 1 && <CheckYourUnderstanding pageId={currentPageId} checkQuestions={checkQuestions} />}
+        {previewPages.length > 1 && (
+          <div className="mt-6 flex justify-between border-t border-[var(--color-line)] pt-4">
+            <Button size="sm" variant="secondary" disabled={safePreviewPage === 0} onClick={() => setPreviewPage((p) => Math.max(0, p - 1))}>Previous Page</Button>
+            <Button size="sm" disabled={safePreviewPage === previewPages.length - 1} onClick={() => setPreviewPage((p) => Math.min(previewPages.length - 1, p + 1))}>Next Page</Button>
+          </div>
+        )}
       </div>
     );
   }
@@ -259,7 +284,7 @@ export default function LessonEditor() {
         {error && <p role="alert" className="mt-3 text-xs text-[var(--color-coral)]">{error}</p>}
         <div className="mt-4 flex gap-2">
           <Button variant="secondary" onClick={handleSaveDraft} disabled={saving}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Draft"}</Button>
-          <Button variant="secondary" onClick={() => setPreviewing(true)} disabled={!currentPageId}><Eye size={14} /> Preview as Student</Button>
+          <Button variant="secondary" onClick={() => { setPreviewPage(0); setPreviewing(true); }} disabled={!currentPageId}><Eye size={14} /> Preview as Student</Button>
           <Button onClick={handlePublish} disabled={saving}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Publish"}</Button>
         </div>
       </div>
@@ -365,6 +390,7 @@ function CheckQuestionPicker({ selected, pageId, onAdd, onAddManual, onUpdateMan
           options: Array.isArray(item.options) ? item.options : [],
           correctAnswerData: secret?.correctAnswerData ?? (item.question_type === "mcq" ? { type: "mcq", value: "" } : { type: "text", value: "", alternatives: [] }),
           explanation: secret?.explanation ?? "",
+          stimulus: item.stimulus && typeof item.stimulus === "object" ? item.stimulus : {},
         },
       });
       setMode("manual");
@@ -424,6 +450,8 @@ function CheckQuestionPicker({ selected, pageId, onAdd, onAddManual, onUpdateMan
           key={editingManual?.item?.id || "new"}
           initial={editingManual?.initial}
           editing={Boolean(editingManual?.item)}
+          pageId={pageId}
+          mediaKey={editingManual?.item?.id || "draft"}
           onCancel={() => { setEditingManual(null); setMode("bank"); }}
           onSave={async (question) => {
             if (editingManual?.item) await onUpdateManual(editingManual.item, question);
@@ -437,7 +465,7 @@ function CheckQuestionPicker({ selected, pageId, onAdd, onAddManual, onUpdateMan
   );
 }
 
-function ManualQuestionForm({ initial, editing, onSave, onCancel }) {
+function ManualQuestionForm({ initial, editing, pageId, mediaKey, onSave, onCancel }) {
   const defaultOptions = ["A", "B", "C", "D"].map((id) => ({ id, text: "" }));
   const [questionType, setQuestionType] = useState(initial?.questionType || "mcq");
   const [questionText, setQuestionText] = useState(initial?.questionText || "");
@@ -445,6 +473,7 @@ function ManualQuestionForm({ initial, editing, onSave, onCancel }) {
   const [correct, setCorrect] = useState(initial?.correctAnswerData?.value || "");
   const [alternatives, setAlternatives] = useState((initial?.correctAnswerData?.alternatives || []).join("; "));
   const [explanation, setExplanation] = useState(initial?.explanation || "");
+  const [stimulus, setStimulus] = useState(initial?.stimulus || {});
   const [saving, setSaving] = useState(false);
   const [localError, setLocalError] = useState("");
 
@@ -454,6 +483,7 @@ function ManualQuestionForm({ initial, editing, onSave, onCancel }) {
 
   async function submit() {
     if (!questionText.trim()) { setLocalError("Enter the question text."); return; }
+    if (stimulus?.src && !String(stimulus.alt || "").trim()) { setLocalError("Add alt text for the question image."); return; }
     if (questionType === "mcq") {
       const validOptions = options.filter((o) => o.text.trim());
       if (validOptions.length < 2) { setLocalError("Add at least two options."); return; }
@@ -470,6 +500,7 @@ function ManualQuestionForm({ initial, editing, onSave, onCancel }) {
           ? { type: "mcq", value: correct }
           : { type: "text", value: correct.trim(), alternatives: alternatives.split(";").map((v) => v.trim()).filter(Boolean) },
         explanation,
+        stimulus: stimulus?.src ? { type: "image", src: stimulus.src, alt: stimulus.alt || "", caption: stimulus.caption || "" } : {},
       });
     } catch (err) {
       setLocalError(err.message || "Could not save this question.");
@@ -489,6 +520,25 @@ function ManualQuestionForm({ initial, editing, onSave, onCancel }) {
         <div className="sm:col-span-2">
           <label className={labelCls}>Question</label>
           <textarea className={inputCls} rows={3} value={questionText} onChange={(e) => setQuestionText(e.target.value)} placeholder="Type the quick-check question" />
+        </div>
+
+        <div className="sm:col-span-2 rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] p-3">
+          <p className="mb-2 text-xs font-semibold text-[var(--color-ink)]">Question Image <span className="font-normal text-[var(--color-ink-faint)]">(optional)</span></p>
+          <LearnMediaInput
+            kind="image"
+            pageId={pageId}
+            blockId={`check-${mediaKey}`}
+            url={stimulus?.src || ""}
+            onUrlChange={(src) => setStimulus((prev) => src ? { ...prev, type: "image", src } : {})}
+            label="Add by link or upload"
+          />
+          {stimulus?.src && (
+            <div className="mt-3 space-y-2">
+              <img src={stimulus.src} alt={stimulus.alt || "Question preview"} className="max-h-52 rounded-md border border-[var(--color-line)] bg-white object-contain" />
+              <div><label className={labelCls}>Alt Text</label><input className={inputCls} value={stimulus.alt || ""} onChange={(e) => setStimulus((prev) => ({ ...prev, alt: e.target.value }))} placeholder="Describe the image for accessibility" /></div>
+              <div><label className={labelCls}>Caption <span className="text-[var(--color-ink-faint)]">(optional)</span></label><input className={inputCls} value={stimulus.caption || ""} onChange={(e) => setStimulus((prev) => ({ ...prev, caption: e.target.value }))} /></div>
+            </div>
+          )}
         </div>
 
         {questionType === "mcq" ? (

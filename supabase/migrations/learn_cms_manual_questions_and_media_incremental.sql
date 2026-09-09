@@ -11,6 +11,7 @@ create table if not exists public.learn_manual_questions (
   question_type text not null check (question_type in ('mcq', 'short_answer')),
   question_text text not null,
   options jsonb not null default '[]'::jsonb,
+  stimulus jsonb not null default '{}'::jsonb,
   position int not null default 0 check (position >= 0),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -76,6 +77,7 @@ declare
   v_type text := p_question->>'question_type';
   v_text text := trim(coalesce(p_question->>'question_text', ''));
   v_options jsonb := coalesce(p_question->'options', '[]'::jsonb);
+  v_stimulus jsonb := coalesce(p_question->'stimulus', '{}'::jsonb);
   v_position int := coalesce((p_question->>'position')::int, 0);
   v_correct_type text := p_correct_answer_data->>'type';
   v_correct_value text := trim(coalesce(p_correct_answer_data->>'value', ''));
@@ -84,6 +86,8 @@ begin
   if not exists (select 1 from public.learn_pages where id = p_page_id) then raise exception 'Learn page not found'; end if;
   if v_type not in ('mcq', 'short_answer') then raise exception 'Unsupported manual question type'; end if;
   if v_text = '' then raise exception 'Question text is required'; end if;
+  if jsonb_typeof(v_stimulus) <> 'object' then raise exception 'Stimulus must be an object'; end if;
+  if coalesce(v_stimulus->>'src','') <> '' and coalesce(v_stimulus->>'type','') <> 'image' then raise exception 'Only image stimulus is supported for manual Learn questions'; end if;
   if v_correct_value = '' then raise exception 'Correct answer is required'; end if;
 
   if v_type = 'mcq' then
@@ -101,12 +105,12 @@ begin
   end if;
 
   if p_question_id is null then
-    insert into public.learn_manual_questions(page_id, question_type, question_text, options, position)
-    values (p_page_id, v_type, v_text, v_options, v_position)
+    insert into public.learn_manual_questions(page_id, question_type, question_text, options, stimulus, position)
+    values (p_page_id, v_type, v_text, v_options, v_stimulus, v_position)
     returning * into v_row;
   else
     update public.learn_manual_questions
-      set question_type = v_type, question_text = v_text, options = v_options
+      set question_type = v_type, question_text = v_text, options = v_options, stimulus = v_stimulus
       where id = p_question_id and page_id = p_page_id
       returning * into v_row;
     if v_row is null then raise exception 'Manual question not found'; end if;
@@ -194,7 +198,7 @@ begin
            'questionText', m.question_text,
            'questionType', case when m.question_type = 'mcq' then 'MCQ' else 'Short Response' end,
            'marks', null,
-           'stimulus', null,
+           'stimulus', case when coalesce(m.stimulus->>'src','') <> '' then m.stimulus else null end,
            'options', m.options,
            'parts', '[]'::jsonb
          )

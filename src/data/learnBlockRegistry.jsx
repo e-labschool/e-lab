@@ -3,7 +3,7 @@ import LearnMediaInput from "../components/admin/LearnMediaInput.jsx";
 import {
   Type, Image as ImageIcon, Video, FlaskConical, Box, PlayCircle,
   Lightbulb, BookMarked, AlertTriangle, Globe2, ListChecks, BarChart3,
-  Columns2, HelpCircle, Beaker,
+  Columns2, HelpCircle, Beaker, Files,
 } from "lucide-react";
 
 // ============================================================
@@ -25,13 +25,14 @@ export const BLOCK_TYPES = {
   simulation: { label: "e-Lab Simulation", category: "chemistry", icon: PlayCircle, defaultContent: { simulationId: "" } },
   key_idea: { label: "Key Idea", category: "teaching", icon: Lightbulb, defaultContent: { text: "" } },
   definition: { label: "Definition", category: "teaching", icon: BookMarked, defaultContent: { term: "", definition: "" } },
-  common_mistake: { label: "Common Mistake", category: "teaching", icon: AlertTriangle, defaultContent: { text: "" } },
+  common_mistake: { label: "Common Mistakes / Misunderstandings", category: "teaching", icon: AlertTriangle, defaultContent: { text: "" } },
   real_life: { label: "Real-Life Connection", category: "teaching", icon: Globe2, defaultContent: { title: "", content: "", imageUrl: "" } },
   worked_example: { label: "Worked Example", category: "teaching", icon: ListChecks, defaultContent: { question: "", steps: [], finalAnswer: "" } },
   data_graph: { label: "Data / Graph", category: "teaching", icon: BarChart3, defaultContent: { title: "", rows: [], explanation: "", prompt: "" } },
   compare_contrast: { label: "Compare & Contrast", category: "teaching", icon: Columns2, defaultContent: { columns: [{ title: "", content: "" }, { title: "", content: "" }] } },
   reveal_think: { label: "Reveal / Think", category: "teaching", icon: HelpCircle, defaultContent: { prompt: "", reveal: "" } },
   practical: { label: "Practical / Experiment", category: "teaching", icon: Beaker, defaultContent: { aim: "", apparatus: "", variables: "", method: "", safety: "", observations: "", data: "", analysis: "" } },
+  page_break: { label: "Page Break", category: "content", icon: Files, defaultContent: { label: "" } },
 };
 
 // Curated presets — Admin selects, never writes raw geometry config.
@@ -91,8 +92,15 @@ export function RichTextEditor({ value, onChange }) {
         <button type="button" title="Align center" onMouseDown={(e) => e.preventDefault()} onClick={() => exec("justifyCenter")} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">\u2261C</button>
         <button type="button" title="Link" onMouseDown={(e) => e.preventDefault()} onClick={handleLink} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">Link</button>
         <span className="mx-1 h-5 w-px bg-[var(--color-line)]" />
-        <label className="flex items-center gap-1 px-1 text-[11px] text-[var(--color-ink-soft)]" title="Text colour">
-          Colour
+        <span className="px-1 text-[11px] text-[var(--color-ink-soft)]">Colour</span>
+        {[
+          ["#12161c", "Dark"], ["#3654D6", "Indigo"], ["#2B7A6E", "Teal"],
+          ["#B7791F", "Amber"], ["#B85C4A", "Coral"], ["#6D3FA3", "Violet"],
+        ].map(([colour, name]) => (
+          <button key={colour} type="button" title={name} aria-label={`Text colour ${name}`} onMouseDown={(e) => e.preventDefault()} onClick={() => exec("foreColor", colour)} className="h-5 w-5 rounded-full border border-black/10" style={{ backgroundColor: colour }} />
+        ))}
+        <label className="flex items-center gap-1 px-1 text-[11px] text-[var(--color-ink-soft)]" title="Custom text colour">
+          Custom
           <input type="color" defaultValue="#12161c" onChange={(e) => exec("foreColor", e.target.value)} className="h-6 w-7 cursor-pointer rounded border border-[var(--color-line)] bg-transparent p-0.5" />
         </label>
         <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => exec("removeFormat")} className="rounded px-2 py-1 text-[11px] text-[var(--color-ink-soft)] hover:bg-[var(--color-line)]/40">Clear style</button>
@@ -187,7 +195,16 @@ export function BlockEditor({ blockType, content, onChange, pageId, blockId }) {
 
     case "key_idea":
     case "common_mistake":
-      return <textarea className={inputCls} rows={3} value={content.text} onChange={(e) => set("text", e.target.value)} />;
+      return <textarea className={inputCls} rows={3} value={content.text} onChange={(e) => set("text", e.target.value)} placeholder={blockType === "common_mistake" ? "Add a common mistake, misconception or misunderstanding students may have…" : "Add the key idea…"} />;
+
+    case "page_break":
+      return (
+        <div className="rounded-md border border-dashed border-[var(--color-indigo)]/40 bg-[var(--color-indigo-soft)] p-3">
+          <p className="text-xs font-semibold text-[var(--color-indigo)]">Starts a new student page</p>
+          <p className="mt-1 text-[11px] text-[var(--color-ink-faint)]">Students will see page numbers (1, 2, 3…) and Previous/Next Page controls. Check Your Understanding stays on the final page.</p>
+          <div className="mt-2"><label className={labelCls}>Optional page label</label><input className={inputCls} value={content.label ?? ""} onChange={(e) => set("label", e.target.value)} placeholder="e.g. Classification of matter" /></div>
+        </div>
+      );
 
     case "definition":
       return (

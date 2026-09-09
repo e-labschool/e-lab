@@ -180,6 +180,7 @@ export async function addManualCheckQuestion(pageId, question, position) {
     question_type: question.questionType,
     question_text: question.questionText.trim(),
     options: question.questionType === "mcq" ? question.options : [],
+    stimulus: question.stimulus && typeof question.stimulus === "object" ? question.stimulus : {},
     position,
   };
   const { data, error } = await supabase.rpc("admin_save_learn_manual_question", {
@@ -210,6 +211,7 @@ export async function updateManualCheckQuestion(rowId, pageId, question) {
       question_type: question.questionType,
       question_text: question.questionText.trim(),
       options: question.questionType === "mcq" ? question.options : [],
+      stimulus: question.stimulus && typeof question.stimulus === "object" ? question.stimulus : {},
     },
     p_correct_answer_data: question.correctAnswerData,
     p_explanation: question.explanation?.trim() || null,

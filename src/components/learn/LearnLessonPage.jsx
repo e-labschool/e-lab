@@ -6,6 +6,7 @@ import { getLearnCmsCurriculumTree } from "../../data/learnCmsCurriculum.js";
 import LearnBlockRenderer from "./LearnBlockRenderer.jsx";
 import CheckYourUnderstanding from "./CheckYourUnderstanding.jsx";
 import ELabLoader from "../ui/ELabLoader.jsx";
+import { splitLearnBlocksIntoPages } from "../../lib/learnPagination.js";
 
 /** Determines prev/next PUBLISHED lesson purely from parent topic +
  * display order + curriculum hierarchy — Admin never creates nav links
@@ -48,8 +49,10 @@ export default function LearnLessonPage() {
   const [adjacent, setAdjacent] = useState({ prev: null, next: null, nextIsNewTopic: false });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [contentPage, setContentPage] = useState(0);
 
   useEffect(() => {
+    setContentPage(0);
     setLoading(true);
     setError(null);
     Promise.all([getPublishedLesson(pageId), listPublishedLessonMeta()])
@@ -67,6 +70,17 @@ export default function LearnLessonPage() {
   if (!lesson) return null;
 
   const topicMeta = findTopicMeta(lesson.page.parent_topic);
+  const pages = splitLearnBlocksIntoPages(lesson.blocks);
+  const safePage = Math.min(contentPage, pages.length - 1);
+  const activePage = pages[safePage];
+  const isFirstContentPage = safePage === 0;
+  const isLastContentPage = safePage === pages.length - 1;
+
+  function goToContentPage(nextPage) {
+    const clamped = Math.max(0, Math.min(nextPage, pages.length - 1));
+    setContentPage(clamped);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
 
   return (
     <div className="mx-auto max-w-2xl px-6 py-10">
@@ -78,24 +92,57 @@ export default function LearnLessonPage() {
       <p className="mt-1 font-mono text-xs font-semibold text-[var(--color-indigo)]">{lesson.page.lesson_code}</p>
       <h1 className="mt-1 font-[var(--font-display)] text-[26px] font-bold tracking-tight text-[var(--color-ink)]">{lesson.page.title}</h1>
 
+      {pages.length > 1 && (
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-y border-[var(--color-line)] py-3">
+          <div>
+            <p className="text-xs font-semibold text-[var(--color-ink-soft)]">Page {safePage + 1} of {pages.length}</p>
+            {activePage.label && <p className="mt-0.5 text-sm font-medium text-[var(--color-ink)]">{activePage.label}</p>}
+          </div>
+          <div className="flex items-center gap-1.5" aria-label="Lesson pages">
+            {pages.map((_, index) => (
+              <button key={index} type="button" onClick={() => goToContentPage(index)} aria-current={safePage === index ? "page" : undefined} className={`h-8 min-w-8 rounded-md px-2 text-xs font-semibold ${safePage === index ? "bg-[var(--color-indigo)] text-white" : "border border-[var(--color-line)] bg-[var(--color-paper-raised)] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)]"}`}>
+                {index + 1}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="mt-6 space-y-5">
-        {lesson.blocks.map((block) => <LearnBlockRenderer key={block.id} block={block} />)}
+        {activePage.blocks.map((block) => <LearnBlockRenderer key={block.id} block={block} />)}
       </div>
 
-      <CheckYourUnderstanding pageId={pageId} checkQuestions={lesson.checkQuestions} />
+      {isLastContentPage && <CheckYourUnderstanding pageId={pageId} checkQuestions={lesson.checkQuestions} />}
 
-      <div className="mt-8 flex items-center justify-between border-t border-[var(--color-line)] pt-5">
-        {adjacent.prev ? (
-          <button type="button" onClick={() => navigate(`/student/learn/${adjacent.prev.id}`)} className="flex items-center gap-1 text-sm font-medium text-[var(--color-ink-soft)] hover:text-[var(--color-ink)]">
-            <ChevronLeft size={15} /> Previous Concept
-          </button>
-        ) : <span />}
-        {adjacent.next && (
-          <button type="button" onClick={() => navigate(`/student/learn/${adjacent.next.id}`)} className="flex items-center gap-1 text-sm font-medium text-[var(--color-indigo)]">
-            {adjacent.nextIsNewTopic ? "Next Topic" : "Next Concept"} <ChevronRight size={15} />
-          </button>
-        )}
-      </div>
+      {pages.length > 1 && (
+        <div className="mt-8 flex items-center justify-between border-t border-[var(--color-line)] pt-5">
+          {!isFirstContentPage ? (
+            <button type="button" onClick={() => goToContentPage(safePage - 1)} className="flex items-center gap-1 rounded-md border border-[var(--color-line)] px-3 py-2 text-sm font-medium text-[var(--color-ink-soft)] hover:text-[var(--color-ink)]">
+              <ChevronLeft size={15} /> Previous Page
+            </button>
+          ) : <span />}
+          {!isLastContentPage && (
+            <button type="button" onClick={() => goToContentPage(safePage + 1)} className="flex items-center gap-1 rounded-md bg-[var(--color-indigo)] px-3 py-2 text-sm font-semibold text-white">
+              Next Page <ChevronRight size={15} />
+            </button>
+          )}
+        </div>
+      )}
+
+      {(isFirstContentPage || isLastContentPage) && (
+        <div className="mt-5 flex items-center justify-between border-t border-[var(--color-line)] pt-5">
+          {isFirstContentPage && adjacent.prev ? (
+            <button type="button" onClick={() => navigate(`/student/learn/${adjacent.prev.id}`)} className="flex items-center gap-1 text-sm font-medium text-[var(--color-ink-soft)] hover:text-[var(--color-ink)]">
+              <ChevronLeft size={15} /> Previous Concept
+            </button>
+          ) : <span />}
+          {isLastContentPage && adjacent.next && (
+            <button type="button" onClick={() => navigate(`/student/learn/${adjacent.next.id}`)} className="flex items-center gap-1 text-sm font-medium text-[var(--color-indigo)]">
+              {adjacent.nextIsNewTopic ? "Next Topic" : "Next Concept"} <ChevronRight size={15} />
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

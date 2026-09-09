@@ -48,11 +48,34 @@ import AdminUsers from "./pages/admin/users/AdminUsers.jsx";
 import AdminAccess from "./pages/admin/access/AdminAccess.jsx";
 import AdminSettings from "./pages/admin/settings/AdminSettings.jsx";
 
+
+function lazyWithChunkRefresh(factory, key) {
+  return lazy(async () => {
+    const retryKey = `e-lab:chunk-refresh:${key}`;
+    try {
+      const module = await factory();
+      try { sessionStorage.removeItem(retryKey); } catch { /* storage may be unavailable */ }
+      return module;
+    } catch (error) {
+      const message = String(error?.message || error || "");
+      const isChunkFetchError = /Failed to fetch dynamically imported module|Importing a module script failed|ChunkLoadError|Loading chunk/i.test(message);
+      let alreadyRetried = false;
+      try { alreadyRetried = sessionStorage.getItem(retryKey) === "1"; } catch { /* storage may be unavailable */ }
+      if (isChunkFetchError && !alreadyRetried && typeof window !== "undefined") {
+        try { sessionStorage.setItem(retryKey, "1"); } catch { /* storage may be unavailable */ }
+        window.location.reload();
+        return new Promise(() => {});
+      }
+      throw error;
+    }
+  });
+}
+
 // Q Builder pulls in PDF/Word export libraries (jsPDF, docx) that are only
 // needed once a teacher actually opens it — lazy-loaded so those libraries
 // never load on the rest of the site, same pattern already used for the
 // interactive engines' component loaders in resources-registry.js.
-const TeacherQBuilder = lazy(() => import("./pages/teacher/QBuilder.jsx"));
+const TeacherQBuilder = lazyWithChunkRefresh(() => import("./pages/teacher/QBuilder.jsx"), "teacher-question-builder");
 
 // Challenge Builder/Session/Report pull in QuestionRenderer ->
 // StimulusRenderer, which drags in every question-visual component the Q
@@ -60,9 +83,9 @@ const TeacherQBuilder = lazy(() => import("./pages/teacher/QBuilder.jsx"));
 // weight only loads when a student actually starts/resumes a challenge,
 // not on every page view. SolveHome itself stays eager (it's the direct
 // child of the main Solve route and has no such heavy dependency).
-const ChallengeBuilder = lazy(() => import("./pages/student/solve/ChallengeBuilder.jsx"));
-const ChallengeSession = lazy(() => import("./pages/student/solve/ChallengeSession.jsx"));
-const ChallengeReport = lazy(() => import("./pages/student/solve/ChallengeReport.jsx"));
+const ChallengeBuilder = lazyWithChunkRefresh(() => import("./pages/student/solve/ChallengeBuilder.jsx"), "challenge-builder");
+const ChallengeSession = lazyWithChunkRefresh(() => import("./pages/student/solve/ChallengeSession.jsx"), "challenge-session");
+const ChallengeReport = lazyWithChunkRefresh(() => import("./pages/student/solve/ChallengeReport.jsx"), "challenge-report");
 
 // /student and /teacher are deliberately SEPARATE top-level route trees,
 // not nested under the public Shell — StudentLayout/TeacherLayout render

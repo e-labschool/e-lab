@@ -38,14 +38,14 @@ export default function LearnMediaInput({ kind, pageId, blockId, url = "", onUrl
       {mode === "link" ? (
         <input className={inputCls} value={url} onChange={(e) => onUrlChange(e.target.value)} placeholder={isImage ? "https://... image URL" : "YouTube/Vimeo or direct video URL"} />
       ) : (
-        <div className="rounded-md border border-dashed border-[var(--color-line)] bg-[var(--color-paper)] p-4 text-center">
+        <div onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); handleFile(e.dataTransfer.files?.[0]); }} className="rounded-md border border-dashed border-[var(--color-line)] bg-[var(--color-paper)] p-4 text-center">
           {uploading ? (
             <div className="flex items-center justify-center gap-2 text-sm text-[var(--color-ink-soft)]"><Loader2 size={16} className="animate-spin" /> Uploading…</div>
           ) : (
             <>
               {isImage ? <ImageIcon size={20} className="mx-auto text-[var(--color-ink-faint)]" /> : <Video size={20} className="mx-auto text-[var(--color-ink-faint)]" />}
               <button type="button" onClick={() => inputRef.current?.click()} className="mt-2 rounded-md bg-[var(--color-indigo)] px-3 py-2 text-xs font-semibold text-white">Choose {isImage ? "Image" : "Video"}</button>
-              <p className="mt-1 text-[11px] text-[var(--color-ink-faint)]">{isImage ? "PNG, JPG, WEBP or GIF · max 8 MB" : "MP4, WEBM or MOV · max 100 MB"}</p>
+              <p className="mt-1 text-[11px] text-[var(--color-ink-faint)]">Choose a file or drag & drop · {isImage ? "PNG, JPG, WEBP or GIF · max 8 MB" : "MP4, WEBM or MOV · max 100 MB"}</p>
             </>
           )}
           <input ref={inputRef} type="file" className="hidden" accept={isImage ? "image/png,image/jpeg,image/webp,image/gif" : "video/mp4,video/webm,video/quicktime"} onChange={(e) => handleFile(e.target.files?.[0])} />
@@ -53,9 +53,13 @@ export default function LearnMediaInput({ kind, pageId, blockId, url = "", onUrl
       )}
 
       {url && (
-        <div className="mt-2 flex items-center justify-between rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)] px-3 py-2">
-          <span className="min-w-0 truncate text-xs text-[var(--color-ink-soft)]">Media attached</span>
-          <button type="button" onClick={() => onUrlChange("")} className="inline-flex items-center gap-1 text-xs text-[var(--color-coral)]"><X size={12} /> Clear</button>
+        <div className="mt-2 rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-2">
+          {isImage && <img src={url} alt="Selected media preview" className="mb-2 max-h-40 rounded-md border border-[var(--color-line)] bg-white object-contain" />}
+          {!isImage && /\.(mp4|webm|mov)(\?|#|$)/i.test(url) && <video src={url} controls preload="metadata" className="mb-2 max-h-48 w-full rounded-md bg-black" />}
+          <div className="flex items-center justify-between gap-2">
+            <span className="min-w-0 truncate text-xs text-[var(--color-ink-soft)]">Media attached</span>
+            <button type="button" onClick={() => onUrlChange("")} className="inline-flex shrink-0 items-center gap-1 text-xs text-[var(--color-coral)]"><X size={12} /> Clear</button>
+          </div>
         </div>
       )}
       {error && <p className="mt-1.5 text-xs text-[var(--color-coral)]">{error}</p>}
