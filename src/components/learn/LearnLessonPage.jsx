@@ -15,7 +15,7 @@ function findAdjacentLessons(currentLesson, allLessons, tree) {
   const flatTopicIds = tree.flatMap((section) => section.topics.map((t) => t.id));
   const sameTopicLessons = allLessons
     .filter((l) => l.parent_topic === currentLesson.parent_topic)
-    .sort((a, b) => a.display_order - b.display_order);
+    .sort((a, b) => a.display_order - b.display_order || a.id.localeCompare(b.id)); // id as a stable tiebreaker for equal display_order
   const indexInTopic = sameTopicLessons.findIndex((l) => l.id === currentLesson.id);
 
   const prev = indexInTopic > 0 ? sameTopicLessons[indexInTopic - 1] : null;
@@ -25,7 +25,7 @@ function findAdjacentLessons(currentLesson, allLessons, tree) {
   if (!next) {
     const topicIndex = flatTopicIds.indexOf(currentLesson.parent_topic);
     for (let i = topicIndex + 1; i < flatTopicIds.length; i++) {
-      const candidates = allLessons.filter((l) => l.parent_topic === flatTopicIds[i]).sort((a, b) => a.display_order - b.display_order);
+      const candidates = allLessons.filter((l) => l.parent_topic === flatTopicIds[i]).sort((a, b) => a.display_order - b.display_order || a.id.localeCompare(b.id)); // id as a stable tiebreaker for equal display_order
       if (candidates.length > 0) {
         next = candidates[0];
         nextIsNewTopic = true;
@@ -78,7 +78,7 @@ export default function LearnLessonPage() {
         {lesson.blocks.map((block) => <LearnBlockRenderer key={block.id} block={block} />)}
       </div>
 
-      <CheckYourUnderstanding checkQuestions={lesson.checkQuestions} />
+      <CheckYourUnderstanding pageId={pageId} checkQuestions={lesson.checkQuestions} />
 
       <div className="mt-8 flex items-center justify-between border-t border-[var(--color-line)] pt-5">
         {adjacent.prev ? (

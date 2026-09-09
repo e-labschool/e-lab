@@ -1,8 +1,16 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ChevronLeft, Loader2, AlertTriangle } from "lucide-react";
 import { getQuestion, getAdminQuestionSecrets, saveQuestionWithSecrets } from "../../../lib/questionBankService.js";
 import Button from "../../../components/ui/Button.jsx";
+
+// Lazy-loaded specifically because it pulls in the real StimulusRenderer
+// (and, through it, all 30+ visual sub-renderer components) — required
+// for "Admin preview = Student preview", per the brief, but Admin routes
+// aren't otherwise code-split, so importing this eagerly would bundle
+// every visual renderer into the JS needed for every Admin page, not
+// just the question editor.
+const VisualEditor = lazy(() => import("./VisualEditor.jsx"));
 
 const LEVELS = ["SL", "HL", "SL/HL"];
 const PAPERS = ["Paper 1A", "Paper 1B", "Paper 2"];
@@ -16,7 +24,7 @@ const labelClasses = "mb-1 block text-xs font-medium text-[var(--color-ink-soft)
 const EMPTY_FORM = {
   id: "", curriculumSection: "Structure", topicCode: "", topicTitle: "", unitCode: "", unitTitle: "",
   concept: "", level: "SL", paper: "Paper 1A", questionType: "MCQ", difficulty: "Medium", marks: 1,
-  commandTerms: "", tags: "", questionContent: "", visualData: "", parts: "", options: "",
+  commandTerms: "", tags: "", questionContent: "", visualData: null, parts: "", options: "",
   estimatedMinutes: "", dataBookletRequired: false, calculatorRequired: false, status: "draft",
   correctAnswerData: "", markscheme: "", explanation: "",
 };
@@ -54,7 +62,7 @@ export default function QuestionEditor() {
           unitCode: q.unit_code, unitTitle: q.unit_title, concept: q.concept, level: q.level, paper: q.paper,
           questionType: q.question_type, difficulty: q.difficulty, marks: q.marks,
           commandTerms: (q.command_terms ?? []).join(", "), tags: (q.tags ?? []).join(", "),
-          questionContent: q.question_content, visualData: jsonToText(q.visual_data),
+          questionContent: q.question_content, visualData: q.visual_data ?? null,
           parts: jsonToText(q.parts), options: jsonToText(q.options),
           estimatedMinutes: q.estimated_minutes ?? "", dataBookletRequired: q.data_booklet_required,
           calculatorRequired: q.calculator_required, status: q.status,
@@ -93,7 +101,7 @@ export default function QuestionEditor() {
         commandTerms: form.commandTerms.split(",").map((t) => t.trim()).filter(Boolean),
         tags: form.tags.split(",").map((t) => t.trim()).filter(Boolean),
         questionContent: form.questionContent,
-        visualData: jsonOrEmpty(form.visualData), parts: jsonOrEmpty(form.parts), options: jsonOrEmpty(form.options),
+        visualData: form.visualData, parts: jsonOrEmpty(form.parts), options: jsonOrEmpty(form.options),
         estimatedMinutes: form.estimatedMinutes ? Number(form.estimatedMinutes) : null,
         dataBookletRequired: form.dataBookletRequired, calculatorRequired: form.calculatorRequired, status: form.status,
         correctAnswerData: jsonOrEmpty(form.correctAnswerData), markscheme: jsonOrEmpty(form.markscheme),
@@ -179,10 +187,15 @@ export default function QuestionEditor() {
 
         <Section title="Question Content">
           <Field label="Question Content"><textarea required rows={4} className={inputClasses} value={form.questionContent} onChange={(e) => set("questionContent", e.target.value)} /></Field>
-          <Field label="Visual Data (JSON, optional)"><textarea rows={4} className={`${inputClasses} font-mono text-xs`} value={form.visualData} onChange={(e) => set("visualData", e.target.value)} placeholder='{"type": "lewis-structure", ...}' /></Field>
           <Field label="Options (JSON array, MCQ only)"><textarea rows={3} className={`${inputClasses} font-mono text-xs`} value={form.options} onChange={(e) => set("options", e.target.value)} placeholder='[{"id":"A","text":"..."},{"id":"B","text":"..."}]' /></Field>
           <Field label="Parts (JSON array, multipart only)"><textarea rows={3} className={`${inputClasses} font-mono text-xs`} value={form.parts} onChange={(e) => set("parts", e.target.value)} placeholder='[{"id":"a","questionText":"...","marks":1}]' /></Field>
         </Section>
+
+        <VisualEditor questionId={form.id || "new-question"} content={form.visualData} onChange={(v) => set("visualData", v)} />
+
+        <Suspense fallback={<div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-[var(--color-ink-faint)]" /></div>}>
+          <VisualEditor questionId={form.id || "new-question"} content={form.visualData} onChange={(v) => set("visualData", v)} />
+        </Suspense>
 
         <Section title="Answer Key & Marking (secret — never shown to students before submission)">
           {!isNew && secretsLoadFailed && (

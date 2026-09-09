@@ -3,6 +3,7 @@ import { useParams, Link, Navigate } from "react-router-dom";
 import { Search, Loader2 } from "lucide-react";
 import { CATEGORIES, getResourcesByCategory, filterResources, RESOURCE_TYPE_FILTERS } from "./lib/resourceUtils.js";
 import { useVisibleResources } from "../../../lib/useVisibleResources.js";
+import { isResourceVisibleToAudience } from "../../../lib/resourceService.js";
 import staticResources from "../../../data/student-resources.js";
 import Container from "../../../components/ui/Container.jsx";
 import EmptyStatePanel from "../../../components/ui/EmptyStatePanel.jsx";
@@ -17,7 +18,7 @@ export default function CategoryPage() {
   const { resources: supabaseResources, loading, error } = useVisibleResources();
 
   const allResources = useMemo(
-    () => [...staticResources, ...supabaseResources.filter((r) => r.audience === "student" || r.audience === "both")],
+    () => [...staticResources, ...supabaseResources.filter((r) => isResourceVisibleToAudience(r, "student"))],
     [supabaseResources]
   );
   const categoryResources = useMemo(

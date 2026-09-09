@@ -140,3 +140,31 @@ export async function bulkImportQuestions(questions) {
   if (error) throw error;
   return data; // { imported: [...ids] }
 }
+
+/**
+ * Uploads an Admin-provided question image to the question-media bucket
+ * under a deterministic questions/{question_id}/ path, and returns its
+ * public URL. Admin-only in practice — enforced by storage RLS
+ * (question-media bucket write policies check is_admin()), not by
+ * anything client-side.
+ */
+export async function uploadQuestionImage(questionId, file) {
+  if (!supabase) throw new Error("Not connected to Supabase.");
+  const ext = file.name.split(".").pop();
+  const safeName = `${Date.now()}.${ext}`;
+  const path = `questions/${questionId}/${safeName}`;
+  const { error } = await supabase.storage.from("question-media").upload(path, file, { upsert: false });
+  if (error) throw error;
+  const { data } = supabase.storage.from("question-media").getPublicUrl(path);
+  return data.publicUrl;
+}
+
+/** Lightweight fetch of every question's visual-relevant fields only —
+ * used ONLY to compute real quick-filter counters (never hardcoded) and
+ * apply the visual filter. Not the main paginated list query. */
+export async function listQuestionsForVisualStats() {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from("questions").select("id, question_content, visual_data, parts");
+  if (error) throw error;
+  return data;
+}

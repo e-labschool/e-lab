@@ -133,3 +133,35 @@ export const TEACHER_CATEGORIES = [
   { id: "ib-resources", label: "IB Resources" },
   { id: "worksheets-other", label: "Worksheets & Other Resources" },
 ];
+
+// A resource stores exactly ONE category value, chosen from whichever
+// scheme the Admin form offered at save time — but Student and Teacher
+// use entirely different category id schemes. For an audience="both"
+// resource, THIS was the actual root cause of it disappearing from
+// Teacher Resources: it was saved with a student-scheme category
+// (e.g. "ib-documents"), and Teacher's tab filtering checked for an
+// exact match against its own scheme ("ib-resources"/"worksheets-other"),
+// which could never match. Rather than duplicating the resource row or
+// forcing Admin to pick two categories, this mapping lets each side
+// translate the OTHER scheme's category into its own equivalent tab.
+const STUDENT_TO_TEACHER_CATEGORY = { "ib-documents": "ib-resources", "study-materials": "worksheets-other" };
+const TEACHER_TO_STUDENT_CATEGORY = { "ib-resources": "ib-documents", "worksheets-other": "study-materials" };
+
+/** The category id to match against THIS role's own tab list — maps
+ * across schemes only when the stored category belongs to the other
+ * scheme; otherwise returns it unchanged. */
+export function getCategoryForAudience(resource, forRole) {
+  if (forRole === "teacher" && resource.category in STUDENT_TO_TEACHER_CATEGORY) {
+    return STUDENT_TO_TEACHER_CATEGORY[resource.category];
+  }
+  if (forRole === "student" && resource.category in TEACHER_TO_STUDENT_CATEGORY) {
+    return TEACHER_TO_STUDENT_CATEGORY[resource.category];
+  }
+  return resource.category;
+}
+
+/** Single shared audience check — "both" always means visible to both
+ * roles, never just whichever role happened to be checked first. */
+export function isResourceVisibleToAudience(resource, role) {
+  return resource.audience === role || resource.audience === "both";
+}

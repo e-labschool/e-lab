@@ -141,8 +141,18 @@ export default function LessonEditor() {
   }
 
   async function handleAddCheckQuestion(question) {
+    setError(null);
     const versionMap = await resolveLatestVersionIds([question.id]);
-    const created = await addCheckQuestion(currentPageId, { questionId: question.id, questionVersionId: versionMap[question.id] ?? null, position: checkQuestions.length });
+    const questionVersionId = versionMap[question.id];
+    if (!questionVersionId) {
+      // Never insert an unpinned assignment — matches the database's own
+      // NOT NULL constraint on learn_check_questions.question_version_id,
+      // enforced here too so the admin gets a clear, immediate reason
+      // rather than a raw constraint-violation error from the insert.
+      setError("Could not pin this question version. Please save/publish the canonical question first.");
+      return;
+    }
+    const created = await addCheckQuestion(currentPageId, { questionId: question.id, questionVersionId, position: checkQuestions.length });
     setCheckQuestions((prev) => [...prev, created]);
   }
 
@@ -273,6 +283,7 @@ export default function LessonEditor() {
           <div className="mt-8 rounded-md border border-[var(--color-indigo)]/25 bg-[var(--color-indigo-soft)] p-4">
             <p className="text-sm font-bold text-[var(--color-ink)]">\ud83d\udca1 Check Your Understanding</p>
             <p className="mt-0.5 text-xs text-[var(--color-ink-faint)]">Mandatory system section \u2014 cannot be removed, only configured.</p>
+            {error && <p role="alert" className="mt-2 text-xs text-[var(--color-coral)]">{error}</p>}
             <CheckQuestionPicker selected={checkQuestions} onAdd={handleAddCheckQuestion} onRemove={handleRemoveCheckQuestion} />
           </div>
         </div>

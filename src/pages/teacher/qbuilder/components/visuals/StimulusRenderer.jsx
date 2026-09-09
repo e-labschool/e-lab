@@ -39,6 +39,7 @@ import LineGraph from "./LineGraph.jsx";
 import BondComparison from "./BondComparison.jsx";
 import DipoleComparison from "./DipoleComparison.jsx";
 import HydrogenBond from "./HydrogenBond.jsx";
+import ImageDiagram from "./ImageDiagram.jsx";
 import { validateStimulus } from "../../../../../lib/stimulusSchema.js";
 import { normalizeStimulus } from "../../../../../lib/normalizeStimulus.js";
 
@@ -151,6 +152,8 @@ function StimulusBody({ stimulus, questionId, rawType }) {
       return <DipoleComparison bonds={stimulus.bonds} />;
     case "hydrogen-bond":
       return <HydrogenBond molecules={stimulus.molecules} showIntermolecular={stimulus.showIntermolecular} showIntramolecular={stimulus.showIntramolecular} />;
+    case "image":
+      return <ImageDiagram src={stimulus.src} alt={stimulus.alt} caption={stimulus.caption} credit={stimulus.credit} />;
     case "ion-grid":
       return <IonGridDiagram mode={stimulus.mode} rows={stimulus.rows} cols={stimulus.cols} variant={stimulus.variant} />;
     case "electron-transfer":

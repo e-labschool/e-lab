@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { FolderOpen, ArrowRight, Loader2 } from "lucide-react";
 import { CATEGORIES, getResourceCounts } from "./lib/resourceUtils.js";
 import { useVisibleResources } from "../../../lib/useVisibleResources.js";
+import { isResourceVisibleToAudience } from "../../../lib/resourceService.js";
 import staticResources from "../../../data/student-resources.js";
 import Container from "../../../components/ui/Container.jsx";
 import Card from "../../../components/ui/Card.jsx";
@@ -12,7 +13,7 @@ export default function ResourcesLanding() {
   // Merge existing static entries with Supabase-published ones — nothing
   // that worked before this change stops working, per the brief.
   const allResources = useMemo(
-    () => [...staticResources, ...supabaseResources.filter((r) => r.audience === "student" || r.audience === "both")],
+    () => [...staticResources, ...supabaseResources.filter((r) => isResourceVisibleToAudience(r, "student"))],
     [supabaseResources]
   );
   const counts = getResourceCounts(allResources);

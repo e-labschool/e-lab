@@ -69,6 +69,7 @@ export const STIMULUS_SCHEMA = {
   "bond-comparison": { required: [], arrayFields: ["bonds"] },
   "dipole-comparison": { required: [], arrayFields: ["bonds"] },
   "hydrogen-bond": { required: [], arrayFields: ["molecules"] },
+  image: { required: ["src", "alt"], arrayFields: [] },
 };
 
 function getNestedValue(obj, path) {

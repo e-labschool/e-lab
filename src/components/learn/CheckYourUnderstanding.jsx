@@ -7,7 +7,7 @@ import Button from "../ui/Button.jsx";
 // lesson, never a draggable/deletable block. Deliberately does NOT touch
 // student_challenges or Progress in any way (see mark_learn_check_answers
 // in the SQL migration) — this is explicitly not the Assess experience.
-export default function CheckYourUnderstanding({ checkQuestions }) {
+export default function CheckYourUnderstanding({ pageId, checkQuestions }) {
   const [started, setStarted] = useState(false);
   const [answers, setAnswers] = useState({});
   const [submitting, setSubmitting] = useState(false);
@@ -17,9 +17,9 @@ export default function CheckYourUnderstanding({ checkQuestions }) {
     setSubmitting(true);
     try {
       const items = checkQuestions.map((q) => ({
-        questionId: q.question_id, questionVersionId: q.question_version_id, studentAnswer: answers[q.question_id] ?? null,
+        questionId: q.question_id, studentAnswer: answers[q.question_id] ?? null,
       }));
-      const data = await submitLearnCheckAnswers(items);
+      const data = await submitLearnCheckAnswers(pageId, items);
       setResults(new Map(data.map((r) => [r.question_id, r])));
     } finally {
       setSubmitting(false);

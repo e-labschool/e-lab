@@ -10,7 +10,7 @@ export async function listLessonsForTopic(parentTopic) {
     .from("learn_pages")
     .select("*")
     .eq("parent_topic", parentTopic)
-    .order("display_order", { ascending: true });
+    .order("display_order", { ascending: true }).order("id", { ascending: true }); // id as a stable tiebreaker
   if (error) throw error;
   return data;
 }
@@ -157,7 +157,7 @@ export async function listPublishedLessonMeta() {
     .from("learn_pages")
     .select("id, parent_topic, lesson_code, title, level, display_order")
     .eq("status", "published")
-    .order("display_order", { ascending: true });
+    .order("display_order", { ascending: true }).order("id", { ascending: true }); // id as a stable tiebreaker
   if (error) throw error;
   return data;
 }
@@ -186,13 +186,15 @@ async function listVisibleBlocks(pageId) {
 }
 
 /** Submits Check Your Understanding answers for immediate, secure
- * feedback — never touches student_challenges/Progress. */
-export async function submitLearnCheckAnswers(items) {
+ * feedback — never touches student_challenges/Progress. The RPC itself
+ * verifies the page is published and that each question is genuinely
+ * assigned to it, using the ASSIGNED version for marking — a client
+ * cannot target an arbitrary question/version. */
+export async function submitLearnCheckAnswers(pageId, items) {
   if (!supabase) throw new Error("Not connected to Supabase.");
   const { data, error } = await supabase.rpc("mark_learn_check_answers", {
-    p_items: items.map((i) => ({
-      question_id: i.questionId, question_version_id: i.questionVersionId ?? null, student_answer: i.studentAnswer,
-    })),
+    p_page_id: pageId,
+    p_items: items.map((i) => ({ question_id: i.questionId, student_answer: i.studentAnswer })),
   });
   if (error) throw error;
   return data;

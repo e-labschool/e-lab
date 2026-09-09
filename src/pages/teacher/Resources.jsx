@@ -4,7 +4,7 @@ import { FolderOpen, Loader2 } from "lucide-react";
 import Container from "../../components/ui/Container.jsx";
 import EmptyStatePanel from "../../components/ui/EmptyStatePanel.jsx";
 import { useVisibleResources } from "../../lib/useVisibleResources.js";
-import { TEACHER_CATEGORIES } from "../../lib/resourceService.js";
+import { TEACHER_CATEGORIES, isResourceVisibleToAudience, getCategoryForAudience } from "../../lib/resourceService.js";
 import ResourceCard from "../student/resources/components/ResourceCard.jsx";
 
 export default function Resources() {
@@ -12,7 +12,7 @@ export default function Resources() {
   const { resources, loading, error } = useVisibleResources();
   const [activeCategory, setActiveCategory] = useState(TEACHER_CATEGORIES[0].id);
   const teacherResources = useMemo(
-    () => resources.filter((r) => (r.audience === "teacher" || r.audience === "both") && r.category === activeCategory),
+    () => resources.filter((r) => isResourceVisibleToAudience(r, "teacher") && getCategoryForAudience(r, "teacher") === activeCategory),
     [resources, activeCategory]
   );
 
