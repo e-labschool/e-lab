@@ -1,13 +1,21 @@
 import { useState } from "react";
-import { Upload, Sparkles, Trash2, Plus, Loader2, X } from "lucide-react";
+import { Upload, Sparkles, Trash2, Plus, Loader2, X, ChevronDown, ChevronRight } from "lucide-react";
 import { getVisualTypeCategories, VISUAL_FIELD_DEFS, getDefaultContentForType } from "./visualEditorRegistry.js";
 import { uploadQuestionImage } from "../../../lib/questionBankService.js";
 import StimulusRenderer from "../../teacher/qbuilder/components/visuals/StimulusRenderer.jsx";
 import { validateStimulus } from "../../../lib/stimulusSchema.js";
-import Button from "../../../components/ui/Button.jsx";
+import AtomsBondsEditor from "./AtomsBondsEditor.jsx";
 
 const inputCls = "w-full rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] px-3 py-2 text-sm text-[var(--color-ink)] focus:border-[var(--color-indigo)] focus:outline-none";
 const labelCls = "mb-1 block text-xs font-medium text-[var(--color-ink-soft)]";
+
+// Types with a genuine dedicated field-based (or purpose-built) form —
+// everything else falls back to the collapsed Advanced JSON editor,
+// which is explicitly permitted for types too complex to safely form-ify
+// yet, per the brief's own escape valve. Upload Image remains available
+// regardless of which bucket a type falls into.
+const ATOMS_BONDS_TYPES = new Set(["organic-structure", "lewis-structure"]);
+
 
 // The Admin preview below is the EXACT same StimulusRenderer component
 // Assess uses — never a separate fake preview — so what Admin sees here
@@ -89,15 +97,47 @@ function FieldInput({ field, value, onChange }) {
   return <input className={inputCls} value={value ?? ""} onChange={(e) => onChange(e.target.value)} />;
 }
 
+function ImageFields({ content, onChange }) {
+  return (
+    <div className="space-y-2">
+      <div><label className={labelCls}>Alt text (required)</label><input className={inputCls} value={content.alt ?? ""} onChange={(e) => onChange({ ...content, alt: e.target.value })} /></div>
+      <div><label className={labelCls}>Caption (optional)</label><input className={inputCls} value={content.caption ?? ""} onChange={(e) => onChange({ ...content, caption: e.target.value })} /></div>
+      <div><label className={labelCls}>Credit/source (optional)</label><input className={inputCls} value={content.credit ?? ""} onChange={(e) => onChange({ ...content, credit: e.target.value })} /></div>
+    </div>
+  );
+}
+
 export default function VisualEditor({ questionId, content, onChange }) {
   const [picking, setPicking] = useState(false);
-  const [creatingType, setCreatingType] = useState(null);
+  const [pendingAction, setPendingAction] = useState(null); // "upload" | "create" | null — awaiting confirmation
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+
+  function startAction(action) {
+    if (content) {
+      setPendingAction(action); // existing visual — require confirmation first
+    } else if (action === "upload") {
+      document.getElementById("visual-editor-file-input")?.click();
+    } else {
+      setPicking(true);
+    }
+  }
+
+  function confirmPendingAction() {
+    const action = pendingAction;
+    setPendingAction(null);
+    if (action === "upload") {
+      document.getElementById("visual-editor-file-input")?.click();
+    } else {
+      setPicking(true);
+    }
+  }
 
   async function handleFileSelect(e) {
     const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same file later
     if (!file) return;
     if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
       setUploadError("Only PNG, JPG, or WEBP images are supported.");
@@ -122,43 +162,76 @@ export default function VisualEditor({ questionId, content, onChange }) {
 
   function handleSelectType(typeId) {
     onChange(getDefaultContentForType(typeId));
-    setCreatingType(typeId);
     setPicking(false);
+    setAdvancedOpen(false);
   }
 
   function handleRemove() {
     onChange(null);
     setConfirmRemove(false);
-    setCreatingType(null);
   }
 
   const currentType = content?.type;
   const fieldDefs = currentType ? VISUAL_FIELD_DEFS[currentType] : null;
+  const usesAtomsBonds = ATOMS_BONDS_TYPES.has(currentType);
 
   return (
     <div className="rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-5">
       <p className="text-sm font-semibold text-[var(--color-ink)]">Visual / Stimulus</p>
 
-      {!content && !picking && (
-        <Button className="mt-3" variant="secondary" onClick={() => setPicking(true)}><Plus size={14} /> Add Visual</Button>
+      {/* CURRENT VISUAL */}
+      {content ? (
+        <div className="mt-3">
+          <p className="text-xs font-medium text-[var(--color-ink-soft)]">Current Visual \u2014 Type: {currentType}</p>
+          <div className="mt-2">
+            <LivePreview content={content} questionId={questionId} />
+          </div>
+        </div>
+      ) : (
+        <p className="mt-2 text-xs text-[var(--color-ink-faint)]">No visual added.</p>
       )}
 
-      {picking && (
-        <div className="mt-3 flex flex-wrap gap-2">
-          <label className="flex cursor-pointer items-center gap-1.5 rounded-md border border-[var(--color-line)] px-3 py-2 text-sm hover:border-[var(--color-indigo)]">
+      {/* VISUAL ACTIONS \u2014 ALWAYS visible, never hidden behind a vague "Replace" */}
+      <div className="mt-3">
+        <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Visual Actions</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" onClick={() => startAction("upload")} className="flex items-center gap-1.5 rounded-md border border-[var(--color-line)] px-3 py-2 text-sm hover:border-[var(--color-indigo)]">
             <Upload size={14} /> Upload Image
-            <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleFileSelect} />
-          </label>
-          <button type="button" onClick={() => setCreatingType("picker")} className="flex items-center gap-1.5 rounded-md border border-[var(--color-line)] px-3 py-2 text-sm hover:border-[var(--color-indigo)]">
+          </button>
+          <input id="visual-editor-file-input" type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleFileSelect} />
+          <button type="button" onClick={() => startAction("create")} className="flex items-center gap-1.5 rounded-md border border-[var(--color-line)] px-3 py-2 text-sm hover:border-[var(--color-indigo)]">
             <Sparkles size={14} /> Create e-Lab Visual
           </button>
+          {content && !confirmRemove && (
+            <button type="button" onClick={() => setConfirmRemove(true)} className="flex items-center gap-1.5 rounded-md border border-[var(--color-coral)]/40 px-3 py-2 text-sm text-[var(--color-coral)] hover:bg-[var(--color-coral-soft)]">
+              <Trash2 size={14} /> Remove Visual
+            </button>
+          )}
+        </div>
+      </div>
+
+      {confirmRemove && (
+        <div className="mt-2 flex items-center gap-2 rounded-md bg-[var(--color-coral-soft)] px-3 py-2 text-xs text-[var(--color-coral)]">
+          Remove this visual from the question?
+          <button type="button" onClick={handleRemove} className="font-semibold">Yes, remove</button>
+          <button type="button" onClick={() => setConfirmRemove(false)} className="text-[var(--color-ink-faint)]">Cancel</button>
+        </div>
+      )}
+
+      {pendingAction && (
+        <div className="mt-2 rounded-md bg-[var(--color-amber-soft)] px-3 py-2 text-xs text-[var(--color-amber)]">
+          <p>This question already has an e-Lab visual. {pendingAction === "upload" ? "Uploading an image" : "Creating a new visual"} will replace the current visual. Continue?</p>
+          <div className="mt-1.5 flex gap-2">
+            <button type="button" onClick={confirmPendingAction} className="font-semibold">Continue</button>
+            <button type="button" onClick={() => setPendingAction(null)} className="text-[var(--color-ink-faint)]">Cancel</button>
+          </div>
         </div>
       )}
 
       {uploading && <p className="mt-2 flex items-center gap-1.5 text-xs text-[var(--color-ink-faint)]"><Loader2 className="h-3 w-3 animate-spin" /> Uploading\u2026</p>}
       {uploadError && <p className="mt-2 text-xs text-[var(--color-coral)]">{uploadError}</p>}
 
-      {creatingType === "picker" && (
+      {picking && (
         <div className="mt-3 max-h-72 overflow-y-auto rounded-md border border-[var(--color-line)] bg-white p-3">
           {getVisualTypeCategories().map((cat) => (
             <div key={cat.id} className="mb-2 last:mb-0">
@@ -175,31 +248,14 @@ export default function VisualEditor({ questionId, content, onChange }) {
         </div>
       )}
 
+      {/* EDIT FORM for the current visual */}
       {content && (
-        <div className="mt-3 grid gap-4 lg:grid-cols-2">
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
           <div>
-            <div className="mb-2 flex items-center justify-between">
-              <p className="text-xs font-medium text-[var(--color-ink-soft)]">Editing: {currentType}</p>
-              <div className="flex gap-1">
-                <Button size="sm" variant="ghost" onClick={() => setPicking(true)}>Replace</Button>
-                {!confirmRemove ? (
-                  <button type="button" onClick={() => setConfirmRemove(true)} className="rounded p-1.5 text-[var(--color-coral)] hover:bg-[var(--color-coral-soft)]"><Trash2 size={13} /></button>
-                ) : (
-                  <span className="flex items-center gap-1 text-xs">
-                    Remove this visual from the question?
-                    <button type="button" onClick={handleRemove} className="font-medium text-[var(--color-coral)]">Yes</button>
-                    <button type="button" onClick={() => setConfirmRemove(false)} className="text-[var(--color-ink-faint)]">Cancel</button>
-                  </span>
-                )}
-              </div>
-            </div>
-
             {currentType === "image" ? (
-              <div className="space-y-2">
-                <div><label className={labelCls}>Alt text (required)</label><input className={inputCls} value={content.alt ?? ""} onChange={(e) => onChange({ ...content, alt: e.target.value })} /></div>
-                <div><label className={labelCls}>Caption (optional)</label><input className={inputCls} value={content.caption ?? ""} onChange={(e) => onChange({ ...content, caption: e.target.value })} /></div>
-                <div><label className={labelCls}>Credit/source (optional)</label><input className={inputCls} value={content.credit ?? ""} onChange={(e) => onChange({ ...content, credit: e.target.value })} /></div>
-              </div>
+              <ImageFields content={content} onChange={onChange} />
+            ) : usesAtomsBonds ? (
+              <AtomsBondsEditor content={content} onChange={onChange} showOverallCharge={currentType === "lewis-structure"} />
             ) : fieldDefs ? (
               <div className="space-y-3">
                 {fieldDefs.map((field) => (
@@ -210,15 +266,24 @@ export default function VisualEditor({ questionId, content, onChange }) {
                 ))}
               </div>
             ) : (
-              <div>
-                <label className={labelCls}>Raw visual data (JSON) \u2014 no dedicated form yet for this type</label>
+              <p className="text-xs text-[var(--color-ink-faint)]">No dedicated form yet for this visual type \u2014 use Advanced below, or Upload Image / Remove Visual above.</p>
+            )}
+
+            {/* Advanced raw JSON \u2014 collapsed, never the primary experience
+                for a type that already has a dedicated form; the only way
+                to edit a type WITHOUT a dedicated form. */}
+            <div className="mt-4 border-t border-[var(--color-line)] pt-3">
+              <button type="button" onClick={() => setAdvancedOpen((v) => !v)} className="flex items-center gap-1 text-xs font-medium text-[var(--color-ink-faint)] hover:text-[var(--color-ink-soft)]">
+                {advancedOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />} Advanced (raw visual data JSON)
+              </button>
+              {advancedOpen && (
                 <textarea
-                  className={`${inputCls} font-mono text-xs`} rows={8}
+                  className={`${inputCls} mt-2 font-mono text-xs`} rows={8}
                   value={JSON.stringify(content, null, 2)}
                   onChange={(e) => { try { onChange(JSON.parse(e.target.value)); } catch { /* ignore until valid JSON */ } }}
                 />
-              </div>
-            )}
+              )}
+            </div>
           </div>
 
           <div>

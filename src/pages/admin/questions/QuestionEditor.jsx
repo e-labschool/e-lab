@@ -191,8 +191,6 @@ export default function QuestionEditor() {
           <Field label="Parts (JSON array, multipart only)"><textarea rows={3} className={`${inputClasses} font-mono text-xs`} value={form.parts} onChange={(e) => set("parts", e.target.value)} placeholder='[{"id":"a","questionText":"...","marks":1}]' /></Field>
         </Section>
 
-        <VisualEditor questionId={form.id || "new-question"} content={form.visualData} onChange={(v) => set("visualData", v)} />
-
         <Suspense fallback={<div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-[var(--color-ink-faint)]" /></div>}>
           <VisualEditor questionId={form.id || "new-question"} content={form.visualData} onChange={(v) => set("visualData", v)} />
         </Suspense>

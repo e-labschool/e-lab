@@ -87,6 +87,10 @@ export const VISUAL_FIELD_DEFS = {
     { key: "caption", label: "Caption (optional)", type: "text" },
     { key: "credit", label: "Credit/source (optional)", type: "text" },
   ],
+  vsepr: [
+    { key: "geometry", label: "Geometry", type: "select", options: ["linear", "trigonal-planar", "tetrahedral", "trigonal-pyramidal", "bent", "trigonal-bipyramidal", "octahedral"] },
+    { key: "centralLabel", label: "Central atom label", type: "text" },
+  ],
 };
 
 export function getDefaultContentForType(type) {

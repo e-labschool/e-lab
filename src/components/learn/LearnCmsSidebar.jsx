@@ -12,6 +12,13 @@ export default function LearnCmsSidebar({ activeConceptId: activePageId, basePat
   useEffect(() => {
     listPublishedLessonMeta()
       .then((rows) => {
+        // Lessons are grouped by parent_topic, which is always a
+        // SUBTOPIC id (e.g. "structure-1.1") — never the higher-level
+        // topic/unit id (e.g. "structure-1"). Grouping at the wrong
+        // level here was the exact reason a published lesson never
+        // appeared: this lookup key must match what Admin actually
+        // stores, confirmed directly against learnCmsCurriculum.js's
+        // own tree shape rather than assumed.
         const grouped = {};
         for (const row of rows) (grouped[row.parent_topic] ??= []).push(row);
         setLessonsByTopic(grouped);
@@ -25,10 +32,10 @@ export default function LearnCmsSidebar({ activeConceptId: activePageId, basePat
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function toggleTopic(topicId) {
+  function toggleSubtopic(subtopicId) {
     setOpenTopics((prev) => {
       const next = new Set(prev);
-      if (next.has(topicId)) next.delete(topicId); else next.add(topicId);
+      if (next.has(subtopicId)) next.delete(subtopicId); else next.add(subtopicId);
       return next;
     });
   }
@@ -42,44 +49,51 @@ export default function LearnCmsSidebar({ activeConceptId: activePageId, basePat
       {tree.map((section) => (
         <div key={section.id}>
           <p className="mb-1.5 px-1 text-[17px] font-bold tracking-tight text-[var(--color-ink)]">{section.label}</p>
-          <div className="space-y-0.5">
-            {section.topics.map((topic) => {
-              const isOpen = openTopics.has(topic.id);
-              const lessons = (lessonsByTopic[topic.id] ?? []).sort((a, b) => a.display_order - b.display_order);
-              return (
-                <div key={topic.id}>
-                  <button
-                    type="button"
-                    onClick={() => toggleTopic(topic.id)}
-                    className="flex w-full items-center justify-between rounded-md px-2 py-2 text-left text-[15px] font-medium text-[var(--color-ink-soft)] hover:bg-[var(--color-line)]/30"
-                  >
-                    <span>{topic.label}</span>
-                    {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                  </button>
-                  {isOpen && (
-                    <div className="ml-2 border-l border-[var(--color-line)] pl-3">
-                      {lessons.length === 0 ? (
-                        <p className="px-2 py-2 text-xs text-[var(--color-ink-faint)]">Learning content coming soon.</p>
-                      ) : (
-                        lessons.map((lesson) => (
-                          <Link
-                            key={lesson.id}
-                            to={`${basePath}/${lesson.id}`}
-                            className={`block rounded-md px-2 py-1.5 text-[14px] leading-snug ${
-                              lesson.id === activePageId
-                                ? "bg-[var(--color-indigo-soft)] font-medium text-[var(--color-indigo)]"
-                                : "text-[var(--color-ink-faint)] hover:bg-[var(--color-line)]/30 hover:text-[var(--color-ink)]"
-                            }`}
-                          >
-                            <span className="font-mono text-xs">{lesson.lesson_code}</span> {lesson.title}
-                          </Link>
-                        ))
-                      )}
-                    </div>
-                  )}
+          <div className="space-y-2.5">
+            {section.topics.map((topic) => (
+              <div key={topic.id}>
+                <p className="px-1 text-[15px] font-medium text-[var(--color-ink-soft)]">{topic.label}</p>
+                <div className="mt-0.5 space-y-0.5">
+                  {topic.subtopics.map((subtopic) => {
+                    const isOpen = openTopics.has(subtopic.id);
+                    const lessons = (lessonsByTopic[subtopic.id] ?? []).sort((a, b) => a.display_order - b.display_order);
+                    return (
+                      <div key={subtopic.id}>
+                        <button
+                          type="button"
+                          onClick={() => toggleSubtopic(subtopic.id)}
+                          className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-[14px] text-[var(--color-ink-soft)] hover:bg-[var(--color-line)]/30"
+                        >
+                          <span>{subtopic.label}</span>
+                          {isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                        </button>
+                        {isOpen && (
+                          <div className="ml-2 border-l border-[var(--color-line)] pl-3">
+                            {lessons.length === 0 ? (
+                              <p className="px-2 py-2 text-xs text-[var(--color-ink-faint)]">Learning content coming soon.</p>
+                            ) : (
+                              lessons.map((lesson) => (
+                                <Link
+                                  key={lesson.id}
+                                  to={`${basePath}/${lesson.id}`}
+                                  className={`block rounded-md px-2 py-1.5 text-[14px] leading-snug ${
+                                    lesson.id === activePageId
+                                      ? "bg-[var(--color-indigo-soft)] font-medium text-[var(--color-indigo)]"
+                                      : "text-[var(--color-ink-faint)] hover:bg-[var(--color-line)]/30 hover:text-[var(--color-ink)]"
+                                  }`}
+                                >
+                                  <span className="font-mono text-xs">{lesson.lesson_code}</span> {lesson.title}
+                                </Link>
+                              ))
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </div>
         </div>
       ))}

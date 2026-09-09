@@ -12,7 +12,11 @@ import ELabLoader from "../ui/ELabLoader.jsx";
  * manually. If the current lesson is last in its topic, looks ahead to
  * the first published lesson of the next topic in curriculum order. */
 function findAdjacentLessons(currentLesson, allLessons, tree) {
-  const flatTopicIds = tree.flatMap((section) => section.topics.map((t) => t.id));
+  // flatTopicIds must be SUBTOPIC ids in curriculum order — parent_topic
+  // is always a subtopic id, never the higher-level topic/unit id. Using
+  // topic-level ids here (the original bug) meant flatTopicIds.indexOf()
+  // could never find a match, silently breaking "next topic" lookup too.
+  const flatTopicIds = tree.flatMap((section) => section.topics.flatMap((t) => t.subtopics.map((s) => s.id)));
   const sameTopicLessons = allLessons
     .filter((l) => l.parent_topic === currentLesson.parent_topic)
     .sort((a, b) => a.display_order - b.display_order || a.id.localeCompare(b.id)); // id as a stable tiebreaker for equal display_order
@@ -97,10 +101,16 @@ export default function LearnLessonPage() {
 }
 
 function findTopicMeta(topicId) {
+  // topicId here is always a SUBTOPIC id (parent_topic) — must search
+  // section.topics[].subtopics, not section.topics itself, or this
+  // silently returns null and the breadcrumb renders nothing (the same
+  // root confusion as the sidebar/adjacent-lesson bugs above).
   const tree = getLearnCmsCurriculumTree();
   for (const section of tree) {
-    const topic = section.topics.find((t) => t.id === topicId);
-    if (topic) return { sectionLabel: section.label, topicLabel: topic.label };
+    for (const topic of section.topics) {
+      const subtopic = topic.subtopics.find((s) => s.id === topicId);
+      if (subtopic) return { sectionLabel: section.label, topicLabel: subtopic.label };
+    }
   }
   return null;
 }
