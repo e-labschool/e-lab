@@ -26,10 +26,10 @@ const resources = [
     title: "Particle Model Visualizer",
     resourceType: "visualizer",
     categories: ["visualize","explore"],
-    status: "planned", // live | in-development | planned
-    description: "An animated particle view comparing the arrangement and motion of particles in solids, liquids and gases.",
+    status: "live", // live | in-development | planned
+    description: "An animated 3D particle view comparing the arrangement, movement and intermolecular attraction of particles in solids, liquids and gases.",
     conceptIds: ["states-of-matter","kinetic-molecular-theory","physical-vs-chemical-change"],
-    component: null,
+    component: () => import("../engines/particle-model-visualizer/ParticleModelVisualizer.jsx"),
   },
   {
     id: "explore-matter-and-states",

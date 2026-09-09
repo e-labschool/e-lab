@@ -8,6 +8,7 @@ const SIMULATION_COMPONENTS = {
   "electron-configuration": lazy(() => import("../../engines/electron-configuration/ElectronConfigurationExplorer.jsx")),
   "vsepr-explorer-3d": lazy(() => import("../../engines/vsepr-explorer-3d/VSEPRExplorer3D.jsx")),
   "explore-matter-and-states": lazy(() => import("../../engines/explore-matter-and-states/ExploreMatterAndStates.jsx")),
+  "particle-model-visualizer": lazy(() => import("../../engines/particle-model-visualizer/ParticleModelVisualizer.jsx")),
 };
 
 export default function LearnBlockRenderer({ block }) {
