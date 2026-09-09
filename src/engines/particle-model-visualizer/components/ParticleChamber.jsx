@@ -1,7 +1,8 @@
-import { useMemo, useRef } from "react";
+import { forwardRef, useImperativeHandle, useMemo, useRef } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
-import { RotateCcw, Box } from "lucide-react";
+import { Box } from "lucide-react";
+import { PALETTE } from "../data/palette.js";
 
 function detectWebGL() {
   if (typeof window === "undefined") return false;
@@ -18,37 +19,36 @@ function isMobileViewport() {
 }
 
 /**
- * The chamber always renders on its own dark "instrument viewport"
- * background, independent of the site's light/dark theme — the same way a
- * map or video player keeps its own chrome. Everything around the chamber
- * (control panel, info card) still uses the e-Lab theme tokens so it sits
- * naturally in Learn content either way.
+ * The chamber viewport. Exposes reset() via ref so the surrounding control
+ * bar can offer a single "Reset View" action instead of a second, floating
+ * button duplicating the same job.
  */
-export default function ParticleChamber({ children, height = 420, fallbackDescription }) {
+const ParticleChamber = forwardRef(function ParticleChamber({ children, height = 420, fallbackDescription }, ref) {
   const webglAvailable = useMemo(() => detectWebGL(), []);
   const mobile = useMemo(() => isMobileViewport(), []);
   const controlsRef = useRef(null);
 
+  useImperativeHandle(ref, () => ({
+    reset: () => controlsRef.current?.reset(),
+  }));
+
   if (!webglAvailable) {
     return (
       <div
-        style={{ height }}
-        className="flex flex-col items-center justify-center gap-2 rounded-xl border border-[#232B3D] bg-[#0B0E15] px-6 text-center"
+        style={{ height, background: PALETTE.bg, borderColor: PALETTE.border }}
+        className="flex flex-col items-center justify-center gap-2 rounded-lg border px-6 text-center"
       >
-        <Box size={22} className="text-[#5B6478]" />
-        <p className="text-sm font-medium text-[#E7E9EF]">3D chamber unavailable on this device</p>
-        {fallbackDescription && <p className="max-w-sm text-xs text-[#7B8298]">{fallbackDescription}</p>}
+        <Box size={22} style={{ color: PALETTE.textFaint }} />
+        <p className="text-sm font-medium" style={{ color: PALETTE.textPrimary }}>3D chamber unavailable on this device</p>
+        {fallbackDescription && <p className="max-w-sm text-xs" style={{ color: PALETTE.textSecondary }}>{fallbackDescription}</p>}
       </div>
     );
   }
 
   return (
     <div
-      className="relative overflow-hidden rounded-xl border border-[#232B3D]"
-      style={{
-        height,
-        background: "radial-gradient(120% 100% at 50% 8%, #182034 0%, #0C0F17 55%, #090B10 100%)",
-      }}
+      className="relative overflow-hidden rounded-lg border"
+      style={{ height, background: PALETTE.bgGradient, borderColor: PALETTE.border }}
     >
       <Canvas
         dpr={mobile ? [1, 1.25] : [1, 2]}
@@ -75,18 +75,14 @@ export default function ParticleChamber({ children, height = 420, fallbackDescri
         />
       </Canvas>
 
-      <button
-        type="button"
-        onClick={() => controlsRef.current?.reset()}
-        aria-label="Reset view"
-        title="Reset view"
-        className="absolute bottom-2.5 right-2.5 flex h-7 w-7 items-center justify-center rounded-full border border-[#2A3244] bg-[#12161F]/85 text-[#9BA3B8] backdrop-blur transition-colors hover:text-[#E7E9EF]"
+      <p
+        className="pointer-events-none absolute left-2.5 top-2.5 rounded-md border px-2 py-1 text-[10px] tracking-wide backdrop-blur"
+        style={{ borderColor: PALETTE.borderStrong, background: `${PALETTE.panelRaised}B3`, color: PALETTE.textSecondary }}
       >
-        <RotateCcw size={13} />
-      </button>
-      <p className="pointer-events-none absolute left-2.5 top-2.5 rounded-md border border-[#2A3244] bg-[#12161F]/70 px-2 py-1 text-[10px] tracking-wide text-[#8890A3] backdrop-blur">
         Drag to rotate &middot; scroll to zoom
       </p>
     </div>
   );
-}
+});
+
+export default ParticleChamber;
