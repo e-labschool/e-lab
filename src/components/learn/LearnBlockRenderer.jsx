@@ -9,6 +9,7 @@ const SIMULATION_COMPONENTS = {
   "vsepr-explorer-3d": lazy(() => import("../../engines/vsepr-explorer-3d/VSEPRExplorer3D.jsx")),
   "explore-matter-and-states": lazy(() => import("../../engines/explore-matter-and-states/ExploreMatterAndStates.jsx")),
   "particle-model-visualizer": lazy(() => import("../../engines/particle-model-visualizer/ParticleModelVisualizer.jsx")),
+  "phase-change-heating-curve": lazy(() => import("../../engines/phase-change-heating-curve/PhaseChangeHeatingCurve.jsx")),
 };
 
 export default function LearnBlockRenderer({ block }) {

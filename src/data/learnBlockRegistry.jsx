@@ -49,6 +49,7 @@ export const SIMULATION_REGISTRY = {
   "vsepr-explorer-3d": { label: "VSEPR Explorer (3D)" },
   "explore-matter-and-states": { label: "Explore Matter & States" },
   "particle-model-visualizer": { label: "Particle Model Visualizer" },
+  "phase-change-heating-curve": { label: "Phase Change & Heating Curve" },
 };
 
 const inputCls = "w-full rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] px-3 py-2 text-sm text-[var(--color-ink)] focus:border-[var(--color-indigo)] focus:outline-none";

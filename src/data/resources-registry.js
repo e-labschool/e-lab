@@ -32,6 +32,16 @@ const resources = [
     component: () => import("../engines/particle-model-visualizer/ParticleModelVisualizer.jsx"),
   },
   {
+    id: "phase-change-heating-curve",
+    title: "Phase Change & Heating Curve",
+    resourceType: "animation",
+    categories: ["visualize","explore"],
+    status: "live", // live | in-development | planned
+    description: "A non-interactive teaching animation of the same particles heating from solid through liquid to gas, synchronized with a heating curve for water.",
+    conceptIds: ["states-of-matter","kinetic-molecular-theory"],
+    component: () => import("../engines/phase-change-heating-curve/PhaseChangeHeatingCurve.jsx"),
+  },
+  {
     id: "explore-matter-and-states",
     title: "Explore Matter & States",
     subtitle: "Teacher-led visual exploration",
