@@ -1,5 +1,5 @@
 import { useState, lazy, Suspense } from "react";
-import { Lightbulb, BookMarked, AlertTriangle, Globe2, Beaker } from "lucide-react";
+import { Lightbulb, BookMarked, AlertTriangle, Globe2, Beaker, Columns2 } from "lucide-react";
 import { sanitizeHtml, renderChemMarkup, MOLECULE_PRESETS } from "../../data/learnBlockRegistry.jsx";
 import MoleculeViewer3D from "../3d/MoleculeViewer3D.jsx";
 import ELabLoader from "../ui/ELabLoader.jsx";
@@ -112,16 +112,7 @@ export default function LearnBlockRenderer({ block }) {
       return <DataGraphBlock content={c} />;
 
     case "compare_contrast":
-      return (
-        <div className={`grid gap-3 sm:grid-cols-${Math.min(c.columns?.length ?? 2, 3)}`}>
-          {(c.columns ?? []).map((col, i) => (
-            <div key={i} className="rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-4">
-              <p className="font-semibold text-[var(--color-ink)]">{col.title}</p>
-              <p className="mt-1.5 text-sm text-[var(--color-ink-soft)]">{col.content}</p>
-            </div>
-          ))}
-        </div>
-      );
+      return <CompareContrastBlock content={c} />;
 
     case "reveal_think":
       return <RevealThinkBlock content={c} />;
@@ -183,6 +174,55 @@ function DataGraphBlock({ content }) {
       )}
       {content.explanation && <p className="mt-2 text-sm text-[var(--color-ink-soft)]">{content.explanation}</p>}
       {content.prompt && <p className="mt-2 text-sm italic text-[var(--color-indigo)]">{content.prompt}</p>}
+    </div>
+  );
+}
+
+function CompareContrastGrid({ content }) {
+  return (
+    <div className={`grid gap-3 sm:grid-cols-${Math.min(content.columns?.length ?? 2, 3)}`}>
+      {(content.columns ?? []).map((col, i) => (
+        <div key={i} className="rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-4">
+          <p className="font-semibold text-[var(--color-ink)]">{col.title}</p>
+          <p className="mt-1.5 text-sm text-[var(--color-ink-soft)]">{col.content}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function CompareContrastBlock({ content }) {
+  const [open, setOpen] = useState(false);
+  // Existing blocks saved before displayMode existed have no such key at
+  // all — undefined must behave exactly like "inline" so nothing already
+  // published silently changes appearance.
+  const isReveal = content.displayMode === "reveal";
+
+  if (!isReveal) return <CompareContrastGrid content={content} />;
+
+  const buttonLabel = content.title ? `${content.title} \u2014 Compare & Contrast` : "Compare & Contrast";
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="flex w-full items-center gap-2 rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)] px-4 py-3 text-left text-sm font-medium text-[var(--color-ink)] hover:border-[var(--color-indigo)] hover:bg-[var(--color-indigo-soft)]"
+      >
+        <Columns2 size={16} className="text-[var(--color-indigo)]" /> {buttonLabel}
+      </button>
+    );
+  }
+
+  return (
+    <div className="rounded-md border border-[var(--color-indigo)]/25 bg-[var(--color-indigo-soft)] p-4">
+      <div className="flex items-center justify-between">
+        <p className="flex items-center gap-2 text-sm font-semibold text-[var(--color-ink)]"><Columns2 size={15} className="text-[var(--color-indigo)]" /> {buttonLabel}</p>
+        <button type="button" onClick={() => setOpen(false)} className="text-xs font-medium text-[var(--color-indigo)]">Close</button>
+      </div>
+      <div className="mt-3">
+        <CompareContrastGrid content={content} />
+      </div>
     </div>
   );
 }

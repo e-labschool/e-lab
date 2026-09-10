@@ -3,6 +3,8 @@ import ProtectedRoute from "../auth/ProtectedRoute.jsx";
 import Wordmark from "./Wordmark.jsx";
 import AccountMenu from "../auth/AccountMenu.jsx";
 import ThemeToggle from "./ThemeToggle.jsx";
+import DisplaySettingsButton from "./DisplaySettingsButton.jsx";
+import { useDisplaySettings } from "../../context/DisplaySettingsContext.jsx";
 
 // Shared by StudentLayout and TeacherLayout.
 //
@@ -41,6 +43,8 @@ function TopTabBar({ tabs, accentHex }) {
 }
 
 function AppSidebarLayout({ tabs, accentHex, role, subject, programmeId, subjectId }) {
+  const { settings } = useDisplaySettings();
+  const displayClass = `elab-display-surface elab-text-${settings.textSize} elab-width-${settings.contentWidth} elab-lines-${settings.lineSpacing} elab-contrast-${settings.contrast}`;
   return (
     <div className="flex min-h-screen flex-col">
       {/* Row 1 — brand + profile, always visible, never buried in a contextual panel */}
@@ -48,6 +52,7 @@ function AppSidebarLayout({ tabs, accentHex, role, subject, programmeId, subject
         <Wordmark />
         <div className="flex items-center gap-3">
           <span className="hidden text-xs font-medium capitalize text-[var(--color-ink-faint)] sm:inline">{role}</span>
+          <DisplaySettingsButton />
           <ThemeToggle />
           <AccountMenu />
         </div>
@@ -58,7 +63,7 @@ function AppSidebarLayout({ tabs, accentHex, role, subject, programmeId, subject
 
       {/* Every page renders its own content below — including its own
           contextual side panel, if that page needs one. */}
-      <main className="flex-1 bg-[var(--color-paper)]">
+      <main className={`flex-1 bg-[var(--color-paper)] ${displayClass}`}>
         <Outlet context={{ subject, programmeId, subjectId }} />
       </main>
     </div>

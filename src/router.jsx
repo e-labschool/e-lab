@@ -1,6 +1,6 @@
 import { lazy, Suspense } from "react";
 import ELabLoader from "./components/ui/ELabLoader.jsx";
-import { createBrowserRouter, Navigate } from "react-router-dom";
+import { createBrowserRouter } from "react-router-dom";
 import Shell from "./components/layout/Shell.jsx";
 import ProtectedRoute from "./components/auth/ProtectedRoute.jsx";
 import Home from "./pages/Home.jsx";
@@ -38,6 +38,7 @@ import TeacherProfilePage from "./pages/teacher/TeacherProfilePage.jsx";
 
 import AdminLayout from "./pages/admin/AdminLayout.jsx";
 import AdminDashboard from "./pages/admin/AdminDashboard.jsx";
+import { RoleIndexRedirect, RoleIndexResume, LearnIndexResume } from "./lib/lastRoute.jsx";
 import AdminResources from "./pages/admin/resources/AdminResources.jsx";
 import AdminLearnContent from "./pages/admin/learn/AdminLearnContent.jsx";
 import LessonEditor from "./pages/admin/learn/LessonEditor.jsx";
@@ -120,12 +121,12 @@ const router = createBrowserRouter([
     path: "/student",
     element: <StudentLayout />,
     children: [
-      { index: true, element: <CurriculumSubjectSelect /> },
+      { index: true, element: <RoleIndexResume role="student" fallbackElement={<CurriculumSubjectSelect />} /> },
       {
         path: "learn",
         element: <LearnLayout />,
         children: [
-          { index: true, element: <LearnCmsHome /> },
+          { index: true, element: <LearnIndexResume fallbackElement={<LearnCmsHome />} /> },
           { path: ":conceptId", element: <LearnLessonPage /> },
         ],
       },
@@ -170,7 +171,7 @@ const router = createBrowserRouter([
     path: "/teacher",
     element: <TeacherLayout />,
     children: [
-      { index: true, element: <Navigate to="/teacher/teach" replace /> },
+      { index: true, element: <RoleIndexRedirect role="teacher" fallback="/teacher/teach" /> },
       { path: "teach", element: <TeacherTeach /> },
       { path: "class-planner", element: <ClassPlanner /> },
       { path: "class-planner/:planId", element: <ClassPlanWorkspace /> },
@@ -183,7 +184,7 @@ const router = createBrowserRouter([
     path: "/admin",
     element: <AdminLayout />,
     children: [
-      { index: true, element: <AdminDashboard /> },
+      { index: true, element: <RoleIndexResume role="admin" fallbackElement={<AdminDashboard />} /> },
       { path: "learn-content", element: <AdminLearnContent /> },
       { path: "learn-content/new", element: <LessonEditor /> },
       { path: "learn-content/:pageId", element: <LessonEditor /> },

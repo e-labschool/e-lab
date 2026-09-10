@@ -12,13 +12,15 @@ import {
 } from "../../../lib/learnContentService.js";
 import { listQuestions } from "../../../lib/questionBankService.js";
 import { resolveLatestVersionIds } from "../../../lib/canonicalQuestions.js";
-import { BLOCK_TYPES, BLOCK_CATEGORIES, BlockEditor } from "../../../data/learnBlockRegistry.jsx";
+import { BLOCK_TYPES, BLOCK_CATEGORIES, BlockEditor, getLearnBlockDisplayLabel } from "../../../data/learnBlockRegistry.jsx";
 import LearnBlockRenderer from "../../../components/learn/LearnBlockRenderer.jsx";
 import CheckYourUnderstanding from "../../../components/learn/CheckYourUnderstanding.jsx";
 import Button from "../../../components/ui/Button.jsx";
 import LearnMediaInput from "../../../components/admin/LearnMediaInput.jsx";
 import Badge from "../../../components/ui/Badge.jsx";
 import { splitLearnBlocksIntoPages } from "../../../lib/learnPagination.js";
+import { useAuth } from "../../../context/AuthContext.jsx";
+import { saveLearnDraft, loadLearnDraft, clearLearnDraft } from "../../../lib/learnAdminDraft.js";
 
 const inputCls = "w-full rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] px-3 py-2 text-sm text-[var(--color-ink)] focus:border-[var(--color-indigo)] focus:outline-none";
 const labelCls = "mb-1 block text-xs font-medium text-[var(--color-ink-soft)]";
@@ -27,6 +29,7 @@ export default function LessonEditor() {
   const { pageId } = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const isNew = !pageId;
   const parentTopics = getFlatParentTopics();
 
@@ -50,7 +53,19 @@ export default function LessonEditor() {
     if (isNew) return;
     Promise.all([getLesson(pageId), listBlocks(pageId), listCheckQuestions(pageId)])
       .then(([lesson, blockRows, checkRows]) => {
-        setForm({ parentTopic: lesson.parent_topic, lessonCode: lesson.lesson_code, title: lesson.title, level: lesson.level, displayOrder: lesson.display_order });
+        const serverForm = { parentTopic: lesson.parent_topic, lessonCode: lesson.lesson_code, title: lesson.title, level: lesson.level, displayOrder: lesson.display_order };
+        // Resume any unsaved settings-form edits and the expanded block
+        // from before a temporary trip to another Admin tab — only if
+        // the remembered draft is genuinely for THIS lesson; a draft for
+        // a different lesson (or a stale one from a prior session) is
+        // never applied here.
+        const draft = user?.id ? loadLearnDraft(user.id) : null;
+        if (draft && draft.pageId === pageId && draft.formDraft) {
+          setForm({ ...serverForm, ...draft.formDraft });
+          if (draft.expandedBlockId) setExpandedBlockId(draft.expandedBlockId);
+        } else {
+          setForm(serverForm);
+        }
         setStatus(lesson.status);
         setBlocks(blockRows);
         setCheckQuestions(checkRows);
@@ -58,6 +73,24 @@ export default function LessonEditor() {
       .catch((err) => setError(err.message || "Couldn't load this lesson."))
       .finally(() => setLoading(false));
   }, [pageId, isNew]);
+
+  // Persists the current lesson id, expanded block, and settings-form
+  // draft to sessionStorage on every change — cheap client-side writes
+  // only, never Supabase. This is what lets a temporary trip to another
+  // Admin tab and back restore exactly where the admin left off.
+  useEffect(() => {
+    if (!user?.id || !currentPageId) return;
+    saveLearnDraft(user.id, { pageId: currentPageId, expandedBlockId, formDraft: form });
+  }, [user?.id, currentPageId, expandedBlockId, form]);
+
+  // Scrolls the restored block into view once the lesson has finished
+  // loading — "practical" best-effort focus restoration, not required to
+  // be pixel-perfect.
+  useEffect(() => {
+    if (loading || !expandedBlockId) return;
+    const el = document.getElementById(`learn-block-${expandedBlockId}`);
+    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [loading, expandedBlockId]);
 
   async function ensurePageExists() {
     if (currentPageId) {
@@ -77,6 +110,7 @@ export default function LessonEditor() {
       const id = await ensurePageExists();
       await saveLessonAsDraft(id);
       setStatus("draft");
+      if (user?.id) clearLearnDraft(user.id); // now safely persisted — no unsaved draft to protect
     } catch (err) {
       setError(err.message || "Couldn't save this lesson.");
     } finally {
@@ -91,6 +125,7 @@ export default function LessonEditor() {
       const id = await ensurePageExists();
       const published = await publishLesson(id);
       setStatus(published.status);
+      if (user?.id) clearLearnDraft(user.id);
     } catch (err) {
       setError(err.message || "Couldn't publish this lesson.");
     } finally {
@@ -257,7 +292,7 @@ export default function LessonEditor() {
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-10">
-      <button type="button" onClick={() => navigate("/admin/learn-content")} className="mb-4 inline-flex items-center gap-1 text-sm text-[var(--color-ink-faint)] hover:text-[var(--color-ink)]">
+      <button type="button" onClick={() => { if (user?.id) clearLearnDraft(user.id); navigate("/admin/learn-content"); }} className="mb-4 inline-flex items-center gap-1 text-sm text-[var(--color-ink-faint)] hover:text-[var(--color-ink)]">
         <ChevronLeft size={15} /> Learn Content
       </button>
 
@@ -309,6 +344,7 @@ export default function LessonEditor() {
             {blocks.map((block, i) => (
               <div
                 key={block.id}
+                id={`learn-block-${block.id}`}
                 draggable
                 onDragStart={(e) => handleDragStart(e, i)}
                 onDragOver={(e) => e.preventDefault()}
@@ -317,7 +353,10 @@ export default function LessonEditor() {
               >
                 <div className="flex items-center gap-2 border-b border-[var(--color-line)] px-3 py-2">
                   <GripVertical size={14} className="cursor-grab text-[var(--color-ink-faint)]" />
-                  <span className="text-xs font-semibold text-[var(--color-ink-soft)]">{BLOCK_TYPES[block.block_type]?.label ?? block.block_type}</span>
+                  <span className="min-w-0 leading-tight">
+                    <span className="block text-xs font-semibold text-[var(--color-ink-soft)]">{getLearnBlockDisplayLabel(block).typeLabel}</span>
+                    {getLearnBlockDisplayLabel(block).preview && <span className="block truncate text-[11px] text-[var(--color-ink-faint)]">{getLearnBlockDisplayLabel(block).preview}</span>}
+                  </span>
                   {block.block_type === "check_understanding" && <span className="rounded bg-[var(--color-indigo-soft)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-indigo)]">{checkQuestions.length} question{checkQuestions.length === 1 ? "" : "s"}</span>}
                   <div className="ml-auto flex items-center gap-1">
                     <button type="button" onClick={() => setExpandedBlockId(expandedBlockId === block.id ? null : block.id)} className="rounded px-2 py-1 text-xs text-[var(--color-indigo)] hover:bg-[var(--color-indigo-soft)]">{expandedBlockId === block.id ? "Close" : "Edit"}</button>

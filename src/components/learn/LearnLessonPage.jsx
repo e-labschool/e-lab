@@ -3,10 +3,13 @@ import { useParams, useNavigate } from "react-router-dom";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { getPublishedLesson, listPublishedLessonMeta } from "../../lib/learnContentService.js";
 import { getLearnCmsCurriculumTree } from "../../data/learnCmsCurriculum.js";
+import { useAuth } from "../../context/AuthContext.jsx";
+import { saveUserScopedValue, loadUserScopedValue } from "../../lib/userScopedStorage.js";
 import LearnBlockRenderer from "./LearnBlockRenderer.jsx";
 import CheckYourUnderstanding from "./CheckYourUnderstanding.jsx";
 import ELabLoader from "../ui/ELabLoader.jsx";
 import { splitLearnBlocksIntoPages } from "../../lib/learnPagination.js";
+import { useDisplaySettings } from "../../context/DisplaySettingsContext.jsx";
 
 /** Determines prev/next PUBLISHED lesson purely from parent topic +
  * display order + curriculum hierarchy — Admin never creates nav links
@@ -45,6 +48,8 @@ function findAdjacentLessons(currentLesson, allLessons, tree) {
 export default function LearnLessonPage() {
   const { conceptId: pageId } = useParams(); // param name kept as conceptId — see LearnLayout.jsx
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const { settings: displaySettings } = useDisplaySettings();
   const [lesson, setLesson] = useState(null);
   const [adjacent, setAdjacent] = useState({ prev: null, next: null, nextIsNewTopic: false });
   const [loading, setLoading] = useState(true);
@@ -52,7 +57,6 @@ export default function LearnLessonPage() {
   const [contentPage, setContentPage] = useState(0);
 
   useEffect(() => {
-    setContentPage(0);
     setLoading(true);
     setError(null);
     Promise.all([getPublishedLesson(pageId), listPublishedLessonMeta()])
@@ -60,9 +64,17 @@ export default function LearnLessonPage() {
         if (!data?.page) throw new Error("This lesson isn't available.");
         setLesson(data);
         setAdjacent(findAdjacentLessons(data.page, allLessons, getLearnCmsCurriculumTree()));
+        // Resume the last internal page the student was on for THIS
+        // specific lesson, if remembered — a lesson last visited on
+        // page 3 reopens on page 3, not page 1. If Admin has since
+        // removed pages, the clamp below (safePage) keeps this safe.
+        const remembered = user?.id ? loadUserScopedValue(user.id, `learn:last-page:${pageId}`, 0) : 0;
+        setContentPage(remembered);
+        if (user?.id) saveUserScopedValue(user.id, "learn:last-lesson", pageId);
       })
       .catch((err) => setError(err.message || "Couldn't load this lesson."))
       .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageId]);
 
   if (loading) return <div className="flex min-h-[50vh] items-center justify-center"><ELabLoader /></div>;
@@ -79,11 +91,12 @@ export default function LearnLessonPage() {
   function goToContentPage(nextPage) {
     const clamped = Math.max(0, Math.min(nextPage, pages.length - 1));
     setContentPage(clamped);
+    if (user?.id) saveUserScopedValue(user.id, `learn:last-page:${pageId}`, clamped);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   return (
-    <div className="mx-auto max-w-2xl px-6 py-10">
+    <div className={`mx-auto w-full px-5 py-10 sm:px-7 lg:px-10 ${displaySettings.contentWidth === "wide" ? "max-w-[1320px]" : "max-w-[980px]"}`}>
       {topicMeta && (
         <p className="text-xs text-[var(--color-ink-faint)]">
           {topicMeta.sectionLabel} <ChevronRight size={11} className="inline" /> {topicMeta.topicLabel}

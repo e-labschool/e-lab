@@ -1,6 +1,7 @@
 import { Presentation, CalendarDays, FileEdit, Library } from "lucide-react";
 import { getSubject } from "../../data/programmes.js";
 import AppSidebarLayout from "../../components/layout/AppSidebarLayout.jsx";
+import { useTrackLastRoute } from "../../lib/lastRoute.jsx";
 
 const PROGRAMME_ID = "ibdp";
 const SUBJECT_ID = "chemistry";
@@ -15,6 +16,7 @@ const TABS = [
 ];
 
 export default function TeacherLayout() {
+  useTrackLastRoute("teacher");
   const subject = getSubject(PROGRAMME_ID, SUBJECT_ID);
   return (
     <AppSidebarLayout

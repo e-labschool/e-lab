@@ -29,7 +29,7 @@ export const BLOCK_TYPES = {
   real_life: { label: "Real-Life Connection", category: "teaching", icon: Globe2, defaultContent: { title: "", content: "", imageUrl: "" } },
   worked_example: { label: "Worked Example", category: "teaching", icon: ListChecks, defaultContent: { question: "", steps: [], finalAnswer: "" } },
   data_graph: { label: "Data / Graph", category: "teaching", icon: BarChart3, defaultContent: { title: "", rows: [], explanation: "", prompt: "" } },
-  compare_contrast: { label: "Compare & Contrast", category: "teaching", icon: Columns2, defaultContent: { columns: [{ title: "", content: "" }, { title: "", content: "" }] } },
+  compare_contrast: { label: "Compare & Contrast", category: "teaching", icon: Columns2, defaultContent: { title: "", displayMode: "inline", columns: [{ title: "", content: "" }, { title: "", content: "" }] } },
   reveal_think: { label: "Reveal / Think", category: "teaching", icon: HelpCircle, defaultContent: { prompt: "", reveal: "" } },
   practical: { label: "Practical / Experiment", category: "teaching", icon: Beaker, defaultContent: { aim: "", apparatus: "", variables: "", method: "", safety: "", observations: "", data: "", analysis: "" } },
   page_break: { label: "Page Break", category: "content", icon: Files, defaultContent: { label: "" } },
@@ -51,6 +51,76 @@ export const SIMULATION_REGISTRY = {
   "particle-model-visualizer": { label: "Particle Model Visualizer" },
   "phase-change-heating-curve": { label: "Phase Change & Heating Curve" },
 };
+
+// Strips HTML tags for a safe plain-text preview — never renders HTML
+// inside an Admin list card, and never mutates the actual stored content.
+function stripHtml(html) {
+  return (html || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function truncate(text, max = 65) {
+  if (!text) return "";
+  return text.length > max ? `${text.slice(0, max).trim()}\u2026` : text;
+}
+
+/** Admin-only block card label — the block TYPE label always stays
+ * visible; this derives a short, content-based preview underneath it so
+ * multiple blocks of the same type are distinguishable at a glance.
+ * Never alters the stored block content, purely a display derivation.
+ * Uses the current block schema (BLOCK_TYPES content shape) as source of
+ * truth — one field lookup per type, easy to extend alongside it. */
+export function getLearnBlockDisplayLabel(block) {
+  const typeLabel = BLOCK_TYPES[block.block_type]?.label ?? block.block_type;
+  const c = block.content ?? {};
+  let preview = "";
+
+  switch (block.block_type) {
+    case "rich_text":
+      preview = c.title || stripHtml(c.html);
+      break;
+    case "image":
+    case "video":
+      preview = c.caption || "";
+      break;
+    case "key_idea":
+    case "common_mistake":
+      preview = c.text || "";
+      break;
+    case "definition":
+      preview = c.term || "";
+      break;
+    case "real_life":
+    case "data_graph":
+    case "compare_contrast":
+      preview = c.title || "";
+      break;
+    case "worked_example":
+      preview = c.question || "";
+      break;
+    case "reveal_think":
+      preview = c.prompt || "";
+      break;
+    case "practical":
+      preview = c.aim || "";
+      break;
+    case "equation":
+      preview = c.markup || "";
+      break;
+    case "molecule_3d":
+      preview = MOLECULE_PRESETS[c.presetId]?.label || "";
+      break;
+    case "simulation":
+      preview = SIMULATION_REGISTRY[c.simulationId]?.label || "";
+      break;
+    case "page_break":
+      preview = c.label || "";
+      break;
+    default:
+      preview = "";
+  }
+
+  return { typeLabel, preview: truncate(preview) };
+}
 
 const inputCls = "w-full rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] px-3 py-2 text-sm text-[var(--color-ink)] focus:border-[var(--color-indigo)] focus:outline-none";
 const labelCls = "mb-1 block text-xs font-medium text-[var(--color-ink-soft)]";
@@ -324,7 +394,24 @@ function CompareContrastEditor({ content, set }) {
     set("columns", columns);
   }
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
+      <div>
+        <label className="mb-1 block text-xs font-medium text-[var(--color-ink-soft)]">Title (optional \u2014 also used as the reveal button label)</label>
+        <input className={inputCls} placeholder="e.g. Colloids & Suspensions" value={content.title ?? ""} onChange={(e) => set("title", e.target.value)} />
+      </div>
+      <div>
+        <label className="mb-1 block text-xs font-medium text-[var(--color-ink-soft)]">Display Mode</label>
+        <div className="flex flex-col gap-1.5 text-sm text-[var(--color-ink-soft)]">
+          <label className="flex items-center gap-2">
+            <input type="radio" name={`display-mode-${content.title ?? "cc"}`} checked={(content.displayMode ?? "inline") === "inline"} onChange={() => set("displayMode", "inline")} />
+            Show directly in lesson flow
+          </label>
+          <label className="flex items-center gap-2">
+            <input type="radio" name={`display-mode-${content.title ?? "cc"}`} checked={content.displayMode === "reveal"} onChange={() => set("displayMode", "reveal")} />
+            Show as button / reveal
+          </label>
+        </div>
+      </div>
       {content.columns.map((col, i) => (
         <div key={i} className="rounded-md border border-[var(--color-line)] p-2">
           <input className={`${inputCls} mb-1.5 font-medium`} placeholder="Column title" value={col.title} onChange={(e) => updateColumn(i, "title", e.target.value)} />

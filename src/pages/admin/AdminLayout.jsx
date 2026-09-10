@@ -5,6 +5,7 @@ import ProtectedRoute from "../../components/auth/ProtectedRoute.jsx";
 import Wordmark from "../../components/layout/Wordmark.jsx";
 import AccountMenu from "../../components/auth/AccountMenu.jsx";
 import ThemeToggle from "../../components/layout/ThemeToggle.jsx";
+import { useTrackLastRoute } from "../../lib/lastRoute.jsx";
 
 // Deliberately a LEFT-SIDEBAR CMS layout, not the top-tab chrome
 // Student/TeacherLayout use — the brief is explicit this should read as a
@@ -47,6 +48,7 @@ function SidebarNav({ onNavigate }) {
 }
 
 function AdminChrome() {
+  useTrackLastRoute("admin");
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 

@@ -171,3 +171,15 @@ body {
   color-scheme: light;
   color: #12161C;
 }
+
+/* Student/teacher display preferences. Scope deliberately excludes global chrome. */
+.elab-display-surface.elab-text-small { --elab-reading-scale: .94; }
+.elab-display-surface.elab-text-default { --elab-reading-scale: 1; }
+.elab-display-surface.elab-text-large { --elab-reading-scale: 1.10; }
+.elab-display-surface.elab-text-xl { --elab-reading-scale: 1.20; }
+.elab-display-surface :where(p, li, td, th, blockquote, .elab-reading-text) { font-size: calc(1em * var(--elab-reading-scale, 1)); }
+.elab-display-surface.elab-lines-compact :where(p, li, blockquote) { line-height: 1.4; }
+.elab-display-surface.elab-lines-normal :where(p, li, blockquote) { line-height: 1.6; }
+.elab-display-surface.elab-lines-relaxed :where(p, li, blockquote) { line-height: 1.85; }
+.elab-display-surface.elab-contrast-high { --color-ink-soft: var(--color-ink); --color-ink-faint: var(--color-ink-soft); }
+.elab-display-surface.elab-contrast-high :where(input, textarea, select, button) { outline-color: currentColor; }

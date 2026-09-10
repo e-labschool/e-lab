@@ -3,13 +3,29 @@ import { useNavigate } from "react-router-dom";
 import { ChevronDown, ChevronRight, Plus, Loader2, FileText } from "lucide-react";
 import { getLearnCmsCurriculumTree } from "../../../data/learnCmsCurriculum.js";
 import { listLessonsForTopic } from "../../../lib/learnContentService.js";
+import { useAuth } from "../../../context/AuthContext.jsx";
+import { loadLearnDraft } from "../../../lib/learnAdminDraft.js";
 import Badge from "../../../components/ui/Badge.jsx";
 import Button from "../../../components/ui/Button.jsx";
 
 export default function AdminLearnContent() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [openTopics, setOpenTopics] = useState(new Set());
   const [selectedTopic, setSelectedTopic] = useState(null);
+
+  // Resumes the lesson the admin was actively editing before a temporary
+  // trip to another Admin tab — fires once, only from the list view
+  // itself (never overrides an explicit deep link to a specific lesson,
+  // since this component only renders for the bare /admin/learn-content
+  // route in the first place).
+  useEffect(() => {
+    if (!user?.id) return;
+    const draft = loadLearnDraft(user.id);
+    if (draft?.pageId) navigate(`/admin/learn-content/${draft.pageId}`, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
   const [lessons, setLessons] = useState(null);
   const tree = getLearnCmsCurriculumTree();
 
