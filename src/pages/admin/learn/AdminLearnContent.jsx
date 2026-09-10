@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronDown, ChevronRight, Plus, Loader2, FileText } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus, Loader2, FileText, GripVertical } from "lucide-react";
 import { getLearnCmsCurriculumTree } from "../../../data/learnCmsCurriculum.js";
-import { listLessonsForTopic } from "../../../lib/learnContentService.js";
+import { listLessonsForTopic, reorderLessons } from "../../../lib/learnContentService.js";
 import { useAuth } from "../../../context/AuthContext.jsx";
 import { loadLearnDraft } from "../../../lib/learnAdminDraft.js";
 import Badge from "../../../components/ui/Badge.jsx";
@@ -14,6 +14,8 @@ export default function AdminLearnContent() {
   const [openTopics, setOpenTopics] = useState(new Set());
   const [selectedTopic, setSelectedTopic] = useState(null);
   const [welcomeLesson, setWelcomeLesson] = useState(undefined);
+  const [draggedLessonId, setDraggedLessonId] = useState(null);
+  const [reordering, setReordering] = useState(false);
 
   // Resumes the lesson the admin was actively editing before a temporary
   // trip to another Admin tab — fires once, only from the list view
@@ -44,6 +46,29 @@ export default function AdminLearnContent() {
       if (next.has(topicId)) next.delete(topicId); else next.add(topicId);
       return next;
     });
+  }
+
+  async function moveLessonTo(targetId) {
+    if (!draggedLessonId || draggedLessonId === targetId || !lessons) return;
+    const from = lessons.findIndex((lesson) => lesson.id === draggedLessonId);
+    const to = lessons.findIndex((lesson) => lesson.id === targetId);
+    if (from < 0 || to < 0) return;
+    const previous = lessons;
+    const next = [...lessons];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    setLessons(next);
+    setDraggedLessonId(null);
+    setReordering(true);
+    try {
+      await reorderLessons(next.map((lesson) => lesson.id));
+      setLessons(next.map((lesson, index) => ({ ...lesson, display_order: index + 1 })));
+    } catch (err) {
+      setLessons(previous);
+      console.error("Could not reorder Learn lessons", err);
+    } finally {
+      setReordering(false);
+    }
   }
 
   const selectedMeta = selectedTopic && findTopicLabel(tree, selectedTopic);
@@ -108,21 +133,33 @@ export default function AdminLearnContent() {
                   <Button size="sm" variant="secondary" onClick={() => navigate(`/admin/learn-content/new?parentTopic=${selectedTopic}`)}><Plus size={14} /> Create Lesson</Button>
                 </div>
               ) : (
-                <div className="mt-4 divide-y divide-[var(--color-line)] rounded-md border border-[var(--color-line)]">
-                  {lessons.map((lesson) => (
-                    <button
-                      key={lesson.id}
-                      type="button"
-                      onClick={() => navigate(`/admin/learn-content/${lesson.id}`)}
-                      className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-[var(--color-line)]/15"
-                    >
-                      <div>
-                        <span className="font-mono text-xs text-[var(--color-ink-faint)]">{lesson.lesson_code}</span>
-                        <p className="text-sm font-medium text-[var(--color-ink)]">{lesson.title}</p>
+                <div className="mt-4 overflow-hidden rounded-md border border-[var(--color-line)]">
+                  <div className="border-b border-[var(--color-line)] bg-[var(--color-line)]/10 px-4 py-2 text-xs text-[var(--color-ink-faint)]">
+                    Drag lessons to change Student Learn order. New lessons are added at the bottom.{reordering ? " Saving order…" : ""}
+                  </div>
+                  <div className="divide-y divide-[var(--color-line)]">
+                    {lessons.map((lesson, index) => (
+                      <div
+                        key={lesson.id}
+                        draggable
+                        onDragStart={() => setDraggedLessonId(lesson.id)}
+                        onDragEnd={() => setDraggedLessonId(null)}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={() => moveLessonTo(lesson.id)}
+                        className={`flex items-center gap-3 px-3 py-3 transition-colors hover:bg-[var(--color-line)]/15 ${draggedLessonId === lesson.id ? "opacity-50" : ""}`}
+                      >
+                        <button type="button" aria-label={`Drag ${lesson.title}`} title="Drag to reorder" className="cursor-grab text-[var(--color-ink-faint)] active:cursor-grabbing">
+                          <GripVertical size={18} />
+                        </button>
+                        <span className="w-6 shrink-0 text-center text-xs font-semibold text-[var(--color-ink-faint)]">{index + 1}</span>
+                        <button type="button" onClick={() => navigate(`/admin/learn-content/${lesson.id}`)} className="min-w-0 flex-1 text-left">
+                          <span className="font-mono text-xs text-[var(--color-ink-faint)]">{lesson.lesson_code}</span>
+                          <p className="truncate text-sm font-medium text-[var(--color-ink)]">{lesson.title}</p>
+                        </button>
+                        <Badge tone={lesson.status === "published" ? "teal" : "neutral"}>{lesson.status}</Badge>
                       </div>
-                      <Badge tone={lesson.status === "published" ? "teal" : "neutral"}>{lesson.status}</Badge>
-                    </button>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               )}
             </>

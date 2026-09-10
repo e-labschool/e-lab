@@ -37,7 +37,7 @@ export default function LessonEditor() {
 
   const [form, setForm] = useState({
     parentTopic: searchParams.get("parentTopic") || parentTopics[0]?.id || "",
-    lessonCode: "", syllabusCodes: [], title: "", level: "SL/HL", displayOrder: 0,
+    lessonCode: "", syllabusCodes: [], title: "", level: "SL/HL", displayOrder: null,
   });
   const [status, setStatus] = useState("draft");
   const [blocks, setBlocks] = useState([]);
@@ -122,6 +122,7 @@ export default function LessonEditor() {
     }
     const created = await createLesson(form);
     setCurrentPageId(created.id);
+    setForm((prev) => ({ ...prev, displayOrder: created.display_order }));
     navigate(`/admin/learn-content/${created.id}`, { replace: true });
     return created.id;
   }
@@ -423,8 +424,10 @@ export default function LessonEditor() {
             </select>
           </div>
           <div>
-            <label className={labelCls}>Display Order</label>
-            <input type="number" className={inputCls} value={form.displayOrder} onChange={(e) => setForm({ ...form, displayOrder: Number(e.target.value) })} />
+            <label className={labelCls}>Lesson Order</label>
+            <div className={`${inputCls} flex items-center text-sm text-[var(--color-ink-faint)]`}>
+              Managed by drag-and-drop on the Learn Content lesson list
+            </div>
           </div>
         </div>
 

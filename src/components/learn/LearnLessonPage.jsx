@@ -96,7 +96,15 @@ export default function LearnLessonPage() {
   if (!lesson) return null;
 
   const isWelcome = lesson.page.parent_topic === "__welcome__";
-  const firstLearningLesson = allPublishedLessons.filter(l => l.parent_topic !== "__welcome__").sort((a,b)=>(a.display_order??0)-(b.display_order??0))[0] ?? null;
+  const curriculumTree = getLearnCmsCurriculumTree();
+  const orderedTopicIds = curriculumTree.flatMap((section) => section.topics.flatMap((topic) => topic.subtopics.map((subtopic) => subtopic.id)));
+  let firstLearningLesson = null;
+  for (const topicId of orderedTopicIds) {
+    const candidates = allPublishedLessons
+      .filter((item) => item.parent_topic === topicId)
+      .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0) || a.id.localeCompare(b.id));
+    if (candidates.length) { firstLearningLesson = candidates[0]; break; }
+  }
   const topicMeta = findTopicMeta(lesson.page.parent_topic);
   const pages = splitLearnBlocksIntoPages(lesson.blocks);
   const safePage = Math.min(contentPage, pages.length - 1);

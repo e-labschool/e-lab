@@ -15,6 +15,19 @@ export async function listLessonsForTopic(parentTopic) {
   return data;
 }
 
+
+export async function reorderLessons(pageIds) {
+  if (!supabase) throw new Error("Not connected to Supabase.");
+  const ids = (pageIds || []).filter(Boolean);
+  // Use stable, positive order values. Promise.all is safe here because
+  // each row is independent and there is no unique constraint on order.
+  const results = await Promise.all(ids.map((id, index) =>
+    supabase.from("learn_pages").update({ display_order: index + 1 }).eq("id", id)
+  ));
+  const failed = results.find((result) => result.error);
+  if (failed?.error) throw failed.error;
+}
+
 export async function getLesson(pageId) {
   if (!supabase) return null;
   const { data, error } = await supabase.from("learn_pages").select("*").eq("id", pageId).single();
@@ -25,11 +38,24 @@ export async function getLesson(pageId) {
 export async function createLesson(fields) {
   if (!supabase) throw new Error("Not connected to Supabase.");
   const { data: userData } = await supabase.auth.getUser();
+
+  // New lessons always append to the end of the selected parent topic.
+  // This prevents a newly-created lesson from jumping ahead of existing
+  // lessons simply because its default display_order was 0.
+  const { data: lastRows, error: orderError } = await supabase
+    .from("learn_pages")
+    .select("display_order")
+    .eq("parent_topic", fields.parentTopic)
+    .order("display_order", { ascending: false })
+    .limit(1);
+  if (orderError) throw orderError;
+  const nextDisplayOrder = ((lastRows?.[0]?.display_order ?? 0) + 1);
+
   const { data, error } = await supabase
     .from("learn_pages")
     .insert({
       parent_topic: fields.parentTopic, lesson_code: fields.lessonCode, syllabus_codes: fields.syllabusCodes ?? [], title: fields.title,
-      level: fields.level, display_order: fields.displayOrder ?? 0, status: "draft",
+      level: fields.level, display_order: nextDisplayOrder, status: "draft",
       created_by: userData?.user?.id ?? null,
     })
     .select()
@@ -40,12 +66,17 @@ export async function createLesson(fields) {
 
 export async function updateLesson(pageId, fields) {
   if (!supabase) throw new Error("Not connected to Supabase.");
+  const updates = {
+    parent_topic: fields.parentTopic,
+    lesson_code: fields.lessonCode,
+    syllabus_codes: fields.syllabusCodes ?? [],
+    title: fields.title,
+    level: fields.level,
+  };
+  if (Number.isFinite(fields.displayOrder)) updates.display_order = fields.displayOrder;
   const { data, error } = await supabase
     .from("learn_pages")
-    .update({
-      parent_topic: fields.parentTopic, lesson_code: fields.lessonCode, syllabus_codes: fields.syllabusCodes ?? [], title: fields.title,
-      level: fields.level, display_order: fields.displayOrder,
-    })
+    .update(updates)
     .eq("id", pageId)
     .select()
     .single();
