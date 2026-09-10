@@ -290,7 +290,16 @@ export async function getPublishedLearnCheckItems(pageId) {
     source_type: row.source_type,
     question_id: row.question_id,
     position: row.position,
-    question: row.question_content,
+    question: row.question_content ? {
+      ...row.question_content,
+      // Canonical Question Bank snapshots may store `mcq` while the shared
+      // student renderer expects `MCQ`. Normalise at this boundary so Learn
+      // checks render their configured radio options instead of a text box.
+      questionType: String(row.question_content.questionType || "").toLowerCase() === "mcq"
+        ? "MCQ"
+        : row.question_content.questionType,
+      options: Array.isArray(row.question_content.options) ? row.question_content.options : [],
+    } : null,
   }));
 }
 

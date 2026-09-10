@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, CheckCircle2, RotateCcw } from "lucide-react";
 import { getPublishedLesson, listPublishedLessonMeta } from "../../lib/learnContentService.js";
 import { getLearnCmsCurriculumTree } from "../../data/learnCmsCurriculum.js";
 import { useAuth } from "../../context/AuthContext.jsx";
@@ -10,6 +10,8 @@ import CheckYourUnderstanding from "./CheckYourUnderstanding.jsx";
 import ELabLoader from "../ui/ELabLoader.jsx";
 import { splitLearnBlocksIntoPages } from "../../lib/learnPagination.js";
 import { useDisplaySettings } from "../../context/DisplaySettingsContext.jsx";
+import { useLearningProgress } from "../../context/ProgressContext.jsx";
+import { getConceptIdForLessonCode } from "../../lib/learn-tree.js";
 
 /** Determines prev/next PUBLISHED lesson purely from parent topic +
  * display order + curriculum hierarchy — Admin never creates nav links
@@ -50,6 +52,7 @@ export default function LearnLessonPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { settings: displaySettings } = useDisplaySettings();
+  const { openConcept, markCompleted, restartConcept, statusFor } = useLearningProgress();
   const [lesson, setLesson] = useState(null);
   const [adjacent, setAdjacent] = useState({ prev: null, next: null, nextIsNewTopic: false });
   const [loading, setLoading] = useState(true);
@@ -76,6 +79,13 @@ export default function LearnLessonPage() {
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageId]);
+
+  const progressConceptId = lesson?.page ? getConceptIdForLessonCode(lesson.page.lesson_code) : null;
+  useEffect(() => {
+    if (progressConceptId) openConcept(progressConceptId);
+    // Only opening a different mapped lesson should trigger this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [progressConceptId]);
 
   if (loading) return <div className="flex min-h-[50vh] items-center justify-center"><ELabLoader /></div>;
   if (error) return <p className="p-10 text-center text-sm text-[var(--color-coral)]">{error}</p>;
@@ -124,7 +134,7 @@ export default function LearnLessonPage() {
       <div className="mt-6 space-y-5">
         {activePage.blocks.map((block) =>
           block.block_type === "check_understanding" ? (
-            <CheckYourUnderstanding key={block.id} pageId={pageId} checkQuestions={lesson.checkQuestions} />
+            <CheckYourUnderstanding key={block.id} pageId={pageId} checkQuestions={lesson.checkQuestions} progressConceptId={progressConceptId} />
           ) : (
             <LearnBlockRenderer key={block.id} block={block} />
           )
@@ -147,16 +157,50 @@ export default function LearnLessonPage() {
       )}
 
       {(isFirstContentPage || isLastContentPage) && (
-        <div className="mt-5 flex items-center justify-between border-t border-[var(--color-line)] pt-5">
-          {isFirstContentPage && adjacent.prev ? (
+        <div className="mt-5 border-t border-[var(--color-line)] pt-5">
+          {isFirstContentPage && adjacent.prev && !isLastContentPage && (
             <button type="button" onClick={() => navigate(`/student/learn/${adjacent.prev.id}`)} className="flex items-center gap-1 text-sm font-medium text-[var(--color-ink-soft)] hover:text-[var(--color-ink)]">
               <ChevronLeft size={15} /> Previous Concept
             </button>
-          ) : <span />}
-          {isLastContentPage && adjacent.next && (
-            <button type="button" onClick={() => navigate(`/student/learn/${adjacent.next.id}`)} className="flex items-center gap-1 text-sm font-medium text-[var(--color-indigo)]">
-              {adjacent.nextIsNewTopic ? "Next Topic" : "Next Concept"} <ChevronRight size={15} />
-            </button>
+          )}
+
+          {isLastContentPage && (
+            <div className="rounded-lg border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-4 sm:p-5">
+              <p className="text-sm font-semibold text-[var(--color-ink)]">End of this chapter</p>
+              <p className="mt-1 text-xs text-[var(--color-ink-soft)]">Finish to record this lesson in Progress, restart from Page 1, or continue to the next topic.</p>
+              <div className="mt-4 flex flex-wrap gap-2.5">
+                <button
+                  type="button"
+                  disabled={!progressConceptId || statusFor(progressConceptId) === "completed"}
+                  onClick={() => progressConceptId && markCompleted(progressConceptId)}
+                  className="flex items-center gap-1.5 rounded-md bg-[var(--color-indigo)] px-4 py-2 text-sm font-semibold text-white disabled:cursor-default disabled:opacity-70"
+                >
+                  <CheckCircle2 size={15} /> {progressConceptId && statusFor(progressConceptId) === "completed" ? "Finished ✓" : "Finish"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (progressConceptId) restartConcept(progressConceptId);
+                    goToContentPage(0);
+                  }}
+                  className="flex items-center gap-1.5 rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] px-4 py-2 text-sm font-semibold text-[var(--color-ink)]"
+                >
+                  <RotateCcw size={15} /> Restart Chapter
+                </button>
+                {adjacent.next && (
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/student/learn/${adjacent.next.id}`)}
+                    className="flex items-center gap-1.5 rounded-md border border-[var(--color-indigo)] px-4 py-2 text-sm font-semibold text-[var(--color-indigo)]"
+                  >
+                    Next Topic <ChevronRight size={15} />
+                  </button>
+                )}
+              </div>
+              {!progressConceptId && (
+                <p className="mt-3 text-[11px] text-[var(--color-ink-faint)]">Progress tracking will activate when this lesson has a curriculum lesson code such as S1.1.1.</p>
+              )}
+            </div>
           )}
         </div>
       )}

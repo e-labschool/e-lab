@@ -3,9 +3,11 @@ import { Lightbulb, Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { submitLearnCheckAnswers } from "../../lib/learnContentService.js";
 import QuestionRenderer from "../../pages/student/solve/QuestionRenderer.jsx";
 import Button from "../ui/Button.jsx";
+import { useLearningProgress } from "../../context/ProgressContext.jsx";
 
-// Optional Learn block. It is intentionally stateless with respect to Assess/Progress.
-export default function CheckYourUnderstanding({ pageId, checkQuestions = [] }) {
+// Optional Learn block. Check attempts feed the existing Learn progress model.
+export default function CheckYourUnderstanding({ pageId, checkQuestions = [], progressConceptId = null }) {
+  const { recordCheckAttempt } = useLearningProgress();
   const [started, setStarted] = useState(false);
   const [answers, setAnswers] = useState({});
   const [submitting, setSubmitting] = useState(false);
@@ -26,6 +28,21 @@ export default function CheckYourUnderstanding({ pageId, checkQuestions = [] }) 
       }));
       const data = await submitLearnCheckAnswers(pageId, items);
       setResults(new Map(data.map((r) => [r.item_id, r])));
+
+      // Record real server-marked Check Your Understanding outcomes in the
+      // same progress stream used by the Progress page. Unmarked responses
+      // are not invented as correct/wrong.
+      if (progressConceptId) {
+        const marked = data.filter((r) => typeof r.is_correct === "boolean");
+        const score = marked.length ? Math.round((marked.filter((r) => r.is_correct).length / marked.length) * 100) : 0;
+        for (const r of marked) {
+          await recordCheckAttempt(progressConceptId, {
+            questionId: r.question_id || r.item_id,
+            isCorrect: r.is_correct,
+            score,
+          });
+        }
+      }
     } catch (err) {
       setSubmitError(err.message || "Could not submit your answers.");
     } finally {
@@ -79,7 +96,13 @@ export default function CheckYourUnderstanding({ pageId, checkQuestions = [] }) 
 }
 
 function CheckQuestionCard({ index, item, answer, onAnswer, result }) {
-  const question = item.question;
+  const question = item.question || (item.question_text ? {
+    id: item.item_id || item.id,
+    questionText: item.question_text,
+    questionType: String(item.question_type || "").toLowerCase() === "mcq" ? "MCQ" : "Short Response",
+    options: Array.isArray(item.options) ? item.options : [],
+    parts: [],
+  } : null);
   return (
     <div className="light-surface rounded-md border border-[#DCE1F0] bg-white p-5 text-[#12161C] shadow-sm">
       {question ? (

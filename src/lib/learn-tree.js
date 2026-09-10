@@ -61,6 +61,19 @@ export function getConceptContext(conceptId) {
   return tree?.conceptIndex.get(conceptId) ?? null;
 }
 
+/** Resolve an Admin-authored Learn lesson code (for example S1.1.1) to
+ * the existing progress concept id. This keeps CMS lessons on the same
+ * learning_progress model instead of creating a second progress system. */
+export function getConceptIdForLessonCode(lessonCode) {
+  const tree = getLearnTree();
+  if (!tree || !lessonCode) return null;
+  const wanted = String(lessonCode).trim().toUpperCase();
+  for (const [conceptId, entry] of tree.conceptIndex.entries()) {
+    if (String(entry.code || "").toUpperCase() === wanted) return conceptId;
+  }
+  return null;
+}
+
 /** The concept immediately before/after this one in curriculum order, or null at the ends. */
 export function getAdjacentConcepts(conceptId) {
   const tree = getLearnTree();

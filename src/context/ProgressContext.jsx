@@ -109,7 +109,11 @@ export function ProgressProvider({ children }) {
   }
 
   function markCompleted(conceptId) {
-    upsertRow(conceptId, { status: "completed", completed_at: new Date().toISOString() });
+    return upsertRow(conceptId, { status: "completed", completed_at: new Date().toISOString() });
+  }
+
+  function restartConcept(conceptId) {
+    return upsertRow(conceptId, { status: "in_progress", completed_at: null });
   }
 
   async function recordCheckAttempt(conceptId, { questionId, isCorrect, score }) {
@@ -138,6 +142,7 @@ export function ProgressProvider({ children }) {
       loading,
       openConcept,
       markCompleted,
+      restartConcept,
       recordCheckAttempt,
       statusFor: (conceptId) => progress[conceptId]?.status ?? "not_started",
       isSignedIn: Boolean(user),
