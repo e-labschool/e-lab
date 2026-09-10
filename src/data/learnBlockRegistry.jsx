@@ -1,3 +1,4 @@
+import { useState } from "react";
 import DOMPurify from "dompurify";
 import LearnMediaInput from "../components/admin/LearnMediaInput.jsx";
 import {
@@ -18,8 +19,8 @@ export const BLOCK_CATEGORIES = [
 
 export const BLOCK_TYPES = {
   rich_text: { label: "Rich Text", category: "content", icon: Type, defaultContent: { title: "", titleColor: "", html: "" } },
-  image: { label: "Image", category: "content", icon: ImageIcon, defaultContent: { url: "", caption: "", alt: "", alignment: "center", width: "full" } },
-  video: { label: "Video", category: "content", icon: Video, defaultContent: { url: "", caption: "" } },
+  image: { label: "Image", category: "content", icon: ImageIcon, defaultContent: { url: "", caption: "", alt: "", alignment: "center", width: "large" } },
+  video: { label: "Video", category: "content", icon: Video, defaultContent: { url: "", caption: "", alignment: "center", width: "large" } },
   equation: { label: "Chemical Equation / Chemistry", category: "chemistry", icon: FlaskConical, defaultContent: { markup: "" } },
   molecule_3d: { label: "3D Molecule", category: "chemistry", icon: Box, defaultContent: { presetId: "" } },
   simulation: { label: "e-Lab Simulation", category: "chemistry", icon: PlayCircle, defaultContent: { simulationId: "" } },
@@ -222,7 +223,7 @@ export function BlockEditor({ blockType, content, onChange, pageId, blockId }) {
           <div><label className={labelCls}>Alt text</label><input className={inputCls} value={content.alt} onChange={(e) => set("alt", e.target.value)} /></div>
           <div className="grid grid-cols-2 gap-2">
             <div><label className={labelCls}>Alignment</label><select className={inputCls} value={content.alignment} onChange={(e) => set("alignment", e.target.value)}><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></div>
-            <div><label className={labelCls}>Width</label><select className={inputCls} value={content.width} onChange={(e) => set("width", e.target.value)}><option value="small">Small</option><option value="medium">Medium</option><option value="full">Full</option></select></div>
+            <div><label className={labelCls}>Width</label><select className={inputCls} value={content.width || "large"} onChange={(e) => set("width", e.target.value)}><option value="small">50%</option><option value="medium">70%</option><option value="large">85%</option><option value="full">100%</option></select></div>
           </div>
         </div>
       );
@@ -232,6 +233,10 @@ export function BlockEditor({ blockType, content, onChange, pageId, blockId }) {
         <div className="space-y-2">
           <LearnMediaInput kind="video" pageId={pageId} blockId={blockId} url={content.url ?? ""} onUrlChange={(url) => set("url", url)} label="Video" />
           <div><label className={labelCls}>Caption</label><input className={inputCls} value={content.caption} onChange={(e) => set("caption", e.target.value)} /></div>
+          <div className="grid grid-cols-2 gap-2">
+            <div><label className={labelCls}>Alignment</label><select className={inputCls} value={content.alignment || "center"} onChange={(e) => set("alignment", e.target.value)}><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></div>
+            <div><label className={labelCls}>Width</label><select className={inputCls} value={content.width || "large"} onChange={(e) => set("width", e.target.value)}><option value="small">50%</option><option value="medium">70%</option><option value="large">85%</option><option value="full">100%</option></select></div>
+          </div>
         </div>
       );
 
@@ -388,15 +393,106 @@ function DataGraphEditor({ content, set }) {
   );
 }
 
+function parsePastedCompareTable({ html = "", text = "" }) {
+  let matrix = [];
+
+  // Word/Google Docs commonly place a real HTML <table> on the clipboard.
+  // Prefer it because it preserves cell boundaries even when cell text contains spaces.
+  if (html && typeof DOMParser !== "undefined") {
+    try {
+      const doc = new DOMParser().parseFromString(html, "text/html");
+      const table = doc.querySelector("table");
+      if (table) {
+        matrix = Array.from(table.querySelectorAll("tr")).map((row) =>
+          Array.from(row.querySelectorAll("th,td")).map((cell) => (cell.innerText || cell.textContent || "").trim())
+        );
+      }
+    } catch {
+      matrix = [];
+    }
+  }
+
+  // Excel/Google Sheets copy cells as tab-separated rows. Also accept CSV-ish
+  // pasted text as a convenience, without trying to be a full CSV importer.
+  if (!matrix.length && text) {
+    const lines = text.replace(/\r/g, "").split("\n").filter((line) => line.trim().length);
+    const delimiter = lines.some((line) => line.includes("\t")) ? "\t" : (lines.some((line) => line.includes(",")) ? "," : null);
+    if (delimiter) matrix = lines.map((line) => line.split(delimiter).map((cell) => cell.trim()));
+  }
+
+  matrix = matrix
+    .map((row) => row.map((cell) => String(cell ?? "").trim()))
+    .filter((row) => row.some(Boolean));
+
+  if (matrix.length < 2) return null;
+  const width = Math.max(...matrix.map((row) => row.length));
+  if (width < 2) return null;
+  const normalized = matrix.map((row) => Array.from({ length: width }, (_, i) => row[i] ?? ""));
+
+  // First row is the header row. This maps naturally to the common comparison
+  // table copied from Word/Excel: Property | A | B | ...
+  return { headers: normalized[0], rows: normalized.slice(1) };
+}
+
+function CompareTablePreview({ table }) {
+  if (!table?.headers?.length) return null;
+  return (
+    <div className="overflow-x-auto rounded-md border border-[var(--color-line)]">
+      <table className="min-w-full border-collapse text-left text-xs">
+        <thead className="bg-[var(--color-paper-raised)] text-[var(--color-ink)]">
+          <tr>{table.headers.map((h, i) => <th key={i} className="border-b border-r border-[var(--color-line)] px-2.5 py-2 font-semibold last:border-r-0">{h || `Column ${i + 1}`}</th>)}</tr>
+        </thead>
+        <tbody>
+          {table.rows.map((row, r) => (
+            <tr key={r} className="text-[var(--color-ink-soft)]">
+              {table.headers.map((_, c) => <td key={c} className="border-b border-r border-[var(--color-line)] px-2.5 py-2 align-top last:border-r-0 last:border-b">{row[c]}</td>)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function CompareContrastEditor({ content, set }) {
+  const [pastePreview, setPastePreview] = useState(null);
+  const [pasteError, setPasteError] = useState("");
+
   function updateColumn(i, key, value) {
-    const columns = content.columns.map((c, j) => (j === i ? { ...c, [key]: value } : c));
+    const columns = (content.columns ?? []).map((c, j) => (j === i ? { ...c, [key]: value } : c));
     set("columns", columns);
   }
+
+  function handleTablePaste(event) {
+    const clipboard = event.clipboardData;
+    if (!clipboard) return;
+    event.preventDefault();
+    const parsed = parsePastedCompareTable({
+      html: clipboard.getData("text/html"),
+      text: clipboard.getData("text/plain"),
+    });
+    if (!parsed) {
+      setPastePreview(null);
+      setPasteError("Could not detect a table. Copy at least 2 columns and 2 rows from Word, Excel or Google Sheets.");
+      return;
+    }
+    setPasteError("");
+    setPastePreview(parsed);
+  }
+
+  function applyPastedTable() {
+    if (!pastePreview) return;
+    set("table", pastePreview);
+    setPastePreview(null);
+    setPasteError("");
+  }
+
+  const hasTable = Boolean(content.table?.headers?.length && content.table?.rows?.length);
+
   return (
     <div className="space-y-3">
       <div>
-        <label className="mb-1 block text-xs font-medium text-[var(--color-ink-soft)]">Title (optional \u2014 also used as the reveal button label)</label>
+        <label className="mb-1 block text-xs font-medium text-[var(--color-ink-soft)]">Title (optional — also used as the reveal button label)</label>
         <input className={inputCls} placeholder="e.g. Colloids & Suspensions" value={content.title ?? ""} onChange={(e) => set("title", e.target.value)} />
       </div>
       <div>
@@ -412,14 +508,54 @@ function CompareContrastEditor({ content, set }) {
           </label>
         </div>
       </div>
-      {content.columns.map((col, i) => (
-        <div key={i} className="rounded-md border border-[var(--color-line)] p-2">
-          <input className={`${inputCls} mb-1.5 font-medium`} placeholder="Column title" value={col.title} onChange={(e) => updateColumn(i, "title", e.target.value)} />
-          <textarea className={inputCls} rows={2} placeholder="Content" value={col.content} onChange={(e) => updateColumn(i, "content", e.target.value)} />
-          {content.columns.length > 2 && <button type="button" onClick={() => set("columns", content.columns.filter((_, j) => j !== i))} className="mt-1 text-xs text-[var(--color-coral)]">Remove column</button>}
+
+      <div className="rounded-md border border-dashed border-[var(--color-indigo)]/35 bg-[var(--color-indigo-soft)]/35 p-3">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <p className="text-xs font-semibold text-[var(--color-ink)]">Paste a comparison table</p>
+            <p className="mt-0.5 text-[11px] text-[var(--color-ink-faint)]">Copy a table from Word, Excel or Google Sheets, then click below and paste. The first row becomes the header.</p>
+          </div>
+          {hasTable && <button type="button" onClick={() => set("table", null)} className="text-[11px] font-medium text-[var(--color-coral)]">Remove pasted table</button>}
         </div>
-      ))}
-      <button type="button" onClick={() => set("columns", [...content.columns, { title: "", content: "" }])} className="text-xs font-medium text-[var(--color-indigo)]">+ Add column</button>
+        <textarea
+          className={`${inputCls} mt-2 min-h-16`}
+          value=""
+          readOnly
+          onPaste={handleTablePaste}
+          placeholder="Click here, then Ctrl+V / Cmd+V to paste your table…"
+          aria-label="Paste comparison table from Word or spreadsheet"
+        />
+        {pasteError && <p className="mt-2 text-xs text-[var(--color-coral)]">{pasteError}</p>}
+        {pastePreview && (
+          <div className="mt-3 space-y-2">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Preview before applying</p>
+            <CompareTablePreview table={pastePreview} />
+            <div className="flex gap-2">
+              <button type="button" onClick={applyPastedTable} className="rounded-md bg-[var(--color-ink)] px-3 py-1.5 text-xs font-semibold text-white">Use this table</button>
+              <button type="button" onClick={() => { setPastePreview(null); setPasteError(""); }} className="rounded-md border border-[var(--color-line)] px-3 py-1.5 text-xs font-medium text-[var(--color-ink-soft)]">Cancel</button>
+            </div>
+          </div>
+        )}
+        {hasTable && !pastePreview && (
+          <div className="mt-3">
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Current pasted table</p>
+            <CompareTablePreview table={content.table} />
+            <p className="mt-1.5 text-[11px] text-[var(--color-ink-faint)]">Paste another table above to replace it. Undo restores the previous block state.</p>
+          </div>
+        )}
+      </div>
+
+      {!hasTable && <>
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Or build comparison cards manually</p>
+        {(content.columns ?? []).map((col, i) => (
+          <div key={i} className="rounded-md border border-[var(--color-line)] p-2">
+            <input className={`${inputCls} mb-1.5 font-medium`} placeholder="Column title" value={col.title} onChange={(e) => updateColumn(i, "title", e.target.value)} />
+            <textarea className={inputCls} rows={2} placeholder="Content" value={col.content} onChange={(e) => updateColumn(i, "content", e.target.value)} />
+            {(content.columns ?? []).length > 2 && <button type="button" onClick={() => set("columns", content.columns.filter((_, j) => j !== i))} className="mt-1 text-xs text-[var(--color-coral)]">Remove column</button>}
+          </div>
+        ))}
+        <button type="button" onClick={() => set("columns", [...(content.columns ?? []), { title: "", content: "" }])} className="text-xs font-medium text-[var(--color-indigo)]">+ Add column</button>
+      </>}
     </div>
   );
 }

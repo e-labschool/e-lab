@@ -5,6 +5,7 @@ import { useDisplaySettings } from "../../context/DisplaySettingsContext.jsx";
 const choices = {
   textSize: [["small","Small"],["default","Default"],["large","Large"],["xl","Extra Large"]],
   contentWidth: [["comfortable","Comfortable"],["wide","Wide"]],
+  sideSpacing: [["compact","Small"],["balanced","Balanced"],["roomy","Roomy"]],
   lineSpacing: [["compact","Compact"],["normal","Normal"],["relaxed","Relaxed"]],
   contrast: [["standard","Standard"],["high","High"]],
 };

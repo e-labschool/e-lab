@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useSearchParams, useNavigate } from "react-router-dom";
 import {
-  ChevronLeft, Plus, Loader2, GripVertical, Copy, Eye, EyeOff, Trash2, Search, X, ArrowUp, ArrowDown, Pencil,
+  ChevronLeft, Plus, Loader2, GripVertical, Copy, Eye, EyeOff, Trash2, Search, X, ArrowUp, ArrowDown, Pencil, Undo2, Redo2, SlidersHorizontal,
 } from "lucide-react";
 import { getFlatParentTopics } from "../../../data/learnCmsCurriculum.js";
 import {
@@ -21,6 +21,7 @@ import Badge from "../../../components/ui/Badge.jsx";
 import { splitLearnBlocksIntoPages } from "../../../lib/learnPagination.js";
 import { useAuth } from "../../../context/AuthContext.jsx";
 import { saveLearnDraft, loadLearnDraft, clearLearnDraft } from "../../../lib/learnAdminDraft.js";
+import { loadLearnAuthorDefaults, saveLearnAuthorDefaults } from "../../../lib/learnAuthorDefaults.js";
 
 const inputCls = "w-full rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] px-3 py-2 text-sm text-[var(--color-ink)] focus:border-[var(--color-indigo)] focus:outline-none";
 const labelCls = "mb-1 block text-xs font-medium text-[var(--color-ink-soft)]";
@@ -48,6 +49,25 @@ export default function LessonEditor() {
   const [previewPage, setPreviewPage] = useState(0);
   const [expandedBlockId, setExpandedBlockId] = useState(null);
   const [currentPageId, setCurrentPageId] = useState(pageId ?? null);
+  const [showDesignDefaults, setShowDesignDefaults] = useState(false);
+  const [authorDefaults, setAuthorDefaults] = useState(() => loadLearnAuthorDefaults(user?.id));
+  const undoStack = useRef([]);
+  const redoStack = useRef([]);
+  const [, setHistoryTick] = useState(0);
+  const suppressHistory = useRef(false);
+
+  useEffect(() => { setAuthorDefaults(loadLearnAuthorDefaults(user?.id)); }, [user?.id]);
+  function updateAuthorDefaults(patch) {
+    const next = { ...authorDefaults, ...patch };
+    setAuthorDefaults(next);
+    saveLearnAuthorDefaults(user?.id, next);
+  }
+  function pushHistory(entry) {
+    if (suppressHistory.current) return;
+    undoStack.current = [...undoStack.current.slice(-39), entry];
+    redoStack.current = [];
+    setHistoryTick((n) => n + 1);
+  }
 
   useEffect(() => {
     if (isNew) return;
@@ -143,18 +163,25 @@ export default function LessonEditor() {
       setError("This lesson already has a Check Your Understanding block. Move the existing block to the position you want.");
       return;
     }
-    const created = await createBlock(currentPageId, { blockType, content: BLOCK_TYPES[blockType].defaultContent, position: blocks.length });
+    let initialContent = { ...BLOCK_TYPES[blockType].defaultContent };
+    if (blockType === "image") initialContent = { ...initialContent, width: authorDefaults.imageWidth, alignment: authorDefaults.imageAlignment };
+    if (blockType === "video") initialContent = { ...initialContent, width: authorDefaults.videoWidth, alignment: authorDefaults.videoAlignment };
+    const created = await createBlock(currentPageId, { blockType, content: initialContent, position: blocks.length });
+    pushHistory({ type: "add", block: created });
     setBlocks((prev) => [...prev, created]);
     setExpandedBlockId(created.id);
   }
 
   async function handleUpdateBlockContent(blockId, content) {
+    const before = blocks.find((b) => b.id === blockId)?.content;
+    if (before && JSON.stringify(before) !== JSON.stringify(content)) pushHistory({ type: "content", blockId, before, after: content });
     setBlocks((prev) => prev.map((b) => (b.id === blockId ? { ...b, content } : b)));
     await updateBlock(blockId, { content });
   }
 
   async function handleToggleVisible(block) {
     const visible = !block.visible;
+    pushHistory({ type: "visibility", blockId: block.id, before: block.visible, after: visible });
     setBlocks((prev) => prev.map((b) => (b.id === block.id ? { ...b, visible } : b)));
     await updateBlock(block.id, { visible });
   }
@@ -165,10 +192,14 @@ export default function LessonEditor() {
       return;
     }
     const created = await createBlock(currentPageId, { blockType: block.block_type, content: block.content, position: blocks.length });
+    pushHistory({ type: "add", block: created });
     setBlocks((prev) => [...prev, created]);
   }
 
   async function handleDelete(blockId) {
+    const index = blocks.findIndex((b) => b.id === blockId);
+    const deleted = blocks[index];
+    if (deleted) pushHistory({ type: "delete", block: deleted, index });
     setBlocks((prev) => prev.filter((b) => b.id !== blockId));
     await deleteBlock(blockId);
   }
@@ -180,12 +211,63 @@ export default function LessonEditor() {
     e.preventDefault();
     const sourceIndex = Number(e.dataTransfer.getData("text/plain"));
     if (sourceIndex === targetIndex) return;
+    const beforeIds = blocks.map((b) => b.id);
     const next = [...blocks];
     const [moved] = next.splice(sourceIndex, 1);
     next.splice(targetIndex, 0, moved);
+    pushHistory({ type: "reorder", beforeIds, afterIds: next.map((b) => b.id) });
     setBlocks(next);
     reorderBlocks(next.map((b) => b.id));
   }
+
+  async function applyHistory(entry, direction) {
+    suppressHistory.current = true;
+    try {
+      if (entry.type === "content") {
+        const content = direction === "undo" ? entry.before : entry.after;
+        setBlocks((prev) => prev.map((b) => b.id === entry.blockId ? { ...b, content } : b));
+        await updateBlock(entry.blockId, { content });
+      } else if (entry.type === "visibility") {
+        const visible = direction === "undo" ? entry.before : entry.after;
+        setBlocks((prev) => prev.map((b) => b.id === entry.blockId ? { ...b, visible } : b));
+        await updateBlock(entry.blockId, { visible });
+      } else if (entry.type === "reorder") {
+        const ids = direction === "undo" ? entry.beforeIds : entry.afterIds;
+        setBlocks((prev) => ids.map((id) => prev.find((b) => b.id === id)).filter(Boolean));
+        await reorderBlocks(ids);
+      } else if (entry.type === "add") {
+        if (direction === "undo") {
+          await deleteBlock(entry.block.id);
+          setBlocks((prev) => prev.filter((b) => b.id !== entry.block.id));
+        } else {
+          const recreated = await createBlock(currentPageId, { blockType: entry.block.block_type, content: entry.block.content, position: entry.block.position ?? blocks.length });
+          entry.block = recreated;
+          setBlocks((prev) => [...prev, recreated]);
+        }
+      } else if (entry.type === "delete") {
+        if (direction === "undo") {
+          const recreated = await createBlock(currentPageId, { blockType: entry.block.block_type, content: entry.block.content, position: entry.index });
+          entry.block = recreated;
+          setBlocks((prev) => { const next=[...prev]; next.splice(Math.min(entry.index,next.length),0,recreated); return next; });
+        } else {
+          await deleteBlock(entry.block.id);
+          setBlocks((prev) => prev.filter((b) => b.id !== entry.block.id));
+        }
+      }
+    } finally { suppressHistory.current = false; setHistoryTick((n) => n + 1); }
+  }
+  async function handleUndo() { const entry = undoStack.current.pop(); if (!entry) return; await applyHistory(entry, "undo"); redoStack.current.push(entry); setHistoryTick((n)=>n+1); }
+  async function handleRedo() { const entry = redoStack.current.pop(); if (!entry) return; await applyHistory(entry, "redo"); undoStack.current.push(entry); setHistoryTick((n)=>n+1); }
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "z") return;
+      e.preventDefault();
+      if (e.shiftKey) handleRedo(); else handleUndo();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
 
   async function handleAddCheckQuestion(question) {
     setError(null);
@@ -340,6 +422,24 @@ export default function LessonEditor() {
       {/* Block canvas */}
       {currentPageId && (
         <div className="mt-6">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold text-[var(--color-ink)]">Lesson Blocks</h2>
+            <div className="flex items-center gap-1.5">
+              <button type="button" onClick={handleUndo} disabled={!undoStack.current.length} title="Undo (Ctrl/Cmd+Z)" className="flex items-center gap-1 rounded-md border border-[var(--color-line)] px-2 py-1 text-xs text-[var(--color-ink-soft)] disabled:opacity-35"><Undo2 size={13}/> Undo</button>
+              <button type="button" onClick={handleRedo} disabled={!redoStack.current.length} title="Redo (Ctrl/Cmd+Shift+Z)" className="flex items-center gap-1 rounded-md border border-[var(--color-line)] px-2 py-1 text-xs text-[var(--color-ink-soft)] disabled:opacity-35"><Redo2 size={13}/> Redo</button>
+              <button type="button" onClick={() => setShowDesignDefaults((v)=>!v)} className="flex items-center gap-1 rounded-md border border-[var(--color-line)] px-2 py-1 text-xs text-[var(--color-ink-soft)]"><SlidersHorizontal size={13}/> Design Defaults</button>
+            </div>
+          </div>
+          {showDesignDefaults && <div className="mb-3 rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] p-3">
+            <p className="mb-2 text-xs font-semibold text-[var(--color-ink)]">Defaults for new Learn blocks</p>
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              <label className={labelCls}>Image size<select className={inputCls} value={authorDefaults.imageWidth} onChange={(e)=>updateAuthorDefaults({imageWidth:e.target.value})}><option value="small">50%</option><option value="medium">70%</option><option value="large">85%</option><option value="full">100%</option></select></label>
+              <label className={labelCls}>Image alignment<select className={inputCls} value={authorDefaults.imageAlignment} onChange={(e)=>updateAuthorDefaults({imageAlignment:e.target.value})}><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></label>
+              <label className={labelCls}>Video size<select className={inputCls} value={authorDefaults.videoWidth} onChange={(e)=>updateAuthorDefaults({videoWidth:e.target.value})}><option value="small">50%</option><option value="medium">70%</option><option value="large">85%</option><option value="full">100%</option></select></label>
+              <label className={labelCls}>Video alignment<select className={inputCls} value={authorDefaults.videoAlignment} onChange={(e)=>updateAuthorDefaults({videoAlignment:e.target.value})}><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></label>
+            </div>
+            <p className="mt-2 text-[11px] text-[var(--color-ink-faint)]">Saved for this Admin profile. New media blocks use these values; individual blocks can override them.</p>
+          </div>}
           <div className="space-y-2">
             {blocks.map((block, i) => (
               <div

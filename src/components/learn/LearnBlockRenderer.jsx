@@ -27,7 +27,7 @@ export default function LearnBlockRenderer({ block }) {
     case "image":
       return (
         <figure className={c.alignment === "left" ? "text-left" : c.alignment === "right" ? "text-right" : "text-center"}>
-          <img src={c.url} alt={c.alt || ""} className={`inline-block rounded-md ${c.width === "small" ? "max-w-xs" : c.width === "medium" ? "max-w-md" : "w-full"}`} />
+          <img src={c.url} alt={c.alt || ""} className={`inline-block h-auto rounded-md ${c.width === "small" ? "w-1/2" : c.width === "medium" ? "w-[70%]" : c.width === "full" ? "w-full" : "w-[85%]"}`} />
           {c.caption && <figcaption className="mt-1.5 text-xs text-[var(--color-ink-faint)]">{c.caption}</figcaption>}
         </figure>
       );
@@ -37,9 +37,11 @@ export default function LearnBlockRenderer({ block }) {
       const isDirectVideo = /\.(mp4|webm|mov)(\?|#|$)/i.test(url) || url.includes("/storage/v1/object/public/learn-media/");
       const embedUrl = toEmbedVideoUrl(url);
       if (!url) return <PlaceholderBlock label="Video not yet configured" />;
+      const widthClass = c.width === "small" ? "w-1/2" : c.width === "medium" ? "w-[70%]" : c.width === "full" ? "w-full" : "w-[85%]";
+      const alignClass = c.alignment === "left" ? "mr-auto" : c.alignment === "right" ? "ml-auto" : "mx-auto";
       return (
         <figure>
-          <div className="aspect-video w-full overflow-hidden rounded-md bg-black">
+          <div className={`aspect-video overflow-hidden rounded-md bg-black ${widthClass} ${alignClass}`}>
             {isDirectVideo ? (
               <video src={url} controls preload="metadata" className="h-full w-full object-contain" aria-label={c.caption || "Lesson video"} />
             ) : (
@@ -179,12 +181,38 @@ function DataGraphBlock({ content }) {
 }
 
 function CompareContrastGrid({ content }) {
+  const table = content.table;
+  if (table?.headers?.length && table?.rows?.length) {
+    return (
+      <div className="overflow-x-auto rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)]">
+        <table className="min-w-full border-collapse text-left text-sm">
+          <thead className="bg-[var(--color-indigo-soft)] text-[var(--color-ink)]">
+            <tr>
+              {table.headers.map((header, i) => (
+                <th key={i} scope="col" className="border-b border-r border-[var(--color-line)] px-4 py-3 font-semibold last:border-r-0">{header}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {table.rows.map((row, r) => (
+              <tr key={r} className="text-[var(--color-ink-soft)]">
+                {table.headers.map((_, c) => (
+                  <td key={c} className={`border-b border-r border-[var(--color-line)] px-4 py-3 align-top last:border-r-0 ${c === 0 ? "font-medium text-[var(--color-ink)]" : ""}`}>{row[c] ?? ""}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
   return (
     <div className={`grid gap-3 sm:grid-cols-${Math.min(content.columns?.length ?? 2, 3)}`}>
       {(content.columns ?? []).map((col, i) => (
         <div key={i} className="rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-4">
           <p className="font-semibold text-[var(--color-ink)]">{col.title}</p>
-          <p className="mt-1.5 text-sm text-[var(--color-ink-soft)]">{col.content}</p>
+          <p className="mt-1.5 whitespace-pre-line text-sm text-[var(--color-ink-soft)]">{col.content}</p>
         </div>
       ))}
     </div>

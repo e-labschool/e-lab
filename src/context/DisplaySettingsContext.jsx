@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { useAuth } from "./AuthContext.jsx";
 
 const DisplaySettingsContext = createContext(null);
-const DEFAULTS = { textSize: "default", contentWidth: "wide", lineSpacing: "normal", contrast: "standard" };
+const DEFAULTS = { textSize: "default", contentWidth: "wide", sideSpacing: "balanced", lineSpacing: "normal", contrast: "standard" };
 
 function keyFor(userId) { return `e-lab:${userId || "guest"}:display-settings`; }
 function read(userId) {

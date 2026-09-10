@@ -96,7 +96,7 @@ export default function LearnLessonPage() {
   }
 
   return (
-    <div className={`mx-auto w-full px-5 py-10 sm:px-7 lg:px-10 ${displaySettings.contentWidth === "wide" ? "max-w-[1320px]" : "max-w-[980px]"}`}>
+    <div className={`mx-auto w-full py-10 ${displaySettings.contentWidth === "wide" ? "max-w-[1240px]" : "max-w-[980px]"} ${displaySettings.sideSpacing === "compact" ? "px-4 sm:px-5 lg:px-6" : displaySettings.sideSpacing === "roomy" ? "px-6 sm:px-10 lg:px-14" : "px-5 sm:px-8 lg:px-10"}`}>
       {topicMeta && (
         <p className="text-xs text-[var(--color-ink-faint)]">
           {topicMeta.sectionLabel} <ChevronRight size={11} className="inline" /> {topicMeta.topicLabel}
