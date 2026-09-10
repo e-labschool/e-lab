@@ -52,12 +52,15 @@ export default function LearnLessonPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { settings: displaySettings } = useDisplaySettings();
-  const { openConcept, markCompleted, restartConcept, statusFor } = useLearningProgress();
+  const { openConcept, markConceptsCompleted, restartConcept, statusFor } = useLearningProgress();
   const [lesson, setLesson] = useState(null);
+  const [allPublishedLessons, setAllPublishedLessons] = useState([]);
   const [adjacent, setAdjacent] = useState({ prev: null, next: null, nextIsNewTopic: false });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [contentPage, setContentPage] = useState(0);
+  const [finishing, setFinishing] = useState(false);
+  const [finishError, setFinishError] = useState("");
 
   useEffect(() => {
     setLoading(true);
@@ -66,6 +69,7 @@ export default function LearnLessonPage() {
       .then(([data, allLessons]) => {
         if (!data?.page) throw new Error("This lesson isn't available.");
         setLesson(data);
+        setAllPublishedLessons(allLessons);
         setAdjacent(findAdjacentLessons(data.page, allLessons, getLearnCmsCurriculumTree()));
         // Resume the last internal page the student was on for THIS
         // specific lesson, if remembered — a lesson last visited on
@@ -91,6 +95,8 @@ export default function LearnLessonPage() {
   if (error) return <p className="p-10 text-center text-sm text-[var(--color-coral)]">{error}</p>;
   if (!lesson) return null;
 
+  const isWelcome = lesson.page.parent_topic === "__welcome__";
+  const firstLearningLesson = allPublishedLessons.filter(l => l.parent_topic !== "__welcome__").sort((a,b)=>(a.display_order??0)-(b.display_order??0))[0] ?? null;
   const topicMeta = findTopicMeta(lesson.page.parent_topic);
   const pages = splitLearnBlocksIntoPages(lesson.blocks);
   const safePage = Math.min(contentPage, pages.length - 1);
@@ -156,7 +162,13 @@ export default function LearnLessonPage() {
         </div>
       )}
 
-      {(isFirstContentPage || isLastContentPage) && (
+      {isWelcome && isLastContentPage && firstLearningLesson && (
+        <div className="mt-8 flex justify-center border-t border-[var(--color-line)] pt-6">
+          <button type="button" onClick={() => navigate(`/student/learn/${firstLearningLesson.id}`)} className="inline-flex items-center gap-2 rounded-md bg-[var(--color-indigo)] px-6 py-3 text-base font-semibold text-white shadow-sm">Let’s learn! <ChevronRight size={17}/></button>
+        </div>
+      )}
+
+      {!isWelcome && (isFirstContentPage || isLastContentPage) && (
         <div className="mt-5 border-t border-[var(--color-line)] pt-5">
           {isFirstContentPage && adjacent.prev && !isLastContentPage && (
             <button type="button" onClick={() => navigate(`/student/learn/${adjacent.prev.id}`)} className="flex items-center gap-1 text-sm font-medium text-[var(--color-ink-soft)] hover:text-[var(--color-ink)]">
@@ -171,11 +183,22 @@ export default function LearnLessonPage() {
               <div className="mt-4 flex flex-wrap gap-2.5">
                 <button
                   type="button"
-                  disabled={!progressConceptIds.length || progressConceptIds.every((id) => statusFor(id) === "completed")}
-                  onClick={() => progressConceptIds.forEach((id) => markCompleted(id))}
+                  disabled={finishing || !progressConceptIds.length || progressConceptIds.every((id) => statusFor(id) === "completed")}
+                  onClick={async () => {
+                    setFinishError("");
+                    setFinishing(true);
+                    try {
+                      await markConceptsCompleted(progressConceptIds);
+                    } catch (err) {
+                      console.error("Could not finish mapped Learn lesson", err);
+                      setFinishError(err?.message || "Could not save completion. Please try again.");
+                    } finally {
+                      setFinishing(false);
+                    }
+                  }}
                   className="flex items-center gap-1.5 rounded-md bg-[var(--color-indigo)] px-4 py-2 text-sm font-semibold text-white disabled:cursor-default disabled:opacity-70"
                 >
-                  <CheckCircle2 size={15} /> {progressConceptIds.length && progressConceptIds.every((id) => statusFor(id) === "completed") ? "Finished ✓" : "Finish"}
+                  <CheckCircle2 size={15} /> {finishing ? "Finishing…" : progressConceptIds.length && progressConceptIds.every((id) => statusFor(id) === "completed") ? "Finished ✓" : "Finish"}
                 </button>
                 <button
                   type="button"
@@ -197,8 +220,11 @@ export default function LearnLessonPage() {
                   </button>
                 )}
               </div>
+              {finishError && (
+                <p role="alert" className="mt-3 text-xs font-medium text-[var(--color-coral)]">{finishError}</p>
+              )}
               {!progressConceptIds.length && (
-                <p className="mt-3 text-[11px] text-[var(--color-ink-faint)]">Progress tracking will activate when this lesson has at least one syllabus code selected in Admin.</p>
+                <p className="mt-3 text-[11px] text-[var(--color-ink-faint)]">Progress tracking will activate when this lesson has at least one valid syllabus code selected in Admin.</p>
               )}
             </div>
           )}

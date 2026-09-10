@@ -74,7 +74,9 @@ export function ProgressProvider({ children }) {
           .upsert(nextRow, { onConflict: "user_id,concept_id" })
           .select()
           .single();
-        if (!error && data) setProgress((prev) => ({ ...prev, [conceptId]: data }));
+        if (error) throw error;
+        if (data) setProgress((prev) => ({ ...prev, [conceptId]: data }));
+        return data;
       } else {
         setProgress((prev) => {
           const existing = prev[conceptId];
@@ -91,6 +93,7 @@ export function ProgressProvider({ children }) {
           writeLocalProgress(next);
           return next;
         });
+        return true;
       }
     },
     [user, isConfigured, progress]
@@ -114,6 +117,18 @@ export function ProgressProvider({ children }) {
 
   function restartConcept(conceptId) {
     return upsertRow(conceptId, { status: "in_progress", completed_at: null });
+  }
+
+  // Complete all syllabus concepts mapped to one CMS lesson as a single
+  // user action. Run sequentially so each Supabase write is awaited and a
+  // failure is surfaced to the Learn UI instead of making Finish appear to
+  // do nothing. This is especially important for lessons mapped to several
+  // codes such as S1.1.1, S1.1.2 and S1.1.3.
+  async function markConceptsCompleted(conceptIds) {
+    const ids = [...new Set((conceptIds || []).filter(Boolean))];
+    if (!ids.length) return false;
+    for (const conceptId of ids) await markCompleted(conceptId);
+    return true;
   }
 
   async function recordCheckAttempt(conceptId, { questionId, isCorrect, score }) {
@@ -142,6 +157,7 @@ export function ProgressProvider({ children }) {
       loading,
       openConcept,
       markCompleted,
+      markConceptsCompleted,
       restartConcept,
       recordCheckAttempt,
       statusFor: (conceptId) => progress[conceptId]?.status ?? "not_started",

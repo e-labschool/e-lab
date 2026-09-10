@@ -1,8 +1,9 @@
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import ProtectedRoute from "../auth/ProtectedRoute.jsx";
 import Wordmark from "./Wordmark.jsx";
 import AccountMenu from "../auth/AccountMenu.jsx";
 import ThemeToggle from "./ThemeToggle.jsx";
+import { ArrowLeft } from "lucide-react";
 import DisplaySettingsButton from "./DisplaySettingsButton.jsx";
 import { useDisplaySettings } from "../../context/DisplaySettingsContext.jsx";
 
@@ -17,28 +18,18 @@ import { useDisplaySettings } from "../../context/DisplaySettingsContext.jsx";
 // contextual panel changes per-tab and isn't "global navigation".
 const TAB_BAR_BG = "#0B1220";
 
-function TopTabBar({ tabs, accentHex }) {
+function TopTabBar({ tabs, accentHex, role }) {
+  const navigate = useNavigate();
   return (
-    <nav className="sticky top-0 z-30 border-b shadow-sm" style={{ backgroundColor: TAB_BAR_BG, borderColor: "#1B2436" }}>
-      <div className="mx-auto flex max-w-[1440px] gap-1 overflow-x-auto px-4 sm:px-6 lg:px-8">
-        {tabs.map((tab) => (
-          <NavLink
-            key={tab.to}
-            to={tab.to}
-            end={tab.end}
-            className={({ isActive }) =>
-              `flex shrink-0 items-center gap-2 border-b-2 px-4 py-3.5 text-[15px] font-semibold transition-colors ${
-                isActive ? "border-current text-white" : "border-transparent text-[#8C97B8] hover:text-white"
-              }`
-            }
-            style={({ isActive }) => (isActive ? { color: "#fff", borderColor: accentHex } : undefined)}
-          >
-            <tab.icon size={17} className="shrink-0" />
-            {tab.label}
-          </NavLink>
-        ))}
+    <div className="sticky top-0 z-40 border-b shadow-sm" style={{ backgroundColor: TAB_BAR_BG, borderColor: "#1B2436" }}>
+      <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
+        <nav className="flex min-w-0 gap-1 overflow-x-auto">
+          <button type="button" onClick={() => navigate(-1)} aria-label="Go back" className="mr-1 flex shrink-0 items-center gap-1 px-2 text-sm font-semibold text-[#AAB3CE] hover:text-white"><ArrowLeft size={16}/> Back</button>
+          {tabs.map((tab) => <NavLink key={tab.to} to={tab.to} end={tab.end} className={({isActive})=>`flex shrink-0 items-center gap-2 border-b-2 px-4 py-3.5 text-[15px] font-semibold transition-colors ${isActive ? "border-current text-white" : "border-transparent text-[#8C97B8] hover:text-white"}`} style={({isActive})=>isActive?{color:"#fff",borderColor:accentHex}:undefined}><tab.icon size={17}/>{tab.label}</NavLink>)}
+        </nav>
+        <div className="flex shrink-0 items-center gap-2 text-white"><span className="hidden text-xs font-medium capitalize text-[#AAB3CE] sm:inline">{role}</span><DisplaySettingsButton/><ThemeToggle/><AccountMenu/></div>
       </div>
-    </nav>
+    </div>
   );
 }
 
@@ -49,17 +40,11 @@ function AppSidebarLayout({ tabs, accentHex, role, subject, programmeId, subject
     <div className="flex min-h-screen flex-col">
       {/* Row 1 — brand + profile, always visible, never buried in a contextual panel */}
       <header className="flex h-16 shrink-0 items-center justify-between border-b border-[var(--color-line)] bg-[var(--color-paper-raised)] px-4 sm:px-6 lg:px-8">
-        <Wordmark />
-        <div className="flex items-center gap-3">
-          <span className="hidden text-xs font-medium capitalize text-[var(--color-ink-faint)] sm:inline">{role}</span>
-          <DisplaySettingsButton />
-          <ThemeToggle />
-          <AccountMenu />
-        </div>
+<Wordmark />
       </header>
 
       {/* Row 2 — the main tab ribbon */}
-      <TopTabBar tabs={tabs} accentHex={accentHex} />
+      <TopTabBar tabs={tabs} accentHex={accentHex} role={role} />
 
       {/* Every page renders its own content below — including its own
           contextual side panel, if that page needs one. */}

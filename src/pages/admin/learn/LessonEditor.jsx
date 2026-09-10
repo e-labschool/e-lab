@@ -33,7 +33,7 @@ export default function LessonEditor() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const isNew = !pageId;
-  const parentTopics = getFlatParentTopics();
+  const parentTopics = [{ id: "__welcome__", label: "Welcome Page", sectionLabel: "Learn" }, ...getFlatParentTopics()];
 
   const [form, setForm] = useState({
     parentTopic: searchParams.get("parentTopic") || parentTopics[0]?.id || "",

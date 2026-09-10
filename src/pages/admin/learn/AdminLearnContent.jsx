@@ -13,6 +13,7 @@ export default function AdminLearnContent() {
   const { user } = useAuth();
   const [openTopics, setOpenTopics] = useState(new Set());
   const [selectedTopic, setSelectedTopic] = useState(null);
+  const [welcomeLesson, setWelcomeLesson] = useState(undefined);
 
   // Resumes the lesson the admin was actively editing before a temporary
   // trip to another Admin tab — fires once, only from the list view
@@ -28,6 +29,8 @@ export default function AdminLearnContent() {
 
   const [lessons, setLessons] = useState(null);
   const tree = getLearnCmsCurriculumTree();
+
+  useEffect(() => { listLessonsForTopic("__welcome__").then(rows => setWelcomeLesson(rows[0] || null)).catch(() => setWelcomeLesson(null)); }, []);
 
   useEffect(() => {
     if (!selectedTopic) return;
@@ -52,6 +55,11 @@ export default function AdminLearnContent() {
 
       <div className="mt-6 grid gap-6 md:grid-cols-[280px_1fr]">
         <nav className="space-y-3">
+          <div className="mb-4 rounded-md border border-[var(--color-line)] p-2">
+            <p className="px-1 text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Student Learn landing</p>
+            <button type="button" onClick={() => welcomeLesson ? navigate(`/admin/learn-content/${welcomeLesson.id}`) : navigate(`/admin/learn-content/new?parentTopic=__welcome__`)} className="mt-1 w-full rounded-md px-2 py-2 text-left text-sm font-semibold text-[var(--color-indigo)] hover:bg-[var(--color-indigo-soft)]">Welcome Page</button>
+            <p className="px-2 pb-1 text-[11px] text-[var(--color-ink-faint)]">Add your welcome message here. Students see a “Let’s learn!” button automatically.</p>
+          </div>
           {tree.map((section) => (
             <div key={section.id}>
               <p className="mb-1 px-1 text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">{section.label}</p>
