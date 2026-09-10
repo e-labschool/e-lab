@@ -22,6 +22,7 @@ import { splitLearnBlocksIntoPages } from "../../../lib/learnPagination.js";
 import { useAuth } from "../../../context/AuthContext.jsx";
 import { saveLearnDraft, loadLearnDraft, clearLearnDraft } from "../../../lib/learnAdminDraft.js";
 import { loadLearnAuthorDefaults, saveLearnAuthorDefaults } from "../../../lib/learnAuthorDefaults.js";
+import { getSyllabusCodeOptions } from "../../../lib/learn-tree.js";
 
 const inputCls = "w-full rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] px-3 py-2 text-sm text-[var(--color-ink)] focus:border-[var(--color-indigo)] focus:outline-none";
 const labelCls = "mb-1 block text-xs font-medium text-[var(--color-ink-soft)]";
@@ -36,12 +37,13 @@ export default function LessonEditor() {
 
   const [form, setForm] = useState({
     parentTopic: searchParams.get("parentTopic") || parentTopics[0]?.id || "",
-    lessonCode: "", title: "", level: "SL/HL", displayOrder: 0,
+    lessonCode: "", syllabusCodes: [], title: "", level: "SL/HL", displayOrder: 0,
   });
   const [status, setStatus] = useState("draft");
   const [blocks, setBlocks] = useState([]);
   const [checkQuestions, setCheckQuestions] = useState([]);
   const [loading, setLoading] = useState(!isNew);
+  const [formHydrated, setFormHydrated] = useState(isNew);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [showPicker, setShowPicker] = useState(false);
@@ -73,7 +75,7 @@ export default function LessonEditor() {
     if (isNew) return;
     Promise.all([getLesson(pageId), listBlocks(pageId), listCheckQuestions(pageId)])
       .then(([lesson, blockRows, checkRows]) => {
-        const serverForm = { parentTopic: lesson.parent_topic, lessonCode: lesson.lesson_code, title: lesson.title, level: lesson.level, displayOrder: lesson.display_order };
+        const serverForm = { parentTopic: lesson.parent_topic, lessonCode: lesson.lesson_code, syllabusCodes: lesson.syllabus_codes ?? [], title: lesson.title, level: lesson.level, displayOrder: lesson.display_order };
         // Resume any unsaved settings-form edits and the expanded block
         // from before a temporary trip to another Admin tab — only if
         // the remembered draft is genuinely for THIS lesson; a draft for
@@ -89,6 +91,7 @@ export default function LessonEditor() {
         setStatus(lesson.status);
         setBlocks(blockRows);
         setCheckQuestions(checkRows);
+        setFormHydrated(true);
       })
       .catch((err) => setError(err.message || "Couldn't load this lesson."))
       .finally(() => setLoading(false));
@@ -99,9 +102,9 @@ export default function LessonEditor() {
   // only, never Supabase. This is what lets a temporary trip to another
   // Admin tab and back restore exactly where the admin left off.
   useEffect(() => {
-    if (!user?.id || !currentPageId) return;
+    if (!user?.id || !currentPageId || !formHydrated) return;
     saveLearnDraft(user.id, { pageId: currentPageId, expandedBlockId, formDraft: form });
-  }, [user?.id, currentPageId, expandedBlockId, form]);
+  }, [user?.id, currentPageId, expandedBlockId, form, formHydrated]);
 
   // Scrolls the restored block into view once the lesson has finished
   // loading — "practical" best-effort focus restoration, not required to
@@ -392,8 +395,22 @@ export default function LessonEditor() {
             </select>
           </div>
           <div>
-            <label className={labelCls}>Syllabus / Lesson Code</label>
-            <input className={inputCls} value={form.lessonCode} onChange={(e) => setForm({ ...form, lessonCode: e.target.value })} placeholder="S1.1.1" />
+            <label className={labelCls}>Lesson Code</label>
+            <input className={inputCls} value={form.lessonCode} onChange={(e) => setForm({ ...form, lessonCode: e.target.value })} placeholder="e.g. S1.1 Matter" />
+            <p className="mt-1 text-[11px] text-[var(--color-ink-faint)]">Display identifier for this lesson. Progress mapping is selected separately below.</p>
+          </div>
+          <div className="sm:col-span-2">
+            <label className={labelCls}>Syllabus codes covered (select one or more)</label>
+            <div className="max-h-48 overflow-y-auto rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] p-2">
+              {getSyllabusCodeOptions(form.parentTopic).length ? getSyllabusCodeOptions(form.parentTopic).map((opt) => (
+                <label key={opt.code} className="flex cursor-pointer items-start gap-2 rounded px-2 py-1.5 hover:bg-[var(--color-line)]/20">
+                  <input type="checkbox" className="mt-0.5" checked={(form.syllabusCodes || []).includes(opt.code)} onChange={(e) => setForm((prev) => ({ ...prev, syllabusCodes: e.target.checked ? [...new Set([...(prev.syllabusCodes || []), opt.code])] : (prev.syllabusCodes || []).filter((c) => c !== opt.code) }))} />
+                  <span className="font-mono text-xs font-semibold text-[var(--color-indigo)]">{opt.code}</span>
+                  <span className="text-xs text-[var(--color-ink-soft)]">{opt.title}</span>
+                </label>
+              )) : <p className="px-2 py-1 text-xs text-[var(--color-ink-faint)]">No mapped syllabus codes for this topic.</p>}
+            </div>
+            {(form.syllabusCodes || []).length > 0 && <p className="mt-1 text-[11px] text-[var(--color-ink-faint)]">Progress for this lesson will update: {form.syllabusCodes.join(", ")}</p>}
           </div>
           <div className="sm:col-span-2">
             <label className={labelCls}>Lesson Title</label>

@@ -6,7 +6,7 @@ import Button from "../ui/Button.jsx";
 import { useLearningProgress } from "../../context/ProgressContext.jsx";
 
 // Optional Learn block. Check attempts feed the existing Learn progress model.
-export default function CheckYourUnderstanding({ pageId, checkQuestions = [], progressConceptId = null }) {
+export default function CheckYourUnderstanding({ pageId, checkQuestions = [], progressConceptIds = [] }) {
   const { recordCheckAttempt } = useLearningProgress();
   const [started, setStarted] = useState(false);
   const [answers, setAnswers] = useState({});
@@ -32,15 +32,17 @@ export default function CheckYourUnderstanding({ pageId, checkQuestions = [], pr
       // Record real server-marked Check Your Understanding outcomes in the
       // same progress stream used by the Progress page. Unmarked responses
       // are not invented as correct/wrong.
-      if (progressConceptId) {
+      if (progressConceptIds.length) {
         const marked = data.filter((r) => typeof r.is_correct === "boolean");
         const score = marked.length ? Math.round((marked.filter((r) => r.is_correct).length / marked.length) * 100) : 0;
-        for (const r of marked) {
-          await recordCheckAttempt(progressConceptId, {
+        for (const conceptId of progressConceptIds) {
+          for (const r of marked) {
+          await recordCheckAttempt(conceptId, {
             questionId: r.question_id || r.item_id,
             isCorrect: r.is_correct,
             score,
           });
+          }
         }
       }
     } catch (err) {

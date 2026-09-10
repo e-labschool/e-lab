@@ -74,6 +74,25 @@ export function getConceptIdForLessonCode(lessonCode) {
   return null;
 }
 
+
+/** Resolve multiple Admin-selected syllabus codes to unique progress concept ids. */
+export function getConceptIdsForLessonCodes(lessonCodes) {
+  const codes = Array.isArray(lessonCodes) ? lessonCodes : [lessonCodes];
+  return [...new Set(codes.map(getConceptIdForLessonCode).filter(Boolean))];
+}
+
+/** Selectable syllabus-code entries from the authoritative Learn tree. */
+export function getSyllabusCodeOptions(parentTopic = null) {
+  const tree = getLearnTree();
+  if (!tree) return [];
+  const out = [];
+  for (const section of tree.sections) for (const topic of section.topics) for (const subtopic of topic.subtopics) {
+    if (parentTopic && subtopic.id !== parentTopic) continue;
+    for (const concept of subtopic.concepts) out.push({ code: concept.code, conceptId: concept.id, title: concept.title || concept.label || concept.id, subtopicId: subtopic.id, subtopicLabel: subtopic.label });
+  }
+  return out;
+}
+
 /** The concept immediately before/after this one in curriculum order, or null at the ends. */
 export function getAdjacentConcepts(conceptId) {
   const tree = getLearnTree();

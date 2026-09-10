@@ -19,7 +19,7 @@ const TAB_BAR_BG = "#0B1220";
 
 function TopTabBar({ tabs, accentHex }) {
   return (
-    <nav className="border-b" style={{ backgroundColor: TAB_BAR_BG, borderColor: "#1B2436" }}>
+    <nav className="sticky top-0 z-30 border-b shadow-sm" style={{ backgroundColor: TAB_BAR_BG, borderColor: "#1B2436" }}>
       <div className="mx-auto flex max-w-[1440px] gap-1 overflow-x-auto px-4 sm:px-6 lg:px-8">
         {tabs.map((tab) => (
           <NavLink

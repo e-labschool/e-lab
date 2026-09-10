@@ -11,7 +11,7 @@ import ELabLoader from "../ui/ELabLoader.jsx";
 import { splitLearnBlocksIntoPages } from "../../lib/learnPagination.js";
 import { useDisplaySettings } from "../../context/DisplaySettingsContext.jsx";
 import { useLearningProgress } from "../../context/ProgressContext.jsx";
-import { getConceptIdForLessonCode } from "../../lib/learn-tree.js";
+import { getConceptIdsForLessonCodes } from "../../lib/learn-tree.js";
 
 /** Determines prev/next PUBLISHED lesson purely from parent topic +
  * display order + curriculum hierarchy — Admin never creates nav links
@@ -80,12 +80,12 @@ export default function LearnLessonPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageId]);
 
-  const progressConceptId = lesson?.page ? getConceptIdForLessonCode(lesson.page.lesson_code) : null;
+  const progressConceptIds = lesson?.page ? getConceptIdsForLessonCodes((lesson.page.syllabus_codes?.length ? lesson.page.syllabus_codes : [lesson.page.lesson_code])) : [];
   useEffect(() => {
-    if (progressConceptId) openConcept(progressConceptId);
+    for (const conceptId of progressConceptIds) openConcept(conceptId);
     // Only opening a different mapped lesson should trigger this.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [progressConceptId]);
+  }, [progressConceptIds.join("|")]);
 
   if (loading) return <div className="flex min-h-[50vh] items-center justify-center"><ELabLoader /></div>;
   if (error) return <p className="p-10 text-center text-sm text-[var(--color-coral)]">{error}</p>;
@@ -134,7 +134,7 @@ export default function LearnLessonPage() {
       <div className="mt-6 space-y-5">
         {activePage.blocks.map((block) =>
           block.block_type === "check_understanding" ? (
-            <CheckYourUnderstanding key={block.id} pageId={pageId} checkQuestions={lesson.checkQuestions} progressConceptId={progressConceptId} />
+            <CheckYourUnderstanding key={block.id} pageId={pageId} checkQuestions={lesson.checkQuestions} progressConceptIds={progressConceptIds} />
           ) : (
             <LearnBlockRenderer key={block.id} block={block} />
           )
@@ -167,20 +167,20 @@ export default function LearnLessonPage() {
           {isLastContentPage && (
             <div className="rounded-lg border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-4 sm:p-5">
               <p className="text-sm font-semibold text-[var(--color-ink)]">End of this chapter</p>
-              <p className="mt-1 text-xs text-[var(--color-ink-soft)]">Finish to record this lesson in Progress, restart from Page 1, or continue to the next topic.</p>
+              <p className="mt-1 text-xs text-[var(--color-ink-soft)]">Finish to record this lesson in Progress, restart from Page 1, or continue to the next published lesson.</p>
               <div className="mt-4 flex flex-wrap gap-2.5">
                 <button
                   type="button"
-                  disabled={!progressConceptId || statusFor(progressConceptId) === "completed"}
-                  onClick={() => progressConceptId && markCompleted(progressConceptId)}
+                  disabled={!progressConceptIds.length || progressConceptIds.every((id) => statusFor(id) === "completed")}
+                  onClick={() => progressConceptIds.forEach((id) => markCompleted(id))}
                   className="flex items-center gap-1.5 rounded-md bg-[var(--color-indigo)] px-4 py-2 text-sm font-semibold text-white disabled:cursor-default disabled:opacity-70"
                 >
-                  <CheckCircle2 size={15} /> {progressConceptId && statusFor(progressConceptId) === "completed" ? "Finished ✓" : "Finish"}
+                  <CheckCircle2 size={15} /> {progressConceptIds.length && progressConceptIds.every((id) => statusFor(id) === "completed") ? "Finished ✓" : "Finish"}
                 </button>
                 <button
                   type="button"
                   onClick={() => {
-                    if (progressConceptId) restartConcept(progressConceptId);
+                    progressConceptIds.forEach((id) => restartConcept(id));
                     goToContentPage(0);
                   }}
                   className="flex items-center gap-1.5 rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] px-4 py-2 text-sm font-semibold text-[var(--color-ink)]"
@@ -193,12 +193,12 @@ export default function LearnLessonPage() {
                     onClick={() => navigate(`/student/learn/${adjacent.next.id}`)}
                     className="flex items-center gap-1.5 rounded-md border border-[var(--color-indigo)] px-4 py-2 text-sm font-semibold text-[var(--color-indigo)]"
                   >
-                    Next Topic <ChevronRight size={15} />
+                    Next Lesson <ChevronRight size={15} />
                   </button>
                 )}
               </div>
-              {!progressConceptId && (
-                <p className="mt-3 text-[11px] text-[var(--color-ink-faint)]">Progress tracking will activate when this lesson has a curriculum lesson code such as S1.1.1.</p>
+              {!progressConceptIds.length && (
+                <p className="mt-3 text-[11px] text-[var(--color-ink-faint)]">Progress tracking will activate when this lesson has at least one syllabus code selected in Admin.</p>
               )}
             </div>
           )}

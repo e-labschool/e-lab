@@ -28,7 +28,7 @@ export async function createLesson(fields) {
   const { data, error } = await supabase
     .from("learn_pages")
     .insert({
-      parent_topic: fields.parentTopic, lesson_code: fields.lessonCode, title: fields.title,
+      parent_topic: fields.parentTopic, lesson_code: fields.lessonCode, syllabus_codes: fields.syllabusCodes ?? [], title: fields.title,
       level: fields.level, display_order: fields.displayOrder ?? 0, status: "draft",
       created_by: userData?.user?.id ?? null,
     })
@@ -43,7 +43,7 @@ export async function updateLesson(pageId, fields) {
   const { data, error } = await supabase
     .from("learn_pages")
     .update({
-      parent_topic: fields.parentTopic, lesson_code: fields.lessonCode, title: fields.title,
+      parent_topic: fields.parentTopic, lesson_code: fields.lessonCode, syllabus_codes: fields.syllabusCodes ?? [], title: fields.title,
       level: fields.level, display_order: fields.displayOrder,
     })
     .eq("id", pageId)
@@ -246,7 +246,7 @@ export async function listPublishedLessonMeta() {
   if (!supabase) return [];
   const { data, error } = await supabase
     .from("learn_pages")
-    .select("id, parent_topic, lesson_code, title, level, display_order")
+    .select("id, parent_topic, lesson_code, syllabus_codes, title, level, display_order")
     .eq("status", "published")
     .order("display_order", { ascending: true }).order("id", { ascending: true });
   if (error) throw error;

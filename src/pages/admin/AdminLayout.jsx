@@ -53,10 +53,10 @@ function AdminChrome() {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex h-screen overflow-hidden">
       {/* Desktop sidebar */}
       <aside
-        className={`hidden shrink-0 flex-col border-r border-[var(--color-line)] bg-[var(--color-paper-raised)] transition-[width] duration-200 md:flex ${collapsed ? "w-16" : "w-60"}`}
+        className={`hidden h-screen shrink-0 flex-col border-r border-[var(--color-line)] bg-[var(--color-paper-raised)] transition-[width] duration-200 md:flex ${collapsed ? "w-16" : "w-60"}`}
       >
         <div className="flex h-16 items-center justify-between border-b border-[var(--color-line)] px-4">
           {!collapsed && (
@@ -98,7 +98,7 @@ function AdminChrome() {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-16 items-center justify-between border-b border-[var(--color-line)] bg-[var(--color-paper)] px-4">
+        <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center justify-between border-b border-[var(--color-line)] bg-[var(--color-paper)] px-4">
           <button
             type="button"
             onClick={() => setMobileOpen(true)}
