@@ -1,29 +1,34 @@
 import { supabase } from "./supabaseClient.js";
+import { canStudentAccessLessonLevel, lessonOrderValue, normalizeStudentLevel } from "./learnLevelAccess.js";
 
 // ============================================================
 // Admin: lesson (learn_pages) CRUD
 // ============================================================
 
-export async function listLessonsForTopic(parentTopic) {
+export async function listLessonsForTopic(parentTopic, flowLevel = "SL") {
   if (!supabase) return [];
+  const orderField = normalizeStudentLevel(flowLevel) === "HL" ? "display_order_hl" : "display_order_sl";
   const { data, error } = await supabase
     .from("learn_pages")
     .select("*")
     .eq("parent_topic", parentTopic)
-    .order("display_order", { ascending: true }).order("id", { ascending: true });
+    .order(orderField, { ascending: true }).order("id", { ascending: true });
   if (error) throw error;
   return data;
 }
 
 
-export async function reorderLessons(pageIds) {
+export async function reorderLessons(pageIds, flowLevel = "SL") {
   if (!supabase) throw new Error("Not connected to Supabase.");
   const ids = (pageIds || []).filter(Boolean);
-  // Use stable, positive order values. Promise.all is safe here because
-  // each row is independent and there is no unique constraint on order.
-  const results = await Promise.all(ids.map((id, index) =>
-    supabase.from("learn_pages").update({ display_order: index + 1 }).eq("id", id)
-  ));
+  const orderField = normalizeStudentLevel(flowLevel) === "HL" ? "display_order_hl" : "display_order_sl";
+  const results = await Promise.all(ids.map((id, index) => {
+    const patch = { [orderField]: index + 1 };
+    // Keep the legacy display_order aligned with the SL flow for older
+    // code paths and safe rollback compatibility.
+    if (orderField === "display_order_sl") patch.display_order = index + 1;
+    return supabase.from("learn_pages").update(patch).eq("id", id);
+  }));
   const failed = results.find((result) => result.error);
   if (failed?.error) throw failed.error;
 }
@@ -39,23 +44,28 @@ export async function createLesson(fields) {
   if (!supabase) throw new Error("Not connected to Supabase.");
   const { data: userData } = await supabase.auth.getUser();
 
-  // New lessons always append to the end of the selected parent topic.
-  // This prevents a newly-created lesson from jumping ahead of existing
-  // lessons simply because its default display_order was 0.
   const { data: lastRows, error: orderError } = await supabase
     .from("learn_pages")
-    .select("display_order")
-    .eq("parent_topic", fields.parentTopic)
-    .order("display_order", { ascending: false })
-    .limit(1);
+    .select("display_order, display_order_sl, display_order_hl")
+    .eq("parent_topic", fields.parentTopic);
   if (orderError) throw orderError;
-  const nextDisplayOrder = ((lastRows?.[0]?.display_order ?? 0) + 1);
+  const maxOf = (field) => Math.max(0, ...(lastRows || []).map((row) => Number(row?.[field] ?? 0) || 0));
+  const nextSl = maxOf("display_order_sl") + 1;
+  const nextHl = maxOf("display_order_hl") + 1;
+  const nextLegacy = maxOf("display_order") + 1;
 
   const { data, error } = await supabase
     .from("learn_pages")
     .insert({
-      parent_topic: fields.parentTopic, lesson_code: fields.lessonCode, syllabus_codes: fields.syllabusCodes ?? [], title: fields.title,
-      level: fields.level, display_order: nextDisplayOrder, status: "draft",
+      parent_topic: fields.parentTopic,
+      lesson_code: fields.lessonCode,
+      syllabus_codes: fields.syllabusCodes ?? [],
+      title: fields.title,
+      level: fields.level,
+      display_order: nextLegacy,
+      display_order_sl: nextSl,
+      display_order_hl: nextHl,
+      status: "draft",
       created_by: userData?.user?.id ?? null,
     })
     .select()
@@ -74,6 +84,8 @@ export async function updateLesson(pageId, fields) {
     level: fields.level,
   };
   if (Number.isFinite(fields.displayOrder)) updates.display_order = fields.displayOrder;
+  if (Number.isFinite(fields.displayOrderSl)) updates.display_order_sl = fields.displayOrderSl;
+  if (Number.isFinite(fields.displayOrderHl)) updates.display_order_hl = fields.displayOrderHl;
   const { data, error } = await supabase
     .from("learn_pages")
     .update(updates)
@@ -273,18 +285,49 @@ export async function reorderCheckQuestions(items) {
 // ============================================================
 
 /** Lightweight metadata ONLY — for the sidebar. Never fetches blocks. */
-export async function listPublishedLessonMeta() {
+export async function listPublishedLessonMeta(studentLevel = "HL") {
   if (!supabase) return [];
+  const learner = normalizeStudentLevel(studentLevel);
+  const orderField = learner === "HL" ? "display_order_hl" : "display_order_sl";
   const { data, error } = await supabase
     .from("learn_pages")
-    .select("id, parent_topic, lesson_code, syllabus_codes, title, level, display_order")
+    .select("id, parent_topic, lesson_code, syllabus_codes, title, level, display_order, display_order_sl, display_order_hl")
     .eq("status", "published")
-    .order("display_order", { ascending: true }).order("id", { ascending: true });
+    .order(orderField, { ascending: true }).order("id", { ascending: true });
   if (error) throw error;
-  return data;
+  return (data || [])
+    .filter((row) => canStudentAccessLessonLevel(learner, row.level))
+    .sort((a, b) => lessonOrderValue(a, learner) - lessonOrderValue(b, learner) || String(a.id).localeCompare(String(b.id)));
 }
 
-export async function getPublishedLesson(pageId) {
+/** Resolve an official syllabus understanding code (for example R2.1.2)
+ * to the first published CMS lesson that explicitly covers it. */
+export async function findPublishedLessonBySyllabusCode(code, studentLevel = "HL") {
+  if (!supabase || !code) return null;
+  const learner = normalizeStudentLevel(studentLevel);
+  const wanted = String(code).trim().toUpperCase();
+  const orderField = learner === "HL" ? "display_order_hl" : "display_order_sl";
+  const { data, error } = await supabase
+    .from("learn_pages")
+    .select("id, parent_topic, lesson_code, syllabus_codes, title, level, display_order, display_order_sl, display_order_hl")
+    .eq("status", "published")
+    .contains("syllabus_codes", [wanted])
+    .order(orderField, { ascending: true });
+  if (error) throw error;
+  const permitted = (data || []).filter((row) => canStudentAccessLessonLevel(learner, row.level));
+  if (permitted[0]) return permitted[0];
+
+  const { data: legacy, error: legacyError } = await supabase
+    .from("learn_pages")
+    .select("id, parent_topic, lesson_code, syllabus_codes, title, level, display_order, display_order_sl, display_order_hl")
+    .eq("status", "published")
+    .ilike("lesson_code", wanted)
+    .order(orderField, { ascending: true });
+  if (legacyError) throw legacyError;
+  return (legacy || []).find((row) => canStudentAccessLessonLevel(learner, row.level)) ?? null;
+}
+
+export async function getPublishedLesson(pageId, studentLevel = "HL") {
   if (!supabase) return null;
   const [{ data: page, error: pageError }, blocks, checkItems] = await Promise.all([
     supabase.from("learn_pages").select("*").eq("id", pageId).eq("status", "published").single(),
@@ -292,6 +335,7 @@ export async function getPublishedLesson(pageId) {
     getPublishedLearnCheckItems(pageId),
   ]);
   if (pageError) throw pageError;
+  if (!canStudentAccessLessonLevel(studentLevel, page?.level)) throw new Error("This lesson is not available for your course level.");
   return { page, blocks, checkQuestions: checkItems };
 }
 

@@ -25,12 +25,17 @@ export default function ChallengeBuilder() {
   const [questionCount, setQuestionCount] = useState(10);
   const [customCount, setCustomCount] = useState("");
   const [timeMinutes, setTimeMinutes] = useState(20);
-  const [level, setLevel] = useState(profile?.level === "HL" ? "HL" : "SL");
+  const accountLevel = profile?.level === "HL" ? "HL" : "SL";
+  const [level, setLevel] = useState(accountLevel);
   const [style, setStyle] = useState("balanced");
   const [starting, setStarting] = useState(false);
   const [buildError, setBuildError] = useState(null);
   const [pool, setPool] = useState(null); // null while loading; merged legacy+Supabase pool once ready
   const [poolError, setPoolError] = useState(null);
+
+  useEffect(() => {
+    if (accountLevel === "SL" && level !== "SL") setLevel("SL");
+  }, [accountLevel, level]);
 
   useEffect(() => {
     let cancelled = false;
@@ -110,7 +115,8 @@ export default function ChallengeBuilder() {
                   <button key={m} type="button" onClick={() => setMode(m)} className={`flex-1 rounded-md border px-2 py-1.5 text-xs font-semibold ${mode === m ? "border-[var(--color-indigo)] bg-[var(--color-indigo-soft)] text-[var(--color-indigo)]" : "border-[var(--color-line)] text-[var(--color-ink-soft)]"}`}>
                     {m === "questions" ? "By Questions" : "By Time"}
                   </button>
-                ))}
+                  );
+                })}
               </div>
               {mode === "questions" ? (
                 <div className="mt-3 flex flex-wrap gap-1.5">
@@ -137,11 +143,14 @@ export default function ChallengeBuilder() {
               <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Level</p>
               <p className="mt-1 text-[11px] text-[var(--color-ink-faint)]">HL may include SL foundation content.</p>
               <div className="mt-2 flex gap-1.5">
-                {["SL", "HL"].map((l) => (
-                  <button key={l} type="button" onClick={() => setLevel(l)} className={`flex-1 rounded-md border py-2 text-sm font-semibold ${level === l ? "border-[var(--color-indigo)] bg-[var(--color-indigo-soft)] text-[var(--color-indigo)]" : "border-[var(--color-line)] text-[var(--color-ink-soft)]"}`}>
+                {["SL", "HL"].map((l) => {
+                  const locked = accountLevel === "SL" && l === "HL";
+                  return (
+                  <button key={l} type="button" disabled={locked} title={locked ? "HL content is available to HL student profiles" : undefined} onClick={() => !locked && setLevel(l)} className={`flex-1 rounded-md border py-2 text-sm font-semibold ${level === l ? "border-[var(--color-indigo)] bg-[var(--color-indigo-soft)] text-[var(--color-indigo)]" : "border-[var(--color-line)] text-[var(--color-ink-soft)]"} ${locked ? "cursor-not-allowed opacity-40" : ""}`}>
                     {l}
                   </button>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </div>

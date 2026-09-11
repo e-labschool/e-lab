@@ -12,12 +12,13 @@ import { splitLearnBlocksIntoPages } from "../../lib/learnPagination.js";
 import { useDisplaySettings } from "../../context/DisplaySettingsContext.jsx";
 import { useLearningProgress } from "../../context/ProgressContext.jsx";
 import { getConceptIdsForLessonCodes } from "../../lib/learn-tree.js";
+import { filterBlocksForStudent, filterSyllabusCodesForStudent, lessonOrderValue, canStudentAccessQuestionLevel } from "../../lib/learnLevelAccess.js";
 
 /** Determines prev/next PUBLISHED lesson purely from parent topic +
  * display order + curriculum hierarchy — Admin never creates nav links
  * manually. If the current lesson is last in its topic, looks ahead to
  * the first published lesson of the next topic in curriculum order. */
-function findAdjacentLessons(currentLesson, allLessons, tree) {
+function findAdjacentLessons(currentLesson, allLessons, tree, studentLevel) {
   // flatTopicIds must be SUBTOPIC ids in curriculum order — parent_topic
   // is always a subtopic id, never the higher-level topic/unit id. Using
   // topic-level ids here (the original bug) meant flatTopicIds.indexOf()
@@ -25,7 +26,7 @@ function findAdjacentLessons(currentLesson, allLessons, tree) {
   const flatTopicIds = tree.flatMap((section) => section.topics.flatMap((t) => t.subtopics.map((s) => s.id)));
   const sameTopicLessons = allLessons
     .filter((l) => l.parent_topic === currentLesson.parent_topic)
-    .sort((a, b) => a.display_order - b.display_order || a.id.localeCompare(b.id)); // id as a stable tiebreaker for equal display_order
+    .sort((a, b) => lessonOrderValue(a, studentLevel) - lessonOrderValue(b, studentLevel) || a.id.localeCompare(b.id));
   const indexInTopic = sameTopicLessons.findIndex((l) => l.id === currentLesson.id);
 
   const prev = indexInTopic > 0 ? sameTopicLessons[indexInTopic - 1] : null;
@@ -35,7 +36,7 @@ function findAdjacentLessons(currentLesson, allLessons, tree) {
   if (!next) {
     const topicIndex = flatTopicIds.indexOf(currentLesson.parent_topic);
     for (let i = topicIndex + 1; i < flatTopicIds.length; i++) {
-      const candidates = allLessons.filter((l) => l.parent_topic === flatTopicIds[i]).sort((a, b) => a.display_order - b.display_order || a.id.localeCompare(b.id)); // id as a stable tiebreaker for equal display_order
+      const candidates = allLessons.filter((l) => l.parent_topic === flatTopicIds[i]).sort((a, b) => lessonOrderValue(a, studentLevel) - lessonOrderValue(b, studentLevel) || a.id.localeCompare(b.id));
       if (candidates.length > 0) {
         next = candidates[0];
         nextIsNewTopic = true;
@@ -50,7 +51,8 @@ function findAdjacentLessons(currentLesson, allLessons, tree) {
 export default function LearnLessonPage() {
   const { conceptId: pageId } = useParams(); // param name kept as conceptId — see LearnLayout.jsx
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
+  const studentLevel = profile?.level || "SL";
   const { settings: displaySettings } = useDisplaySettings();
   const { openConcept, markConceptsCompleted, restartConcept, statusFor } = useLearningProgress();
   const [lesson, setLesson] = useState(null);
@@ -65,12 +67,12 @@ export default function LearnLessonPage() {
   useEffect(() => {
     setLoading(true);
     setError(null);
-    Promise.all([getPublishedLesson(pageId), listPublishedLessonMeta()])
+    Promise.all([getPublishedLesson(pageId, studentLevel), listPublishedLessonMeta(studentLevel)])
       .then(([data, allLessons]) => {
         if (!data?.page) throw new Error("This lesson isn't available.");
         setLesson(data);
         setAllPublishedLessons(allLessons);
-        setAdjacent(findAdjacentLessons(data.page, allLessons, getLearnCmsCurriculumTree()));
+        setAdjacent(findAdjacentLessons(data.page, allLessons, getLearnCmsCurriculumTree(), studentLevel));
         // Resume the last internal page the student was on for THIS
         // specific lesson, if remembered — a lesson last visited on
         // page 3 reopens on page 3, not page 1. If Admin has since
@@ -82,9 +84,10 @@ export default function LearnLessonPage() {
       .catch((err) => setError(err.message || "Couldn't load this lesson."))
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pageId]);
+  }, [pageId, studentLevel]);
 
-  const progressConceptIds = lesson?.page ? getConceptIdsForLessonCodes((lesson.page.syllabus_codes?.length ? lesson.page.syllabus_codes : [lesson.page.lesson_code])) : [];
+  const permittedSyllabusCodes = lesson?.page ? filterSyllabusCodesForStudent((lesson.page.syllabus_codes?.length ? lesson.page.syllabus_codes : [lesson.page.lesson_code]), studentLevel) : [];
+  const progressConceptIds = getConceptIdsForLessonCodes(permittedSyllabusCodes);
   useEffect(() => {
     for (const conceptId of progressConceptIds) openConcept(conceptId);
     // Only opening a different mapped lesson should trigger this.
@@ -102,11 +105,13 @@ export default function LearnLessonPage() {
   for (const topicId of orderedTopicIds) {
     const candidates = allPublishedLessons
       .filter((item) => item.parent_topic === topicId)
-      .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0) || a.id.localeCompare(b.id));
+      .sort((a, b) => lessonOrderValue(a, studentLevel) - lessonOrderValue(b, studentLevel) || a.id.localeCompare(b.id));
     if (candidates.length) { firstLearningLesson = candidates[0]; break; }
   }
   const topicMeta = findTopicMeta(lesson.page.parent_topic);
-  const pages = splitLearnBlocksIntoPages(lesson.blocks);
+  const visibleBlocks = filterBlocksForStudent(lesson.blocks, studentLevel);
+  const visibleCheckQuestions = (lesson.checkQuestions || []).filter((item) => canStudentAccessQuestionLevel(studentLevel, item?.question?.level || item?.level || "SL/HL"));
+  const pages = splitLearnBlocksIntoPages(visibleBlocks);
   const safePage = Math.min(contentPage, pages.length - 1);
   const activePage = pages[safePage];
   const isFirstContentPage = safePage === 0;
@@ -148,7 +153,7 @@ export default function LearnLessonPage() {
       <div className="mt-6 space-y-5">
         {activePage.blocks.map((block) =>
           block.block_type === "check_understanding" ? (
-            <CheckYourUnderstanding key={block.id} pageId={pageId} checkQuestions={lesson.checkQuestions} progressConceptIds={progressConceptIds} />
+            <CheckYourUnderstanding key={block.id} pageId={pageId} checkQuestions={visibleCheckQuestions} progressConceptIds={progressConceptIds} />
           ) : (
             <LearnBlockRenderer key={block.id} block={block} />
           )

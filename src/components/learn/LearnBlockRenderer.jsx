@@ -1,8 +1,11 @@
-import { useState, lazy, Suspense } from "react";
-import { Lightbulb, BookMarked, AlertTriangle, Globe2, Beaker, Columns2 } from "lucide-react";
+import { useState, useEffect, lazy, Suspense } from "react";
+import { Lightbulb, BookMarked, AlertTriangle, Globe2, Beaker, Columns2, Link2, ArrowRight } from "lucide-react";
 import { sanitizeHtml, renderChemMarkup, MOLECULE_PRESETS } from "../../data/learnBlockRegistry.jsx";
 import MoleculeViewer3D from "../3d/MoleculeViewer3D.jsx";
 import ELabLoader from "../ui/ELabLoader.jsx";
+import { findPublishedLessonBySyllabusCode } from "../../lib/learnContentService.js";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext.jsx";
 
 const SIMULATION_COMPONENTS = {
   "electron-configuration": lazy(() => import("../../engines/electron-configuration/ElectronConfigurationExplorer.jsx")),
@@ -76,16 +79,16 @@ export default function LearnBlockRenderer({ block }) {
       return (
         <div className="rounded-md border-l-4 border-[var(--color-indigo)] bg-[var(--color-indigo-soft)] p-4">
           <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-indigo)]"><Lightbulb size={13} /> Key Idea</p>
-          <p className="mt-1.5 text-sm text-[var(--color-ink)]">{c.text}</p>
+          <p className="mt-1.5 whitespace-pre-wrap text-sm text-[var(--color-ink)]">{c.text}</p>
         </div>
       );
 
     case "definition":
       return (
-        <div className="rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-4">
-          <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]"><BookMarked size={13} /> Definition</p>
+        <div className="rounded-md border border-[var(--color-teal)]/25 bg-[var(--color-teal-soft)] p-4">
+          <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-teal)]"><BookMarked size={13} /> Definition</p>
           <p className="mt-1.5 font-semibold text-[var(--color-ink)]">{c.term}</p>
-          <p className="mt-0.5 text-sm text-[var(--color-ink-soft)]">{c.definition}</p>
+          <p className="mt-0.5 whitespace-pre-wrap text-sm text-[var(--color-ink)]">{c.definition}</p>
         </div>
       );
 
@@ -93,7 +96,7 @@ export default function LearnBlockRenderer({ block }) {
       return (
         <div className="rounded-md border-l-4 border-[var(--color-amber)] bg-[var(--color-amber-soft)] p-4">
           <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-amber)]"><AlertTriangle size={13} /> Common Mistakes / Misunderstandings</p>
-          <p className="mt-1.5 text-sm text-[var(--color-ink)]">{c.text}</p>
+          <p className="mt-1.5 whitespace-pre-wrap text-sm text-[var(--color-ink)]">{c.text}</p>
         </div>
       );
 
@@ -102,7 +105,7 @@ export default function LearnBlockRenderer({ block }) {
         <div className="rounded-md border border-[var(--color-teal)]/30 bg-[var(--color-teal-soft)] p-4">
           <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-teal)]"><Globe2 size={13} /> Real-Life Connection</p>
           {c.title && <p className="mt-1.5 font-semibold text-[var(--color-ink)]">{c.title}</p>}
-          <p className="mt-0.5 text-sm text-[var(--color-ink-soft)]">{c.content}</p>
+          <p className="mt-0.5 whitespace-pre-wrap text-sm text-[var(--color-ink-soft)]">{c.content}</p>
           {c.imageUrl && <img src={c.imageUrl} alt="" className="mt-2 max-w-sm rounded-md" />}
         </div>
       );
@@ -115,6 +118,9 @@ export default function LearnBlockRenderer({ block }) {
 
     case "compare_contrast":
       return <CompareContrastBlock content={c} />;
+
+    case "topic_link":
+      return <TopicLinkBlock content={c} />;
 
     case "reveal_think":
       return <RevealThinkBlock content={c} />;
@@ -136,6 +142,46 @@ export default function LearnBlockRenderer({ block }) {
   }
 }
 
+function TopicLinkBlock({ content }) {
+  const navigate = useNavigate();
+  const { profile } = useAuth();
+  const studentLevel = profile?.level || "SL";
+  const [target, setTarget] = useState(null);
+  const [unavailable, setUnavailable] = useState(false);
+  const code = String(content.targetCode || "").trim().toUpperCase();
+
+  useEffect(() => {
+    let active = true;
+    setTarget(null);
+    setUnavailable(false);
+    if (!code) return () => { active = false; };
+    findPublishedLessonBySyllabusCode(code, studentLevel)
+      .then((lesson) => { if (!active) return; if (lesson) setTarget(lesson); else setUnavailable(true); })
+      .catch(() => { if (active) setUnavailable(true); });
+    return () => { active = false; };
+  }, [code, studentLevel]);
+
+  if (!code) return null;
+  const align = content.alignment === "left" ? "justify-start" : content.alignment === "center" ? "justify-center" : "justify-end";
+  const label = content.label?.trim() || `Revisit ${code}`;
+  return (
+    <div className={`flex ${align}`}>
+      <button
+        type="button"
+        disabled={!target}
+        onClick={() => target && navigate(`/student/learn/${target.id}`)}
+        className="inline-flex max-w-full items-center gap-2 rounded-md border border-[var(--color-indigo)]/30 bg-[var(--color-indigo-soft)] px-3 py-2 text-left text-xs font-semibold text-[var(--color-indigo)] shadow-sm transition hover:border-[var(--color-indigo)] disabled:cursor-default disabled:opacity-60"
+        title={target ? `Open ${code}: ${target.title}` : unavailable ? `No published lesson currently covers ${code}` : `Finding ${code}…`}
+      >
+        <Link2 size={13} className="shrink-0" />
+        <span className="truncate">{label}</span>
+        <span className="font-mono text-[10px] opacity-75">{code}</span>
+        <ArrowRight size={12} className="shrink-0" />
+      </button>
+    </div>
+  );
+}
+
 function PlaceholderBlock({ label }) {
   return <div className="flex items-center justify-center rounded-md border border-dashed border-[var(--color-line)] bg-[var(--color-paper)] p-8 text-xs text-[var(--color-ink-faint)]">{label}</div>;
 }
@@ -146,14 +192,14 @@ function WorkedExampleBlock({ content }) {
   return (
     <div className="rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-4">
       <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Worked Example</p>
-      <p className="mt-1.5 text-sm font-medium text-[var(--color-ink)]">{content.question}</p>
+      <p className="mt-1.5 whitespace-pre-wrap text-sm font-medium text-[var(--color-ink)]">{content.question}</p>
       <ol className="mt-3 list-decimal space-y-1.5 pl-5 text-sm text-[var(--color-ink-soft)]">
-        {steps.slice(0, revealedCount).map((step, i) => <li key={i}>{step}</li>)}
+        {steps.slice(0, revealedCount).map((step, i) => <li key={i} className="whitespace-pre-wrap">{step}</li>)}
       </ol>
       {revealedCount < steps.length ? (
         <button type="button" onClick={() => setRevealedCount((n) => n + 1)} className="mt-3 rounded-md bg-[var(--color-indigo)] px-3 py-1.5 text-xs font-medium text-white">Show Next Step</button>
       ) : content.finalAnswer && (
-        <p className="mt-3 rounded-md bg-[var(--color-teal-soft)] px-3 py-2 text-sm font-medium text-[var(--color-teal)]">Final Answer: {content.finalAnswer}</p>
+        <p className="mt-3 whitespace-pre-wrap rounded-md bg-[var(--color-teal-soft)] px-3 py-2 text-sm font-medium text-[var(--color-teal)]">Final Answer: {content.finalAnswer}</p>
       )}
     </div>
   );
@@ -174,8 +220,8 @@ function DataGraphBlock({ content }) {
           </table>
         </div>
       )}
-      {content.explanation && <p className="mt-2 text-sm text-[var(--color-ink-soft)]">{content.explanation}</p>}
-      {content.prompt && <p className="mt-2 text-sm italic text-[var(--color-indigo)]">{content.prompt}</p>}
+      {content.explanation && <p className="mt-2 whitespace-pre-wrap text-sm text-[var(--color-ink-soft)]">{content.explanation}</p>}
+      {content.prompt && <p className="mt-2 whitespace-pre-wrap text-sm italic text-[var(--color-indigo)]">{content.prompt}</p>}
     </div>
   );
 }
@@ -197,7 +243,7 @@ function CompareContrastGrid({ content }) {
             {table.rows.map((row, r) => (
               <tr key={r} className="text-[var(--color-ink-soft)]">
                 {table.headers.map((_, c) => (
-                  <td key={c} className={`border-b border-r border-[var(--color-line)] px-4 py-3 align-top last:border-r-0 ${c === 0 ? "font-medium text-[var(--color-ink)]" : ""}`}>{row[c] ?? ""}</td>
+                  <td key={c} className={`whitespace-pre-wrap border-b border-r border-[var(--color-line)] px-4 py-3 align-top last:border-r-0 ${c === 0 ? "font-medium text-[var(--color-ink)]" : ""}`}>{row[c] ?? ""}</td>
                 ))}
               </tr>
             ))}
@@ -260,11 +306,11 @@ function RevealThinkBlock({ content }) {
   return (
     <div className="rounded-md border border-[var(--color-violet)]/30 bg-[var(--color-violet-soft)] p-4">
       <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-violet)]">Think</p>
-      <p className="mt-1.5 text-sm text-[var(--color-ink)]">{content.prompt}</p>
+      <p className="mt-1.5 whitespace-pre-wrap text-sm text-[var(--color-ink)]">{content.prompt}</p>
       {!revealed ? (
         <button type="button" onClick={() => setRevealed(true)} className="mt-3 rounded-md border border-[var(--color-violet)] px-3 py-1.5 text-xs font-medium text-[var(--color-violet)]">Reveal</button>
       ) : (
-        <p className="mt-3 rounded-md bg-[var(--color-paper-raised)] px-3 py-2 text-sm text-[var(--color-ink-soft)]">{content.reveal}</p>
+        <p className="mt-3 whitespace-pre-wrap rounded-md bg-[var(--color-paper-raised)] px-3 py-2 text-sm text-[var(--color-ink-soft)]">{content.reveal}</p>
       )}
     </div>
   );
@@ -280,7 +326,7 @@ function PracticalBlock({ content }) {
         {sections.map((field) => (
           <div key={field}>
             <p className="text-xs font-semibold text-[var(--color-ink)]">{field[0].toUpperCase() + field.slice(1)}</p>
-            <p className="text-sm text-[var(--color-ink-soft)]">{content[field]}</p>
+            <p className="whitespace-pre-wrap text-sm text-[var(--color-ink-soft)]">{content[field]}</p>
           </div>
         ))}
       </div>

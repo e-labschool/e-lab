@@ -7,6 +7,7 @@ import { STATUS_LABELS } from "../../lib/progressConfig.js";
 import Container from "../../components/ui/Container.jsx";
 import Button from "../../components/ui/Button.jsx";
 import Badge from "../../components/ui/Badge.jsx";
+import { useAuth } from "../../context/AuthContext.jsx";
 
 // One colour per topic, reusing the app's EXISTING accent tokens only —
 // no new colours invented for this page.
@@ -15,13 +16,16 @@ const STATUS_TONE = { strong: "teal", revisit: "amber", performing_well: "indigo
 
 export default function StudentProgressPage() {
   const navigate = useNavigate();
+  const { profile } = useAuth();
+  const studentLevel = profile?.level || "SL";
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(null);
 
   useEffect(() => {
-    getProgressOverview().then(setData).finally(() => setLoading(false));
-  }, []);
+    setLoading(true);
+    getProgressOverview(studentLevel).then(setData).finally(() => setLoading(false));
+  }, [studentLevel]);
 
   if (loading) {
     return <div className="flex min-h-[50vh] items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-[var(--color-ink-faint)]" /></div>;

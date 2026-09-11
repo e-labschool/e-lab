@@ -7,14 +7,18 @@ import { isResourceVisibleToAudience } from "../../../lib/resourceService.js";
 import staticResources from "../../../data/student-resources.js";
 import Container from "../../../components/ui/Container.jsx";
 import Card from "../../../components/ui/Card.jsx";
+import { useAuth } from "../../../context/AuthContext.jsx";
+import { canStudentAccessResourceLevel } from "../../../lib/learnLevelAccess.js";
 
 export default function ResourcesLanding() {
+  const { profile } = useAuth();
+  const studentLevel = profile?.level || "SL";
   const { resources: supabaseResources, loading, error } = useVisibleResources();
   // Merge existing static entries with Supabase-published ones — nothing
   // that worked before this change stops working, per the brief.
   const allResources = useMemo(
-    () => [...staticResources, ...supabaseResources.filter((r) => isResourceVisibleToAudience(r, "student"))],
-    [supabaseResources]
+    () => [...staticResources, ...supabaseResources.filter((r) => isResourceVisibleToAudience(r, "student"))].filter((r) => canStudentAccessResourceLevel(studentLevel, r.level)),
+    [supabaseResources, studentLevel]
   );
   const counts = getResourceCounts(allResources);
 

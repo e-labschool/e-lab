@@ -3,29 +3,33 @@ import { Link, useNavigate } from "react-router-dom";
 import { ChevronDown, ChevronRight, Loader2, Home } from "lucide-react";
 import { getLearnCmsCurriculumTree } from "../../data/learnCmsCurriculum.js";
 import { listPublishedLessonMeta } from "../../lib/learnContentService.js";
+import { useAuth } from "../../context/AuthContext.jsx";
+import { lessonOrderValue } from "../../lib/learnLevelAccess.js";
 
 export default function LearnCmsSidebar({ activeConceptId: activePageId, basePath }) {
   const navigate = useNavigate();
+  const { profile } = useAuth();
+  const studentLevel = profile?.level || "SL";
   const [lessonsByTopic, setLessonsByTopic] = useState(null);
   const [openTopics, setOpenTopics] = useState(new Set());
   const [welcomeId, setWelcomeId] = useState(null);
   const tree = getLearnCmsCurriculumTree();
 
   useEffect(() => {
-    listPublishedLessonMeta().then((rows) => {
+    listPublishedLessonMeta(studentLevel).then((rows) => {
       const grouped = {};
       for (const row of rows) {
         if (row.parent_topic === "__welcome__") { setWelcomeId(row.id); continue; }
         (grouped[row.parent_topic] ??= []).push(row);
       }
-      Object.values(grouped).forEach((items) => items.sort((a,b)=>(a.display_order??0)-(b.display_order??0)));
+      Object.values(grouped).forEach((items) => items.sort((a,b)=>lessonOrderValue(a, studentLevel)-lessonOrderValue(b, studentLevel) || String(a.id).localeCompare(String(b.id))));
       setLessonsByTopic(grouped);
       if (activePageId) {
         const active = rows.find((r) => r.id === activePageId);
         if (active && active.parent_topic !== "__welcome__") setOpenTopics(new Set([active.parent_topic]));
       }
     }).catch(() => setLessonsByTopic({}));
-  }, [activePageId]);
+  }, [activePageId, studentLevel]);
 
   const firstLessonForSubtopic = (id) => lessonsByTopic?.[id]?.[0];
   const firstLessonForTopic = (topic) => topic.subtopics.map(s => firstLessonForSubtopic(s.id)).find(Boolean);

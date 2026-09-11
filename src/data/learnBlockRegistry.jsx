@@ -1,10 +1,12 @@
 import { useState } from "react";
 import DOMPurify from "dompurify";
 import LearnMediaInput from "../components/admin/LearnMediaInput.jsx";
+import EquationFriendlyField, { pasteEquationFriendly } from "../components/admin/EquationFriendlyField.jsx";
+import { getSyllabusCodeOptions } from "../lib/learn-tree.js";
 import {
   Type, Image as ImageIcon, Video, FlaskConical, Box, PlayCircle,
   Lightbulb, BookMarked, AlertTriangle, Globe2, ListChecks, BarChart3,
-  Columns2, HelpCircle, Beaker, Files,
+  Columns2, HelpCircle, Beaker, Files, Link2,
 } from "lucide-react";
 
 // ============================================================
@@ -35,6 +37,7 @@ export const BLOCK_TYPES = {
   practical: { label: "Practical / Experiment", category: "teaching", icon: Beaker, defaultContent: { aim: "", apparatus: "", variables: "", method: "", safety: "", observations: "", data: "", analysis: "" } },
   page_break: { label: "Page Break", category: "content", icon: Files, defaultContent: { label: "" } },
   check_understanding: { label: "Check Your Understanding", category: "teaching", icon: ListChecks, defaultContent: {} },
+  topic_link: { label: "Linked Topic", category: "teaching", icon: Link2, defaultContent: { targetCode: "", label: "", alignment: "right" } },
 };
 
 // Curated presets — Admin selects, never writes raw geometry config.
@@ -116,6 +119,9 @@ export function getLearnBlockDisplayLabel(block) {
     case "page_break":
       preview = c.label || "";
       break;
+    case "topic_link":
+      preview = c.label || c.targetCode || "";
+      break;
     default:
       preview = "";
   }
@@ -125,6 +131,7 @@ export function getLearnBlockDisplayLabel(block) {
 
 const inputCls = "w-full rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] px-3 py-2 text-sm text-[var(--color-ink)] focus:border-[var(--color-indigo)] focus:outline-none";
 const labelCls = "mb-1 block text-xs font-medium text-[var(--color-ink-soft)]";
+const equationInputPaste = (value, setter) => (e) => pasteEquationFriendly(e, value, setter);
 
 /** Converts simple chemistry markup (H_2O, SO_4^2-) into safe HTML with
  * real <sub>/<sup> tags — avoids a heavy LaTeX/MathJax dependency while
@@ -244,7 +251,7 @@ export function BlockEditor({ blockType, content, onChange, pageId, blockId }) {
       return (
         <div>
           <label className={labelCls}>Markup — use _2 for subscript, ^2- for superscript (e.g. SO_4^2-)</label>
-          <input className={`${inputCls} font-mono`} value={content.markup} onChange={(e) => set("markup", e.target.value)} placeholder="H_2O + CO_2 -> H_2CO_3" />
+          <input className={`${inputCls} font-mono`} value={content.markup} onChange={(e) => set("markup", e.target.value)} onPaste={equationInputPaste(content.markup, (value) => set("markup", value))} placeholder="H_2O + CO_2 -> H_2CO_3" />
           <p className="mt-2 text-sm text-[var(--color-ink-soft)]" dangerouslySetInnerHTML={{ __html: renderChemMarkup(content.markup) }} />
         </div>
       );
@@ -273,7 +280,7 @@ export function BlockEditor({ blockType, content, onChange, pageId, blockId }) {
 
     case "key_idea":
     case "common_mistake":
-      return <textarea className={inputCls} rows={3} value={content.text} onChange={(e) => set("text", e.target.value)} placeholder={blockType === "common_mistake" ? "Add a common mistake, misconception or misunderstanding students may have…" : "Add the key idea…"} />;
+      return <EquationFriendlyField className={inputCls} rows={3} value={content.text} onChange={(value) => set("text", value)} placeholder={blockType === "common_mistake" ? "Add a common mistake, misconception or misunderstanding students may have…" : "Add the key idea…"} />;
 
     case "page_break":
       return (
@@ -292,11 +299,32 @@ export function BlockEditor({ blockType, content, onChange, pageId, blockId }) {
         </div>
       );
 
+    case "topic_link": {
+      const options = getSyllabusCodeOptions();
+      return (
+        <div className="space-y-3">
+          <div>
+            <label className={labelCls}>Linked syllabus understanding</label>
+            <select className={inputCls} value={content.targetCode || ""} onChange={(e) => set("targetCode", e.target.value)}>
+              <option value="">Select a syllabus code…</option>
+              {options.map((opt) => <option key={opt.code} value={opt.code}>{opt.code} — {opt.title}</option>)}
+            </select>
+          </div>
+          <div><label className={labelCls}>Button label <span className="text-[var(--color-ink-faint)]">(optional)</span></label><input className={inputCls} value={content.label || ""} onChange={(e) => set("label", e.target.value)} placeholder="e.g. Revisit metallic bonding" /></div>
+          <div>
+            <label className={labelCls}>Alignment</label>
+            <select className={inputCls} value={content.alignment || "right"} onChange={(e) => set("alignment", e.target.value)}><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select>
+          </div>
+          <p className="text-[11px] text-[var(--color-ink-faint)]">Students see a small contextual button at this exact point in the lesson. It opens the first published lesson mapped to the selected syllabus code.</p>
+        </div>
+      );
+    }
+
     case "definition":
       return (
         <div className="space-y-2">
           <div><label className={labelCls}>Term</label><input className={inputCls} value={content.term} onChange={(e) => set("term", e.target.value)} /></div>
-          <div><label className={labelCls}>Definition</label><textarea className={inputCls} rows={2} value={content.definition} onChange={(e) => set("definition", e.target.value)} /></div>
+          <div><label className={labelCls}>Definition</label><EquationFriendlyField className={inputCls} rows={2} value={content.definition} onChange={(value) => set("definition", value)} /></div>
         </div>
       );
 
@@ -304,7 +332,7 @@ export function BlockEditor({ blockType, content, onChange, pageId, blockId }) {
       return (
         <div className="space-y-2">
           <div><label className={labelCls}>Title</label><input className={inputCls} value={content.title} onChange={(e) => set("title", e.target.value)} /></div>
-          <div><label className={labelCls}>Content</label><textarea className={inputCls} rows={3} value={content.content} onChange={(e) => set("content", e.target.value)} /></div>
+          <div><label className={labelCls}>Content</label><EquationFriendlyField className={inputCls} rows={3} value={content.content} onChange={(value) => set("content", value)} /></div>
           <LearnMediaInput kind="image" pageId={pageId} blockId={blockId} url={content.imageUrl ?? ""} onUrlChange={(url) => set("imageUrl", url)} label="Optional image" />
         </div>
       );
@@ -321,8 +349,8 @@ export function BlockEditor({ blockType, content, onChange, pageId, blockId }) {
     case "reveal_think":
       return (
         <div className="space-y-2">
-          <div><label className={labelCls}>Prompt (Think)</label><textarea className={inputCls} rows={2} value={content.prompt} onChange={(e) => set("prompt", e.target.value)} /></div>
-          <div><label className={labelCls}>Reveal content</label><textarea className={inputCls} rows={2} value={content.reveal} onChange={(e) => set("reveal", e.target.value)} /></div>
+          <div><label className={labelCls}>Prompt (Think)</label><EquationFriendlyField className={inputCls} rows={2} value={content.prompt} onChange={(value) => set("prompt", value)} /></div>
+          <div><label className={labelCls}>Reveal content</label><EquationFriendlyField className={inputCls} rows={2} value={content.reveal} onChange={(value) => set("reveal", value)} /></div>
         </div>
       );
 
@@ -332,7 +360,7 @@ export function BlockEditor({ blockType, content, onChange, pageId, blockId }) {
           {["aim", "apparatus", "variables", "method", "safety", "observations", "data", "analysis"].map((field) => (
             <div key={field}>
               <label className={labelCls}>{field[0].toUpperCase() + field.slice(1)} <span className="text-[var(--color-ink-faint)]">(leave blank to omit)</span></label>
-              <textarea className={inputCls} rows={2} value={content[field]} onChange={(e) => set(field, e.target.value)} />
+              <EquationFriendlyField className={inputCls} rows={2} value={content[field]} onChange={(value) => set(field, value)} />
             </div>
           ))}
         </div>
@@ -351,13 +379,13 @@ function WorkedExampleEditor({ content, set }) {
   }
   return (
     <div className="space-y-2">
-      <div><label className={labelCls}>Question / Problem</label><textarea className={inputCls} rows={2} value={content.question} onChange={(e) => set("question", e.target.value)} /></div>
+      <div><label className={labelCls}>Question / Problem</label><EquationFriendlyField className={inputCls} rows={2} value={content.question} onChange={(value) => set("question", value)} /></div>
       <div>
         <label className={labelCls}>Steps</label>
         {content.steps.map((step, i) => (
           <div key={i} className="mb-1.5 flex gap-2">
             <span className="mt-2 text-xs text-[var(--color-ink-faint)]">{i + 1}.</span>
-            <textarea className={inputCls} rows={1} value={step} onChange={(e) => updateStep(i, e.target.value)} />
+            <EquationFriendlyField className={inputCls} rows={1} value={step} onChange={(value) => updateStep(i, value)} />
             <button type="button" onClick={() => set("steps", content.steps.filter((_, j) => j !== i))} className="text-xs text-[var(--color-coral)]">Remove</button>
           </div>
         ))}
@@ -387,7 +415,7 @@ function DataGraphEditor({ content, set }) {
         ))}
         <button type="button" onClick={() => set("rows", [...content.rows, { x: "", y: "" }])} className="text-xs font-medium text-[var(--color-indigo)]">+ Add data point</button>
       </div>
-      <div><label className={labelCls}>Explanation</label><textarea className={inputCls} rows={2} value={content.explanation} onChange={(e) => set("explanation", e.target.value)} /></div>
+      <div><label className={labelCls}>Explanation</label><EquationFriendlyField className={inputCls} rows={2} value={content.explanation} onChange={(value) => set("explanation", value)} /></div>
       <div><label className={labelCls}>Optional student prompt</label><input className={inputCls} value={content.prompt} onChange={(e) => set("prompt", e.target.value)} /></div>
     </div>
   );
@@ -550,7 +578,7 @@ function CompareContrastEditor({ content, set }) {
         {(content.columns ?? []).map((col, i) => (
           <div key={i} className="rounded-md border border-[var(--color-line)] p-2">
             <input className={`${inputCls} mb-1.5 font-medium`} placeholder="Column title" value={col.title} onChange={(e) => updateColumn(i, "title", e.target.value)} />
-            <textarea className={inputCls} rows={2} placeholder="Content" value={col.content} onChange={(e) => updateColumn(i, "content", e.target.value)} />
+            <EquationFriendlyField className={inputCls} rows={2} placeholder="Content" value={col.content} onChange={(value) => updateColumn(i, "content", value)} />
             {(content.columns ?? []).length > 2 && <button type="button" onClick={() => set("columns", content.columns.filter((_, j) => j !== i))} className="mt-1 text-xs text-[var(--color-coral)]">Remove column</button>}
           </div>
         ))}

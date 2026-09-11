@@ -8,7 +8,7 @@
 // list for a subtopic changes, these codes shift accordingly and nothing
 // here needs to change.
 import { buildRoadmap } from "./curriculum-resolver.js";
-import { getLessonSubsections } from "../data/lessons/index.js";
+import { getSyllabusPointsForSubtopic, getSyllabusPointLevel } from "../data/curricula/dp-chemistry/syllabus-points-2025.js";
 
 let cachedTree = null;
 
@@ -30,20 +30,28 @@ export function getLearnTree() {
       const subtopics = topic.subtopics.map((subtopic) => {
         const subtopicNumber = subtopic.id.split("-")[1]; // "structure-1.1" -> "1.1"
         const subtopicCode = `${sectionShort[0]}${subtopicNumber}`; // "S1.1"
-        // A subtopic with a full e-Lab lesson sequence (see
-        // src/data/lessons) uses its lesson subsections as the navigable
-        // items instead of the raw conceptIds list — everything below
-        // (codes, progress, sidebar, adjacent-nav) works identically
-        // either way, since both shapes provide { id, title }.
-        const sourceItems = getLessonSubsections(subtopic.id) ?? subtopic.concepts;
-        const concepts = sourceItems.map((concept, i) => {
-          const code = `${subtopicCode}.${i + 1}`; // "S1.1.1"
+        // Syllabus-code navigation/progress uses the official 2025 guide
+        // understandings (S1.1.1, R3.1.1, etc.), not the position of
+        // e-Lab's broader internal concept buckets. This prevents codes
+        // and titles from drifting when internal content is reorganized.
+        const syllabusPoints = getSyllabusPointsForSubtopic(subtopicCode);
+        const concepts = syllabusPoints.map((point) => {
+          const concept = { id: point.code, code: point.code, title: point.title };
           totalConcepts += 1;
-          const entry = { concept, code, sectionLabel: sectionShort, topicLabel: topic.label, subtopicLabel: subtopic.label, subtopicCode, subtopicId: subtopic.id };
+          const entry = { concept, code: point.code, sectionLabel: sectionShort, topicLabel: topic.label, subtopicLabel: subtopic.label, subtopicCode, subtopicId: subtopic.id };
           conceptIndex.set(concept.id, entry);
           flatOrder.push(concept.id);
-          return { ...concept, code };
+          return concept;
         });
+
+        // Keep legacy e-Lab concept IDs resolvable for older resources and
+        // existing question-bank metadata, without using them to invent
+        // syllabus numbering.
+        for (const legacyConcept of subtopic.concepts) {
+          if (!conceptIndex.has(legacyConcept.id)) {
+            conceptIndex.set(legacyConcept.id, { concept: legacyConcept, code: null, sectionLabel: sectionShort, topicLabel: topic.label, subtopicLabel: subtopic.label, subtopicCode, subtopicId: subtopic.id });
+          }
+        }
         return { id: subtopic.id, code: subtopicCode, label: subtopic.label, concepts };
       });
       return { id: topic.id, code: unitCode, label: topic.label, subtopics };
@@ -88,7 +96,7 @@ export function getSyllabusCodeOptions(parentTopic = null) {
   const out = [];
   for (const section of tree.sections) for (const topic of section.topics) for (const subtopic of topic.subtopics) {
     if (parentTopic && subtopic.id !== parentTopic) continue;
-    for (const concept of subtopic.concepts) out.push({ code: concept.code, conceptId: concept.id, title: concept.title || concept.label || concept.id, subtopicId: subtopic.id, subtopicLabel: subtopic.label });
+    for (const concept of subtopic.concepts) out.push({ code: concept.code, conceptId: concept.id, title: concept.title || concept.label || concept.id, level: getSyllabusPointLevel(concept.code), subtopicId: subtopic.id, subtopicLabel: subtopic.label });
   }
   return out;
 }

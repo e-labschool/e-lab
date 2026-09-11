@@ -17,12 +17,14 @@ import LearnBlockRenderer from "../../../components/learn/LearnBlockRenderer.jsx
 import CheckYourUnderstanding from "../../../components/learn/CheckYourUnderstanding.jsx";
 import Button from "../../../components/ui/Button.jsx";
 import LearnMediaInput from "../../../components/admin/LearnMediaInput.jsx";
+import EquationFriendlyField, { pasteEquationFriendly } from "../../../components/admin/EquationFriendlyField.jsx";
 import Badge from "../../../components/ui/Badge.jsx";
 import { splitLearnBlocksIntoPages } from "../../../lib/learnPagination.js";
 import { useAuth } from "../../../context/AuthContext.jsx";
 import { saveLearnDraft, loadLearnDraft, clearLearnDraft } from "../../../lib/learnAdminDraft.js";
 import { loadLearnAuthorDefaults, saveLearnAuthorDefaults } from "../../../lib/learnAuthorDefaults.js";
 import { getSyllabusCodeOptions } from "../../../lib/learn-tree.js";
+import { filterBlocksForStudent } from "../../../lib/learnLevelAccess.js";
 
 const inputCls = "w-full rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] px-3 py-2 text-sm text-[var(--color-ink)] focus:border-[var(--color-indigo)] focus:outline-none";
 const labelCls = "mb-1 block text-xs font-medium text-[var(--color-ink-soft)]";
@@ -37,7 +39,7 @@ export default function LessonEditor() {
 
   const [form, setForm] = useState({
     parentTopic: searchParams.get("parentTopic") || parentTopics[0]?.id || "",
-    lessonCode: "", syllabusCodes: [], title: "", level: "SL/HL", displayOrder: null,
+    lessonCode: "", syllabusCodes: [], title: "", level: "SL/HL", displayOrder: null, displayOrderSl: null, displayOrderHl: null,
   });
   const [status, setStatus] = useState("draft");
   const [blocks, setBlocks] = useState([]);
@@ -49,6 +51,7 @@ export default function LessonEditor() {
   const [showPicker, setShowPicker] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [previewPage, setPreviewPage] = useState(0);
+  const [previewLevel, setPreviewLevel] = useState("SL");
   const [expandedBlockId, setExpandedBlockId] = useState(null);
   const [currentPageId, setCurrentPageId] = useState(pageId ?? null);
   const [showDesignDefaults, setShowDesignDefaults] = useState(false);
@@ -75,7 +78,7 @@ export default function LessonEditor() {
     if (isNew) return;
     Promise.all([getLesson(pageId), listBlocks(pageId), listCheckQuestions(pageId)])
       .then(([lesson, blockRows, checkRows]) => {
-        const serverForm = { parentTopic: lesson.parent_topic, lessonCode: lesson.lesson_code, syllabusCodes: lesson.syllabus_codes ?? [], title: lesson.title, level: lesson.level, displayOrder: lesson.display_order };
+        const serverForm = { parentTopic: lesson.parent_topic, lessonCode: lesson.lesson_code, syllabusCodes: lesson.syllabus_codes ?? [], title: lesson.title, level: lesson.level, displayOrder: lesson.display_order, displayOrderSl: lesson.display_order_sl, displayOrderHl: lesson.display_order_hl };
         // Resume any unsaved settings-form edits and the expanded block
         // from before a temporary trip to another Admin tab — only if
         // the remembered draft is genuinely for THIS lesson; a draft for
@@ -122,7 +125,7 @@ export default function LessonEditor() {
     }
     const created = await createLesson(form);
     setCurrentPageId(created.id);
-    setForm((prev) => ({ ...prev, displayOrder: created.display_order }));
+    setForm((prev) => ({ ...prev, displayOrder: created.display_order, displayOrderSl: created.display_order_sl, displayOrderHl: created.display_order_hl }));
     navigate(`/admin/learn-content/${created.id}`, { replace: true });
     return created.id;
   }
@@ -167,7 +170,7 @@ export default function LessonEditor() {
       setError("This lesson already has a Check Your Understanding block. Move the existing block to the position you want.");
       return;
     }
-    let initialContent = { ...BLOCK_TYPES[blockType].defaultContent };
+    let initialContent = { ...BLOCK_TYPES[blockType].defaultContent, audience: "both" };
     if (blockType === "image") initialContent = { ...initialContent, width: authorDefaults.imageWidth, alignment: authorDefaults.imageAlignment };
     if (blockType === "video") initialContent = { ...initialContent, width: authorDefaults.videoWidth, alignment: authorDefaults.videoAlignment };
     const created = await createBlock(currentPageId, { blockType, content: initialContent, position: blocks.length });
@@ -333,7 +336,7 @@ export default function LessonEditor() {
   if (loading) return <div className="flex min-h-[50vh] items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-[var(--color-ink-faint)]" /></div>;
 
   if (previewing) {
-    const previewPages = splitLearnBlocksIntoPages(blocks.filter((b) => b.visible));
+    const previewPages = splitLearnBlocksIntoPages(filterBlocksForStudent(blocks.filter((b) => b.visible), previewLevel));
     const safePreviewPage = Math.min(previewPage, previewPages.length - 1);
     const activePreviewPage = previewPages[safePreviewPage];
     return (
@@ -341,7 +344,7 @@ export default function LessonEditor() {
         <button type="button" onClick={() => setPreviewing(false)} className="mb-4 inline-flex items-center gap-1 text-sm text-[var(--color-ink-faint)] hover:text-[var(--color-ink)]">
           <ChevronLeft size={15} /> Back to editor
         </button>
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-amber)]">Preview as Student</p>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-amber)]">Preview as Student</p><div className="inline-flex rounded-md border border-[var(--color-line)] p-1">{["SL","HL"].map((level)=><button key={level} type="button" onClick={()=>{setPreviewLevel(level);setPreviewPage(0);}} className={`rounded px-2.5 py-1 text-xs font-semibold ${previewLevel===level?"bg-[var(--color-indigo)] text-white":"text-[var(--color-ink-soft)]"}`}>{level}</button>)}</div></div>
         <p className="font-mono text-xs text-[var(--color-indigo)]">{form.lessonCode}</p>
         <h1 className="mt-1 font-[var(--font-display)] text-[26px] font-bold text-[var(--color-ink)]">{form.title}</h1>
         {previewPages.length > 1 && (
@@ -407,21 +410,28 @@ export default function LessonEditor() {
                 <label key={opt.code} className="flex cursor-pointer items-start gap-2 rounded px-2 py-1.5 hover:bg-[var(--color-line)]/20">
                   <input type="checkbox" className="mt-0.5" checked={(form.syllabusCodes || []).includes(opt.code)} onChange={(e) => setForm((prev) => ({ ...prev, syllabusCodes: e.target.checked ? [...new Set([...(prev.syllabusCodes || []), opt.code])] : (prev.syllabusCodes || []).filter((c) => c !== opt.code) }))} />
                   <span className="font-mono text-xs font-semibold text-[var(--color-indigo)]">{opt.code}</span>
+                  <span className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold ${opt.level === "HL" ? "bg-[var(--color-violet-soft)] text-[var(--color-violet)]" : "bg-[var(--color-teal-soft)] text-[var(--color-teal)]"}`}>{opt.level === "HL" ? "HL" : "SL + HL"}</span>
                   <span className="text-xs text-[var(--color-ink-soft)]">{opt.title}</span>
                 </label>
               )) : <p className="px-2 py-1 text-xs text-[var(--color-ink-faint)]">No mapped syllabus codes for this topic.</p>}
             </div>
             {(form.syllabusCodes || []).length > 0 && <p className="mt-1 text-[11px] text-[var(--color-ink-faint)]">Progress for this lesson will update: {form.syllabusCodes.join(", ")}</p>}
+            {(form.syllabusCodes || []).some((code) => getSyllabusCodeOptions(form.parentTopic).find((opt) => opt.code === code)?.level === "HL") && form.level !== "HL" && (
+              <p className="mt-1 rounded bg-[var(--color-amber-soft)] px-2 py-1 text-[11px] text-[var(--color-ink)]">This lesson maps at least one HL-only syllabus point. SL progress will automatically ignore those HL-only codes. If the whole lesson is AHL, set Student Access to “HL only”.</p>
+            )}
           </div>
           <div className="sm:col-span-2">
             <label className={labelCls}>Lesson Title</label>
             <input className={inputCls} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
           </div>
           <div>
-            <label className={labelCls}>Level</label>
+            <label className={labelCls}>Student Access</label>
             <select className={inputCls} value={form.level} onChange={(e) => setForm({ ...form, level: e.target.value })}>
-              <option value="SL/HL">SL/HL</option><option value="SL">SL</option><option value="HL">HL</option>
+              <option value="SL/HL">SL + HL — shared lesson</option>
+              <option value="SL">SL core — also visible to HL</option>
+              <option value="HL">HL only — hidden from SL</option>
             </select>
+            <p className="mt-1 text-[11px] text-[var(--color-ink-faint)]">HL students always receive the SL course plus HL-only content. Use HL only for AHL lessons.</p>
           </div>
           <div>
             <label className={labelCls}>Lesson Order</label>
@@ -478,6 +488,7 @@ export default function LessonEditor() {
                     {getLearnBlockDisplayLabel(block).preview && <span className="block truncate text-[11px] text-[var(--color-ink-faint)]">{getLearnBlockDisplayLabel(block).preview}</span>}
                   </span>
                   {block.block_type === "check_understanding" && <span className="rounded bg-[var(--color-indigo-soft)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-indigo)]">{checkQuestions.length} question{checkQuestions.length === 1 ? "" : "s"}</span>}
+                  {(block.content?.audience === "hl") && <span className="rounded bg-[var(--color-violet-soft)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-violet)]">HL only</span>}
                   <div className="ml-auto flex items-center gap-1">
                     <button type="button" onClick={() => setExpandedBlockId(expandedBlockId === block.id ? null : block.id)} className="rounded px-2 py-1 text-xs text-[var(--color-indigo)] hover:bg-[var(--color-indigo-soft)]">{expandedBlockId === block.id ? "Close" : "Edit"}</button>
                     <button type="button" title="Duplicate" onClick={() => handleDuplicate(block)} className="rounded p-1.5 text-[var(--color-ink-faint)] hover:bg-[var(--color-line)]/40"><Copy size={13} /></button>
@@ -487,6 +498,16 @@ export default function LessonEditor() {
                 </div>
                 {expandedBlockId === block.id && (
                   <div className="p-3">
+                    <div className="mb-3 flex flex-wrap items-center gap-3 rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] px-3 py-2">
+                      <div>
+                        <p className="text-xs font-semibold text-[var(--color-ink)]">Block access</p>
+                        <p className="text-[11px] text-[var(--color-ink-faint)]">HL students always see SL content too.</p>
+                      </div>
+                      <select className="ml-auto rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)] px-2 py-1.5 text-xs text-[var(--color-ink)]" value={block.content?.audience || "both"} onChange={(e) => handleUpdateBlockContent(block.id, { ...(block.content || {}), audience: e.target.value })}>
+                        <option value="both">SL + HL</option>
+                        <option value="hl">HL only</option>
+                      </select>
+                    </div>
                     {block.block_type === "check_understanding" ? (
                       <div className="rounded-md border border-[var(--color-indigo)]/25 bg-[var(--color-indigo-soft)] p-4">
                         <div className="mb-3">
@@ -695,7 +716,7 @@ function ManualQuestionForm({ initial, editing, pageId, mediaKey, onSave, onCanc
         </div>
         <div className="sm:col-span-2">
           <label className={labelCls}>Question</label>
-          <textarea className={inputCls} rows={3} value={questionText} onChange={(e) => setQuestionText(e.target.value)} placeholder="Type the quick-check question" />
+          <EquationFriendlyField className={inputCls} rows={3} value={questionText} onChange={setQuestionText} placeholder="Type or paste the quick-check question — subscripts/superscripts from Word are preserved where possible" />
         </div>
 
         <div className="sm:col-span-2 rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] p-3">
@@ -726,19 +747,19 @@ function ManualQuestionForm({ initial, editing, pageId, mediaKey, onSave, onCanc
                   <input type="radio" className="sr-only" name="manual-correct" checked={correct === opt.id} onChange={() => setCorrect(opt.id)} />
                   {opt.id}{correct === opt.id ? " ✓" : ""}
                 </label>
-                <input className={inputCls} value={opt.text} onChange={(e) => updateOption(i, e.target.value)} placeholder={`Option ${opt.id}`} />
+                <input className={inputCls} value={opt.text} onChange={(e) => updateOption(i, e.target.value)} onPaste={(e) => pasteEquationFriendly(e, opt.text, (value) => updateOption(i, value))} placeholder={`Option ${opt.id}`} />
               </div>
             ))}
             <p className="text-[11px] text-[var(--color-ink-faint)]">Click A/B/C/D to mark the correct answer.</p>
           </div>
         ) : (
           <>
-            <div className="sm:col-span-2"><label className={labelCls}>Accepted Answer</label><input className={inputCls} value={correct} onChange={(e) => setCorrect(e.target.value)} /></div>
-            <div className="sm:col-span-2"><label className={labelCls}>Alternative Accepted Answers <span className="text-[var(--color-ink-faint)]">(optional, separate with ;)</span></label><input className={inputCls} value={alternatives} onChange={(e) => setAlternatives(e.target.value)} placeholder="e.g. solid; solid state" /></div>
+            <div className="sm:col-span-2"><label className={labelCls}>Accepted Answer</label><input className={inputCls} value={correct} onChange={(e) => setCorrect(e.target.value)} onPaste={(e) => pasteEquationFriendly(e, correct, setCorrect)} /></div>
+            <div className="sm:col-span-2"><label className={labelCls}>Alternative Accepted Answers <span className="text-[var(--color-ink-faint)]">(optional, separate with ;)</span></label><input className={inputCls} value={alternatives} onChange={(e) => setAlternatives(e.target.value)} onPaste={(e) => pasteEquationFriendly(e, alternatives, setAlternatives)} placeholder="e.g. solid; solid state" /></div>
           </>
         )}
 
-        <div className="sm:col-span-2"><label className={labelCls}>Explanation / Feedback <span className="text-[var(--color-ink-faint)]">(optional)</span></label><textarea className={inputCls} rows={2} value={explanation} onChange={(e) => setExplanation(e.target.value)} /></div>
+        <div className="sm:col-span-2"><label className={labelCls}>Explanation / Feedback <span className="text-[var(--color-ink-faint)]">(optional)</span></label><EquationFriendlyField className={inputCls} rows={2} value={explanation} onChange={setExplanation} /></div>
       </div>
       {localError && <p className="mt-2 text-xs text-[var(--color-coral)]">{localError}</p>}
       <div className="mt-3 flex gap-2">

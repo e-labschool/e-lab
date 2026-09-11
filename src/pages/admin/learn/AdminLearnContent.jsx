@@ -16,6 +16,7 @@ export default function AdminLearnContent() {
   const [welcomeLesson, setWelcomeLesson] = useState(undefined);
   const [draggedLessonId, setDraggedLessonId] = useState(null);
   const [reordering, setReordering] = useState(false);
+  const [flowLevel, setFlowLevel] = useState("SL");
 
   // Resumes the lesson the admin was actively editing before a temporary
   // trip to another Admin tab — fires once, only from the list view
@@ -37,8 +38,11 @@ export default function AdminLearnContent() {
   useEffect(() => {
     if (!selectedTopic) return;
     setLessons(null);
-    listLessonsForTopic(selectedTopic).then(setLessons).catch(() => setLessons([]));
-  }, [selectedTopic]);
+    listLessonsForTopic(selectedTopic, flowLevel).then((rows) => {
+      const visible = flowLevel === "SL" ? rows.filter((lesson) => String(lesson.level || "SL/HL").toUpperCase() !== "HL") : rows;
+      setLessons(visible);
+    }).catch(() => setLessons([]));
+  }, [selectedTopic, flowLevel]);
 
   function toggleTopic(topicId) {
     setOpenTopics((prev) => {
@@ -61,8 +65,9 @@ export default function AdminLearnContent() {
     setDraggedLessonId(null);
     setReordering(true);
     try {
-      await reorderLessons(next.map((lesson) => lesson.id));
-      setLessons(next.map((lesson, index) => ({ ...lesson, display_order: index + 1 })));
+      await reorderLessons(next.map((lesson) => lesson.id), flowLevel);
+      const orderField = flowLevel === "HL" ? "display_order_hl" : "display_order_sl";
+      setLessons(next.map((lesson, index) => ({ ...lesson, [orderField]: index + 1, ...(flowLevel === "SL" ? { display_order: index + 1 } : {}) })));
     } catch (err) {
       setLessons(previous);
       console.error("Could not reorder Learn lessons", err);
@@ -119,8 +124,19 @@ export default function AdminLearnContent() {
             <p className="text-sm text-[var(--color-ink-faint)]">Select a topic on the left to manage its lessons.</p>
           ) : (
             <>
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-[var(--color-ink)]">{selectedMeta}</h2>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold text-[var(--color-ink)]">{selectedMeta}</h2>
+                  <div className="mt-2 inline-flex rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] p-1" aria-label="Learn flow to arrange">
+                    {[
+                      ["SL", "SL flow"],
+                      ["HL", "HL flow"],
+                    ].map(([value, label]) => (
+                      <button key={value} type="button" onClick={() => setFlowLevel(value)} className={`rounded px-3 py-1.5 text-xs font-semibold ${flowLevel === value ? "bg-[var(--color-indigo)] text-white" : "text-[var(--color-ink-soft)] hover:bg-[var(--color-line)]/30"}`}>{label}</button>
+                    ))}
+                  </div>
+                  <p className="mt-1 text-[11px] text-[var(--color-ink-faint)]">SL flow contains shared/SL content only. HL flow contains all SL content plus HL-only lessons and can be ordered independently.</p>
+                </div>
                 <Button size="sm" onClick={() => navigate(`/admin/learn-content/new?parentTopic=${selectedTopic}`)}><Plus size={14} /> Create Lesson</Button>
               </div>
 
@@ -135,7 +151,7 @@ export default function AdminLearnContent() {
               ) : (
                 <div className="mt-4 overflow-hidden rounded-md border border-[var(--color-line)]">
                   <div className="border-b border-[var(--color-line)] bg-[var(--color-line)]/10 px-4 py-2 text-xs text-[var(--color-ink-faint)]">
-                    Drag lessons to change Student Learn order. New lessons are added at the bottom.{reordering ? " Saving order…" : ""}
+                    Drag lessons to change the {flowLevel} Student Learn order. New lessons are added at the bottom of both flows.{reordering ? " Saving order…" : ""}
                   </div>
                   <div className="divide-y divide-[var(--color-line)]">
                     {lessons.map((lesson, index) => (
@@ -156,6 +172,7 @@ export default function AdminLearnContent() {
                           <span className="font-mono text-xs text-[var(--color-ink-faint)]">{lesson.lesson_code}</span>
                           <p className="truncate text-sm font-medium text-[var(--color-ink)]">{lesson.title}</p>
                         </button>
+                        <Badge tone={lesson.level === "HL" ? "violet" : "neutral"}>{lesson.level === "HL" ? "HL only" : "SL + HL"}</Badge>
                         <Badge tone={lesson.status === "published" ? "teal" : "neutral"}>{lesson.status}</Badge>
                       </div>
                     ))}

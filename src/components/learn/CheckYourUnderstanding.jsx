@@ -53,7 +53,7 @@ export default function CheckYourUnderstanding({ pageId, checkQuestions = [], pr
   }
 
   return (
-    <div className="mt-10 rounded-md border border-[var(--color-indigo)]/25 bg-gradient-to-br from-[var(--color-indigo-soft)] to-[var(--color-paper-raised)] p-6">
+    <div className="light-surface mt-10 rounded-md border border-[#CBD4F6] bg-[#F3F5FD] p-6 text-[#12161C] shadow-sm">
       <div className="flex items-center gap-2">
         <span className="glowing-bulb flex h-8 w-8 items-center justify-center rounded-full bg-[var(--color-amber-soft)]"><Lightbulb size={16} className="text-[var(--color-amber)]" /></span>
         <p className="text-lg font-bold text-[var(--color-ink)]">Check Your Understanding</p>
@@ -106,7 +106,7 @@ function CheckQuestionCard({ index, item, answer, onAnswer, result }) {
     parts: [],
   } : null);
   return (
-    <div className="light-surface rounded-md border border-[#DCE1F0] bg-white p-5 text-[#12161C] shadow-sm">
+    <div className="rounded-md border border-[#DCE1F0] bg-[#FFFFFF] p-5 text-[#12161C] shadow-sm">
       {question ? (
         <QuestionRenderer
           question={question}
