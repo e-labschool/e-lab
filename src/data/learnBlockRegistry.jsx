@@ -7,6 +7,8 @@ import {
   Type, Image as ImageIcon, Video, FlaskConical, Box, PlayCircle,
   Lightbulb, BookMarked, AlertTriangle, Globe2, ListChecks, BarChart3,
   Columns2, HelpCircle, Beaker, Files, Link2,
+  Bold, Italic, Underline, Superscript, Subscript,
+  List, ListOrdered, AlignLeft, AlignCenter, AlignRight, Eraser,
 } from "lucide-react";
 
 // ============================================================
@@ -30,7 +32,7 @@ export const BLOCK_TYPES = {
   definition: { label: "Definition", category: "teaching", icon: BookMarked, defaultContent: { term: "", definition: "" } },
   common_mistake: { label: "Common Mistakes / Misunderstandings", category: "teaching", icon: AlertTriangle, defaultContent: { text: "" } },
   real_life: { label: "Real-Life Connection", category: "teaching", icon: Globe2, defaultContent: { title: "", content: "", imageUrl: "" } },
-  worked_example: { label: "Worked Example", category: "teaching", icon: ListChecks, defaultContent: { question: "", solution: "" } },
+  worked_example: { label: "Worked Example", category: "teaching", icon: ListChecks, defaultContent: { question: "", solution: "", displayMode: "direct" } },
   data_graph: { label: "Data / Graph", category: "teaching", icon: BarChart3, defaultContent: { title: "", rows: [], explanation: "", prompt: "" } },
   compare_contrast: { label: "Compare & Contrast", category: "teaching", icon: Columns2, defaultContent: { title: "", displayMode: "inline", columns: [{ title: "", content: "" }, { title: "", content: "" }] } },
   reveal_think: { label: "Reveal / Think", category: "teaching", icon: HelpCircle, defaultContent: { prompt: "", reveal: "" } },
@@ -162,6 +164,11 @@ export function renderChemMarkup(markup) {
  * formatting without pulling in a WYSIWYG library. Output is sanitized
  * with DOMPurify (already an existing dependency) before ever being
  * rendered to a student. */
+const FORMAT_BLOCKS = [
+  { label: "Paragraph", value: "p" },
+  { label: "Heading", value: "h3" },
+  { label: "Subheading", value: "h4" },
+];
 const FONT_SIZES = [12, 14, 16, 18, 20, 24, 28, 32];
 const FONT_FAMILIES = [
   { label: "Default", value: "inherit" },
@@ -175,6 +182,27 @@ const QUICK_COLOURS = [
   ["#12161c", "Dark"], ["#3654D6", "Indigo"], ["#2B7A6E", "Teal"],
   ["#B7791F", "Amber"], ["#B85C4A", "Coral"], ["#6D3FA3", "Violet"],
 ];
+
+/** An icon toolbar button with a real, human-readable tooltip (native
+ * title attribute) — never a raw label like "\u2022 List" or "x\u00b2".
+ * onMouseDown both prevents the default focus-steal AND saves the
+ * current selection, so the click that follows always has something
+ * valid to act on. */
+function ToolbarButton({ label, icon: Icon, onClick, active = false, saveSelection }) {
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      aria-pressed={active}
+      onMouseDown={(e) => { e.preventDefault(); saveSelection?.(); }}
+      onClick={onClick}
+      className={`flex h-7 w-7 items-center justify-center rounded hover:bg-[var(--color-line)]/40 ${active ? "bg-[var(--color-indigo-soft)] text-[var(--color-indigo)]" : "text-[var(--color-ink-soft)]"}`}
+    >
+      <Icon size={15} />
+    </button>
+  );
+}
 
 /** The old implementation called document.execCommand("foreColor"/etc)
  * directly from a native <input type="color">'s onChange. That's the bug:
@@ -286,32 +314,15 @@ export function RichTextEditor({ value, onChange }) {
   return (
     <div>
       <div className="mb-1.5 flex flex-wrap items-center gap-1 rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] p-1">
-        {[["Bold", "bold", "B"], ["Italic", "italic", "I"], ["Underline", "underline", "U"]].map(([t, cmd, label]) => (
-          <button key={cmd} type="button" title={t} onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={() => exec(cmd)} className="rounded px-2 py-1 text-xs font-semibold hover:bg-[var(--color-line)]/40">{label}</button>
-        ))}
-        <button type="button" title="Heading" onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={() => exec("formatBlock", "h3")} className="rounded px-2 py-1 text-xs font-semibold hover:bg-[var(--color-line)]/40">H</button>
-        <button type="button" title="Subheading" onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={() => exec("formatBlock", "h4")} className="rounded px-2 py-1 text-xs font-semibold hover:bg-[var(--color-line)]/40">h</button>
-        <button type="button" title="Paragraph" onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={() => exec("formatBlock", "p")} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">P</button>
-        <button type="button" title="Bullet list" onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={() => exec("insertUnorderedList")} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">\u2022 List</button>
-        <button type="button" title="Numbered list" onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={() => exec("insertOrderedList")} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">1. List</button>
-        <button type="button" title="Superscript" onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={() => exec("superscript")} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">x\u00b2</button>
-        <button type="button" title="Subscript" onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={() => exec("subscript")} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">x\u2082</button>
-        <button type="button" title="Align left" onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={() => exec("justifyLeft")} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">\u2261L</button>
-        <button type="button" title="Align center" onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={() => exec("justifyCenter")} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">\u2261C</button>
-        <button type="button" title="Link" onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={handleLink} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">Link</button>
-
-        <span className="mx-1 h-5 w-px bg-[var(--color-line)]" />
-
         <select
-          title="Font size"
-          aria-label="Font size"
-          defaultValue=""
+          title="Paragraph style"
+          aria-label="Paragraph style"
+          defaultValue="p"
           onMouseDown={saveSelection}
-          onChange={(e) => { if (e.target.value) applyInlineStyle("fontSize", `${e.target.value}px`); }}
+          onChange={(e) => exec("formatBlock", e.target.value)}
           className="rounded border border-[var(--color-line)] bg-[var(--color-paper-raised)] px-1 py-1 text-[11px] text-[var(--color-ink-soft)]"
         >
-          <option value="">Size</option>
-          {FONT_SIZES.map((s) => <option key={s} value={s}>{s}</option>)}
+          {FORMAT_BLOCKS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
         </select>
 
         <select
@@ -326,17 +337,52 @@ export function RichTextEditor({ value, onChange }) {
           {FONT_FAMILIES.map((f) => <option key={f.label} value={f.value}>{f.label}</option>)}
         </select>
 
-        <span className="mx-1 h-5 w-px bg-[var(--color-line)]" />
-        <span className="px-1 text-[11px] text-[var(--color-ink-soft)]">Colour</span>
+        <select
+          title="Font size"
+          aria-label="Font size"
+          defaultValue=""
+          onMouseDown={saveSelection}
+          onChange={(e) => { if (e.target.value) applyInlineStyle("fontSize", `${e.target.value}px`); }}
+          className="rounded border border-[var(--color-line)] bg-[var(--color-paper-raised)] px-1 py-1 text-[11px] text-[var(--color-ink-soft)]"
+        >
+          <option value="">Size</option>
+          {FONT_SIZES.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+
+        <span className="mx-0.5 h-5 w-px bg-[var(--color-line)]" />
+
+        <ToolbarButton label="Bold" icon={Bold} saveSelection={saveSelection} onClick={() => exec("bold")} />
+        <ToolbarButton label="Italic" icon={Italic} saveSelection={saveSelection} onClick={() => exec("italic")} />
+        <ToolbarButton label="Underline" icon={Underline} saveSelection={saveSelection} onClick={() => exec("underline")} />
+        <ToolbarButton label="Superscript" icon={Superscript} saveSelection={saveSelection} onClick={() => exec("superscript")} />
+        <ToolbarButton label="Subscript" icon={Subscript} saveSelection={saveSelection} onClick={() => exec("subscript")} />
+
+        <span className="mx-0.5 h-5 w-px bg-[var(--color-line)]" />
+
+        <span className="px-1 text-[11px] text-[var(--color-ink-soft)]">Text Colour</span>
         {QUICK_COLOURS.map(([colour, name]) => (
-          <button key={colour} type="button" title={name} aria-label={`Text colour ${name}`} onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={() => applyInlineStyle("color", colour)} className="h-5 w-5 rounded-full border border-black/10" style={{ backgroundColor: colour }} />
+          <button key={colour} type="button" title={`Text colour: ${name}`} aria-label={`Text colour ${name}`} onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={() => applyInlineStyle("color", colour)} className="h-5 w-5 rounded-full border border-black/10" style={{ backgroundColor: colour }} />
         ))}
         <label className="flex items-center gap-1 px-1 text-[11px] text-[var(--color-ink-soft)]" title="Custom text colour">
           Custom
           <input type="color" defaultValue="#12161c" onMouseDown={saveSelection} onChange={(e) => applyInlineStyle("color", e.target.value)} className="h-6 w-7 cursor-pointer rounded border border-[var(--color-line)] bg-transparent p-0.5" />
         </label>
 
-        <button type="button" onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={() => exec("removeFormat")} className="rounded px-2 py-1 text-[11px] text-[var(--color-ink-soft)] hover:bg-[var(--color-line)]/40">Clear style</button>
+        <span className="mx-0.5 h-5 w-px bg-[var(--color-line)]" />
+
+        <ToolbarButton label="Bullets" icon={List} saveSelection={saveSelection} onClick={() => exec("insertUnorderedList")} />
+        <ToolbarButton label="Numbered List" icon={ListOrdered} saveSelection={saveSelection} onClick={() => exec("insertOrderedList")} />
+
+        <span className="mx-0.5 h-5 w-px bg-[var(--color-line)]" />
+
+        <ToolbarButton label="Align Left" icon={AlignLeft} saveSelection={saveSelection} onClick={() => exec("justifyLeft")} />
+        <ToolbarButton label="Align Center" icon={AlignCenter} saveSelection={saveSelection} onClick={() => exec("justifyCenter")} />
+        <ToolbarButton label="Align Right" icon={AlignRight} saveSelection={saveSelection} onClick={() => exec("justifyRight")} />
+
+        <span className="mx-0.5 h-5 w-px bg-[var(--color-line)]" />
+
+        <ToolbarButton label="Link" icon={Link2} saveSelection={saveSelection} onClick={handleLink} />
+        <ToolbarButton label="Clear Formatting" icon={Eraser} saveSelection={saveSelection} onClick={() => exec("removeFormat")} />
       </div>
       <div
         ref={editorRef}
@@ -537,12 +583,31 @@ function WorkedExampleEditor({ content, set }) {
   // in the stored content — harmless, and no longer read once `solution`
   // has a value.
   const solutionValue = content.solution ?? getWorkedExampleSolution(content);
+  // Existing blocks saved before displayMode existed have no such key at
+  // all — undefined must behave exactly like "direct" so nothing already
+  // published silently changes appearance (same convention as
+  // Compare & Contrast's displayMode).
+  const displayMode = content.displayMode ?? "direct";
   return (
     <div className="space-y-2">
       <div><label className={labelCls}>Question / Problem</label><EquationFriendlyField className={inputCls} rows={2} value={content.question} onChange={(value) => set("question", value)} /></div>
       <div>
         <label className={labelCls}>Solution</label>
         <EquationFriendlyField className={inputCls} rows={6} value={solutionValue} onChange={(value) => set("solution", value)} placeholder={"Paste or type the full worked solution, with line breaks preserved — e.g.\npH = \u2212log\u2081\u2080[H\u2083O\u207A]\npH = \u2212log\u2081\u2080(2.5 \u00d7 10\u207B\u00b3)\npH = 2.60"} />
+      </div>
+      <div>
+        <label className="mb-1 block text-xs font-medium text-[var(--color-ink-soft)]">Display Mode</label>
+        <div className="flex flex-col gap-1.5 text-sm text-[var(--color-ink-soft)]">
+          <label className="flex items-center gap-2">
+            <input type="radio" name="worked-example-display-mode" checked={displayMode === "direct"} onChange={() => set("displayMode", "direct")} />
+            Show directly in lesson flow
+          </label>
+          <label className="flex items-center gap-2">
+            <input type="radio" name="worked-example-display-mode" checked={displayMode === "reveal"} onChange={() => set("displayMode", "reveal")} />
+            Show as button / reveal
+          </label>
+        </div>
+        <p className="mt-1 text-[11px] text-[var(--color-ink-faint)]">Reveal mode shows the question immediately, with a "Show Solution" button students click to reveal the solution.</p>
       </div>
     </div>
   );

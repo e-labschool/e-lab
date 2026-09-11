@@ -188,17 +188,39 @@ function PlaceholderBlock({ label }) {
 }
 
 function WorkedExampleBlock({ content }) {
+  const [revealed, setRevealed] = useState(false);
   const solution = getWorkedExampleSolution(content);
+  // Undefined (every block saved before this existed) behaves exactly
+  // like "direct" — nothing already published changes appearance.
+  const isReveal = content.displayMode === "reveal";
+
   return (
-    <div className="rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-4">
+    <div className="rounded-md border border-[var(--color-indigo)]/20 bg-[var(--color-indigo-soft)] p-4">
       <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Worked Example</p>
       <p className="mt-1.5 whitespace-pre-wrap text-sm font-medium text-[var(--color-ink)]">{content.question}</p>
-      {solution && (
+
+      {solution && (isReveal ? (
+        <>
+          <button
+            type="button"
+            onClick={() => setRevealed((v) => !v)}
+            className="mt-3 rounded-md bg-[var(--color-indigo)] px-3 py-1.5 text-xs font-medium text-white"
+          >
+            {revealed ? "Hide Solution" : "Show Solution"}
+          </button>
+          {revealed && (
+            <>
+              <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Solution</p>
+              <p className="mt-1 whitespace-pre-wrap text-sm text-[var(--color-ink-soft)]">{solution}</p>
+            </>
+          )}
+        </>
+      ) : (
         <>
           <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Solution</p>
           <p className="mt-1 whitespace-pre-wrap text-sm text-[var(--color-ink-soft)]">{solution}</p>
         </>
-      )}
+      ))}
     </div>
   );
 }
