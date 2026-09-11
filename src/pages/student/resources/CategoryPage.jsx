@@ -9,8 +9,12 @@ import Container from "../../../components/ui/Container.jsx";
 import EmptyStatePanel from "../../../components/ui/EmptyStatePanel.jsx";
 import ResourceCard from "./components/ResourceCard.jsx";
 import { FolderOpen } from "lucide-react";
+import { useAuth } from "../../../context/AuthContext.jsx";
+import { canStudentAccessResourceLevel } from "../../../lib/learnLevelAccess.js";
 
 export default function CategoryPage() {
+  const { profile } = useAuth();
+  const studentLevel = profile?.level || "SL";
   const { categoryId } = useParams();
   const category = CATEGORIES[categoryId];
   const [search, setSearch] = useState("");
@@ -18,8 +22,8 @@ export default function CategoryPage() {
   const { resources: supabaseResources, loading, error } = useVisibleResources();
 
   const allResources = useMemo(
-    () => [...staticResources, ...supabaseResources.filter((r) => isResourceVisibleToAudience(r, "student"))],
-    [supabaseResources]
+    () => [...staticResources, ...supabaseResources.filter((r) => isResourceVisibleToAudience(r, "student"))].filter((r) => canStudentAccessResourceLevel(studentLevel, r.level)),
+    [supabaseResources, studentLevel]
   );
   const categoryResources = useMemo(
     () => (category ? getResourcesByCategory(categoryId, allResources) : []),

@@ -4,32 +4,89 @@ const SUB = {0:"₀",1:"₁",2:"₂",3:"₃",4:"₄",5:"₅",6:"₆",7:"₇",8:"
 const SUP = {0:"⁰",1:"¹",2:"²",3:"³",4:"⁴",5:"⁵",6:"⁶",7:"⁷",8:"⁸",9:"⁹","+":"⁺","-":"⁻","=":"⁼","(":"⁽",")":"⁾",n:"ⁿ",i:"ⁱ"};
 const mapChars = (text, map) => [...String(text ?? "")].map((ch) => map[ch] ?? ch).join("");
 
-const HIDDEN_CLASS_PATTERN = /(^|\s)(katex-mathml|sr-only|visually-hidden|screen-reader-text|visuallyhidden)(\s|$)/i;
+// ---------------------------------------------------------------------
+// LaTeX (from a MathML/KaTeX <annotation>) -> plain editable Unicode.
+//
+// Strategy, per spec: identify the equation node, extract ONE
+// representation (the LaTeX source — it's the structured, reliable one;
+// KaTeX's *visible* HTML branch is a maze of spacer/strut spans that
+// isn't reliable to read text back out of), convert it to Unicode, and
+// use THAT as the replacement — never both, never neither.
+// ---------------------------------------------------------------------
 
-/** True for nodes that exist only for accessibility/screen-reader/LaTeX
- * "source" duplication and were never meant to be read as the visible
- * text — most notably KaTeX's hidden MathML branch, which is exactly
- * what ChatGPT/many math-rendering tools put on the clipboard alongside
- * the visible glyphs. Walking both branches is what produces pasted
- * content like "[H₃O⁺][H_3O^+]" — the fix is to simply never walk into
- * these nodes at all. */
+const LATEX_WRAP_COMMANDS = ["mathrm", "text", "mathbf", "boldsymbol", "mathit", "operatorname", "mathsf"];
+const LATEX_SYMBOLS = [
+  ["\\rightleftharpoons", "⇌"], ["\\leftrightarrow", "↔"], ["\\rightarrow", "→"], ["\\to", "→"],
+  ["\\times", "×"], ["\\cdot", "·"], ["\\pm", "±"], ["\\approx", "≈"], ["\\neq", "≠"],
+  ["\\leq", "≤"], ["\\geq", "≥"], ["\\infty", "∞"], ["\\Delta", "Δ"], ["\\delta", "δ"], ["\\circ", "°"],
+];
+
+function stripLatexWrapCommand(str, cmd) {
+  const re = new RegExp(`\\\\${cmd}\\{([^{}]*)\\}`, "g");
+  let prev;
+  do { prev = str; str = str.replace(re, "$1"); } while (str !== prev);
+  return str;
+}
+
+/** e.g. "\mathrm{pH}=-\log_{10}(2.5\times10^{-3})" -> "pH = −log₁₀(2.5 × 10⁻³)" */
+export function convertLatexToUnicode(latex) {
+  let s = String(latex ?? "");
+  LATEX_WRAP_COMMANDS.forEach((cmd) => { s = stripLatexWrapCommand(s, cmd); });
+  LATEX_SYMBOLS.forEach(([cmd, sym]) => { s = s.split(cmd).join(sym); });
+
+  // Sub/superscripts, braced or single-character.
+  s = s.replace(/_\{([^{}]*)\}/g, (_, g) => mapChars(g, SUB));
+  s = s.replace(/_([^\s{}\\])/g, (_, g) => mapChars(g, SUB));
+  s = s.replace(/\^\{([^{}]*)\}/g, (_, g) => mapChars(g, SUP));
+  s = s.replace(/\^([^\s{}\\])/g, (_, g) => mapChars(g, SUP));
+
+  // Any remaining backslash-command we don't specifically know becomes
+  // its bare name (\log -> log) rather than being dropped silently.
+  s = s.replace(/\\([a-zA-Z]+)/g, "$1");
+  s = s.replace(/[{}]/g, "");
+
+  // Bare "-" at this point is always a mathematical minus, not a hyphen.
+  s = s.replace(/-/g, "−");
+
+  // Space out binary-operator-style symbols for readability, matching
+  // how these are normally typeset (e.g. "2.5×10⁻³" -> "2.5 × 10⁻³").
+  s = s.replace(/\s*([×·→⇌↔±≈≠])\s*/g, " $1 ");
+  s = s.replace(/\s*=\s*/g, " = ").replace(/\s+/g, " ").trim();
+  return s;
+}
+/** Finds every <annotation> (KaTeX/MathML's raw-source element) and
+ * replaces its nearest .katex/<math> ancestor with the converted plain
+ * text, IN PLACE, before any other processing touches the tree — so the
+ * maths is preserved and converted, never silently deleted, and never
+ * left duplicated alongside the visible rendering it replaces. */
+function resolveMathAnnotations(doc) {
+  const annotations = [...doc.querySelectorAll("annotation")];
+  for (const annotation of annotations) {
+    const root = annotation.closest?.('[class*="katex"]') || annotation.closest?.("math") || annotation.parentElement;
+    if (!root || !root.parentNode) continue;
+    const converted = convertLatexToUnicode(annotation.textContent || "");
+    root.parentNode.replaceChild(doc.createTextNode(converted), root);
+  }
+}
+
+const HIDDEN_CLASS_PATTERN = /(^|\s)(sr-only|visually-hidden|screen-reader-text|visuallyhidden)(\s|$)/i;
+
+/** Generic accessibility-only duplicate content unrelated to maths (e.g.
+ * a plain "visually hidden" caption some tool adds) — narrow on purpose,
+ * since maths is now handled by resolveMathAnnotations() above rather
+ * than by skipping nodes and hoping the right text is left over. */
 function isHiddenDuplicateNode(node) {
   const cls = typeof node.className === "string" ? node.className : node.getAttribute?.("class") || "";
   if (HIDDEN_CLASS_PATTERN.test(cls)) return true;
   const style = node.getAttribute?.("style") || "";
   if (/display\s*:\s*none|visibility\s*:\s*hidden/i.test(style)) return true;
-  // <annotation> (MathML's raw-source container) and a bare <math> root
-  // that itself contains one are always the "source", never the visible
-  // rendering — skip them regardless of which tool produced them.
-  const tag = node.tagName?.toLowerCase();
-  if (tag === "annotation") return true;
-  if (tag === "math" && node.querySelector?.("annotation")) return true;
   return false;
 }
 
 function htmlToChemText(html) {
   if (!html || typeof DOMParser === "undefined") return "";
   const doc = new DOMParser().parseFromString(html, "text/html");
+  resolveMathAnnotations(doc);
   const walk = (node) => {
     if (node.nodeType === Node.TEXT_NODE) return node.nodeValue || "";
     if (node.nodeType !== Node.ELEMENT_NODE) return "";
@@ -59,6 +116,21 @@ function htmlToChemText(html) {
   return walk(doc.body).replace(/\n{3,}/g, "\n\n").trimEnd();
 }
 
+/** Same math-resolution pass as the plain-text paste path, but operating
+ * on (and returning) an HTML string — used by the Rich Text editor,
+ * which needs to keep real formatting (bold/lists/etc) but must NOT keep
+ * KaTeX's rendered DOM: that produces dozens of non-semantic spacer
+ * spans that look right but can't be edited like normal text. Equations
+ * are resolved to plain Unicode text nodes first; everything else about
+ * the pasted HTML (formatting, links, line breaks) is left untouched for
+ * the caller to sanitize/insert as usual. */
+export function resolveMathAnnotationsInHtml(html) {
+  if (!html || typeof DOMParser === "undefined") return html;
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  resolveMathAnnotations(doc);
+  return doc.body.innerHTML;
+}
+
 export function getEquationFriendlyClipboardText(event) {
   const html = event.clipboardData?.getData("text/html") || "";
   const rich = htmlToChemText(html);
@@ -79,6 +151,11 @@ export function pasteEquationFriendly(event, value, onChange) {
   });
 }
 
+/** A completely ordinary textarea — this is the whole point. Pasted
+ * content (after conversion above) lands as plain editable characters:
+ * click anywhere, select part of it, delete/retype, Enter for a new
+ * line, all standard textarea behaviour. Nothing here ever creates a
+ * non-editable "equation object". */
 export default function EquationFriendlyField({ value = "", onChange, className = "", rows = 2, ...props }) {
   const ref = useRef(null);
   useEffect(() => {

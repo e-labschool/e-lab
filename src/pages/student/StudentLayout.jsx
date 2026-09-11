@@ -1,6 +1,7 @@
 import { BookOpen, PenLine, Library, TrendingUp } from "lucide-react";
 import { getSubject } from "../../data/programmes.js";
 import AppSidebarLayout from "../../components/layout/AppSidebarLayout.jsx";
+import { useTrackLastRoute } from "../../lib/lastRoute.jsx";
 
 const PROGRAMME_ID = "ibdp";
 const SUBJECT_ID = "chemistry";
@@ -16,6 +17,7 @@ const TABS = [
 ];
 
 export default function StudentLayout() {
+  useTrackLastRoute("student");
   const subject = getSubject(PROGRAMME_ID, SUBJECT_ID);
   return (
     <AppSidebarLayout

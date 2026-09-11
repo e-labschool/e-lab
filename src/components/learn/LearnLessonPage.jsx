@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, CheckCircle2, RotateCcw } from "lucide-react";
 import { getPublishedLesson, listPublishedLessonMeta } from "../../lib/learnContentService.js";
 import { getLearnCmsCurriculumTree } from "../../data/learnCmsCurriculum.js";
 import { useAuth } from "../../context/AuthContext.jsx";
@@ -9,12 +9,16 @@ import LearnBlockRenderer from "./LearnBlockRenderer.jsx";
 import CheckYourUnderstanding from "./CheckYourUnderstanding.jsx";
 import ELabLoader from "../ui/ELabLoader.jsx";
 import { splitLearnBlocksIntoPages } from "../../lib/learnPagination.js";
+import { useDisplaySettings } from "../../context/DisplaySettingsContext.jsx";
+import { useLearningProgress } from "../../context/ProgressContext.jsx";
+import { getConceptIdsForLessonCodes } from "../../lib/learn-tree.js";
+import { filterBlocksForStudent, filterSyllabusCodesForStudent, lessonOrderValue, canStudentAccessQuestionLevel } from "../../lib/learnLevelAccess.js";
 
 /** Determines prev/next PUBLISHED lesson purely from parent topic +
  * display order + curriculum hierarchy — Admin never creates nav links
  * manually. If the current lesson is last in its topic, looks ahead to
  * the first published lesson of the next topic in curriculum order. */
-function findAdjacentLessons(currentLesson, allLessons, tree) {
+function findAdjacentLessons(currentLesson, allLessons, tree, studentLevel) {
   // flatTopicIds must be SUBTOPIC ids in curriculum order — parent_topic
   // is always a subtopic id, never the higher-level topic/unit id. Using
   // topic-level ids here (the original bug) meant flatTopicIds.indexOf()
@@ -22,7 +26,7 @@ function findAdjacentLessons(currentLesson, allLessons, tree) {
   const flatTopicIds = tree.flatMap((section) => section.topics.flatMap((t) => t.subtopics.map((s) => s.id)));
   const sameTopicLessons = allLessons
     .filter((l) => l.parent_topic === currentLesson.parent_topic)
-    .sort((a, b) => a.display_order - b.display_order || a.id.localeCompare(b.id)); // id as a stable tiebreaker for equal display_order
+    .sort((a, b) => lessonOrderValue(a, studentLevel) - lessonOrderValue(b, studentLevel) || a.id.localeCompare(b.id));
   const indexInTopic = sameTopicLessons.findIndex((l) => l.id === currentLesson.id);
 
   const prev = indexInTopic > 0 ? sameTopicLessons[indexInTopic - 1] : null;
@@ -32,7 +36,7 @@ function findAdjacentLessons(currentLesson, allLessons, tree) {
   if (!next) {
     const topicIndex = flatTopicIds.indexOf(currentLesson.parent_topic);
     for (let i = topicIndex + 1; i < flatTopicIds.length; i++) {
-      const candidates = allLessons.filter((l) => l.parent_topic === flatTopicIds[i]).sort((a, b) => a.display_order - b.display_order || a.id.localeCompare(b.id)); // id as a stable tiebreaker for equal display_order
+      const candidates = allLessons.filter((l) => l.parent_topic === flatTopicIds[i]).sort((a, b) => lessonOrderValue(a, studentLevel) - lessonOrderValue(b, studentLevel) || a.id.localeCompare(b.id));
       if (candidates.length > 0) {
         next = candidates[0];
         nextIsNewTopic = true;
@@ -47,21 +51,28 @@ function findAdjacentLessons(currentLesson, allLessons, tree) {
 export default function LearnLessonPage() {
   const { conceptId: pageId } = useParams(); // param name kept as conceptId — see LearnLayout.jsx
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
+  const studentLevel = profile?.level || "SL";
+  const { settings: displaySettings } = useDisplaySettings();
+  const { openConcept, markConceptsCompleted, restartConcept, statusFor } = useLearningProgress();
   const [lesson, setLesson] = useState(null);
+  const [allPublishedLessons, setAllPublishedLessons] = useState([]);
   const [adjacent, setAdjacent] = useState({ prev: null, next: null, nextIsNewTopic: false });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [contentPage, setContentPage] = useState(0);
+  const [finishing, setFinishing] = useState(false);
+  const [finishError, setFinishError] = useState("");
 
   useEffect(() => {
     setLoading(true);
     setError(null);
-    Promise.all([getPublishedLesson(pageId), listPublishedLessonMeta()])
+    Promise.all([getPublishedLesson(pageId, studentLevel), listPublishedLessonMeta(studentLevel)])
       .then(([data, allLessons]) => {
         if (!data?.page) throw new Error("This lesson isn't available.");
         setLesson(data);
-        setAdjacent(findAdjacentLessons(data.page, allLessons, getLearnCmsCurriculumTree()));
+        setAllPublishedLessons(allLessons);
+        setAdjacent(findAdjacentLessons(data.page, allLessons, getLearnCmsCurriculumTree(), studentLevel));
         // Resume the last internal page the student was on for THIS
         // specific lesson, if remembered — a lesson last visited on
         // page 3 reopens on page 3, not page 1. If Admin has since
@@ -73,14 +84,34 @@ export default function LearnLessonPage() {
       .catch((err) => setError(err.message || "Couldn't load this lesson."))
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pageId]);
+  }, [pageId, studentLevel]);
+
+  const permittedSyllabusCodes = lesson?.page ? filterSyllabusCodesForStudent((lesson.page.syllabus_codes?.length ? lesson.page.syllabus_codes : [lesson.page.lesson_code]), studentLevel) : [];
+  const progressConceptIds = getConceptIdsForLessonCodes(permittedSyllabusCodes);
+  useEffect(() => {
+    for (const conceptId of progressConceptIds) openConcept(conceptId);
+    // Only opening a different mapped lesson should trigger this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [progressConceptIds.join("|")]);
 
   if (loading) return <div className="flex min-h-[50vh] items-center justify-center"><ELabLoader /></div>;
   if (error) return <p className="p-10 text-center text-sm text-[var(--color-coral)]">{error}</p>;
   if (!lesson) return null;
 
+  const isWelcome = lesson.page.parent_topic === "__welcome__";
+  const curriculumTree = getLearnCmsCurriculumTree();
+  const orderedTopicIds = curriculumTree.flatMap((section) => section.topics.flatMap((topic) => topic.subtopics.map((subtopic) => subtopic.id)));
+  let firstLearningLesson = null;
+  for (const topicId of orderedTopicIds) {
+    const candidates = allPublishedLessons
+      .filter((item) => item.parent_topic === topicId)
+      .sort((a, b) => lessonOrderValue(a, studentLevel) - lessonOrderValue(b, studentLevel) || a.id.localeCompare(b.id));
+    if (candidates.length) { firstLearningLesson = candidates[0]; break; }
+  }
   const topicMeta = findTopicMeta(lesson.page.parent_topic);
-  const pages = splitLearnBlocksIntoPages(lesson.blocks);
+  const visibleBlocks = filterBlocksForStudent(lesson.blocks, studentLevel);
+  const visibleCheckQuestions = (lesson.checkQuestions || []).filter((item) => canStudentAccessQuestionLevel(studentLevel, item?.question?.level || item?.level || "SL/HL"));
+  const pages = splitLearnBlocksIntoPages(visibleBlocks);
   const safePage = Math.min(contentPage, pages.length - 1);
   const activePage = pages[safePage];
   const isFirstContentPage = safePage === 0;
@@ -94,7 +125,7 @@ export default function LearnLessonPage() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl px-6 py-10">
+    <div className={`mx-auto w-full py-10 ${displaySettings.contentWidth === "wide" ? "max-w-[1240px]" : "max-w-[980px]"} ${displaySettings.sideSpacing === "compact" ? "px-4 sm:px-5 lg:px-6" : displaySettings.sideSpacing === "roomy" ? "px-6 sm:px-10 lg:px-14" : "px-5 sm:px-8 lg:px-10"}`}>
       {topicMeta && (
         <p className="text-xs text-[var(--color-ink-faint)]">
           {topicMeta.sectionLabel} <ChevronRight size={11} className="inline" /> {topicMeta.topicLabel}
@@ -122,7 +153,7 @@ export default function LearnLessonPage() {
       <div className="mt-6 space-y-5">
         {activePage.blocks.map((block) =>
           block.block_type === "check_understanding" ? (
-            <CheckYourUnderstanding key={block.id} pageId={pageId} checkQuestions={lesson.checkQuestions} />
+            <CheckYourUnderstanding key={block.id} pageId={pageId} checkQuestions={visibleCheckQuestions} progressConceptIds={progressConceptIds} />
           ) : (
             <LearnBlockRenderer key={block.id} block={block} />
           )
@@ -144,17 +175,71 @@ export default function LearnLessonPage() {
         </div>
       )}
 
-      {(isFirstContentPage || isLastContentPage) && (
-        <div className="mt-5 flex items-center justify-between border-t border-[var(--color-line)] pt-5">
-          {isFirstContentPage && adjacent.prev ? (
+      {isWelcome && isLastContentPage && firstLearningLesson && (
+        <div className="mt-8 flex justify-center border-t border-[var(--color-line)] pt-6">
+          <button type="button" onClick={() => navigate(`/student/learn/${firstLearningLesson.id}`)} className="inline-flex items-center gap-2 rounded-md bg-[var(--color-indigo)] px-6 py-3 text-base font-semibold text-white shadow-sm">Let’s learn! <ChevronRight size={17}/></button>
+        </div>
+      )}
+
+      {!isWelcome && (isFirstContentPage || isLastContentPage) && (
+        <div className="mt-5 border-t border-[var(--color-line)] pt-5">
+          {isFirstContentPage && adjacent.prev && !isLastContentPage && (
             <button type="button" onClick={() => navigate(`/student/learn/${adjacent.prev.id}`)} className="flex items-center gap-1 text-sm font-medium text-[var(--color-ink-soft)] hover:text-[var(--color-ink)]">
               <ChevronLeft size={15} /> Previous Concept
             </button>
-          ) : <span />}
-          {isLastContentPage && adjacent.next && (
-            <button type="button" onClick={() => navigate(`/student/learn/${adjacent.next.id}`)} className="flex items-center gap-1 text-sm font-medium text-[var(--color-indigo)]">
-              {adjacent.nextIsNewTopic ? "Next Topic" : "Next Concept"} <ChevronRight size={15} />
-            </button>
+          )}
+
+          {isLastContentPage && (
+            <div className="rounded-lg border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-4 sm:p-5">
+              <p className="text-sm font-semibold text-[var(--color-ink)]">End of this chapter</p>
+              <p className="mt-1 text-xs text-[var(--color-ink-soft)]">Finish to record this lesson in Progress, restart from Page 1, or continue to the next published lesson.</p>
+              <div className="mt-4 flex flex-wrap gap-2.5">
+                <button
+                  type="button"
+                  disabled={finishing || !progressConceptIds.length || progressConceptIds.every((id) => statusFor(id) === "completed")}
+                  onClick={async () => {
+                    setFinishError("");
+                    setFinishing(true);
+                    try {
+                      await markConceptsCompleted(progressConceptIds);
+                    } catch (err) {
+                      console.error("Could not finish mapped Learn lesson", err);
+                      setFinishError(err?.message || "Could not save completion. Please try again.");
+                    } finally {
+                      setFinishing(false);
+                    }
+                  }}
+                  className="flex items-center gap-1.5 rounded-md bg-[var(--color-indigo)] px-4 py-2 text-sm font-semibold text-white disabled:cursor-default disabled:opacity-70"
+                >
+                  <CheckCircle2 size={15} /> {finishing ? "Finishing…" : progressConceptIds.length && progressConceptIds.every((id) => statusFor(id) === "completed") ? "Finished ✓" : "Finish"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    progressConceptIds.forEach((id) => restartConcept(id));
+                    goToContentPage(0);
+                  }}
+                  className="flex items-center gap-1.5 rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] px-4 py-2 text-sm font-semibold text-[var(--color-ink)]"
+                >
+                  <RotateCcw size={15} /> Restart Chapter
+                </button>
+                {adjacent.next && (
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/student/learn/${adjacent.next.id}`)}
+                    className="flex items-center gap-1.5 rounded-md border border-[var(--color-indigo)] px-4 py-2 text-sm font-semibold text-[var(--color-indigo)]"
+                  >
+                    Next Lesson <ChevronRight size={15} />
+                  </button>
+                )}
+              </div>
+              {finishError && (
+                <p role="alert" className="mt-3 text-xs font-medium text-[var(--color-coral)]">{finishError}</p>
+              )}
+              {!progressConceptIds.length && (
+                <p className="mt-3 text-[11px] text-[var(--color-ink-faint)]">Progress tracking will activate when this lesson has at least one valid syllabus code selected in Admin.</p>
+              )}
+            </div>
           )}
         </div>
       )}

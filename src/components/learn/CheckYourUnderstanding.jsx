@@ -3,9 +3,11 @@ import { Lightbulb, Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { submitLearnCheckAnswers } from "../../lib/learnContentService.js";
 import QuestionRenderer from "../../pages/student/solve/QuestionRenderer.jsx";
 import Button from "../ui/Button.jsx";
+import { useLearningProgress } from "../../context/ProgressContext.jsx";
 
-// Optional Learn block. It is intentionally stateless with respect to Assess/Progress.
-export default function CheckYourUnderstanding({ pageId, checkQuestions = [] }) {
+// Optional Learn block. Check attempts feed the existing Learn progress model.
+export default function CheckYourUnderstanding({ pageId, checkQuestions = [], progressConceptIds = [] }) {
+  const { recordCheckAttempt } = useLearningProgress();
   const [started, setStarted] = useState(false);
   const [answers, setAnswers] = useState({});
   const [submitting, setSubmitting] = useState(false);
@@ -26,6 +28,23 @@ export default function CheckYourUnderstanding({ pageId, checkQuestions = [] }) 
       }));
       const data = await submitLearnCheckAnswers(pageId, items);
       setResults(new Map(data.map((r) => [r.item_id, r])));
+
+      // Record real server-marked Check Your Understanding outcomes in the
+      // same progress stream used by the Progress page. Unmarked responses
+      // are not invented as correct/wrong.
+      if (progressConceptIds.length) {
+        const marked = data.filter((r) => typeof r.is_correct === "boolean");
+        const score = marked.length ? Math.round((marked.filter((r) => r.is_correct).length / marked.length) * 100) : 0;
+        for (const conceptId of progressConceptIds) {
+          for (const r of marked) {
+          await recordCheckAttempt(conceptId, {
+            questionId: r.question_id || r.item_id,
+            isCorrect: r.is_correct,
+            score,
+          });
+          }
+        }
+      }
     } catch (err) {
       setSubmitError(err.message || "Could not submit your answers.");
     } finally {
@@ -34,7 +53,7 @@ export default function CheckYourUnderstanding({ pageId, checkQuestions = [] }) 
   }
 
   return (
-    <div className="mt-10 rounded-md border border-[var(--color-indigo)]/25 bg-gradient-to-br from-[var(--color-indigo-soft)] to-[var(--color-paper-raised)] p-6">
+    <div className="light-surface mt-10 rounded-md border border-[#CBD4F6] bg-[#F3F5FD] p-6 text-[#12161C] shadow-sm">
       <div className="flex items-center gap-2">
         <span className="glowing-bulb flex h-8 w-8 items-center justify-center rounded-full bg-[var(--color-amber-soft)]"><Lightbulb size={16} className="text-[var(--color-amber)]" /></span>
         <p className="text-lg font-bold text-[var(--color-ink)]">Check Your Understanding</p>
@@ -79,9 +98,15 @@ export default function CheckYourUnderstanding({ pageId, checkQuestions = [] }) 
 }
 
 function CheckQuestionCard({ index, item, answer, onAnswer, result }) {
-  const question = item.question;
+  const question = item.question || (item.question_text ? {
+    id: item.item_id || item.id,
+    questionText: item.question_text,
+    questionType: String(item.question_type || "").toLowerCase() === "mcq" ? "MCQ" : "Short Response",
+    options: Array.isArray(item.options) ? item.options : [],
+    parts: [],
+  } : null);
   return (
-    <div className="light-surface rounded-md border border-[#DCE1F0] bg-white p-5 text-[#12161C] shadow-sm">
+    <div className="rounded-md border border-[#DCE1F0] bg-[#FFFFFF] p-5 text-[#12161C] shadow-sm">
       {question ? (
         <QuestionRenderer
           question={question}

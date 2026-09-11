@@ -38,7 +38,7 @@ import TeacherProfilePage from "./pages/teacher/TeacherProfilePage.jsx";
 
 import AdminLayout from "./pages/admin/AdminLayout.jsx";
 import AdminDashboard from "./pages/admin/AdminDashboard.jsx";
-import { RoleIndexRedirect, RoleIndexResume } from "./lib/lastRoute.jsx";
+import { RoleIndexRedirect, RoleIndexResume, LearnIndexResume } from "./lib/lastRoute.jsx";
 import AdminResources from "./pages/admin/resources/AdminResources.jsx";
 import AdminLearnContent from "./pages/admin/learn/AdminLearnContent.jsx";
 import LessonEditor from "./pages/admin/learn/LessonEditor.jsx";
@@ -121,12 +121,12 @@ const router = createBrowserRouter([
     path: "/student",
     element: <StudentLayout />,
     children: [
-      { index: true, element: <CurriculumSubjectSelect /> },
+      { index: true, element: <RoleIndexResume role="student" fallbackElement={<CurriculumSubjectSelect />} /> },
       {
         path: "learn",
         element: <LearnLayout />,
         children: [
-          { index: true, element: <LearnCmsHome /> },
+          { index: true, element: <LearnIndexResume fallbackElement={<LearnCmsHome />} /> },
           { path: ":conceptId", element: <LearnLessonPage /> },
         ],
       },

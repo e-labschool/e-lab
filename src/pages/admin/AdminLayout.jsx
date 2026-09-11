@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { NavLink, Outlet } from "react-router-dom";
-import { LayoutDashboard, BookOpen, FolderOpen, HelpCircle, Users, Lock, Settings, Menu, X } from "lucide-react";
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { LayoutDashboard, BookOpen, FolderOpen, HelpCircle, Users, Lock, Settings, Menu, X, ArrowLeft } from "lucide-react";
 import ProtectedRoute from "../../components/auth/ProtectedRoute.jsx";
 import Wordmark from "../../components/layout/Wordmark.jsx";
 import AccountMenu from "../../components/auth/AccountMenu.jsx";
@@ -49,14 +49,15 @@ function SidebarNav({ onNavigate }) {
 
 function AdminChrome() {
   useTrackLastRoute("admin");
+  const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex h-screen overflow-hidden">
       {/* Desktop sidebar */}
       <aside
-        className={`hidden shrink-0 flex-col border-r border-[var(--color-line)] bg-[var(--color-paper-raised)] transition-[width] duration-200 md:flex ${collapsed ? "w-16" : "w-60"}`}
+        className={`hidden h-screen shrink-0 flex-col border-r border-[var(--color-line)] bg-[var(--color-paper-raised)] transition-[width] duration-200 md:flex ${collapsed ? "w-16" : "w-60"}`}
       >
         <div className="flex h-16 items-center justify-between border-b border-[var(--color-line)] px-4">
           {!collapsed && (
@@ -98,7 +99,7 @@ function AdminChrome() {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-16 items-center justify-between border-b border-[var(--color-line)] bg-[var(--color-paper)] px-4">
+        <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center justify-between border-b border-[var(--color-line)] bg-[var(--color-paper)] px-4">
           <button
             type="button"
             onClick={() => setMobileOpen(true)}
@@ -107,7 +108,7 @@ function AdminChrome() {
           >
             <Menu size={18} />
           </button>
-          <div className="hidden md:block" />
+          <button type="button" onClick={() => navigate(-1)} className="inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm font-semibold text-[var(--color-ink-soft)] hover:bg-[var(--color-line)]/30 hover:text-[var(--color-ink)]"><ArrowLeft size={16}/> Back</button>
           <div className="flex items-center gap-3">
             <ThemeToggle />
             <AccountMenu />

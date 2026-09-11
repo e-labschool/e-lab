@@ -1,5 +1,6 @@
 import { LEVELS, PAPERS, SYLLABUS_SECTIONS, DIFFICULTIES, QUESTION_TYPES, STATUSES } from "../data/questions/schema.js";
 import { getLearnTree } from "./learn-tree.js";
+import { getAllConcepts } from "../data/concepts/index.js";
 import { validateStimulus } from "./stimulusSchema.js";
 import { normalizeStimulus } from "./normalizeStimulus.js";
 
@@ -14,7 +15,9 @@ const IMPORT_STATUSES = [...STATUSES, "archived"];
  * never a second, hand-maintained concept list. */
 export function getAllConceptIds() {
   const tree = getLearnTree();
-  return tree.sections.flatMap((s) => s.topics.flatMap((t) => t.subtopics.flatMap((sub) => sub.concepts.map((c) => c.id))));
+  const syllabusIds = tree.sections.flatMap((s) => s.topics.flatMap((t) => t.subtopics.flatMap((sub) => sub.concepts.map((c) => c.id))));
+  const legacyConceptIds = getAllConcepts().map((concept) => concept.id);
+  return [...new Set([...legacyConceptIds, ...syllabusIds])];
 }
 
 const REQUIRED_STRING_FIELDS = [
