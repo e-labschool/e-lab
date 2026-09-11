@@ -115,7 +115,6 @@ export default function ChallengeBuilder() {
                   <button key={m} type="button" onClick={() => setMode(m)} className={`flex-1 rounded-md border px-2 py-1.5 text-xs font-semibold ${mode === m ? "border-[var(--color-indigo)] bg-[var(--color-indigo-soft)] text-[var(--color-indigo)]" : "border-[var(--color-line)] text-[var(--color-ink-soft)]"}`}>
                     {m === "questions" ? "By Questions" : "By Time"}
                   </button>
-                  );
                 })}
               </div>
               {mode === "questions" ? (
