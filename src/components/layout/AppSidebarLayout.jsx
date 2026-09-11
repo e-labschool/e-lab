@@ -5,6 +5,7 @@ import AccountMenu from "../auth/AccountMenu.jsx";
 import ThemeToggle from "./ThemeToggle.jsx";
 import { ArrowLeft } from "lucide-react";
 import DisplaySettingsButton from "./DisplaySettingsButton.jsx";
+import SiteSearch from "./SiteSearch.jsx";
 import { useDisplaySettings } from "../../context/DisplaySettingsContext.jsx";
 
 // Shared by StudentLayout and TeacherLayout.
@@ -28,7 +29,10 @@ function TopTabBar({ tabs, accentHex, role }) {
         <nav className="flex min-w-0 flex-1 gap-1 overflow-x-auto">
           {tabs.map((tab) => <NavLink key={tab.to} to={tab.to} end={tab.end} className={({isActive})=>`flex shrink-0 items-center gap-2 border-b-2 px-4 py-5 text-[15px] font-semibold transition-colors ${isActive ? "border-current text-white" : "border-transparent text-[#8C97B8] hover:text-white"}`} style={({isActive})=>isActive?{color:"#fff",borderColor:accentHex}:undefined}><tab.icon size={17}/>{tab.label}</NavLink>)}
         </nav>
-        <div className="flex shrink-0 items-center gap-2 text-white"><span className="hidden text-xs font-medium capitalize text-[#AAB3CE] sm:inline">{role}</span><DisplaySettingsButton/><ThemeToggle/><AccountMenu/></div>
+        <div className="flex shrink-0 items-center gap-2 text-white">
+          <SiteSearch role={role} />
+          <span className="hidden text-xs font-medium capitalize text-[#AAB3CE] sm:inline">{role}</span><DisplaySettingsButton/><ThemeToggle/><AccountMenu/>
+        </div>
       </div>
     </div>
   );

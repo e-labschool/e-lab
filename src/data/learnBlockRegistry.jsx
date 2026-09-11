@@ -30,7 +30,7 @@ export const BLOCK_TYPES = {
   definition: { label: "Definition", category: "teaching", icon: BookMarked, defaultContent: { term: "", definition: "" } },
   common_mistake: { label: "Common Mistakes / Misunderstandings", category: "teaching", icon: AlertTriangle, defaultContent: { text: "" } },
   real_life: { label: "Real-Life Connection", category: "teaching", icon: Globe2, defaultContent: { title: "", content: "", imageUrl: "" } },
-  worked_example: { label: "Worked Example", category: "teaching", icon: ListChecks, defaultContent: { question: "", steps: [], finalAnswer: "" } },
+  worked_example: { label: "Worked Example", category: "teaching", icon: ListChecks, defaultContent: { question: "", solution: "" } },
   data_graph: { label: "Data / Graph", category: "teaching", icon: BarChart3, defaultContent: { title: "", rows: [], explanation: "", prompt: "" } },
   compare_contrast: { label: "Compare & Contrast", category: "teaching", icon: Columns2, defaultContent: { title: "", displayMode: "inline", columns: [{ title: "", content: "" }, { title: "", content: "" }] } },
   reveal_think: { label: "Reveal / Think", category: "teaching", icon: HelpCircle, defaultContent: { prompt: "", reveal: "" } },
@@ -54,6 +54,7 @@ export const SIMULATION_REGISTRY = {
   "explore-matter-and-states": { label: "Explore Matter & States" },
   "particle-model-visualizer": { label: "Particle Model Visualizer" },
   "phase-change-heating-curve": { label: "Phase Change & Heating Curve" },
+  "ph-calculator-visualizer": { label: "pH Calculator & Visualizer" },
 };
 
 // Strips HTML tags for a safe plain-text preview — never renders HTML
@@ -133,6 +134,19 @@ const inputCls = "w-full rounded-md border border-[var(--color-line)] bg-[var(--
 const labelCls = "mb-1 block text-xs font-medium text-[var(--color-ink-soft)]";
 const equationInputPaste = (value, setter) => (e) => pasteEquationFriendly(e, value, setter);
 
+/** Worked Example used to store { question, steps: [...], finalAnswer } —
+ * now it's just { question, solution }. Old blocks are never rewritten in
+ * place; this combines them into one solution string on the fly, both for
+ * showing existing content in the (now single-field) editor and for
+ * rendering it to students, so nothing old ever disappears. */
+export function getWorkedExampleSolution(content) {
+  if (content?.solution) return content.solution;
+  const stepLines = (content?.steps ?? []).filter(Boolean);
+  const parts = [...stepLines];
+  if (content?.finalAnswer) parts.push(`Final answer: ${content.finalAnswer}`);
+  return parts.join("\n");
+}
+
 /** Converts simple chemistry markup (H_2O, SO_4^2-) into safe HTML with
  * real <sub>/<sup> tags — avoids a heavy LaTeX/MathJax dependency while
  * still covering formulae, charges, and isotope notation. */
@@ -148,47 +162,187 @@ export function renderChemMarkup(markup) {
  * formatting without pulling in a WYSIWYG library. Output is sanitized
  * with DOMPurify (already an existing dependency) before ever being
  * rendered to a student. */
+const FONT_SIZES = [12, 14, 16, 18, 20, 24, 28, 32];
+const FONT_FAMILIES = [
+  { label: "Default", value: "inherit" },
+  { label: "Arial", value: "Arial, Helvetica, sans-serif" },
+  { label: "Georgia", value: "Georgia, 'Times New Roman', serif" },
+  { label: "Times New Roman", value: "'Times New Roman', Times, serif" },
+  { label: "Verdana", value: "Verdana, Geneva, sans-serif" },
+  { label: "Trebuchet MS", value: "'Trebuchet MS', sans-serif" },
+];
+const QUICK_COLOURS = [
+  ["#12161c", "Dark"], ["#3654D6", "Indigo"], ["#2B7A6E", "Teal"],
+  ["#B7791F", "Amber"], ["#B85C4A", "Coral"], ["#6D3FA3", "Violet"],
+];
+
+/** The old implementation called document.execCommand("foreColor"/etc)
+ * directly from a native <input type="color">'s onChange. That's the bug:
+ * opening the native colour picker (or any <select>) steals focus from
+ * the contentEditable, and by the time onChange fires the browser has
+ * already collapsed/lost the text selection that was supposed to be
+ * coloured — execCommand then has nothing to apply to, or applies to
+ * whatever the caret happens to be sitting at instead. The fix is to
+ * capture (clone) the Range the moment the toolbar control is about to
+ * steal focus (onMouseDown, which fires before that happens), then
+ * restore it right before running the actual command. Font size/family
+ * apply via a real inline-styled <span> instead of execCommand, since
+ * execCommand("fontSize") only understands the legacy 1-7 HTML sizes, not
+ * arbitrary px values.
+ */
+/** Word/Google Docs paste into the rich-text editor often carries a lot of
+ * MSO-specific markup bloat alongside the actual formatting. Rather than
+ * letting the browser insert that raw, or stripping it down to plain text
+ * (which would lose real <sub>/<sup> subscripts/superscripts — those
+ * render natively fine in a contentEditable, unlike the plain-textarea
+ * EquationFriendlyField fields elsewhere), we sanitize the pasted HTML
+ * through the exact same DOMPurify pass used for final student rendering
+ * and insert that. Anything that wouldn't survive rendering doesn't get
+ * into the editor in the first place, and everything that's actually
+ * chemistry-relevant (sub/sup, bold, arrows, unicode symbols, line
+ * breaks) comes through untouched. Plain-text paste (no HTML on the
+ * clipboard) is left to the browser's normal behaviour, which already
+ * preserves unicode characters correctly. */
+function richTextPaste(event) {
+  const html = event.clipboardData?.getData("text/html");
+  if (!html) return;
+  event.preventDefault();
+  document.execCommand("insertHTML", false, sanitizeHtml(html));
+}
+
 export function RichTextEditor({ value, onChange }) {
-  function exec(command, arg) {
-    document.execCommand(command, false, arg);
+  const editorRef = useRef(null);
+  const savedRangeRef = useRef(null);
+
+  function saveSelection() {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || !editorRef.current) return;
+    const range = sel.getRangeAt(0);
+    if (editorRef.current.contains(range.commonAncestorContainer)) {
+      savedRangeRef.current = range.cloneRange();
+    }
   }
+
+  function restoreSelection() {
+    if (!savedRangeRef.current || !editorRef.current) return;
+    editorRef.current.focus();
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(savedRangeRef.current);
+  }
+
+  function exec(command, arg) {
+    restoreSelection();
+    document.execCommand(command, false, arg);
+    saveSelection();
+  }
+
   function handleLink() {
+    restoreSelection();
     const url = window.prompt("Link URL");
     if (url) exec("createLink", url);
   }
+
+  function applyInlineStyle(styleProp, styleValue) {
+    restoreSelection();
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || !editorRef.current) return;
+    const range = sel.getRangeAt(0);
+    if (!editorRef.current.contains(range.commonAncestorContainer)) return;
+
+    const span = document.createElement("span");
+    span.style[styleProp] = styleValue;
+
+    if (range.collapsed) {
+      // Nothing highlighted — apply to a zero-width marker so whatever is
+      // typed next inherits it, per "current typing position".
+      span.appendChild(document.createTextNode("\u200B"));
+      range.insertNode(span);
+      const newRange = document.createRange();
+      newRange.setStart(span.firstChild, 1);
+      newRange.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(newRange);
+      savedRangeRef.current = newRange.cloneRange();
+    } else {
+      try {
+        range.surroundContents(span);
+      } catch {
+        const frag = range.extractContents();
+        span.appendChild(frag);
+        range.insertNode(span);
+      }
+      const newRange = document.createRange();
+      newRange.selectNodeContents(span);
+      sel.removeAllRanges();
+      sel.addRange(newRange);
+      savedRangeRef.current = newRange.cloneRange();
+    }
+    editorRef.current.focus();
+  }
+
   return (
     <div>
-      <div className="mb-1.5 flex flex-wrap gap-1 rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] p-1">
+      <div className="mb-1.5 flex flex-wrap items-center gap-1 rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] p-1">
         {[["Bold", "bold", "B"], ["Italic", "italic", "I"], ["Underline", "underline", "U"]].map(([t, cmd, label]) => (
-          <button key={cmd} type="button" title={t} onMouseDown={(e) => e.preventDefault()} onClick={() => exec(cmd)} className="rounded px-2 py-1 text-xs font-semibold hover:bg-[var(--color-line)]/40">{label}</button>
+          <button key={cmd} type="button" title={t} onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={() => exec(cmd)} className="rounded px-2 py-1 text-xs font-semibold hover:bg-[var(--color-line)]/40">{label}</button>
         ))}
-        <button type="button" title="Heading" onMouseDown={(e) => e.preventDefault()} onClick={() => exec("formatBlock", "h3")} className="rounded px-2 py-1 text-xs font-semibold hover:bg-[var(--color-line)]/40">H</button>
-        <button type="button" title="Subheading" onMouseDown={(e) => e.preventDefault()} onClick={() => exec("formatBlock", "h4")} className="rounded px-2 py-1 text-xs font-semibold hover:bg-[var(--color-line)]/40">h</button>
-        <button type="button" title="Paragraph" onMouseDown={(e) => e.preventDefault()} onClick={() => exec("formatBlock", "p")} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">P</button>
-        <button type="button" title="Bullet list" onMouseDown={(e) => e.preventDefault()} onClick={() => exec("insertUnorderedList")} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">\u2022 List</button>
-        <button type="button" title="Numbered list" onMouseDown={(e) => e.preventDefault()} onClick={() => exec("insertOrderedList")} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">1. List</button>
-        <button type="button" title="Superscript" onMouseDown={(e) => e.preventDefault()} onClick={() => exec("superscript")} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">x\u00b2</button>
-        <button type="button" title="Subscript" onMouseDown={(e) => e.preventDefault()} onClick={() => exec("subscript")} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">x\u2082</button>
-        <button type="button" title="Align left" onMouseDown={(e) => e.preventDefault()} onClick={() => exec("justifyLeft")} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">\u2261L</button>
-        <button type="button" title="Align center" onMouseDown={(e) => e.preventDefault()} onClick={() => exec("justifyCenter")} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">\u2261C</button>
-        <button type="button" title="Link" onMouseDown={(e) => e.preventDefault()} onClick={handleLink} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">Link</button>
+        <button type="button" title="Heading" onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={() => exec("formatBlock", "h3")} className="rounded px-2 py-1 text-xs font-semibold hover:bg-[var(--color-line)]/40">H</button>
+        <button type="button" title="Subheading" onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={() => exec("formatBlock", "h4")} className="rounded px-2 py-1 text-xs font-semibold hover:bg-[var(--color-line)]/40">h</button>
+        <button type="button" title="Paragraph" onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={() => exec("formatBlock", "p")} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">P</button>
+        <button type="button" title="Bullet list" onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={() => exec("insertUnorderedList")} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">\u2022 List</button>
+        <button type="button" title="Numbered list" onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={() => exec("insertOrderedList")} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">1. List</button>
+        <button type="button" title="Superscript" onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={() => exec("superscript")} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">x\u00b2</button>
+        <button type="button" title="Subscript" onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={() => exec("subscript")} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">x\u2082</button>
+        <button type="button" title="Align left" onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={() => exec("justifyLeft")} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">\u2261L</button>
+        <button type="button" title="Align center" onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={() => exec("justifyCenter")} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">\u2261C</button>
+        <button type="button" title="Link" onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={handleLink} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">Link</button>
+
+        <span className="mx-1 h-5 w-px bg-[var(--color-line)]" />
+
+        <select
+          title="Font size"
+          aria-label="Font size"
+          defaultValue=""
+          onMouseDown={saveSelection}
+          onChange={(e) => { if (e.target.value) applyInlineStyle("fontSize", `${e.target.value}px`); }}
+          className="rounded border border-[var(--color-line)] bg-[var(--color-paper-raised)] px-1 py-1 text-[11px] text-[var(--color-ink-soft)]"
+        >
+          <option value="">Size</option>
+          {FONT_SIZES.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+
+        <select
+          title="Font family"
+          aria-label="Font family"
+          defaultValue=""
+          onMouseDown={saveSelection}
+          onChange={(e) => { if (e.target.value) applyInlineStyle("fontFamily", e.target.value); }}
+          className="max-w-[7.5rem] rounded border border-[var(--color-line)] bg-[var(--color-paper-raised)] px-1 py-1 text-[11px] text-[var(--color-ink-soft)]"
+        >
+          <option value="">Font</option>
+          {FONT_FAMILIES.map((f) => <option key={f.label} value={f.value}>{f.label}</option>)}
+        </select>
+
         <span className="mx-1 h-5 w-px bg-[var(--color-line)]" />
         <span className="px-1 text-[11px] text-[var(--color-ink-soft)]">Colour</span>
-        {[
-          ["#12161c", "Dark"], ["#3654D6", "Indigo"], ["#2B7A6E", "Teal"],
-          ["#B7791F", "Amber"], ["#B85C4A", "Coral"], ["#6D3FA3", "Violet"],
-        ].map(([colour, name]) => (
-          <button key={colour} type="button" title={name} aria-label={`Text colour ${name}`} onMouseDown={(e) => e.preventDefault()} onClick={() => exec("foreColor", colour)} className="h-5 w-5 rounded-full border border-black/10" style={{ backgroundColor: colour }} />
+        {QUICK_COLOURS.map(([colour, name]) => (
+          <button key={colour} type="button" title={name} aria-label={`Text colour ${name}`} onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={() => applyInlineStyle("color", colour)} className="h-5 w-5 rounded-full border border-black/10" style={{ backgroundColor: colour }} />
         ))}
         <label className="flex items-center gap-1 px-1 text-[11px] text-[var(--color-ink-soft)]" title="Custom text colour">
           Custom
-          <input type="color" defaultValue="#12161c" onChange={(e) => exec("foreColor", e.target.value)} className="h-6 w-7 cursor-pointer rounded border border-[var(--color-line)] bg-transparent p-0.5" />
+          <input type="color" defaultValue="#12161c" onMouseDown={saveSelection} onChange={(e) => applyInlineStyle("color", e.target.value)} className="h-6 w-7 cursor-pointer rounded border border-[var(--color-line)] bg-transparent p-0.5" />
         </label>
-        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => exec("removeFormat")} className="rounded px-2 py-1 text-[11px] text-[var(--color-ink-soft)] hover:bg-[var(--color-line)]/40">Clear style</button>
+
+        <button type="button" onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={() => exec("removeFormat")} className="rounded px-2 py-1 text-[11px] text-[var(--color-ink-soft)] hover:bg-[var(--color-line)]/40">Clear style</button>
       </div>
       <div
+        ref={editorRef}
         contentEditable
         suppressContentEditableWarning
+        onMouseUp={saveSelection}
+        onKeyUp={saveSelection}
+        onPaste={richTextPaste}
         className="min-h-[100px] rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] px-3 py-2 text-sm text-[var(--color-ink)] focus:border-[var(--color-indigo)] focus:outline-none [&_h3]:text-lg [&_h3]:font-bold [&_h4]:text-base [&_h4]:font-semibold [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-[var(--color-indigo)] [&_a]:underline"
         dangerouslySetInnerHTML={{ __html: value }}
         onBlur={(e) => onChange(e.currentTarget.innerHTML)}
@@ -211,7 +365,7 @@ export function BlockEditor({ blockType, content, onChange, pageId, blockId }) {
           <div>
             <label className={labelCls}>Title <span className="text-[var(--color-ink-faint)]">(optional)</span></label>
             <div className="flex gap-2">
-              <input className={inputCls} value={content.title ?? ""} onChange={(e) => set("title", e.target.value)} placeholder="Section title" />
+              <input className={inputCls} value={content.title ?? ""} onChange={(e) => set("title", e.target.value)} onPaste={equationInputPaste(content.title ?? "", (value) => set("title", value))} placeholder="Section title" />
               <label className="flex shrink-0 items-center gap-1 text-xs text-[var(--color-ink-soft)]">Colour <input type="color" value={content.titleColor || "#12161c"} onChange={(e) => set("titleColor", e.target.value)} className="h-9 w-10 rounded border border-[var(--color-line)] bg-transparent p-1" /></label>
             </div>
           </div>
@@ -226,7 +380,7 @@ export function BlockEditor({ blockType, content, onChange, pageId, blockId }) {
       return (
         <div className="space-y-2">
           <LearnMediaInput kind="image" pageId={pageId} blockId={blockId} url={content.url ?? ""} onUrlChange={(url) => set("url", url)} label="Image" />
-          <div><label className={labelCls}>Caption</label><input className={inputCls} value={content.caption} onChange={(e) => set("caption", e.target.value)} /></div>
+          <div><label className={labelCls}>Caption</label><input className={inputCls} value={content.caption} onChange={(e) => set("caption", e.target.value)} onPaste={equationInputPaste(content.caption ?? "", (value) => set("caption", value))} /></div>
           <div><label className={labelCls}>Alt text</label><input className={inputCls} value={content.alt} onChange={(e) => set("alt", e.target.value)} /></div>
           <div className="grid grid-cols-2 gap-2">
             <div><label className={labelCls}>Alignment</label><select className={inputCls} value={content.alignment} onChange={(e) => set("alignment", e.target.value)}><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></div>
@@ -239,7 +393,7 @@ export function BlockEditor({ blockType, content, onChange, pageId, blockId }) {
       return (
         <div className="space-y-2">
           <LearnMediaInput kind="video" pageId={pageId} blockId={blockId} url={content.url ?? ""} onUrlChange={(url) => set("url", url)} label="Video" />
-          <div><label className={labelCls}>Caption</label><input className={inputCls} value={content.caption} onChange={(e) => set("caption", e.target.value)} /></div>
+          <div><label className={labelCls}>Caption</label><input className={inputCls} value={content.caption} onChange={(e) => set("caption", e.target.value)} onPaste={equationInputPaste(content.caption ?? "", (value) => set("caption", value))} /></div>
           <div className="grid grid-cols-2 gap-2">
             <div><label className={labelCls}>Alignment</label><select className={inputCls} value={content.alignment || "center"} onChange={(e) => set("alignment", e.target.value)}><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></div>
             <div><label className={labelCls}>Width</label><select className={inputCls} value={content.width || "large"} onChange={(e) => set("width", e.target.value)}><option value="small">50%</option><option value="medium">70%</option><option value="large">85%</option><option value="full">100%</option></select></div>
@@ -323,7 +477,7 @@ export function BlockEditor({ blockType, content, onChange, pageId, blockId }) {
     case "definition":
       return (
         <div className="space-y-2">
-          <div><label className={labelCls}>Term</label><input className={inputCls} value={content.term} onChange={(e) => set("term", e.target.value)} /></div>
+          <div><label className={labelCls}>Term</label><input className={inputCls} value={content.term} onChange={(e) => set("term", e.target.value)} onPaste={equationInputPaste(content.term ?? "", (value) => set("term", value))} /></div>
           <div><label className={labelCls}>Definition</label><EquationFriendlyField className={inputCls} rows={2} value={content.definition} onChange={(value) => set("definition", value)} /></div>
         </div>
       );
@@ -331,7 +485,7 @@ export function BlockEditor({ blockType, content, onChange, pageId, blockId }) {
     case "real_life":
       return (
         <div className="space-y-2">
-          <div><label className={labelCls}>Title</label><input className={inputCls} value={content.title} onChange={(e) => set("title", e.target.value)} /></div>
+          <div><label className={labelCls}>Title</label><input className={inputCls} value={content.title} onChange={(e) => set("title", e.target.value)} onPaste={equationInputPaste(content.title ?? "", (value) => set("title", value))} /></div>
           <div><label className={labelCls}>Content</label><EquationFriendlyField className={inputCls} rows={3} value={content.content} onChange={(value) => set("content", value)} /></div>
           <LearnMediaInput kind="image" pageId={pageId} blockId={blockId} url={content.imageUrl ?? ""} onUrlChange={(url) => set("imageUrl", url)} label="Optional image" />
         </div>
@@ -372,26 +526,22 @@ export function BlockEditor({ blockType, content, onChange, pageId, blockId }) {
 }
 
 function WorkedExampleEditor({ content, set }) {
-  function updateStep(i, value) {
-    const steps = [...content.steps];
-    steps[i] = value;
-    set("steps", steps);
-  }
+  // Migration is a read-time concern, not a write-time one — we never
+  // silently rewrite an old block's stored shape just by opening the
+  // editor. The Solution field shows the combined text (old steps +
+  // final answer, if that's what this block still has); once the admin
+  // edits it, it's saved into the new `solution` field going forward.
+  // The old `steps`/`finalAnswer` values, if any, are simply left alone
+  // in the stored content — harmless, and no longer read once `solution`
+  // has a value.
+  const solutionValue = content.solution ?? getWorkedExampleSolution(content);
   return (
     <div className="space-y-2">
       <div><label className={labelCls}>Question / Problem</label><EquationFriendlyField className={inputCls} rows={2} value={content.question} onChange={(value) => set("question", value)} /></div>
       <div>
-        <label className={labelCls}>Steps</label>
-        {content.steps.map((step, i) => (
-          <div key={i} className="mb-1.5 flex gap-2">
-            <span className="mt-2 text-xs text-[var(--color-ink-faint)]">{i + 1}.</span>
-            <EquationFriendlyField className={inputCls} rows={1} value={step} onChange={(value) => updateStep(i, value)} />
-            <button type="button" onClick={() => set("steps", content.steps.filter((_, j) => j !== i))} className="text-xs text-[var(--color-coral)]">Remove</button>
-          </div>
-        ))}
-        <button type="button" onClick={() => set("steps", [...content.steps, ""])} className="text-xs font-medium text-[var(--color-indigo)]">+ Add step</button>
+        <label className={labelCls}>Solution</label>
+        <EquationFriendlyField className={inputCls} rows={6} value={solutionValue} onChange={(value) => set("solution", value)} placeholder={"Paste or type the full worked solution, with line breaks preserved — e.g.\npH = \u2212log\u2081\u2080[H\u2083O\u207A]\npH = \u2212log\u2081\u2080(2.5 \u00d7 10\u207B\u00b3)\npH = 2.60"} />
       </div>
-      <div><label className={labelCls}>Final Answer</label><input className={inputCls} value={content.finalAnswer} onChange={(e) => set("finalAnswer", e.target.value)} /></div>
     </div>
   );
 }
@@ -577,7 +727,7 @@ function CompareContrastEditor({ content, set }) {
         <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Or build comparison cards manually</p>
         {(content.columns ?? []).map((col, i) => (
           <div key={i} className="rounded-md border border-[var(--color-line)] p-2">
-            <input className={`${inputCls} mb-1.5 font-medium`} placeholder="Column title" value={col.title} onChange={(e) => updateColumn(i, "title", e.target.value)} />
+            <input className={`${inputCls} mb-1.5 font-medium`} placeholder="Column title" value={col.title} onChange={(e) => updateColumn(i, "title", e.target.value)} onPaste={equationInputPaste(col.title ?? "", (value) => updateColumn(i, "title", value))} />
             <EquationFriendlyField className={inputCls} rows={2} placeholder="Content" value={col.content} onChange={(value) => updateColumn(i, "content", value)} />
             {(content.columns ?? []).length > 2 && <button type="button" onClick={() => set("columns", content.columns.filter((_, j) => j !== i))} className="mt-1 text-xs text-[var(--color-coral)]">Remove column</button>}
           </div>

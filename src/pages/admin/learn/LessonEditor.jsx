@@ -733,7 +733,7 @@ function ManualQuestionForm({ initial, editing, pageId, mediaKey, onSave, onCanc
             <div className="mt-3 space-y-2">
               <img src={stimulus.src} alt={stimulus.alt || "Question preview"} className="max-h-52 rounded-md border border-[var(--color-line)] bg-white object-contain" />
               <div><label className={labelCls}>Alt Text</label><input className={inputCls} value={stimulus.alt || ""} onChange={(e) => setStimulus((prev) => ({ ...prev, alt: e.target.value }))} placeholder="Describe the image for accessibility" /></div>
-              <div><label className={labelCls}>Caption <span className="text-[var(--color-ink-faint)]">(optional)</span></label><input className={inputCls} value={stimulus.caption || ""} onChange={(e) => setStimulus((prev) => ({ ...prev, caption: e.target.value }))} /></div>
+              <div><label className={labelCls}>Caption <span className="text-[var(--color-ink-faint)]">(optional)</span></label><input className={inputCls} value={stimulus.caption || ""} onChange={(e) => setStimulus((prev) => ({ ...prev, caption: e.target.value }))} onPaste={(e) => pasteEquationFriendly(e, stimulus.caption || "", (value) => setStimulus((prev) => ({ ...prev, caption: value })))} /></div>
             </div>
           )}
         </div>

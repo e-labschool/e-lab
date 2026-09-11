@@ -42,6 +42,16 @@ const resources = [
     component: () => import("../engines/phase-change-heating-curve/PhaseChangeHeatingCurve.jsx"),
   },
   {
+    id: "ph-calculator-visualizer",
+    title: "pH Calculator & Visualizer",
+    resourceType: "calculator",
+    categories: ["visualize","practice"],
+    status: "live", // live | in-development | planned
+    description: "An interactive pH = -log10[H3O+] calculator with a logarithmic concentration slider, a labeled pH scale, and a compact factor-of-10 reference.",
+    conceptIds: ["ph-scale"],
+    component: () => import("../engines/ph-calculator-visualizer/PHCalculatorVisualizer.jsx"),
+  },
+  {
     id: "explore-matter-and-states",
     title: "Explore Matter & States",
     subtitle: "Teacher-led visual exploration",
