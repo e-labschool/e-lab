@@ -6,7 +6,6 @@ import { AuthProvider } from "./context/AuthContext.jsx";
 import { SettingsProvider } from "./context/SettingsContext.jsx";
 import { ProgressProvider } from "./context/ProgressContext.jsx";
 import { PreferencesProvider } from "./context/PreferencesContext.jsx";
-import { DisplaySettingsProvider } from "./context/DisplaySettingsContext.jsx";
 import router from "./router.jsx";
 
 export default function App() {
@@ -18,9 +17,7 @@ export default function App() {
             <AuthProvider>
               <ProgressProvider>
                 <PreferencesProvider>
-                  <DisplaySettingsProvider>
-                    <RouterProvider router={router} />
-                  </DisplaySettingsProvider>
+                  <RouterProvider router={router} />
                 </PreferencesProvider>
               </ProgressProvider>
             </AuthProvider>

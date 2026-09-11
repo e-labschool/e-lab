@@ -2,8 +2,6 @@ import { supabase } from "./supabaseClient.js";
 import { getLearnTree, summarizeProgress } from "./learn-tree.js";
 import { getStreak } from "./challengeService.js";
 import { PROGRESS_CONFIG, classifyTopic } from "./progressConfig.js";
-import { getSyllabusPointLevel } from "../data/curricula/dp-chemistry/syllabus-points-2025.js";
-import { normalizeStudentLevel } from "./learnLevelAccess.js";
 
 // Nothing here stores a standalone "progress percentage" — every number
 // is computed fresh from the same two existing tables the rest of the app
@@ -12,8 +10,7 @@ import { normalizeStudentLevel } from "./learnLevelAccess.js";
 // table, no new migration — both already exist with compatible curriculum
 // codes ("S1.1", "R2.2", ...), confirmed by inspection before writing this.
 
-function buildSubtopicIndex(studentLevel = "SL") {
-  const learner = normalizeStudentLevel(studentLevel);
+function buildSubtopicIndex() {
   const tree = getLearnTree();
   const subtopics = []; // { code, label, topicCode, topicLabel, conceptIds }
   const topics = []; // { code, label, subtopicCodes }
@@ -22,8 +19,7 @@ function buildSubtopicIndex(studentLevel = "SL") {
       const subtopicCodes = topic.subtopics.map((s) => s.code);
       topics.push({ code: topic.code, label: topic.label, subtopicCodes });
       for (const sub of topic.subtopics) {
-        const conceptIds = sub.concepts.map((c) => c.id).filter((id) => learner === "HL" || getSyllabusPointLevel(id) !== "HL");
-        subtopics.push({ code: sub.code, label: sub.label, topicCode: topic.code, topicLabel: topic.label, conceptIds });
+        subtopics.push({ code: sub.code, label: sub.label, topicCode: topic.code, topicLabel: topic.label, conceptIds: sub.concepts.map((c) => c.id) });
       }
     }
   }
@@ -50,8 +46,8 @@ function aggregateAssessment(rows) {
   };
 }
 
-export async function getProgressOverview(studentLevel = "SL") {
-  const { subtopics, topics } = buildSubtopicIndex(studentLevel);
+export async function getProgressOverview() {
+  const { subtopics, topics } = buildSubtopicIndex();
 
   if (!supabase) {
     return emptyOverview(subtopics, topics);

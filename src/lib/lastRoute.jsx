@@ -44,12 +44,3 @@ export function RoleIndexResume({ role, fallbackElement }) {
   if (remembered) return <Navigate to={remembered} replace />;
   return fallbackElement;
 }
-
-/** Student Learn index resume: when the user explicitly returns to the Learn tab,
- * reopen the last lesson they studied. First-time users still see LearnCmsHome. */
-export function LearnIndexResume({ fallbackElement }) {
-  const { user } = useAuth();
-  const lessonId = user?.id ? loadUserScopedValue(user.id, "learn:last-lesson", null) : null;
-  if (lessonId) return <Navigate to={`/student/learn/${lessonId}`} replace />;
-  return fallbackElement;
-}

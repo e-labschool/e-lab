@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Outlet, useParams, useOutletContext } from "react-router-dom";
 import { PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
 import CurriculumSidebar from "./LearnCmsSidebar.jsx";
@@ -13,10 +13,7 @@ import { usePreferences } from "../../context/PreferencesContext.jsx";
 export default function LearnLayout() {
   const { conceptId } = useParams();
   const { subject } = useOutletContext();
-  const { sidebarCollapsed: savedSidebarCollapsed, setSidebarCollapsed } = usePreferences();
-  const [sidebarCollapsed, setLocalSidebarCollapsed] = useState(savedSidebarCollapsed);
-  useEffect(() => setLocalSidebarCollapsed(savedSidebarCollapsed), [savedSidebarCollapsed]);
-  const toggleSidebar = () => { const next = !sidebarCollapsed; setLocalSidebarCollapsed(next); setSidebarCollapsed(next); };
+  const { sidebarCollapsed, setSidebarCollapsed } = usePreferences();
   const [mobileOpen, setMobileOpen] = useState(false);
   const basePath = "/student/learn";
 
@@ -36,7 +33,7 @@ export default function LearnLayout() {
       {/* Collapse/reopen edge button — desktop/tablet only */}
       <button
         type="button"
-        onClick={toggleSidebar}
+        onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
         aria-label={sidebarCollapsed ? "Show curriculum panel" : "Hide curriculum panel"}
         className="sticky top-20 hidden h-8 w-8 shrink-0 -translate-x-1/2 items-center justify-center self-start rounded-full border border-[var(--color-line)] bg-[var(--color-paper-raised)] text-[var(--color-ink-faint)] shadow-sm hover:text-[var(--color-ink)] md:flex"
       >

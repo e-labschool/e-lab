@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useSearchParams, useNavigate } from "react-router-dom";
 import {
-  ChevronLeft, Plus, Loader2, GripVertical, Copy, Eye, EyeOff, Trash2, Search, X, ArrowUp, ArrowDown, Pencil, Undo2, Redo2, SlidersHorizontal,
+  ChevronLeft, Plus, Loader2, GripVertical, Copy, Eye, EyeOff, Trash2, Search, X, ArrowUp, ArrowDown, Pencil,
 } from "lucide-react";
 import { getFlatParentTopics } from "../../../data/learnCmsCurriculum.js";
 import {
@@ -17,14 +17,10 @@ import LearnBlockRenderer from "../../../components/learn/LearnBlockRenderer.jsx
 import CheckYourUnderstanding from "../../../components/learn/CheckYourUnderstanding.jsx";
 import Button from "../../../components/ui/Button.jsx";
 import LearnMediaInput from "../../../components/admin/LearnMediaInput.jsx";
-import EquationFriendlyField, { pasteEquationFriendly } from "../../../components/admin/EquationFriendlyField.jsx";
 import Badge from "../../../components/ui/Badge.jsx";
 import { splitLearnBlocksIntoPages } from "../../../lib/learnPagination.js";
 import { useAuth } from "../../../context/AuthContext.jsx";
 import { saveLearnDraft, loadLearnDraft, clearLearnDraft } from "../../../lib/learnAdminDraft.js";
-import { loadLearnAuthorDefaults, saveLearnAuthorDefaults } from "../../../lib/learnAuthorDefaults.js";
-import { getSyllabusCodeOptions } from "../../../lib/learn-tree.js";
-import { filterBlocksForStudent } from "../../../lib/learnLevelAccess.js";
 
 const inputCls = "w-full rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] px-3 py-2 text-sm text-[var(--color-ink)] focus:border-[var(--color-indigo)] focus:outline-none";
 const labelCls = "mb-1 block text-xs font-medium text-[var(--color-ink-soft)]";
@@ -35,50 +31,29 @@ export default function LessonEditor() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const isNew = !pageId;
-  const parentTopics = [{ id: "__welcome__", label: "Welcome Page", sectionLabel: "Learn" }, ...getFlatParentTopics()];
+  const parentTopics = getFlatParentTopics();
 
   const [form, setForm] = useState({
     parentTopic: searchParams.get("parentTopic") || parentTopics[0]?.id || "",
-    lessonCode: "", syllabusCodes: [], title: "", level: "SL/HL", displayOrder: null, displayOrderSl: null, displayOrderHl: null,
+    lessonCode: "", title: "", level: "SL/HL", displayOrder: 0,
   });
   const [status, setStatus] = useState("draft");
   const [blocks, setBlocks] = useState([]);
   const [checkQuestions, setCheckQuestions] = useState([]);
   const [loading, setLoading] = useState(!isNew);
-  const [formHydrated, setFormHydrated] = useState(isNew);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [showPicker, setShowPicker] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [previewPage, setPreviewPage] = useState(0);
-  const [previewLevel, setPreviewLevel] = useState("SL");
   const [expandedBlockId, setExpandedBlockId] = useState(null);
   const [currentPageId, setCurrentPageId] = useState(pageId ?? null);
-  const [showDesignDefaults, setShowDesignDefaults] = useState(false);
-  const [authorDefaults, setAuthorDefaults] = useState(() => loadLearnAuthorDefaults(user?.id));
-  const undoStack = useRef([]);
-  const redoStack = useRef([]);
-  const [, setHistoryTick] = useState(0);
-  const suppressHistory = useRef(false);
-
-  useEffect(() => { setAuthorDefaults(loadLearnAuthorDefaults(user?.id)); }, [user?.id]);
-  function updateAuthorDefaults(patch) {
-    const next = { ...authorDefaults, ...patch };
-    setAuthorDefaults(next);
-    saveLearnAuthorDefaults(user?.id, next);
-  }
-  function pushHistory(entry) {
-    if (suppressHistory.current) return;
-    undoStack.current = [...undoStack.current.slice(-39), entry];
-    redoStack.current = [];
-    setHistoryTick((n) => n + 1);
-  }
 
   useEffect(() => {
     if (isNew) return;
     Promise.all([getLesson(pageId), listBlocks(pageId), listCheckQuestions(pageId)])
       .then(([lesson, blockRows, checkRows]) => {
-        const serverForm = { parentTopic: lesson.parent_topic, lessonCode: lesson.lesson_code, syllabusCodes: lesson.syllabus_codes ?? [], title: lesson.title, level: lesson.level, displayOrder: lesson.display_order, displayOrderSl: lesson.display_order_sl, displayOrderHl: lesson.display_order_hl };
+        const serverForm = { parentTopic: lesson.parent_topic, lessonCode: lesson.lesson_code, title: lesson.title, level: lesson.level, displayOrder: lesson.display_order };
         // Resume any unsaved settings-form edits and the expanded block
         // from before a temporary trip to another Admin tab — only if
         // the remembered draft is genuinely for THIS lesson; a draft for
@@ -94,7 +69,6 @@ export default function LessonEditor() {
         setStatus(lesson.status);
         setBlocks(blockRows);
         setCheckQuestions(checkRows);
-        setFormHydrated(true);
       })
       .catch((err) => setError(err.message || "Couldn't load this lesson."))
       .finally(() => setLoading(false));
@@ -105,9 +79,9 @@ export default function LessonEditor() {
   // only, never Supabase. This is what lets a temporary trip to another
   // Admin tab and back restore exactly where the admin left off.
   useEffect(() => {
-    if (!user?.id || !currentPageId || !formHydrated) return;
+    if (!user?.id || !currentPageId) return;
     saveLearnDraft(user.id, { pageId: currentPageId, expandedBlockId, formDraft: form });
-  }, [user?.id, currentPageId, expandedBlockId, form, formHydrated]);
+  }, [user?.id, currentPageId, expandedBlockId, form]);
 
   // Scrolls the restored block into view once the lesson has finished
   // loading — "practical" best-effort focus restoration, not required to
@@ -125,7 +99,6 @@ export default function LessonEditor() {
     }
     const created = await createLesson(form);
     setCurrentPageId(created.id);
-    setForm((prev) => ({ ...prev, displayOrder: created.display_order, displayOrderSl: created.display_order_sl, displayOrderHl: created.display_order_hl }));
     navigate(`/admin/learn-content/${created.id}`, { replace: true });
     return created.id;
   }
@@ -170,25 +143,18 @@ export default function LessonEditor() {
       setError("This lesson already has a Check Your Understanding block. Move the existing block to the position you want.");
       return;
     }
-    let initialContent = { ...BLOCK_TYPES[blockType].defaultContent, audience: "both" };
-    if (blockType === "image") initialContent = { ...initialContent, width: authorDefaults.imageWidth, alignment: authorDefaults.imageAlignment };
-    if (blockType === "video") initialContent = { ...initialContent, width: authorDefaults.videoWidth, alignment: authorDefaults.videoAlignment };
-    const created = await createBlock(currentPageId, { blockType, content: initialContent, position: blocks.length });
-    pushHistory({ type: "add", block: created });
+    const created = await createBlock(currentPageId, { blockType, content: BLOCK_TYPES[blockType].defaultContent, position: blocks.length });
     setBlocks((prev) => [...prev, created]);
     setExpandedBlockId(created.id);
   }
 
   async function handleUpdateBlockContent(blockId, content) {
-    const before = blocks.find((b) => b.id === blockId)?.content;
-    if (before && JSON.stringify(before) !== JSON.stringify(content)) pushHistory({ type: "content", blockId, before, after: content });
     setBlocks((prev) => prev.map((b) => (b.id === blockId ? { ...b, content } : b)));
     await updateBlock(blockId, { content });
   }
 
   async function handleToggleVisible(block) {
     const visible = !block.visible;
-    pushHistory({ type: "visibility", blockId: block.id, before: block.visible, after: visible });
     setBlocks((prev) => prev.map((b) => (b.id === block.id ? { ...b, visible } : b)));
     await updateBlock(block.id, { visible });
   }
@@ -199,14 +165,10 @@ export default function LessonEditor() {
       return;
     }
     const created = await createBlock(currentPageId, { blockType: block.block_type, content: block.content, position: blocks.length });
-    pushHistory({ type: "add", block: created });
     setBlocks((prev) => [...prev, created]);
   }
 
   async function handleDelete(blockId) {
-    const index = blocks.findIndex((b) => b.id === blockId);
-    const deleted = blocks[index];
-    if (deleted) pushHistory({ type: "delete", block: deleted, index });
     setBlocks((prev) => prev.filter((b) => b.id !== blockId));
     await deleteBlock(blockId);
   }
@@ -218,63 +180,12 @@ export default function LessonEditor() {
     e.preventDefault();
     const sourceIndex = Number(e.dataTransfer.getData("text/plain"));
     if (sourceIndex === targetIndex) return;
-    const beforeIds = blocks.map((b) => b.id);
     const next = [...blocks];
     const [moved] = next.splice(sourceIndex, 1);
     next.splice(targetIndex, 0, moved);
-    pushHistory({ type: "reorder", beforeIds, afterIds: next.map((b) => b.id) });
     setBlocks(next);
     reorderBlocks(next.map((b) => b.id));
   }
-
-  async function applyHistory(entry, direction) {
-    suppressHistory.current = true;
-    try {
-      if (entry.type === "content") {
-        const content = direction === "undo" ? entry.before : entry.after;
-        setBlocks((prev) => prev.map((b) => b.id === entry.blockId ? { ...b, content } : b));
-        await updateBlock(entry.blockId, { content });
-      } else if (entry.type === "visibility") {
-        const visible = direction === "undo" ? entry.before : entry.after;
-        setBlocks((prev) => prev.map((b) => b.id === entry.blockId ? { ...b, visible } : b));
-        await updateBlock(entry.blockId, { visible });
-      } else if (entry.type === "reorder") {
-        const ids = direction === "undo" ? entry.beforeIds : entry.afterIds;
-        setBlocks((prev) => ids.map((id) => prev.find((b) => b.id === id)).filter(Boolean));
-        await reorderBlocks(ids);
-      } else if (entry.type === "add") {
-        if (direction === "undo") {
-          await deleteBlock(entry.block.id);
-          setBlocks((prev) => prev.filter((b) => b.id !== entry.block.id));
-        } else {
-          const recreated = await createBlock(currentPageId, { blockType: entry.block.block_type, content: entry.block.content, position: entry.block.position ?? blocks.length });
-          entry.block = recreated;
-          setBlocks((prev) => [...prev, recreated]);
-        }
-      } else if (entry.type === "delete") {
-        if (direction === "undo") {
-          const recreated = await createBlock(currentPageId, { blockType: entry.block.block_type, content: entry.block.content, position: entry.index });
-          entry.block = recreated;
-          setBlocks((prev) => { const next=[...prev]; next.splice(Math.min(entry.index,next.length),0,recreated); return next; });
-        } else {
-          await deleteBlock(entry.block.id);
-          setBlocks((prev) => prev.filter((b) => b.id !== entry.block.id));
-        }
-      }
-    } finally { suppressHistory.current = false; setHistoryTick((n) => n + 1); }
-  }
-  async function handleUndo() { const entry = undoStack.current.pop(); if (!entry) return; await applyHistory(entry, "undo"); redoStack.current.push(entry); setHistoryTick((n)=>n+1); }
-  async function handleRedo() { const entry = redoStack.current.pop(); if (!entry) return; await applyHistory(entry, "redo"); undoStack.current.push(entry); setHistoryTick((n)=>n+1); }
-
-  useEffect(() => {
-    const onKey = (e) => {
-      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "z") return;
-      e.preventDefault();
-      if (e.shiftKey) handleRedo(); else handleUndo();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  });
 
   async function handleAddCheckQuestion(question) {
     setError(null);
@@ -336,7 +247,7 @@ export default function LessonEditor() {
   if (loading) return <div className="flex min-h-[50vh] items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-[var(--color-ink-faint)]" /></div>;
 
   if (previewing) {
-    const previewPages = splitLearnBlocksIntoPages(filterBlocksForStudent(blocks.filter((b) => b.visible), previewLevel));
+    const previewPages = splitLearnBlocksIntoPages(blocks.filter((b) => b.visible));
     const safePreviewPage = Math.min(previewPage, previewPages.length - 1);
     const activePreviewPage = previewPages[safePreviewPage];
     return (
@@ -344,7 +255,7 @@ export default function LessonEditor() {
         <button type="button" onClick={() => setPreviewing(false)} className="mb-4 inline-flex items-center gap-1 text-sm text-[var(--color-ink-faint)] hover:text-[var(--color-ink)]">
           <ChevronLeft size={15} /> Back to editor
         </button>
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-amber)]">Preview as Student</p><div className="inline-flex rounded-md border border-[var(--color-line)] p-1">{["SL","HL"].map((level)=><button key={level} type="button" onClick={()=>{setPreviewLevel(level);setPreviewPage(0);}} className={`rounded px-2.5 py-1 text-xs font-semibold ${previewLevel===level?"bg-[var(--color-indigo)] text-white":"text-[var(--color-ink-soft)]"}`}>{level}</button>)}</div></div>
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-amber)]">Preview as Student</p>
         <p className="font-mono text-xs text-[var(--color-indigo)]">{form.lessonCode}</p>
         <h1 className="mt-1 font-[var(--font-display)] text-[26px] font-bold text-[var(--color-ink)]">{form.title}</h1>
         {previewPages.length > 1 && (
@@ -395,49 +306,26 @@ export default function LessonEditor() {
           <div>
             <label className={labelCls}>Parent Topic</label>
             <select className={inputCls} value={form.parentTopic} onChange={(e) => setForm({ ...form, parentTopic: e.target.value })}>
-              {parentTopics.map((t) => <option key={t.id} value={t.id}>{t.sectionLabel} → {t.code ? `${t.code} — ` : ""}{t.label}</option>)}
+              {parentTopics.map((t) => <option key={t.id} value={t.id}>{t.sectionLabel} \u2192 {t.label}</option>)}
             </select>
           </div>
           <div>
-            <label className={labelCls}>Lesson Code</label>
-            <input className={inputCls} value={form.lessonCode} onChange={(e) => setForm({ ...form, lessonCode: e.target.value })} placeholder="e.g. S1.1 Matter" />
-            <p className="mt-1 text-[11px] text-[var(--color-ink-faint)]">Display identifier for this lesson. Progress mapping is selected separately below.</p>
-          </div>
-          <div className="sm:col-span-2">
-            <label className={labelCls}>Syllabus codes covered (select one or more)</label>
-            <div className="max-h-48 overflow-y-auto rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] p-2">
-              {getSyllabusCodeOptions(form.parentTopic).length ? getSyllabusCodeOptions(form.parentTopic).map((opt) => (
-                <label key={opt.code} className="flex cursor-pointer items-start gap-2 rounded px-2 py-1.5 hover:bg-[var(--color-line)]/20">
-                  <input type="checkbox" className="mt-0.5" checked={(form.syllabusCodes || []).includes(opt.code)} onChange={(e) => setForm((prev) => ({ ...prev, syllabusCodes: e.target.checked ? [...new Set([...(prev.syllabusCodes || []), opt.code])] : (prev.syllabusCodes || []).filter((c) => c !== opt.code) }))} />
-                  <span className="font-mono text-xs font-semibold text-[var(--color-indigo)]">{opt.code}</span>
-                  <span className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold ${opt.level === "HL" ? "bg-[var(--color-violet-soft)] text-[var(--color-violet)]" : "bg-[var(--color-teal-soft)] text-[var(--color-teal)]"}`}>{opt.level === "HL" ? "HL" : "SL + HL"}</span>
-                  <span className="text-xs text-[var(--color-ink-soft)]">{opt.title}</span>
-                </label>
-              )) : <p className="px-2 py-1 text-xs text-[var(--color-ink-faint)]">No mapped syllabus codes for this topic.</p>}
-            </div>
-            {(form.syllabusCodes || []).length > 0 && <p className="mt-1 text-[11px] text-[var(--color-ink-faint)]">Progress for this lesson will update: {form.syllabusCodes.join(", ")}</p>}
-            {(form.syllabusCodes || []).some((code) => getSyllabusCodeOptions(form.parentTopic).find((opt) => opt.code === code)?.level === "HL") && form.level !== "HL" && (
-              <p className="mt-1 rounded bg-[var(--color-amber-soft)] px-2 py-1 text-[11px] text-[var(--color-ink)]">This lesson maps at least one HL-only syllabus point. SL progress will automatically ignore those HL-only codes. If the whole lesson is AHL, set Student Access to “HL only”.</p>
-            )}
+            <label className={labelCls}>Syllabus / Lesson Code</label>
+            <input className={inputCls} value={form.lessonCode} onChange={(e) => setForm({ ...form, lessonCode: e.target.value })} placeholder="S1.1.1" />
           </div>
           <div className="sm:col-span-2">
             <label className={labelCls}>Lesson Title</label>
             <input className={inputCls} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
           </div>
           <div>
-            <label className={labelCls}>Student Access</label>
+            <label className={labelCls}>Level</label>
             <select className={inputCls} value={form.level} onChange={(e) => setForm({ ...form, level: e.target.value })}>
-              <option value="SL/HL">SL + HL — shared lesson</option>
-              <option value="SL">SL core — also visible to HL</option>
-              <option value="HL">HL only — hidden from SL</option>
+              <option value="SL/HL">SL/HL</option><option value="SL">SL</option><option value="HL">HL</option>
             </select>
-            <p className="mt-1 text-[11px] text-[var(--color-ink-faint)]">HL students always receive the SL course plus HL-only content. Use HL only for AHL lessons.</p>
           </div>
           <div>
-            <label className={labelCls}>Lesson Order</label>
-            <div className={`${inputCls} flex items-center text-sm text-[var(--color-ink-faint)]`}>
-              Managed by drag-and-drop on the Learn Content lesson list
-            </div>
+            <label className={labelCls}>Display Order</label>
+            <input type="number" className={inputCls} value={form.displayOrder} onChange={(e) => setForm({ ...form, displayOrder: Number(e.target.value) })} />
           </div>
         </div>
 
@@ -452,24 +340,6 @@ export default function LessonEditor() {
       {/* Block canvas */}
       {currentPageId && (
         <div className="mt-6">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold text-[var(--color-ink)]">Lesson Blocks</h2>
-            <div className="flex items-center gap-1.5">
-              <button type="button" onClick={handleUndo} disabled={!undoStack.current.length} title="Undo (Ctrl/Cmd+Z)" className="flex items-center gap-1 rounded-md border border-[var(--color-line)] px-2 py-1 text-xs text-[var(--color-ink-soft)] disabled:opacity-35"><Undo2 size={13}/> Undo</button>
-              <button type="button" onClick={handleRedo} disabled={!redoStack.current.length} title="Redo (Ctrl/Cmd+Shift+Z)" className="flex items-center gap-1 rounded-md border border-[var(--color-line)] px-2 py-1 text-xs text-[var(--color-ink-soft)] disabled:opacity-35"><Redo2 size={13}/> Redo</button>
-              <button type="button" onClick={() => setShowDesignDefaults((v)=>!v)} className="flex items-center gap-1 rounded-md border border-[var(--color-line)] px-2 py-1 text-xs text-[var(--color-ink-soft)]"><SlidersHorizontal size={13}/> Design Defaults</button>
-            </div>
-          </div>
-          {showDesignDefaults && <div className="mb-3 rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] p-3">
-            <p className="mb-2 text-xs font-semibold text-[var(--color-ink)]">Defaults for new Learn blocks</p>
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-              <label className={labelCls}>Image size<select className={inputCls} value={authorDefaults.imageWidth} onChange={(e)=>updateAuthorDefaults({imageWidth:e.target.value})}><option value="small">50%</option><option value="medium">70%</option><option value="large">85%</option><option value="full">100%</option></select></label>
-              <label className={labelCls}>Image alignment<select className={inputCls} value={authorDefaults.imageAlignment} onChange={(e)=>updateAuthorDefaults({imageAlignment:e.target.value})}><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></label>
-              <label className={labelCls}>Video size<select className={inputCls} value={authorDefaults.videoWidth} onChange={(e)=>updateAuthorDefaults({videoWidth:e.target.value})}><option value="small">50%</option><option value="medium">70%</option><option value="large">85%</option><option value="full">100%</option></select></label>
-              <label className={labelCls}>Video alignment<select className={inputCls} value={authorDefaults.videoAlignment} onChange={(e)=>updateAuthorDefaults({videoAlignment:e.target.value})}><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></label>
-            </div>
-            <p className="mt-2 text-[11px] text-[var(--color-ink-faint)]">Saved for this Admin profile. New media blocks use these values; individual blocks can override them.</p>
-          </div>}
           <div className="space-y-2">
             {blocks.map((block, i) => (
               <div
@@ -488,7 +358,6 @@ export default function LessonEditor() {
                     {getLearnBlockDisplayLabel(block).preview && <span className="block truncate text-[11px] text-[var(--color-ink-faint)]">{getLearnBlockDisplayLabel(block).preview}</span>}
                   </span>
                   {block.block_type === "check_understanding" && <span className="rounded bg-[var(--color-indigo-soft)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-indigo)]">{checkQuestions.length} question{checkQuestions.length === 1 ? "" : "s"}</span>}
-                  {(block.content?.audience === "hl") && <span className="rounded bg-[var(--color-violet-soft)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-violet)]">HL only</span>}
                   <div className="ml-auto flex items-center gap-1">
                     <button type="button" onClick={() => setExpandedBlockId(expandedBlockId === block.id ? null : block.id)} className="rounded px-2 py-1 text-xs text-[var(--color-indigo)] hover:bg-[var(--color-indigo-soft)]">{expandedBlockId === block.id ? "Close" : "Edit"}</button>
                     <button type="button" title="Duplicate" onClick={() => handleDuplicate(block)} className="rounded p-1.5 text-[var(--color-ink-faint)] hover:bg-[var(--color-line)]/40"><Copy size={13} /></button>
@@ -498,16 +367,6 @@ export default function LessonEditor() {
                 </div>
                 {expandedBlockId === block.id && (
                   <div className="p-3">
-                    <div className="mb-3 flex flex-wrap items-center gap-3 rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] px-3 py-2">
-                      <div>
-                        <p className="text-xs font-semibold text-[var(--color-ink)]">Block access</p>
-                        <p className="text-[11px] text-[var(--color-ink-faint)]">HL students always see SL content too.</p>
-                      </div>
-                      <select className="ml-auto rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)] px-2 py-1.5 text-xs text-[var(--color-ink)]" value={block.content?.audience || "both"} onChange={(e) => handleUpdateBlockContent(block.id, { ...(block.content || {}), audience: e.target.value })}>
-                        <option value="both">SL + HL</option>
-                        <option value="hl">HL only</option>
-                      </select>
-                    </div>
                     {block.block_type === "check_understanding" ? (
                       <div className="rounded-md border border-[var(--color-indigo)]/25 bg-[var(--color-indigo-soft)] p-4">
                         <div className="mb-3">
@@ -716,7 +575,7 @@ function ManualQuestionForm({ initial, editing, pageId, mediaKey, onSave, onCanc
         </div>
         <div className="sm:col-span-2">
           <label className={labelCls}>Question</label>
-          <EquationFriendlyField className={inputCls} rows={3} value={questionText} onChange={setQuestionText} placeholder="Type or paste the quick-check question — subscripts/superscripts from Word are preserved where possible" />
+          <textarea className={inputCls} rows={3} value={questionText} onChange={(e) => setQuestionText(e.target.value)} placeholder="Type the quick-check question" />
         </div>
 
         <div className="sm:col-span-2 rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] p-3">
@@ -733,7 +592,7 @@ function ManualQuestionForm({ initial, editing, pageId, mediaKey, onSave, onCanc
             <div className="mt-3 space-y-2">
               <img src={stimulus.src} alt={stimulus.alt || "Question preview"} className="max-h-52 rounded-md border border-[var(--color-line)] bg-white object-contain" />
               <div><label className={labelCls}>Alt Text</label><input className={inputCls} value={stimulus.alt || ""} onChange={(e) => setStimulus((prev) => ({ ...prev, alt: e.target.value }))} placeholder="Describe the image for accessibility" /></div>
-              <div><label className={labelCls}>Caption <span className="text-[var(--color-ink-faint)]">(optional)</span></label><input className={inputCls} value={stimulus.caption || ""} onChange={(e) => setStimulus((prev) => ({ ...prev, caption: e.target.value }))} onPaste={(e) => pasteEquationFriendly(e, stimulus.caption || "", (value) => setStimulus((prev) => ({ ...prev, caption: value })))} /></div>
+              <div><label className={labelCls}>Caption <span className="text-[var(--color-ink-faint)]">(optional)</span></label><input className={inputCls} value={stimulus.caption || ""} onChange={(e) => setStimulus((prev) => ({ ...prev, caption: e.target.value }))} /></div>
             </div>
           )}
         </div>
@@ -747,19 +606,19 @@ function ManualQuestionForm({ initial, editing, pageId, mediaKey, onSave, onCanc
                   <input type="radio" className="sr-only" name="manual-correct" checked={correct === opt.id} onChange={() => setCorrect(opt.id)} />
                   {opt.id}{correct === opt.id ? " ✓" : ""}
                 </label>
-                <input className={inputCls} value={opt.text} onChange={(e) => updateOption(i, e.target.value)} onPaste={(e) => pasteEquationFriendly(e, opt.text, (value) => updateOption(i, value))} placeholder={`Option ${opt.id}`} />
+                <input className={inputCls} value={opt.text} onChange={(e) => updateOption(i, e.target.value)} placeholder={`Option ${opt.id}`} />
               </div>
             ))}
             <p className="text-[11px] text-[var(--color-ink-faint)]">Click A/B/C/D to mark the correct answer.</p>
           </div>
         ) : (
           <>
-            <div className="sm:col-span-2"><label className={labelCls}>Accepted Answer</label><input className={inputCls} value={correct} onChange={(e) => setCorrect(e.target.value)} onPaste={(e) => pasteEquationFriendly(e, correct, setCorrect)} /></div>
-            <div className="sm:col-span-2"><label className={labelCls}>Alternative Accepted Answers <span className="text-[var(--color-ink-faint)]">(optional, separate with ;)</span></label><input className={inputCls} value={alternatives} onChange={(e) => setAlternatives(e.target.value)} onPaste={(e) => pasteEquationFriendly(e, alternatives, setAlternatives)} placeholder="e.g. solid; solid state" /></div>
+            <div className="sm:col-span-2"><label className={labelCls}>Accepted Answer</label><input className={inputCls} value={correct} onChange={(e) => setCorrect(e.target.value)} /></div>
+            <div className="sm:col-span-2"><label className={labelCls}>Alternative Accepted Answers <span className="text-[var(--color-ink-faint)]">(optional, separate with ;)</span></label><input className={inputCls} value={alternatives} onChange={(e) => setAlternatives(e.target.value)} placeholder="e.g. solid; solid state" /></div>
           </>
         )}
 
-        <div className="sm:col-span-2"><label className={labelCls}>Explanation / Feedback <span className="text-[var(--color-ink-faint)]">(optional)</span></label><EquationFriendlyField className={inputCls} rows={2} value={explanation} onChange={setExplanation} /></div>
+        <div className="sm:col-span-2"><label className={labelCls}>Explanation / Feedback <span className="text-[var(--color-ink-faint)]">(optional)</span></label><textarea className={inputCls} rows={2} value={explanation} onChange={(e) => setExplanation(e.target.value)} /></div>
       </div>
       {localError && <p className="mt-2 text-xs text-[var(--color-coral)]">{localError}</p>}
       <div className="mt-3 flex gap-2">

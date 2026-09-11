@@ -15,11 +15,9 @@ export function getLearnCmsCurriculumTree() {
     label: section.label,
     topics: section.topics.map((topic) => ({
       id: topic.id,
-      code: topic.id.replace("structure-", "S").replace("reactivity-", "R"),
       label: topic.label,
       subtopics: topic.subtopics.map((subtopic) => ({
         id: subtopic.id,
-        code: subtopic.id.replace("structure-", "S").replace("reactivity-", "R"),
         label: subtopic.label,
       })),
     })),
@@ -49,7 +47,6 @@ export function getFlatParentTopics() {
     section.topics.flatMap((topic) =>
       topic.subtopics.map((subtopic) => ({
         id: subtopic.id,
-        code: subtopic.id.replace("structure-", "S").replace("reactivity-", "R"),
         label: subtopic.label,
         sectionLabel: section.label,
         topicLabel: topic.label,

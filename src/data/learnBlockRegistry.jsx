@@ -1,12 +1,10 @@
-import { useState, useRef } from "react";
 import DOMPurify from "dompurify";
 import LearnMediaInput from "../components/admin/LearnMediaInput.jsx";
-import EquationFriendlyField, { pasteEquationFriendly } from "../components/admin/EquationFriendlyField.jsx";
-import { getSyllabusCodeOptions } from "../lib/learn-tree.js";
+import { handleTextareaPaste, handleRichTextPaste } from "../lib/mathPasteUtils.js";
 import {
   Type, Image as ImageIcon, Video, FlaskConical, Box, PlayCircle,
   Lightbulb, BookMarked, AlertTriangle, Globe2, ListChecks, BarChart3,
-  Columns2, HelpCircle, Beaker, Files, Link2,
+  Columns2, HelpCircle, Beaker, Files,
 } from "lucide-react";
 
 // ============================================================
@@ -21,8 +19,8 @@ export const BLOCK_CATEGORIES = [
 
 export const BLOCK_TYPES = {
   rich_text: { label: "Rich Text", category: "content", icon: Type, defaultContent: { title: "", titleColor: "", html: "" } },
-  image: { label: "Image", category: "content", icon: ImageIcon, defaultContent: { url: "", caption: "", alt: "", alignment: "center", width: "large" } },
-  video: { label: "Video", category: "content", icon: Video, defaultContent: { url: "", caption: "", alignment: "center", width: "large" } },
+  image: { label: "Image", category: "content", icon: ImageIcon, defaultContent: { url: "", caption: "", alt: "", alignment: "center", width: "full" } },
+  video: { label: "Video", category: "content", icon: Video, defaultContent: { url: "", caption: "" } },
   equation: { label: "Chemical Equation / Chemistry", category: "chemistry", icon: FlaskConical, defaultContent: { markup: "" } },
   molecule_3d: { label: "3D Molecule", category: "chemistry", icon: Box, defaultContent: { presetId: "" } },
   simulation: { label: "e-Lab Simulation", category: "chemistry", icon: PlayCircle, defaultContent: { simulationId: "" } },
@@ -30,14 +28,13 @@ export const BLOCK_TYPES = {
   definition: { label: "Definition", category: "teaching", icon: BookMarked, defaultContent: { term: "", definition: "" } },
   common_mistake: { label: "Common Mistakes / Misunderstandings", category: "teaching", icon: AlertTriangle, defaultContent: { text: "" } },
   real_life: { label: "Real-Life Connection", category: "teaching", icon: Globe2, defaultContent: { title: "", content: "", imageUrl: "" } },
-  worked_example: { label: "Worked Example", category: "teaching", icon: ListChecks, defaultContent: { question: "", solution: "" } },
+  worked_example: { label: "Worked Example", category: "teaching", icon: ListChecks, defaultContent: { question: "", solution: "", finalAnswer: "" } },
   data_graph: { label: "Data / Graph", category: "teaching", icon: BarChart3, defaultContent: { title: "", rows: [], explanation: "", prompt: "" } },
   compare_contrast: { label: "Compare & Contrast", category: "teaching", icon: Columns2, defaultContent: { title: "", displayMode: "inline", columns: [{ title: "", content: "" }, { title: "", content: "" }] } },
   reveal_think: { label: "Reveal / Think", category: "teaching", icon: HelpCircle, defaultContent: { prompt: "", reveal: "" } },
   practical: { label: "Practical / Experiment", category: "teaching", icon: Beaker, defaultContent: { aim: "", apparatus: "", variables: "", method: "", safety: "", observations: "", data: "", analysis: "" } },
   page_break: { label: "Page Break", category: "content", icon: Files, defaultContent: { label: "" } },
   check_understanding: { label: "Check Your Understanding", category: "teaching", icon: ListChecks, defaultContent: {} },
-  topic_link: { label: "Linked Topic", category: "teaching", icon: Link2, defaultContent: { targetCode: "", label: "", alignment: "right" } },
 };
 
 // Curated presets — Admin selects, never writes raw geometry config.
@@ -54,7 +51,6 @@ export const SIMULATION_REGISTRY = {
   "explore-matter-and-states": { label: "Explore Matter & States" },
   "particle-model-visualizer": { label: "Particle Model Visualizer" },
   "phase-change-heating-curve": { label: "Phase Change & Heating Curve" },
-  "ph-calculator-visualizer": { label: "pH Calculator & Visualizer" },
 };
 
 // Strips HTML tags for a safe plain-text preview — never renders HTML
@@ -120,9 +116,6 @@ export function getLearnBlockDisplayLabel(block) {
     case "page_break":
       preview = c.label || "";
       break;
-    case "topic_link":
-      preview = c.label || c.targetCode || "";
-      break;
     default:
       preview = "";
   }
@@ -132,20 +125,6 @@ export function getLearnBlockDisplayLabel(block) {
 
 const inputCls = "w-full rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] px-3 py-2 text-sm text-[var(--color-ink)] focus:border-[var(--color-indigo)] focus:outline-none";
 const labelCls = "mb-1 block text-xs font-medium text-[var(--color-ink-soft)]";
-const equationInputPaste = (value, setter) => (e) => pasteEquationFriendly(e, value, setter);
-
-/** Worked Example used to store { question, steps: [...], finalAnswer } —
- * now it's just { question, solution }. Old blocks are never rewritten in
- * place; this combines them into one solution string on the fly, both for
- * showing existing content in the (now single-field) editor and for
- * rendering it to students, so nothing old ever disappears. */
-export function getWorkedExampleSolution(content) {
-  if (content?.solution) return content.solution;
-  const stepLines = (content?.steps ?? []).filter(Boolean);
-  const parts = [...stepLines];
-  if (content?.finalAnswer) parts.push(`Final answer: ${content.finalAnswer}`);
-  return parts.join("\n");
-}
 
 /** Converts simple chemistry markup (H_2O, SO_4^2-) into safe HTML with
  * real <sub>/<sup> tags — avoids a heavy LaTeX/MathJax dependency while
@@ -162,189 +141,50 @@ export function renderChemMarkup(markup) {
  * formatting without pulling in a WYSIWYG library. Output is sanitized
  * with DOMPurify (already an existing dependency) before ever being
  * rendered to a student. */
-const FONT_SIZES = [12, 14, 16, 18, 20, 24, 28, 32];
-const FONT_FAMILIES = [
-  { label: "Default", value: "inherit" },
-  { label: "Arial", value: "Arial, Helvetica, sans-serif" },
-  { label: "Georgia", value: "Georgia, 'Times New Roman', serif" },
-  { label: "Times New Roman", value: "'Times New Roman', Times, serif" },
-  { label: "Verdana", value: "Verdana, Geneva, sans-serif" },
-  { label: "Trebuchet MS", value: "'Trebuchet MS', sans-serif" },
-];
-const QUICK_COLOURS = [
-  ["#12161c", "Dark"], ["#3654D6", "Indigo"], ["#2B7A6E", "Teal"],
-  ["#B7791F", "Amber"], ["#B85C4A", "Coral"], ["#6D3FA3", "Violet"],
-];
-
-/** The old implementation called document.execCommand("foreColor"/etc)
- * directly from a native <input type="color">'s onChange. That's the bug:
- * opening the native colour picker (or any <select>) steals focus from
- * the contentEditable, and by the time onChange fires the browser has
- * already collapsed/lost the text selection that was supposed to be
- * coloured — execCommand then has nothing to apply to, or applies to
- * whatever the caret happens to be sitting at instead. The fix is to
- * capture (clone) the Range the moment the toolbar control is about to
- * steal focus (onMouseDown, which fires before that happens), then
- * restore it right before running the actual command. Font size/family
- * apply via a real inline-styled <span> instead of execCommand, since
- * execCommand("fontSize") only understands the legacy 1-7 HTML sizes, not
- * arbitrary px values.
- */
-/** Word/Google Docs paste into the rich-text editor often carries a lot of
- * MSO-specific markup bloat alongside the actual formatting. Rather than
- * letting the browser insert that raw, or stripping it down to plain text
- * (which would lose real <sub>/<sup> subscripts/superscripts — those
- * render natively fine in a contentEditable, unlike the plain-textarea
- * EquationFriendlyField fields elsewhere), we sanitize the pasted HTML
- * through the exact same DOMPurify pass used for final student rendering
- * and insert that. Anything that wouldn't survive rendering doesn't get
- * into the editor in the first place, and everything that's actually
- * chemistry-relevant (sub/sup, bold, arrows, unicode symbols, line
- * breaks) comes through untouched. Plain-text paste (no HTML on the
- * clipboard) is left to the browser's normal behaviour, which already
- * preserves unicode characters correctly. */
-function richTextPaste(event) {
-  const html = event.clipboardData?.getData("text/html");
-  if (!html) return;
-  event.preventDefault();
-  document.execCommand("insertHTML", false, sanitizeHtml(html));
-}
-
 export function RichTextEditor({ value, onChange }) {
-  const editorRef = useRef(null);
-  const savedRangeRef = useRef(null);
-
-  function saveSelection() {
-    const sel = window.getSelection();
-    if (!sel || sel.rangeCount === 0 || !editorRef.current) return;
-    const range = sel.getRangeAt(0);
-    if (editorRef.current.contains(range.commonAncestorContainer)) {
-      savedRangeRef.current = range.cloneRange();
-    }
-  }
-
-  function restoreSelection() {
-    if (!savedRangeRef.current || !editorRef.current) return;
-    editorRef.current.focus();
-    const sel = window.getSelection();
-    sel.removeAllRanges();
-    sel.addRange(savedRangeRef.current);
-  }
-
   function exec(command, arg) {
-    restoreSelection();
     document.execCommand(command, false, arg);
-    saveSelection();
   }
-
   function handleLink() {
-    restoreSelection();
     const url = window.prompt("Link URL");
     if (url) exec("createLink", url);
   }
-
-  function applyInlineStyle(styleProp, styleValue) {
-    restoreSelection();
-    const sel = window.getSelection();
-    if (!sel || sel.rangeCount === 0 || !editorRef.current) return;
-    const range = sel.getRangeAt(0);
-    if (!editorRef.current.contains(range.commonAncestorContainer)) return;
-
-    const span = document.createElement("span");
-    span.style[styleProp] = styleValue;
-
-    if (range.collapsed) {
-      // Nothing highlighted — apply to a zero-width marker so whatever is
-      // typed next inherits it, per "current typing position".
-      span.appendChild(document.createTextNode("\u200B"));
-      range.insertNode(span);
-      const newRange = document.createRange();
-      newRange.setStart(span.firstChild, 1);
-      newRange.collapse(true);
-      sel.removeAllRanges();
-      sel.addRange(newRange);
-      savedRangeRef.current = newRange.cloneRange();
-    } else {
-      try {
-        range.surroundContents(span);
-      } catch {
-        const frag = range.extractContents();
-        span.appendChild(frag);
-        range.insertNode(span);
-      }
-      const newRange = document.createRange();
-      newRange.selectNodeContents(span);
-      sel.removeAllRanges();
-      sel.addRange(newRange);
-      savedRangeRef.current = newRange.cloneRange();
-    }
-    editorRef.current.focus();
-  }
-
   return (
     <div>
-      <div className="mb-1.5 flex flex-wrap items-center gap-1 rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] p-1">
+      <div className="mb-1.5 flex flex-wrap gap-1 rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] p-1">
         {[["Bold", "bold", "B"], ["Italic", "italic", "I"], ["Underline", "underline", "U"]].map(([t, cmd, label]) => (
-          <button key={cmd} type="button" title={t} onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={() => exec(cmd)} className="rounded px-2 py-1 text-xs font-semibold hover:bg-[var(--color-line)]/40">{label}</button>
+          <button key={cmd} type="button" title={t} onMouseDown={(e) => e.preventDefault()} onClick={() => exec(cmd)} className="rounded px-2 py-1 text-xs font-semibold hover:bg-[var(--color-line)]/40">{label}</button>
         ))}
-        <button type="button" title="Heading" onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={() => exec("formatBlock", "h3")} className="rounded px-2 py-1 text-xs font-semibold hover:bg-[var(--color-line)]/40">H</button>
-        <button type="button" title="Subheading" onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={() => exec("formatBlock", "h4")} className="rounded px-2 py-1 text-xs font-semibold hover:bg-[var(--color-line)]/40">h</button>
-        <button type="button" title="Paragraph" onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={() => exec("formatBlock", "p")} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">P</button>
-        <button type="button" title="Bullet list" onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={() => exec("insertUnorderedList")} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">\u2022 List</button>
-        <button type="button" title="Numbered list" onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={() => exec("insertOrderedList")} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">1. List</button>
-        <button type="button" title="Superscript" onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={() => exec("superscript")} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">x\u00b2</button>
-        <button type="button" title="Subscript" onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={() => exec("subscript")} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">x\u2082</button>
-        <button type="button" title="Align left" onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={() => exec("justifyLeft")} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">\u2261L</button>
-        <button type="button" title="Align center" onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={() => exec("justifyCenter")} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">\u2261C</button>
-        <button type="button" title="Link" onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={handleLink} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">Link</button>
-
-        <span className="mx-1 h-5 w-px bg-[var(--color-line)]" />
-
-        <select
-          title="Font size"
-          aria-label="Font size"
-          defaultValue=""
-          onMouseDown={saveSelection}
-          onChange={(e) => { if (e.target.value) applyInlineStyle("fontSize", `${e.target.value}px`); }}
-          className="rounded border border-[var(--color-line)] bg-[var(--color-paper-raised)] px-1 py-1 text-[11px] text-[var(--color-ink-soft)]"
-        >
-          <option value="">Size</option>
-          {FONT_SIZES.map((s) => <option key={s} value={s}>{s}</option>)}
-        </select>
-
-        <select
-          title="Font family"
-          aria-label="Font family"
-          defaultValue=""
-          onMouseDown={saveSelection}
-          onChange={(e) => { if (e.target.value) applyInlineStyle("fontFamily", e.target.value); }}
-          className="max-w-[7.5rem] rounded border border-[var(--color-line)] bg-[var(--color-paper-raised)] px-1 py-1 text-[11px] text-[var(--color-ink-soft)]"
-        >
-          <option value="">Font</option>
-          {FONT_FAMILIES.map((f) => <option key={f.label} value={f.value}>{f.label}</option>)}
-        </select>
-
+        <button type="button" title="Heading" onMouseDown={(e) => e.preventDefault()} onClick={() => exec("formatBlock", "h3")} className="rounded px-2 py-1 text-xs font-semibold hover:bg-[var(--color-line)]/40">H</button>
+        <button type="button" title="Subheading" onMouseDown={(e) => e.preventDefault()} onClick={() => exec("formatBlock", "h4")} className="rounded px-2 py-1 text-xs font-semibold hover:bg-[var(--color-line)]/40">h</button>
+        <button type="button" title="Paragraph" onMouseDown={(e) => e.preventDefault()} onClick={() => exec("formatBlock", "p")} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">P</button>
+        <button type="button" title="Bullet list" onMouseDown={(e) => e.preventDefault()} onClick={() => exec("insertUnorderedList")} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">\u2022 List</button>
+        <button type="button" title="Numbered list" onMouseDown={(e) => e.preventDefault()} onClick={() => exec("insertOrderedList")} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">1. List</button>
+        <button type="button" title="Superscript" onMouseDown={(e) => e.preventDefault()} onClick={() => exec("superscript")} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">x\u00b2</button>
+        <button type="button" title="Subscript" onMouseDown={(e) => e.preventDefault()} onClick={() => exec("subscript")} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">x\u2082</button>
+        <button type="button" title="Align left" onMouseDown={(e) => e.preventDefault()} onClick={() => exec("justifyLeft")} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">\u2261L</button>
+        <button type="button" title="Align center" onMouseDown={(e) => e.preventDefault()} onClick={() => exec("justifyCenter")} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">\u2261C</button>
+        <button type="button" title="Link" onMouseDown={(e) => e.preventDefault()} onClick={handleLink} className="rounded px-2 py-1 text-xs hover:bg-[var(--color-line)]/40">Link</button>
         <span className="mx-1 h-5 w-px bg-[var(--color-line)]" />
         <span className="px-1 text-[11px] text-[var(--color-ink-soft)]">Colour</span>
-        {QUICK_COLOURS.map(([colour, name]) => (
-          <button key={colour} type="button" title={name} aria-label={`Text colour ${name}`} onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={() => applyInlineStyle("color", colour)} className="h-5 w-5 rounded-full border border-black/10" style={{ backgroundColor: colour }} />
+        {[
+          ["#12161c", "Dark"], ["#3654D6", "Indigo"], ["#2B7A6E", "Teal"],
+          ["#B7791F", "Amber"], ["#B85C4A", "Coral"], ["#6D3FA3", "Violet"],
+        ].map(([colour, name]) => (
+          <button key={colour} type="button" title={name} aria-label={`Text colour ${name}`} onMouseDown={(e) => e.preventDefault()} onClick={() => exec("foreColor", colour)} className="h-5 w-5 rounded-full border border-black/10" style={{ backgroundColor: colour }} />
         ))}
         <label className="flex items-center gap-1 px-1 text-[11px] text-[var(--color-ink-soft)]" title="Custom text colour">
           Custom
-          <input type="color" defaultValue="#12161c" onMouseDown={saveSelection} onChange={(e) => applyInlineStyle("color", e.target.value)} className="h-6 w-7 cursor-pointer rounded border border-[var(--color-line)] bg-transparent p-0.5" />
+          <input type="color" defaultValue="#12161c" onChange={(e) => exec("foreColor", e.target.value)} className="h-6 w-7 cursor-pointer rounded border border-[var(--color-line)] bg-transparent p-0.5" />
         </label>
-
-        <button type="button" onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={() => exec("removeFormat")} className="rounded px-2 py-1 text-[11px] text-[var(--color-ink-soft)] hover:bg-[var(--color-line)]/40">Clear style</button>
+        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => exec("removeFormat")} className="rounded px-2 py-1 text-[11px] text-[var(--color-ink-soft)] hover:bg-[var(--color-line)]/40">Clear style</button>
       </div>
       <div
-        ref={editorRef}
         contentEditable
         suppressContentEditableWarning
-        onMouseUp={saveSelection}
-        onKeyUp={saveSelection}
-        onPaste={richTextPaste}
         className="min-h-[100px] rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] px-3 py-2 text-sm text-[var(--color-ink)] focus:border-[var(--color-indigo)] focus:outline-none [&_h3]:text-lg [&_h3]:font-bold [&_h4]:text-base [&_h4]:font-semibold [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-[var(--color-indigo)] [&_a]:underline"
         dangerouslySetInnerHTML={{ __html: value }}
+        onPaste={handleRichTextPaste}
         onBlur={(e) => onChange(e.currentTarget.innerHTML)}
       />
     </div>
@@ -365,7 +205,7 @@ export function BlockEditor({ blockType, content, onChange, pageId, blockId }) {
           <div>
             <label className={labelCls}>Title <span className="text-[var(--color-ink-faint)]">(optional)</span></label>
             <div className="flex gap-2">
-              <input className={inputCls} value={content.title ?? ""} onChange={(e) => set("title", e.target.value)} onPaste={equationInputPaste(content.title ?? "", (value) => set("title", value))} placeholder="Section title" />
+              <input className={inputCls} value={content.title ?? ""} onChange={(e) => set("title", e.target.value)} placeholder="Section title" />
               <label className="flex shrink-0 items-center gap-1 text-xs text-[var(--color-ink-soft)]">Colour <input type="color" value={content.titleColor || "#12161c"} onChange={(e) => set("titleColor", e.target.value)} className="h-9 w-10 rounded border border-[var(--color-line)] bg-transparent p-1" /></label>
             </div>
           </div>
@@ -380,11 +220,11 @@ export function BlockEditor({ blockType, content, onChange, pageId, blockId }) {
       return (
         <div className="space-y-2">
           <LearnMediaInput kind="image" pageId={pageId} blockId={blockId} url={content.url ?? ""} onUrlChange={(url) => set("url", url)} label="Image" />
-          <div><label className={labelCls}>Caption</label><input className={inputCls} value={content.caption} onChange={(e) => set("caption", e.target.value)} onPaste={equationInputPaste(content.caption ?? "", (value) => set("caption", value))} /></div>
+          <div><label className={labelCls}>Caption</label><input className={inputCls} value={content.caption} onChange={(e) => set("caption", e.target.value)} /></div>
           <div><label className={labelCls}>Alt text</label><input className={inputCls} value={content.alt} onChange={(e) => set("alt", e.target.value)} /></div>
           <div className="grid grid-cols-2 gap-2">
             <div><label className={labelCls}>Alignment</label><select className={inputCls} value={content.alignment} onChange={(e) => set("alignment", e.target.value)}><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></div>
-            <div><label className={labelCls}>Width</label><select className={inputCls} value={content.width || "large"} onChange={(e) => set("width", e.target.value)}><option value="small">50%</option><option value="medium">70%</option><option value="large">85%</option><option value="full">100%</option></select></div>
+            <div><label className={labelCls}>Width</label><select className={inputCls} value={content.width} onChange={(e) => set("width", e.target.value)}><option value="small">Small</option><option value="medium">Medium</option><option value="full">Full</option></select></div>
           </div>
         </div>
       );
@@ -393,11 +233,7 @@ export function BlockEditor({ blockType, content, onChange, pageId, blockId }) {
       return (
         <div className="space-y-2">
           <LearnMediaInput kind="video" pageId={pageId} blockId={blockId} url={content.url ?? ""} onUrlChange={(url) => set("url", url)} label="Video" />
-          <div><label className={labelCls}>Caption</label><input className={inputCls} value={content.caption} onChange={(e) => set("caption", e.target.value)} onPaste={equationInputPaste(content.caption ?? "", (value) => set("caption", value))} /></div>
-          <div className="grid grid-cols-2 gap-2">
-            <div><label className={labelCls}>Alignment</label><select className={inputCls} value={content.alignment || "center"} onChange={(e) => set("alignment", e.target.value)}><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></div>
-            <div><label className={labelCls}>Width</label><select className={inputCls} value={content.width || "large"} onChange={(e) => set("width", e.target.value)}><option value="small">50%</option><option value="medium">70%</option><option value="large">85%</option><option value="full">100%</option></select></div>
-          </div>
+          <div><label className={labelCls}>Caption</label><input className={inputCls} value={content.caption} onChange={(e) => set("caption", e.target.value)} /></div>
         </div>
       );
 
@@ -405,7 +241,7 @@ export function BlockEditor({ blockType, content, onChange, pageId, blockId }) {
       return (
         <div>
           <label className={labelCls}>Markup — use _2 for subscript, ^2- for superscript (e.g. SO_4^2-)</label>
-          <input className={`${inputCls} font-mono`} value={content.markup} onChange={(e) => set("markup", e.target.value)} onPaste={equationInputPaste(content.markup, (value) => set("markup", value))} placeholder="H_2O + CO_2 -> H_2CO_3" />
+          <input className={`${inputCls} font-mono`} value={content.markup} onChange={(e) => set("markup", e.target.value)} placeholder="H_2O + CO_2 -> H_2CO_3" />
           <p className="mt-2 text-sm text-[var(--color-ink-soft)]" dangerouslySetInnerHTML={{ __html: renderChemMarkup(content.markup) }} />
         </div>
       );
@@ -434,7 +270,7 @@ export function BlockEditor({ blockType, content, onChange, pageId, blockId }) {
 
     case "key_idea":
     case "common_mistake":
-      return <EquationFriendlyField className={inputCls} rows={3} value={content.text} onChange={(value) => set("text", value)} placeholder={blockType === "common_mistake" ? "Add a common mistake, misconception or misunderstanding students may have…" : "Add the key idea…"} />;
+      return <textarea className={inputCls} rows={3} value={content.text} onChange={(e) => set("text", e.target.value)} placeholder={blockType === "common_mistake" ? "Add a common mistake, misconception or misunderstanding students may have…" : "Add the key idea…"} />;
 
     case "page_break":
       return (
@@ -453,40 +289,19 @@ export function BlockEditor({ blockType, content, onChange, pageId, blockId }) {
         </div>
       );
 
-    case "topic_link": {
-      const options = getSyllabusCodeOptions();
-      return (
-        <div className="space-y-3">
-          <div>
-            <label className={labelCls}>Linked syllabus understanding</label>
-            <select className={inputCls} value={content.targetCode || ""} onChange={(e) => set("targetCode", e.target.value)}>
-              <option value="">Select a syllabus code…</option>
-              {options.map((opt) => <option key={opt.code} value={opt.code}>{opt.code} — {opt.title}</option>)}
-            </select>
-          </div>
-          <div><label className={labelCls}>Button label <span className="text-[var(--color-ink-faint)]">(optional)</span></label><input className={inputCls} value={content.label || ""} onChange={(e) => set("label", e.target.value)} placeholder="e.g. Revisit metallic bonding" /></div>
-          <div>
-            <label className={labelCls}>Alignment</label>
-            <select className={inputCls} value={content.alignment || "right"} onChange={(e) => set("alignment", e.target.value)}><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select>
-          </div>
-          <p className="text-[11px] text-[var(--color-ink-faint)]">Students see a small contextual button at this exact point in the lesson. It opens the first published lesson mapped to the selected syllabus code.</p>
-        </div>
-      );
-    }
-
     case "definition":
       return (
         <div className="space-y-2">
-          <div><label className={labelCls}>Term</label><input className={inputCls} value={content.term} onChange={(e) => set("term", e.target.value)} onPaste={equationInputPaste(content.term ?? "", (value) => set("term", value))} /></div>
-          <div><label className={labelCls}>Definition</label><EquationFriendlyField className={inputCls} rows={2} value={content.definition} onChange={(value) => set("definition", value)} /></div>
+          <div><label className={labelCls}>Term</label><input className={inputCls} value={content.term} onChange={(e) => set("term", e.target.value)} /></div>
+          <div><label className={labelCls}>Definition</label><textarea className={inputCls} rows={2} value={content.definition} onChange={(e) => set("definition", e.target.value)} /></div>
         </div>
       );
 
     case "real_life":
       return (
         <div className="space-y-2">
-          <div><label className={labelCls}>Title</label><input className={inputCls} value={content.title} onChange={(e) => set("title", e.target.value)} onPaste={equationInputPaste(content.title ?? "", (value) => set("title", value))} /></div>
-          <div><label className={labelCls}>Content</label><EquationFriendlyField className={inputCls} rows={3} value={content.content} onChange={(value) => set("content", value)} /></div>
+          <div><label className={labelCls}>Title</label><input className={inputCls} value={content.title} onChange={(e) => set("title", e.target.value)} /></div>
+          <div><label className={labelCls}>Content</label><textarea className={inputCls} rows={3} value={content.content} onChange={(e) => set("content", e.target.value)} /></div>
           <LearnMediaInput kind="image" pageId={pageId} blockId={blockId} url={content.imageUrl ?? ""} onUrlChange={(url) => set("imageUrl", url)} label="Optional image" />
         </div>
       );
@@ -503,8 +318,8 @@ export function BlockEditor({ blockType, content, onChange, pageId, blockId }) {
     case "reveal_think":
       return (
         <div className="space-y-2">
-          <div><label className={labelCls}>Prompt (Think)</label><EquationFriendlyField className={inputCls} rows={2} value={content.prompt} onChange={(value) => set("prompt", value)} /></div>
-          <div><label className={labelCls}>Reveal content</label><EquationFriendlyField className={inputCls} rows={2} value={content.reveal} onChange={(value) => set("reveal", value)} /></div>
+          <div><label className={labelCls}>Prompt (Think)</label><textarea className={inputCls} rows={2} value={content.prompt} onChange={(e) => set("prompt", e.target.value)} /></div>
+          <div><label className={labelCls}>Reveal content</label><textarea className={inputCls} rows={2} value={content.reveal} onChange={(e) => set("reveal", e.target.value)} /></div>
         </div>
       );
 
@@ -514,7 +329,7 @@ export function BlockEditor({ blockType, content, onChange, pageId, blockId }) {
           {["aim", "apparatus", "variables", "method", "safety", "observations", "data", "analysis"].map((field) => (
             <div key={field}>
               <label className={labelCls}>{field[0].toUpperCase() + field.slice(1)} <span className="text-[var(--color-ink-faint)]">(leave blank to omit)</span></label>
-              <EquationFriendlyField className={inputCls} rows={2} value={content[field]} onChange={(value) => set(field, value)} />
+              <textarea className={inputCls} rows={2} value={content[field]} onChange={(e) => set(field, e.target.value)} />
             </div>
           ))}
         </div>
@@ -526,22 +341,29 @@ export function BlockEditor({ blockType, content, onChange, pageId, blockId }) {
 }
 
 function WorkedExampleEditor({ content, set }) {
-  // Migration is a read-time concern, not a write-time one — we never
-  // silently rewrite an old block's stored shape just by opening the
-  // editor. The Solution field shows the combined text (old steps +
-  // final answer, if that's what this block still has); once the admin
-  // edits it, it's saved into the new `solution` field going forward.
-  // The old `steps`/`finalAnswer` values, if any, are simply left alone
-  // in the stored content — harmless, and no longer read once `solution`
-  // has a value.
-  const solutionValue = content.solution ?? getWorkedExampleSolution(content);
   return (
-    <div className="space-y-2">
-      <div><label className={labelCls}>Question / Problem</label><EquationFriendlyField className={inputCls} rows={2} value={content.question} onChange={(value) => set("question", value)} /></div>
+    <div className="space-y-3">
+      <div>
+        <label className={labelCls}>Question / Problem</label>
+        <textarea
+          className={`${inputCls} font-mono`} rows={3}
+          value={content.question}
+          onChange={(e) => set("question", e.target.value)}
+          onPaste={(e) => handleTextareaPaste(e, content.question, (v) => set("question", v))}
+        />
+      </div>
       <div>
         <label className={labelCls}>Solution</label>
-        <EquationFriendlyField className={inputCls} rows={6} value={solutionValue} onChange={(value) => set("solution", value)} placeholder={"Paste or type the full worked solution, with line breaks preserved — e.g.\npH = \u2212log\u2081\u2080[H\u2083O\u207A]\npH = \u2212log\u2081\u2080(2.5 \u00d7 10\u207B\u00b3)\npH = 2.60"} />
+        <textarea
+          className={`${inputCls} font-mono`} rows={8}
+          value={content.solution ?? ""}
+          onChange={(e) => set("solution", e.target.value)}
+          onPaste={(e) => handleTextareaPaste(e, content.solution ?? "", (v) => set("solution", v))}
+          placeholder={"We know:\n[H\u2083O\u207A] = 2.5 \u00D7 10\u207B\u00B3 mol dm\u207B\u00B3\n\nUsing:\npH = \u2212log\u2081\u2080[H\u2083O\u207A]"}
+        />
+        <p className="mt-1 text-[11px] text-[var(--color-ink-faint)]">Plain editable text \u2014 equations pasted from ChatGPT, Word, or Google Docs are automatically converted to readable Unicode (\u2082, \u207A, \u00D7, etc), never inserted as rendered/locked equation objects.</p>
       </div>
+      <div><label className={labelCls}>Final Answer</label><input className={inputCls} value={content.finalAnswer} onChange={(e) => set("finalAnswer", e.target.value)} /></div>
     </div>
   );
 }
@@ -565,112 +387,21 @@ function DataGraphEditor({ content, set }) {
         ))}
         <button type="button" onClick={() => set("rows", [...content.rows, { x: "", y: "" }])} className="text-xs font-medium text-[var(--color-indigo)]">+ Add data point</button>
       </div>
-      <div><label className={labelCls}>Explanation</label><EquationFriendlyField className={inputCls} rows={2} value={content.explanation} onChange={(value) => set("explanation", value)} /></div>
+      <div><label className={labelCls}>Explanation</label><textarea className={inputCls} rows={2} value={content.explanation} onChange={(e) => set("explanation", e.target.value)} /></div>
       <div><label className={labelCls}>Optional student prompt</label><input className={inputCls} value={content.prompt} onChange={(e) => set("prompt", e.target.value)} /></div>
     </div>
   );
 }
 
-function parsePastedCompareTable({ html = "", text = "" }) {
-  let matrix = [];
-
-  // Word/Google Docs commonly place a real HTML <table> on the clipboard.
-  // Prefer it because it preserves cell boundaries even when cell text contains spaces.
-  if (html && typeof DOMParser !== "undefined") {
-    try {
-      const doc = new DOMParser().parseFromString(html, "text/html");
-      const table = doc.querySelector("table");
-      if (table) {
-        matrix = Array.from(table.querySelectorAll("tr")).map((row) =>
-          Array.from(row.querySelectorAll("th,td")).map((cell) => (cell.innerText || cell.textContent || "").trim())
-        );
-      }
-    } catch {
-      matrix = [];
-    }
-  }
-
-  // Excel/Google Sheets copy cells as tab-separated rows. Also accept CSV-ish
-  // pasted text as a convenience, without trying to be a full CSV importer.
-  if (!matrix.length && text) {
-    const lines = text.replace(/\r/g, "").split("\n").filter((line) => line.trim().length);
-    const delimiter = lines.some((line) => line.includes("\t")) ? "\t" : (lines.some((line) => line.includes(",")) ? "," : null);
-    if (delimiter) matrix = lines.map((line) => line.split(delimiter).map((cell) => cell.trim()));
-  }
-
-  matrix = matrix
-    .map((row) => row.map((cell) => String(cell ?? "").trim()))
-    .filter((row) => row.some(Boolean));
-
-  if (matrix.length < 2) return null;
-  const width = Math.max(...matrix.map((row) => row.length));
-  if (width < 2) return null;
-  const normalized = matrix.map((row) => Array.from({ length: width }, (_, i) => row[i] ?? ""));
-
-  // First row is the header row. This maps naturally to the common comparison
-  // table copied from Word/Excel: Property | A | B | ...
-  return { headers: normalized[0], rows: normalized.slice(1) };
-}
-
-function CompareTablePreview({ table }) {
-  if (!table?.headers?.length) return null;
-  return (
-    <div className="overflow-x-auto rounded-md border border-[var(--color-line)]">
-      <table className="min-w-full border-collapse text-left text-xs">
-        <thead className="bg-[var(--color-paper-raised)] text-[var(--color-ink)]">
-          <tr>{table.headers.map((h, i) => <th key={i} className="border-b border-r border-[var(--color-line)] px-2.5 py-2 font-semibold last:border-r-0">{h || `Column ${i + 1}`}</th>)}</tr>
-        </thead>
-        <tbody>
-          {table.rows.map((row, r) => (
-            <tr key={r} className="text-[var(--color-ink-soft)]">
-              {table.headers.map((_, c) => <td key={c} className="border-b border-r border-[var(--color-line)] px-2.5 py-2 align-top last:border-r-0 last:border-b">{row[c]}</td>)}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
 function CompareContrastEditor({ content, set }) {
-  const [pastePreview, setPastePreview] = useState(null);
-  const [pasteError, setPasteError] = useState("");
-
   function updateColumn(i, key, value) {
-    const columns = (content.columns ?? []).map((c, j) => (j === i ? { ...c, [key]: value } : c));
+    const columns = content.columns.map((c, j) => (j === i ? { ...c, [key]: value } : c));
     set("columns", columns);
   }
-
-  function handleTablePaste(event) {
-    const clipboard = event.clipboardData;
-    if (!clipboard) return;
-    event.preventDefault();
-    const parsed = parsePastedCompareTable({
-      html: clipboard.getData("text/html"),
-      text: clipboard.getData("text/plain"),
-    });
-    if (!parsed) {
-      setPastePreview(null);
-      setPasteError("Could not detect a table. Copy at least 2 columns and 2 rows from Word, Excel or Google Sheets.");
-      return;
-    }
-    setPasteError("");
-    setPastePreview(parsed);
-  }
-
-  function applyPastedTable() {
-    if (!pastePreview) return;
-    set("table", pastePreview);
-    setPastePreview(null);
-    setPasteError("");
-  }
-
-  const hasTable = Boolean(content.table?.headers?.length && content.table?.rows?.length);
-
   return (
     <div className="space-y-3">
       <div>
-        <label className="mb-1 block text-xs font-medium text-[var(--color-ink-soft)]">Title (optional — also used as the reveal button label)</label>
+        <label className="mb-1 block text-xs font-medium text-[var(--color-ink-soft)]">Title (optional \u2014 also used as the reveal button label)</label>
         <input className={inputCls} placeholder="e.g. Colloids & Suspensions" value={content.title ?? ""} onChange={(e) => set("title", e.target.value)} />
       </div>
       <div>
@@ -686,54 +417,14 @@ function CompareContrastEditor({ content, set }) {
           </label>
         </div>
       </div>
-
-      <div className="rounded-md border border-dashed border-[var(--color-indigo)]/35 bg-[var(--color-indigo-soft)]/35 p-3">
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div>
-            <p className="text-xs font-semibold text-[var(--color-ink)]">Paste a comparison table</p>
-            <p className="mt-0.5 text-[11px] text-[var(--color-ink-faint)]">Copy a table from Word, Excel or Google Sheets, then click below and paste. The first row becomes the header.</p>
-          </div>
-          {hasTable && <button type="button" onClick={() => set("table", null)} className="text-[11px] font-medium text-[var(--color-coral)]">Remove pasted table</button>}
+      {content.columns.map((col, i) => (
+        <div key={i} className="rounded-md border border-[var(--color-line)] p-2">
+          <input className={`${inputCls} mb-1.5 font-medium`} placeholder="Column title" value={col.title} onChange={(e) => updateColumn(i, "title", e.target.value)} />
+          <textarea className={inputCls} rows={2} placeholder="Content" value={col.content} onChange={(e) => updateColumn(i, "content", e.target.value)} />
+          {content.columns.length > 2 && <button type="button" onClick={() => set("columns", content.columns.filter((_, j) => j !== i))} className="mt-1 text-xs text-[var(--color-coral)]">Remove column</button>}
         </div>
-        <textarea
-          className={`${inputCls} mt-2 min-h-16`}
-          value=""
-          readOnly
-          onPaste={handleTablePaste}
-          placeholder="Click here, then Ctrl+V / Cmd+V to paste your table…"
-          aria-label="Paste comparison table from Word or spreadsheet"
-        />
-        {pasteError && <p className="mt-2 text-xs text-[var(--color-coral)]">{pasteError}</p>}
-        {pastePreview && (
-          <div className="mt-3 space-y-2">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Preview before applying</p>
-            <CompareTablePreview table={pastePreview} />
-            <div className="flex gap-2">
-              <button type="button" onClick={applyPastedTable} className="rounded-md bg-[var(--color-ink)] px-3 py-1.5 text-xs font-semibold text-white">Use this table</button>
-              <button type="button" onClick={() => { setPastePreview(null); setPasteError(""); }} className="rounded-md border border-[var(--color-line)] px-3 py-1.5 text-xs font-medium text-[var(--color-ink-soft)]">Cancel</button>
-            </div>
-          </div>
-        )}
-        {hasTable && !pastePreview && (
-          <div className="mt-3">
-            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Current pasted table</p>
-            <CompareTablePreview table={content.table} />
-            <p className="mt-1.5 text-[11px] text-[var(--color-ink-faint)]">Paste another table above to replace it. Undo restores the previous block state.</p>
-          </div>
-        )}
-      </div>
-
-      {!hasTable && <>
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Or build comparison cards manually</p>
-        {(content.columns ?? []).map((col, i) => (
-          <div key={i} className="rounded-md border border-[var(--color-line)] p-2">
-            <input className={`${inputCls} mb-1.5 font-medium`} placeholder="Column title" value={col.title} onChange={(e) => updateColumn(i, "title", e.target.value)} onPaste={equationInputPaste(col.title ?? "", (value) => updateColumn(i, "title", value))} />
-            <EquationFriendlyField className={inputCls} rows={2} placeholder="Content" value={col.content} onChange={(value) => updateColumn(i, "content", value)} />
-            {(content.columns ?? []).length > 2 && <button type="button" onClick={() => set("columns", content.columns.filter((_, j) => j !== i))} className="mt-1 text-xs text-[var(--color-coral)]">Remove column</button>}
-          </div>
-        ))}
-        <button type="button" onClick={() => set("columns", [...(content.columns ?? []), { title: "", content: "" }])} className="text-xs font-medium text-[var(--color-indigo)]">+ Add column</button>
-      </>}
+      ))}
+      <button type="button" onClick={() => set("columns", [...content.columns, { title: "", content: "" }])} className="text-xs font-medium text-[var(--color-indigo)]">+ Add column</button>
     </div>
   );
 }

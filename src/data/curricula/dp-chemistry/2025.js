@@ -58,21 +58,21 @@ const dpChemistry2025 = {
             { id: "reactivity-1.1", label: "Measuring enthalpy changes", conceptIds: ["enthalpy-change", "calorimetry", "standard-enthalpy-of-reaction"] },
             { id: "reactivity-1.2", label: "Energy cycles in reactions", conceptIds: ["hess-law", "born-haber-cycle", "bond-enthalpy-calculations"] },
             { id: "reactivity-1.3", label: "Energy from fuels", conceptIds: ["fuels-and-combustion", "energy-density", "environmental-impact-of-fuels"] },
-            { id: "reactivity-1.4", label: "Entropy and spontaneity (Additional higher level)", conceptIds: ["entropy", "gibbs-free-energy", "spontaneity-of-reactions"] },
+            { id: "reactivity-1.4", label: "Entropy and spontaneity", conceptIds: ["entropy", "gibbs-free-energy", "spontaneity-of-reactions"] },
           ],
         },
         {
           id: "reactivity-2",
           label: "How much, how fast and how far?",
           subtopics: [
-            { id: "reactivity-2.1", label: "How much? The amount of chemical change", conceptIds: ["reaction-stoichiometry", "limiting-reagent", "atom-economy"] },
-            { id: "reactivity-2.2", label: "How fast? The rate of chemical change", conceptIds: ["collision-theory", "factors-affecting-rate", "rate-expressions", "activation-energy", "catalysis", "reaction-mechanisms-and-rate"] },
-            { id: "reactivity-2.3", label: "How far? The extent of chemical change", conceptIds: ["dynamic-equilibrium", "equilibrium-constant", "le-chateliers-principle", "equilibrium-calculations"] },
+            { id: "reactivity-2.1", label: "Amount of chemical change", conceptIds: ["reaction-stoichiometry", "limiting-reagent", "atom-economy"] },
+            { id: "reactivity-2.2", label: "Rate of chemical change", conceptIds: ["collision-theory", "factors-affecting-rate", "rate-expressions", "activation-energy", "catalysis", "reaction-mechanisms-and-rate"] },
+            { id: "reactivity-2.3", label: "Extent of chemical change", conceptIds: ["dynamic-equilibrium", "equilibrium-constant", "le-chateliers-principle", "equilibrium-calculations"] },
           ],
         },
         {
           id: "reactivity-3",
-          label: "What are the mechanisms of chemical change?",
+          label: "Mechanisms of chemical change",
           subtopics: [
             { id: "reactivity-3.1", label: "Proton transfer reactions", conceptIds: ["acid-base-definitions", "ph-scale", "strong-and-weak-acids-bases", "acid-base-titrations", "buffer-solutions"] },
             { id: "reactivity-3.2", label: "Electron transfer reactions", conceptIds: ["oxidation-states", "redox-half-equations", "electrochemical-cells", "electrolysis"] },
