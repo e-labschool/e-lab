@@ -4,12 +4,36 @@ const SUB = {0:"₀",1:"₁",2:"₂",3:"₃",4:"₄",5:"₅",6:"₆",7:"₇",8:"
 const SUP = {0:"⁰",1:"¹",2:"²",3:"³",4:"⁴",5:"⁵",6:"⁶",7:"⁷",8:"⁸",9:"⁹","+":"⁺","-":"⁻","=":"⁼","(":"⁽",")":"⁾",n:"ⁿ",i:"ⁱ"};
 const mapChars = (text, map) => [...String(text ?? "")].map((ch) => map[ch] ?? ch).join("");
 
+const HIDDEN_CLASS_PATTERN = /(^|\s)(katex-mathml|sr-only|visually-hidden|screen-reader-text|visuallyhidden)(\s|$)/i;
+
+/** True for nodes that exist only for accessibility/screen-reader/LaTeX
+ * "source" duplication and were never meant to be read as the visible
+ * text — most notably KaTeX's hidden MathML branch, which is exactly
+ * what ChatGPT/many math-rendering tools put on the clipboard alongside
+ * the visible glyphs. Walking both branches is what produces pasted
+ * content like "[H₃O⁺][H_3O^+]" — the fix is to simply never walk into
+ * these nodes at all. */
+function isHiddenDuplicateNode(node) {
+  const cls = typeof node.className === "string" ? node.className : node.getAttribute?.("class") || "";
+  if (HIDDEN_CLASS_PATTERN.test(cls)) return true;
+  const style = node.getAttribute?.("style") || "";
+  if (/display\s*:\s*none|visibility\s*:\s*hidden/i.test(style)) return true;
+  // <annotation> (MathML's raw-source container) and a bare <math> root
+  // that itself contains one are always the "source", never the visible
+  // rendering — skip them regardless of which tool produced them.
+  const tag = node.tagName?.toLowerCase();
+  if (tag === "annotation") return true;
+  if (tag === "math" && node.querySelector?.("annotation")) return true;
+  return false;
+}
+
 function htmlToChemText(html) {
   if (!html || typeof DOMParser === "undefined") return "";
   const doc = new DOMParser().parseFromString(html, "text/html");
   const walk = (node) => {
     if (node.nodeType === Node.TEXT_NODE) return node.nodeValue || "";
     if (node.nodeType !== Node.ELEMENT_NODE) return "";
+    if (isHiddenDuplicateNode(node)) return "";
     const tag = node.tagName.toLowerCase();
     const children = () => [...node.childNodes].map(walk).join("");
     const verticalAlign = node.style?.verticalAlign || "";

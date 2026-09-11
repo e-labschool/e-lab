@@ -58,7 +58,7 @@ export default function LearnBlockRenderer({ block }) {
     }
 
     case "equation":
-      return <p className="rounded-md bg-[var(--color-paper)] px-4 py-3 text-center font-mono text-base text-[var(--color-ink)]" dangerouslySetInnerHTML={{ __html: renderChemMarkup(c.markup) }} />;
+      return <p className="rounded-md bg-[var(--color-paper)] px-4 py-3 text-center text-[15px] leading-relaxed text-[var(--color-ink)]" dangerouslySetInnerHTML={{ __html: renderChemMarkup(c.markup) }} />;
 
     case "molecule_3d": {
       const preset = MOLECULE_PRESETS[c.presetId];

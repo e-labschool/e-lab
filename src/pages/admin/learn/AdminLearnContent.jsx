@@ -96,7 +96,7 @@ export default function AdminLearnContent() {
               {section.topics.map((topic) => (
                 <div key={topic.id}>
                   <button type="button" onClick={() => toggleTopic(topic.id)} className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm font-medium text-[var(--color-ink-soft)] hover:bg-[var(--color-line)]/30">
-                    <span>{topic.label}</span>
+                    <span><span className="mr-1.5 font-mono font-semibold text-[var(--color-ink)]">{topic.code}</span>{topic.label}</span>
                     {topic.subtopics.length > 1 && (openTopics.has(topic.id) ? <ChevronDown size={13} /> : <ChevronRight size={13} />)}
                   </button>
                   {(openTopics.has(topic.id) || topic.subtopics.length === 1) && (
@@ -108,7 +108,7 @@ export default function AdminLearnContent() {
                           onClick={() => setSelectedTopic(subtopic.id)}
                           className={`block w-full rounded-md px-2 py-1.5 text-left text-xs ${selectedTopic === subtopic.id ? "bg-[var(--color-indigo-soft)] font-medium text-[var(--color-indigo)]" : "text-[var(--color-ink-faint)] hover:bg-[var(--color-line)]/30"}`}
                         >
-                          {subtopic.label}
+                          <span className="mr-1.5 font-mono font-semibold text-[var(--color-ink)]">{subtopic.code}</span>{subtopic.label}
                         </button>
                       ))}
                     </div>
@@ -169,7 +169,7 @@ export default function AdminLearnContent() {
                         </button>
                         <span className="w-6 shrink-0 text-center text-xs font-semibold text-[var(--color-ink-faint)]">{index + 1}</span>
                         <button type="button" onClick={() => navigate(`/admin/learn-content/${lesson.id}`)} className="min-w-0 flex-1 text-left">
-                          <span className="font-mono text-xs text-[var(--color-ink-faint)]">{lesson.lesson_code}</span>
+                          <span className="font-mono text-xs font-semibold text-[var(--color-ink-faint)]">{(lesson.syllabus_codes && lesson.syllabus_codes[0]) || lesson.lesson_code}</span>
                           <p className="truncate text-sm font-medium text-[var(--color-ink)]">{lesson.title}</p>
                         </button>
                         <Badge tone={lesson.level === "HL" ? "violet" : "neutral"}>{lesson.level === "HL" ? "HL only" : "SL + HL"}</Badge>
@@ -191,7 +191,7 @@ function findTopicLabel(tree, subtopicId) {
   for (const section of tree) {
     for (const topic of section.topics) {
       const subtopic = topic.subtopics.find((s) => s.id === subtopicId);
-      if (subtopic) return subtopic.label;
+      if (subtopic) return `${subtopic.code} \u2014 ${subtopic.label}`;
     }
   }
   return subtopicId;

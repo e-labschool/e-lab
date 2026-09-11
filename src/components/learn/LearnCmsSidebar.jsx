@@ -11,23 +11,36 @@ import { lessonOrderValue } from "../../lib/learnLevelAccess.js";
 const TOPIC_ROW_HEIGHT = "h-10";
 const TOPIC_TEXT_SIZE = "text-[14px] font-semibold";
 
+// "structure-1" -> "Structure 1", "reactivity-3" -> "Reactivity 3" — the
+// primary nav label is the syllabus numbering, not the long descriptive
+// title (which still appears, smaller, once a topic is expanded).
+function topicNavLabel(topic) {
+  const [word, num] = topic.id.split("-");
+  return `${word.charAt(0).toUpperCase()}${word.slice(1)} ${num}`;
+}
+
 export default function LearnCmsSidebar({ activeConceptId: activePageId, basePath }) {
   const navigate = useNavigate();
   const { profile } = useAuth();
   const studentLevel = profile?.level || "SL";
   const [lessonsByTopic, setLessonsByTopic] = useState(null);
-  const [openTopics, setOpenTopics] = useState(new Set());
-  const [openSubtopics, setOpenSubtopics] = useState(new Set());
+  // Accordion: at most ONE open topic, and at most ONE open subtopic
+  // (within whichever topic is open) — a scalar id (or null), not a Set,
+  // is what actually enforces that, rather than just conventionally
+  // avoiding adding more than one.
+  const [openTopicId, setOpenTopicId] = useState(null);
+  const [openSubtopicId, setOpenSubtopicId] = useState(null);
   const [welcomeId, setWelcomeId] = useState(null);
   const tree = getLearnCmsCurriculumTree();
 
-  // Every topic, flattened out of its section grouping — the section
-  // labels ("Structure" / "Reactivity") aren't shown separately since
-  // "Structure 1", "Structure 2" etc. already say that on their own,
-  // and the default view should be exactly: Welcome, Structure 1-3,
-  // Reactivity 1-3, nothing else, per spec.
+  // Every topic, flattened out of its section grouping ("Structure 1",
+  // "Structure 2"... directly — no separate "Structure" section header),
+  // and explicitly WITHOUT the "tools" section: Tools for Chemistry stays
+  // fully available site-wide (Explore, admin's Parent Topic picker,
+  // etc.) — it's only excluded from this particular curriculum nav,
+  // per spec, since this sidebar is meant to be exactly Welcome + the six
+  // syllabus topics.
   const allTopics = tree.filter((s) => s.id !== "tools").flatMap((section) => section.topics);
-  const toolsSection = tree.find((s) => s.id === "tools");
 
   useEffect(() => {
     listPublishedLessonMeta(studentLevel).then((rows) => {
@@ -47,49 +60,40 @@ export default function LearnCmsSidebar({ activeConceptId: activePageId, basePat
         const active = rows.find((r) => r.id === activePageId);
         if (active && active.parent_topic !== "__welcome__") {
           const subtopicId = active.parent_topic;
-          const owningTopic = [...allTopics, ...(toolsSection?.topics ?? [])].find((t) => t.subtopics.some((s) => s.id === subtopicId));
-          setOpenSubtopics(new Set([subtopicId]));
-          setOpenTopics(new Set(owningTopic ? [owningTopic.id] : []));
+          const owningTopic = allTopics.find((t) => t.subtopics.some((s) => s.id === subtopicId));
+          setOpenSubtopicId(subtopicId);
+          setOpenTopicId(owningTopic ? owningTopic.id : null);
         }
       }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }).catch(() => setLessonsByTopic({}));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activePageId, studentLevel]);
 
   const firstLessonForSubtopic = (id) => lessonsByTopic?.[id]?.[0];
   const firstLessonForTopic = (topic) => topic.subtopics.map((s) => firstLessonForSubtopic(s.id)).find(Boolean);
 
   function toggleTopic(topicId) {
-    setOpenTopics((prev) => {
-      const next = new Set(prev);
-      if (next.has(topicId)) next.delete(topicId);
-      else next.add(topicId);
-      return next;
-    });
+    setOpenTopicId((prev) => (prev === topicId ? null : topicId));
+    setOpenSubtopicId(null); // switching topics always closes whatever subtopic was open
   }
   function toggleSubtopic(subtopicId) {
-    setOpenSubtopics((prev) => {
-      const next = new Set(prev);
-      if (next.has(subtopicId)) next.delete(subtopicId);
-      else next.add(subtopicId);
-      return next;
-    });
+    setOpenSubtopicId((prev) => (prev === subtopicId ? null : subtopicId));
   }
   function openTopicAndNavigate(topic) {
     const first = firstLessonForTopic(topic);
     if (first) navigate(`${basePath}/${first.id}`);
-    setOpenTopics((prev) => new Set(prev).add(topic.id));
+    setOpenTopicId(topic.id);
   }
   function openSubtopicAndNavigate(subtopic) {
     const first = firstLessonForSubtopic(subtopic.id);
     if (first) navigate(`${basePath}/${first.id}`);
-    setOpenSubtopics((prev) => new Set(prev).add(subtopic.id));
+    setOpenSubtopicId(subtopic.id);
   }
 
   if (lessonsByTopic === null) return <div className="flex justify-center py-8"><Loader2 className="h-4 w-4 animate-spin text-[var(--color-ink-faint)]" /></div>;
 
   function TopicRow({ topic }) {
-    const isOpen = openTopics.has(topic.id);
+    const isOpen = openTopicId === topic.id;
     return (
       <div>
         <div className={`flex ${TOPIC_ROW_HEIGHT} w-full items-center gap-0.5 rounded-md`}>
@@ -97,7 +101,7 @@ export default function LearnCmsSidebar({ activeConceptId: activePageId, basePat
             type="button"
             onClick={() => toggleTopic(topic.id)}
             aria-expanded={isOpen}
-            aria-label={`${isOpen ? "Collapse" : "Expand"} ${topic.label}`}
+            aria-label={`${isOpen ? "Collapse" : "Expand"} ${topicNavLabel(topic)}`}
             className="flex h-full shrink-0 items-center justify-center rounded-md px-1.5 text-[var(--color-ink-faint)] hover:bg-[var(--color-line)]/30 hover:text-[var(--color-ink)]"
           >
             {isOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
@@ -105,17 +109,17 @@ export default function LearnCmsSidebar({ activeConceptId: activePageId, basePat
           <button
             type="button"
             onClick={() => openTopicAndNavigate(topic)}
-            className={`flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 text-left ${TOPIC_TEXT_SIZE} text-[var(--color-ink)] hover:bg-[var(--color-line)]/30`}
+            className={`flex h-full min-w-0 flex-1 items-center rounded-md px-1.5 text-left ${TOPIC_TEXT_SIZE} text-[var(--color-ink)] hover:bg-[var(--color-line)]/30`}
           >
-            <span className="font-mono font-bold">{topic.code}</span>
-            <span className="truncate">{topic.label}</span>
+            <span className="truncate">{topicNavLabel(topic)}</span>
           </button>
         </div>
 
         {isOpen && (
           <div className="ml-3 mt-0.5 space-y-0.5 border-l border-[var(--color-line)] pl-2">
+            <p className="px-1.5 py-1 text-[11px] leading-snug text-[var(--color-ink-faint)]">{topic.label}</p>
             {topic.subtopics.map((subtopic) => {
-              const subOpen = openSubtopics.has(subtopic.id);
+              const subOpen = openSubtopicId === subtopic.id;
               const lessons = lessonsByTopic[subtopic.id] ?? [];
               return (
                 <div key={subtopic.id}>
@@ -176,12 +180,6 @@ export default function LearnCmsSidebar({ activeConceptId: activePageId, basePat
       <div className="space-y-1 pt-1">
         {allTopics.map((topic) => <TopicRow key={topic.id} topic={topic} />)}
       </div>
-
-      {toolsSection && (
-        <div className="space-y-1 pt-2">
-          {toolsSection.topics.map((topic) => <TopicRow key={topic.id} topic={topic} />)}
-        </div>
-      )}
     </nav>
   );
 }

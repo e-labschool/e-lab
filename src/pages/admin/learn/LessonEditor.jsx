@@ -395,7 +395,7 @@ export default function LessonEditor() {
           <div>
             <label className={labelCls}>Parent Topic</label>
             <select className={inputCls} value={form.parentTopic} onChange={(e) => setForm({ ...form, parentTopic: e.target.value })}>
-              {parentTopics.map((t) => <option key={t.id} value={t.id}>{t.sectionLabel} \u2192 {t.label}</option>)}
+              {parentTopics.map((t) => <option key={t.id} value={t.id}>{t.sectionLabel} → {t.code ? `${t.code} — ` : ""}{t.label}</option>)}
             </select>
           </div>
           <div>

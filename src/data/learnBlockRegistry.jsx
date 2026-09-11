@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import DOMPurify from "dompurify";
 import LearnMediaInput from "../components/admin/LearnMediaInput.jsx";
 import EquationFriendlyField, { pasteEquationFriendly } from "../components/admin/EquationFriendlyField.jsx";
