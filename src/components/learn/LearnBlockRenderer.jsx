@@ -17,6 +17,7 @@ const SIMULATION_COMPONENTS = {
   "ph-calculator-visualizer": lazy(() => import("../../engines/ph-calculator-visualizer/PHCalculatorVisualizer.jsx")),
   "h-oh-balance": lazy(() => import("../../engines/h-oh-balance/HOHBalance.jsx")),
   "neutralization-particle-visualizer": lazy(() => import("../../engines/neutralization-particle-visualizer/NeutralizationParticleVisualizer.jsx")),
+  "equivalence-point": lazy(() => import("../../engines/equivalence-point/EquivalencePoint.jsx")),
 };
 
 export default function LearnBlockRenderer({ block }) {
