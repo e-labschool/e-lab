@@ -52,6 +52,16 @@ const resources = [
     component: () => import("../engines/ph-calculator-visualizer/PHCalculatorVisualizer.jsx"),
   },
   {
+    id: "h-oh-balance",
+    title: "H+ - OH- Balance in Water",
+    resourceType: "visualizer",
+    categories: ["visualize","explore"],
+    status: "live", // live | in-development | planned
+    description: "A compact simulation showing how adding HCl shifts [H+], [OH-] and pH together in water at 25\u00b0C, leading into the Kw relationship.",
+    conceptIds: ["ph-scale"],
+    component: () => import("../engines/h-oh-balance/HOHBalance.jsx"),
+  },
+  {
     id: "explore-matter-and-states",
     title: "Explore Matter & States",
     subtitle: "Teacher-led visual exploration",

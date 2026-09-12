@@ -1,6 +1,7 @@
 import { useState, useEffect, lazy, Suspense } from "react";
 import { Lightbulb, BookMarked, AlertTriangle, Globe2, Beaker, Columns2, Link2, ArrowRight } from "lucide-react";
 import { sanitizeHtml, renderChemMarkup, MOLECULE_PRESETS, getWorkedExampleSolution } from "../../data/learnBlockRegistry.jsx";
+import { resolveMathAnnotationsInHtml } from "../admin/EquationFriendlyField.jsx";
 import MoleculeViewer3D from "../3d/MoleculeViewer3D.jsx";
 import ELabLoader from "../ui/ELabLoader.jsx";
 import { findPublishedLessonBySyllabusCode } from "../../lib/learnContentService.js";
@@ -14,6 +15,7 @@ const SIMULATION_COMPONENTS = {
   "particle-model-visualizer": lazy(() => import("../../engines/particle-model-visualizer/ParticleModelVisualizer.jsx")),
   "phase-change-heating-curve": lazy(() => import("../../engines/phase-change-heating-curve/PhaseChangeHeatingCurve.jsx")),
   "ph-calculator-visualizer": lazy(() => import("../../engines/ph-calculator-visualizer/PHCalculatorVisualizer.jsx")),
+  "h-oh-balance": lazy(() => import("../../engines/h-oh-balance/HOHBalance.jsx")),
 };
 
 export default function LearnBlockRenderer({ block }) {
@@ -24,7 +26,7 @@ export default function LearnBlockRenderer({ block }) {
       return (
         <section>
           {c.title && <h2 className="mb-2 text-xl font-semibold tracking-tight" style={c.titleColor ? { color: c.titleColor } : { color: "var(--color-ink)" }}>{c.title}</h2>}
-          <div className="prose-sm max-w-none text-[var(--color-ink-soft)] [&_h3]:text-lg [&_h3]:font-bold [&_h3]:text-[var(--color-ink)] [&_h4]:text-base [&_h4]:font-semibold [&_h4]:text-[var(--color-ink)] [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-[var(--color-indigo)] [&_a]:underline" dangerouslySetInnerHTML={{ __html: sanitizeHtml(c.html) }} />
+          <div className="prose-sm max-w-none text-[var(--color-ink-soft)] [&_h3]:text-lg [&_h3]:font-bold [&_h3]:text-[var(--color-ink)] [&_h4]:text-base [&_h4]:font-semibold [&_h4]:text-[var(--color-ink)] [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-[var(--color-indigo)] [&_a]:underline [&_sub]:text-[0.75em] [&_sup]:text-[0.75em] [&_sub]:relative [&_sup]:relative [&_sub]:[line-height:0] [&_sup]:[line-height:0]" dangerouslySetInnerHTML={{ __html: sanitizeHtml(resolveMathAnnotationsInHtml(c.html)) }} />
         </section>
       );
 

@@ -19,6 +19,7 @@ const LATEX_SYMBOLS = [
   ["\\rightleftharpoons", "⇌"], ["\\leftrightarrow", "↔"], ["\\rightarrow", "→"], ["\\to", "→"],
   ["\\times", "×"], ["\\cdot", "·"], ["\\pm", "±"], ["\\approx", "≈"], ["\\neq", "≠"],
   ["\\leq", "≤"], ["\\geq", "≥"], ["\\infty", "∞"], ["\\Delta", "Δ"], ["\\delta", "δ"], ["\\circ", "°"],
+  ["\\qquad", "  "], ["\\quad", " "], ["\\,", " "], ["\\;", " "], ["\\:", " "], ["\\!", ""], ["\\\\", " "],
 ];
 
 function stripLatexWrapCommand(str, cmd) {
@@ -44,6 +45,10 @@ export function convertLatexToUnicode(latex) {
   // its bare name (\log -> log) rather than being dropped silently.
   s = s.replace(/\\([a-zA-Z]+)/g, "$1");
   s = s.replace(/[{}]/g, "");
+  // Defensive catch-all: any stray backslash left over at this point
+  // (an unrecognised spacing/formatting command) contributes nothing
+  // visible rather than leaking a literal "\" into the text.
+  s = s.replace(/\\/g, "");
 
   // Bare "-" at this point is always a mathematical minus, not a hyphen.
   s = s.replace(/-/g, "−");
@@ -54,18 +59,76 @@ export function convertLatexToUnicode(latex) {
   s = s.replace(/\s*=\s*/g, " = ").replace(/\s+/g, " ").trim();
   return s;
 }
-/** Finds every <annotation> (KaTeX/MathML's raw-source element) and
- * replaces its nearest .katex/<math> ancestor with the converted plain
- * text, IN PLACE, before any other processing touches the tree — so the
- * maths is preserved and converted, never silently deleted, and never
- * left duplicated alongside the visible rendering it replaces. */
+const MO_SYMBOL_MAP = { "-": "−", "*": "×", "·": "·" };
+
+/** Fallback for a <math> element that has no <annotation> (semantic LaTeX
+ * source) to work from — walks the *presentation* MathML directly so the
+ * equation still gets neutralised into plain scaling text instead of
+ * being left as browser-native math layout. Less precise than the LaTeX
+ * path (no spacing/symbol normalisation beyond the basics) but never
+ * leaves the maths un-converted. */
+function presentationMathMLToText(node) {
+  if (node.nodeType === Node.TEXT_NODE) return node.nodeValue || "";
+  if (node.nodeType !== Node.ELEMENT_NODE) return "";
+  const tag = node.tagName.toLowerCase();
+  if (tag === "annotation" || tag === "annotation-xml") return "";
+  const children = () => [...node.childNodes].map(presentationMathMLToText).join("");
+  if (tag === "msup" || tag === "mover") {
+    const parts = [...node.children].filter((c) => c.tagName?.toLowerCase() !== "annotation");
+    return (parts[0] ? presentationMathMLToText(parts[0]) : "") + mapChars(parts[1] ? presentationMathMLToText(parts[1]) : "", SUP);
+  }
+  if (tag === "msub" || tag === "munder") {
+    const parts = [...node.children];
+    return (parts[0] ? presentationMathMLToText(parts[0]) : "") + mapChars(parts[1] ? presentationMathMLToText(parts[1]) : "", SUB);
+  }
+  if (tag === "msubsup" || tag === "munderover") {
+    const parts = [...node.children];
+    return (parts[0] ? presentationMathMLToText(parts[0]) : "") + mapChars(parts[1] ? presentationMathMLToText(parts[1]) : "", SUB) + mapChars(parts[2] ? presentationMathMLToText(parts[2]) : "", SUP);
+  }
+  if (tag === "mfrac") {
+    const parts = [...node.children];
+    return `(${parts[0] ? presentationMathMLToText(parts[0]) : ""})/(${parts[1] ? presentationMathMLToText(parts[1]) : ""})`;
+  }
+  if (tag === "msqrt" || tag === "mroot") return `√(${children()})`;
+  if (tag === "mspace") return " ";
+  if (tag === "mo") {
+    const t = children().trim();
+    return MO_SYMBOL_MAP[t] ?? t;
+  }
+  return children();
+}
+
+/** Finds every <math> element (KaTeX/MathML's root, regardless of
+ * whether a semantic <annotation> is present) and replaces its nearest
+ * display wrapper with converted plain text, IN PLACE, before any other
+ * processing touches the tree — so the maths is preserved and
+ * converted, never silently deleted, and never left as native math
+ * layout that Display Settings' text-size can't reach. */
 function resolveMathAnnotations(doc) {
-  const annotations = [...doc.querySelectorAll("annotation")];
-  for (const annotation of annotations) {
-    const root = annotation.closest?.('[class*="katex"]') || annotation.closest?.("math") || annotation.parentElement;
+  const mathNodes = [...doc.querySelectorAll("math")];
+  for (const mathEl of mathNodes) {
+    // Prefer the full "display equation" wrapper when present (KaTeX
+    // wraps block-mode equations in an outer .katex-display element,
+    // which is what actually carries any auto-centering) — replacing
+    // just the inner .katex span would leave that wrapper (and its
+    // centering) behind.
+    const root = mathEl.closest?.(".katex-display") || mathEl.closest?.('[class*="katex"]') || mathEl;
     if (!root || !root.parentNode) continue;
-    const converted = convertLatexToUnicode(annotation.textContent || "");
+    const annotation = mathEl.querySelector("annotation");
+    const converted = annotation?.textContent?.trim()
+      ? convertLatexToUnicode(annotation.textContent)
+      : presentationMathMLToText(mathEl).replace(/\s*=\s*/g, " = ").replace(/,(?=\S)/g, ", ").replace(/\s+/g, " ").trim();
     root.parentNode.replaceChild(doc.createTextNode(converted), root);
+  }
+
+  // Defensive fallback: any KaTeX-classed wrapper that somehow has no
+  // <math> inside at all (e.g. a source that only ever emitted the
+  // visible-HTML branch) still gets flattened to plain text rather than
+  // left as unstyled nested spans.
+  for (const el of [...doc.querySelectorAll('[class*="katex"]')]) {
+    if (!el.parentNode) continue;
+    const text = (el.textContent || "").replace(/\s+/g, " ").trim();
+    el.parentNode.replaceChild(doc.createTextNode(text), el);
   }
 }
 

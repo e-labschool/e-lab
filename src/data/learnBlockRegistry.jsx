@@ -57,6 +57,7 @@ export const SIMULATION_REGISTRY = {
   "particle-model-visualizer": { label: "Particle Model Visualizer" },
   "phase-change-heating-curve": { label: "Phase Change & Heating Curve" },
   "ph-calculator-visualizer": { label: "pH Calculator & Visualizer" },
+  "h-oh-balance": { label: "H+ - OH- Balance in Water" },
 };
 
 // Strips HTML tags for a safe plain-text preview — never renders HTML
@@ -391,8 +392,8 @@ export function RichTextEditor({ value, onChange }) {
         onMouseUp={saveSelection}
         onKeyUp={saveSelection}
         onPaste={richTextPaste}
-        className="min-h-[100px] rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] px-3 py-2 text-sm text-[var(--color-ink)] focus:border-[var(--color-indigo)] focus:outline-none [&_h3]:text-lg [&_h3]:font-bold [&_h4]:text-base [&_h4]:font-semibold [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-[var(--color-indigo)] [&_a]:underline"
-        dangerouslySetInnerHTML={{ __html: value }}
+        className="min-h-[100px] rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] px-3 py-2 text-sm text-[var(--color-ink)] focus:border-[var(--color-indigo)] focus:outline-none [&_h3]:text-lg [&_h3]:font-bold [&_h4]:text-base [&_h4]:font-semibold [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-[var(--color-indigo)] [&_a]:underline [&_sub]:text-[0.75em] [&_sup]:text-[0.75em] [&_sub]:relative [&_sup]:relative [&_sub]:[line-height:0] [&_sup]:[line-height:0]"
+        dangerouslySetInnerHTML={{ __html: resolveMathAnnotationsInHtml(value) }}
         onBlur={(e) => onChange(e.currentTarget.innerHTML)}
       />
     </div>
