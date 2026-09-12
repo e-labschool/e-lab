@@ -16,6 +16,7 @@ const SIMULATION_COMPONENTS = {
   "phase-change-heating-curve": lazy(() => import("../../engines/phase-change-heating-curve/PhaseChangeHeatingCurve.jsx")),
   "ph-calculator-visualizer": lazy(() => import("../../engines/ph-calculator-visualizer/PHCalculatorVisualizer.jsx")),
   "h-oh-balance": lazy(() => import("../../engines/h-oh-balance/HOHBalance.jsx")),
+  "neutralization-particle-visualizer": lazy(() => import("../../engines/neutralization-particle-visualizer/NeutralizationParticleVisualizer.jsx")),
 };
 
 export default function LearnBlockRenderer({ block }) {

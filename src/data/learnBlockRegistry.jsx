@@ -58,6 +58,7 @@ export const SIMULATION_REGISTRY = {
   "phase-change-heating-curve": { label: "Phase Change & Heating Curve" },
   "ph-calculator-visualizer": { label: "pH Calculator & Visualizer" },
   "h-oh-balance": { label: "H+ - OH- Balance in Water" },
+  "neutralization-particle-visualizer": { label: "Neutralization Particle Visualizer" },
 };
 
 // Strips HTML tags for a safe plain-text preview — never renders HTML
