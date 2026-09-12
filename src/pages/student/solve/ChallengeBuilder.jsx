@@ -25,7 +25,7 @@ export default function ChallengeBuilder() {
   const [questionCount, setQuestionCount] = useState(10);
   const [customCount, setCustomCount] = useState("");
   const [timeMinutes, setTimeMinutes] = useState(20);
-  const accountLevel = profile?.level === "HL" ? "HL" : "SL";
+  const accountLevel = profile?.level;
   const [level, setLevel] = useState(accountLevel);
   const [style, setStyle] = useState("balanced");
   const [starting, setStarting] = useState(false);

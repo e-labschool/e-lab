@@ -14,7 +14,7 @@ import { canStudentAccessResourceLevel } from "../../../lib/learnLevelAccess.js"
 
 export default function CategoryPage() {
   const { profile } = useAuth();
-  const studentLevel = profile?.level || "SL";
+  const studentLevel = profile?.level;
   const { categoryId } = useParams();
   const category = CATEGORIES[categoryId];
   const [search, setSearch] = useState("");

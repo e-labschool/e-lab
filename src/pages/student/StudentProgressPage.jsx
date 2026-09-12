@@ -17,7 +17,7 @@ const STATUS_TONE = { strong: "teal", revisit: "amber", performing_well: "indigo
 export default function StudentProgressPage() {
   const navigate = useNavigate();
   const { profile } = useAuth();
-  const studentLevel = profile?.level || "SL";
+  const studentLevel = profile?.level;
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(null);

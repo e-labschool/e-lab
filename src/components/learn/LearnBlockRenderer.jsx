@@ -148,7 +148,7 @@ export default function LearnBlockRenderer({ block }) {
 function TopicLinkBlock({ content }) {
   const navigate = useNavigate();
   const { profile } = useAuth();
-  const studentLevel = profile?.level || "SL";
+  const studentLevel = profile?.level;
   const [target, setTarget] = useState(null);
   const [unavailable, setUnavailable] = useState(false);
   const code = String(content.targetCode || "").trim().toUpperCase();

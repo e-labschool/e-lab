@@ -39,9 +39,23 @@ export function RoleIndexRedirect({ role, fallback }) {
  * the fallback element directly if nothing is remembered yet, instead of
  * redirecting to a fallback path. */
 export function RoleIndexResume({ role, fallbackElement }) {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
+
+  // A student with no saved SL/HL level must complete course setup first.
+  // Ignore any old remembered route so legacy accounts cannot bypass the
+  // new level-selection step.
+  if (role === "student" && profile?.level !== "SL" && profile?.level !== "HL") {
+    return fallbackElement;
+  }
+
   const remembered = user?.id ? loadUserScopedValue(user.id, `last-route:${role}`, null) : null;
   if (remembered) return <Navigate to={remembered} replace />;
+
+  // Once a student has a saved level, /student is no longer an onboarding
+  // screen. On a new browser/device with no remembered route, go straight
+  // to Learn instead of asking them to choose their course again.
+  if (role === "student") return <Navigate to="/student/learn" replace />;
+
   return fallbackElement;
 }
 

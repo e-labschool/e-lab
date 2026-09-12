@@ -7,7 +7,7 @@ import { useAuth } from "../../context/AuthContext.jsx";
 
 export default function LearnCmsHome() {
   const { profile } = useAuth();
-  const studentLevel = profile?.level || "SL";
+  const studentLevel = profile?.level;
   const [welcomeId, setWelcomeId] = useState(undefined);
   useEffect(() => { listPublishedLessonMeta(studentLevel).then(rows => setWelcomeId(rows.find(r=>r.parent_topic==="__welcome__")?.id || null)).catch(()=>setWelcomeId(null)); }, [studentLevel]);
   if (welcomeId === undefined) return <div className="flex min-h-[40vh] items-center justify-center"><ELabLoader/></div>;

@@ -81,6 +81,17 @@ export default function ProtectedRoute({ role, children }) {
     return <Navigate to={`/${profile.role}`} replace />;
   }
 
+  // Student course setup is mandatory before any student sub-route can be
+  // opened. Older accounts may have a null/blank level because level was
+  // introduced after those profiles were created. Do not silently treat
+  // them as SL: send them to the student index to explicitly choose SL/HL.
+  // The bare /student route itself is allowed so CurriculumSubjectSelect
+  // can collect and save the missing level.
+  const hasStudentLevel = profile.level === "SL" || profile.level === "HL";
+  if (role === "student" && !hasStudentLevel && location.pathname !== "/student") {
+    return <Navigate to="/student" replace />;
+  }
+
   // Never checked for role="admin" — the admin console must always stay
   // reachable to actually turn maintenance mode back off.
   if (role !== "admin" && settings.maintenance_mode) {

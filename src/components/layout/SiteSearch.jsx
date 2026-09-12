@@ -33,7 +33,7 @@ export default function SiteSearch({ role }) {
   useEffect(() => {
     if (role !== "student") return;
     let active = true;
-    listPublishedLessonMeta(profile?.level || "SL")
+    listPublishedLessonMeta(profile?.level)
       .then((rows) => { if (active) setLessons(rows); })
       .catch(() => { if (active) setLessons([]); });
     return () => { active = false; };

@@ -22,7 +22,7 @@ function topicNavLabel(topic) {
 export default function LearnCmsSidebar({ activeConceptId: activePageId, basePath }) {
   const navigate = useNavigate();
   const { profile } = useAuth();
-  const studentLevel = profile?.level || "SL";
+  const studentLevel = profile?.level;
   const [lessonsByTopic, setLessonsByTopic] = useState(null);
   // Accordion: at most ONE open topic, and at most ONE open subtopic
   // (within whichever topic is open) — a scalar id (or null), not a Set,

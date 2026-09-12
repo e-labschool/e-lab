@@ -52,7 +52,7 @@ export default function LearnLessonPage() {
   const { conceptId: pageId } = useParams(); // param name kept as conceptId — see LearnLayout.jsx
   const navigate = useNavigate();
   const { user, profile } = useAuth();
-  const studentLevel = profile?.level || "SL";
+  const studentLevel = profile?.level;
   const { settings: displaySettings } = useDisplaySettings();
   const { openConcept, markConceptsCompleted, restartConcept, statusFor } = useLearningProgress();
   const [lesson, setLesson] = useState(null);

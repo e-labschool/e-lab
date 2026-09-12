@@ -12,7 +12,7 @@ import { canStudentAccessResourceLevel } from "../../../lib/learnLevelAccess.js"
 
 export default function ResourcesLanding() {
   const { profile } = useAuth();
-  const studentLevel = profile?.level || "SL";
+  const studentLevel = profile?.level;
   const { resources: supabaseResources, loading, error } = useVisibleResources();
   // Merge existing static entries with Supabase-published ones — nothing
   // that worked before this change stops working, per the brief.
