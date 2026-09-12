@@ -25,7 +25,7 @@ export default function LearnBlockRenderer({ block }) {
     case "rich_text":
       return (
         <section>
-          {c.title && <h2 className="mb-2 text-xl font-semibold tracking-tight" style={c.titleColor ? { color: c.titleColor } : { color: "var(--color-ink)" }}>{c.title}</h2>}
+          {c.title && <h2 className="mb-2 text-xl font-semibold tracking-tight" style={{ color: c.titleColor || "#f08484" }}>{c.title}</h2>}
           <div className="prose-sm max-w-none text-[var(--color-ink-soft)] [&_h3]:text-lg [&_h3]:font-bold [&_h3]:text-[var(--color-ink)] [&_h4]:text-base [&_h4]:font-semibold [&_h4]:text-[var(--color-ink)] [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-[var(--color-indigo)] [&_a]:underline [&_sub]:text-[0.75em] [&_sup]:text-[0.75em] [&_sub]:relative [&_sup]:relative [&_sub]:[line-height:0] [&_sup]:[line-height:0]" dangerouslySetInnerHTML={{ __html: sanitizeHtml(resolveMathAnnotationsInHtml(c.html)) }} />
         </section>
       );
@@ -80,16 +80,16 @@ export default function LearnBlockRenderer({ block }) {
 
     case "key_idea":
       return (
-        <div className="rounded-md border-l-4 border-[var(--color-indigo)] bg-[var(--color-indigo-soft)] p-4">
-          <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-indigo)]"><Lightbulb size={13} /> Key Idea</p>
+        <div className="rounded-md border-l-4 border-[#6d8cff] bg-[#6d8cff]/12 p-4">
+          <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[#8da3ff]"><Lightbulb size={13} /> Key Idea</p>
           <p className="mt-1.5 whitespace-pre-wrap text-sm text-[var(--color-ink)]">{c.text}</p>
         </div>
       );
 
     case "definition":
       return (
-        <div className="rounded-md border border-[var(--color-teal)]/25 bg-[var(--color-teal-soft)] p-4">
-          <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-teal)]"><BookMarked size={13} /> Definition</p>
+        <div className="rounded-md border border-[#2dd4bf]/35 bg-[#2dd4bf]/10 p-4">
+          <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[#45e0cd]"><BookMarked size={13} /> Definition</p>
           <p className="mt-1.5 font-semibold text-[var(--color-ink)]">{c.term}</p>
           <p className="mt-0.5 whitespace-pre-wrap text-sm text-[var(--color-ink)]">{c.definition}</p>
         </div>
@@ -97,16 +97,16 @@ export default function LearnBlockRenderer({ block }) {
 
     case "common_mistake":
       return (
-        <div className="rounded-md border-l-4 border-[var(--color-amber)] bg-[var(--color-amber-soft)] p-4">
-          <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-amber)]"><AlertTriangle size={13} /> Common Mistakes / Misunderstandings</p>
+        <div className="rounded-md border-l-4 border-[#f59e0b] bg-[#f59e0b]/10 p-4">
+          <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[#f7b94a]"><AlertTriangle size={13} /> Common Mistakes / Misunderstandings</p>
           <p className="mt-1.5 whitespace-pre-wrap text-sm text-[var(--color-ink)]">{c.text}</p>
         </div>
       );
 
     case "real_life":
       return (
-        <div className="rounded-md border border-[var(--color-teal)]/30 bg-[var(--color-teal-soft)] p-4">
-          <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-teal)]"><Globe2 size={13} /> Real-Life Connection</p>
+        <div className="rounded-md border border-[#34d399]/30 bg-[#34d399]/10 p-4">
+          <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[#5ee0ad]"><Globe2 size={13} /> Real-Life Connection</p>
           {c.title && <p className="mt-1.5 font-semibold text-[var(--color-ink)]">{c.title}</p>}
           <p className="mt-0.5 whitespace-pre-wrap text-sm text-[var(--color-ink-soft)]">{c.content}</p>
           {c.imageUrl && <img src={c.imageUrl} alt="" className="mt-2 max-w-sm rounded-md" />}
@@ -197,8 +197,8 @@ function WorkedExampleBlock({ content }) {
   const isReveal = content.displayMode === "reveal";
 
   return (
-    <div className="rounded-md border border-[var(--color-indigo)]/20 bg-[var(--color-indigo-soft)] p-4">
-      <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Worked Example</p>
+    <div className="rounded-md border border-[#fb7185]/30 bg-[#fb7185]/10 p-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-[#ff8fa1]">Worked Example</p>
       <p className="mt-1.5 whitespace-pre-wrap text-sm font-medium text-[var(--color-ink)]">{content.question}</p>
 
       {solution && (isReveal ? (
@@ -230,7 +230,7 @@ function WorkedExampleBlock({ content }) {
 function DataGraphBlock({ content }) {
   const rows = (content.rows ?? []).filter((r) => r.x !== "" && r.y !== "");
   return (
-    <div className="rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-4">
+    <div className="rounded-md border border-[#22d3ee]/30 bg-[#22d3ee]/10 p-4">
       {content.title && <p className="font-semibold text-[var(--color-ink)]">{content.title}</p>}
       {rows.length > 0 && (
         <div className="mt-3 overflow-x-auto">
@@ -252,7 +252,7 @@ function CompareContrastGrid({ content }) {
   const table = content.table;
   if (table?.headers?.length && table?.rows?.length) {
     return (
-      <div className="overflow-x-auto rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)]">
+      <div className="overflow-x-auto rounded-md border border-[#a78bfa]/30 bg-[#a78bfa]/8">
         <table className="min-w-full border-collapse text-left text-sm">
           <thead className="bg-[var(--color-indigo-soft)] text-[var(--color-ink)]">
             <tr>
@@ -278,7 +278,7 @@ function CompareContrastGrid({ content }) {
   return (
     <div className={`grid gap-3 sm:grid-cols-${Math.min(content.columns?.length ?? 2, 3)}`}>
       {(content.columns ?? []).map((col, i) => (
-        <div key={i} className="rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-4">
+        <div key={i} className="rounded-md border border-[#a78bfa]/30 bg-[#a78bfa]/8 p-4">
           <p className="font-semibold text-[var(--color-ink)]">{col.title}</p>
           <p className="mt-1.5 whitespace-pre-line text-sm text-[var(--color-ink-soft)]">{col.content}</p>
         </div>
@@ -303,7 +303,7 @@ function CompareContrastBlock({ content }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="flex w-full items-center gap-2 rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)] px-4 py-3 text-left text-sm font-medium text-[var(--color-ink)] hover:border-[var(--color-indigo)] hover:bg-[var(--color-indigo-soft)]"
+        className="flex w-full items-center gap-2 rounded-md border border-[#a78bfa]/35 bg-[#a78bfa]/10 px-4 py-3 text-left text-sm font-medium text-[var(--color-ink)] hover:border-[var(--color-indigo)] hover:bg-[var(--color-indigo-soft)]"
       >
         <Columns2 size={16} className="text-[var(--color-indigo)]" /> {buttonLabel}
       </button>
@@ -311,7 +311,7 @@ function CompareContrastBlock({ content }) {
   }
 
   return (
-    <div className="rounded-md border border-[var(--color-indigo)]/25 bg-[var(--color-indigo-soft)] p-4">
+    <div className="rounded-md border border-[#a78bfa]/35 bg-[#a78bfa]/10 p-4">
       <div className="flex items-center justify-between">
         <p className="flex items-center gap-2 text-sm font-semibold text-[var(--color-ink)]"><Columns2 size={15} className="text-[var(--color-indigo)]" /> {buttonLabel}</p>
         <button type="button" onClick={() => setOpen(false)} className="text-xs font-medium text-[var(--color-indigo)]">Close</button>
@@ -326,8 +326,8 @@ function CompareContrastBlock({ content }) {
 function RevealThinkBlock({ content }) {
   const [revealed, setRevealed] = useState(false);
   return (
-    <div className="rounded-md border border-[var(--color-violet)]/30 bg-[var(--color-violet-soft)] p-4">
-      <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-violet)]">Think</p>
+    <div className="rounded-md border border-[#c084fc]/35 bg-[#c084fc]/10 p-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-[#d29aff]">Think</p>
       <p className="mt-1.5 whitespace-pre-wrap text-sm text-[var(--color-ink)]">{content.prompt}</p>
       {!revealed ? (
         <button type="button" onClick={() => setRevealed(true)} className="mt-3 rounded-md border border-[var(--color-violet)] px-3 py-1.5 text-xs font-medium text-[var(--color-violet)]">Reveal</button>
@@ -342,8 +342,8 @@ function PracticalBlock({ content }) {
   const sections = ["aim", "apparatus", "variables", "method", "safety", "observations", "data", "analysis"].filter((f) => content[f]?.trim());
   if (sections.length === 0) return null;
   return (
-    <div className="rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-4">
-      <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]"><Beaker size={13} /> Practical</p>
+    <div className="rounded-md border border-[#fb923c]/30 bg-[#fb923c]/10 p-4">
+      <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[#f7a85d]"><Beaker size={13} /> Practical</p>
       <div className="mt-2 space-y-2.5">
         {sections.map((field) => (
           <div key={field}>

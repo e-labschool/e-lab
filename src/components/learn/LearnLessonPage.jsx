@@ -132,7 +132,7 @@ export default function LearnLessonPage() {
         </p>
       )}
       <p className="mt-1 font-mono text-xs font-semibold text-[var(--color-indigo)]">{lesson.page.lesson_code}</p>
-      <h1 className="mt-1 font-[var(--font-display)] text-[26px] font-bold tracking-tight text-[var(--color-ink)]">{lesson.page.title}</h1>
+      <h1 className="mt-1 font-[var(--font-display)] text-[26px] font-bold tracking-tight text-[#34fe7b]">{lesson.page.title}</h1>
 
       {pages.length > 1 && (
         <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-y border-[var(--color-line)] py-3">

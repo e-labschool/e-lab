@@ -22,7 +22,7 @@ export const BLOCK_CATEGORIES = [
 ];
 
 export const BLOCK_TYPES = {
-  rich_text: { label: "Rich Text", category: "content", icon: Type, defaultContent: { title: "", titleColor: "", html: "" } },
+  rich_text: { label: "Rich Text", category: "content", icon: Type, defaultContent: { title: "", titleColor: "#f08484", html: "" } },
   image: { label: "Image", category: "content", icon: ImageIcon, defaultContent: { url: "", caption: "", alt: "", alignment: "center", width: "large" } },
   video: { label: "Video", category: "content", icon: Video, defaultContent: { url: "", caption: "", alignment: "center", width: "large" } },
   equation: { label: "Chemical Equation / Chemistry", category: "chemistry", icon: FlaskConical, defaultContent: { markup: "" } },

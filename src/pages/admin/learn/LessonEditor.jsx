@@ -346,7 +346,7 @@ export default function LessonEditor() {
         </button>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-amber)]">Preview as Student</p><div className="inline-flex rounded-md border border-[var(--color-line)] p-1">{["SL","HL"].map((level)=><button key={level} type="button" onClick={()=>{setPreviewLevel(level);setPreviewPage(0);}} className={`rounded px-2.5 py-1 text-xs font-semibold ${previewLevel===level?"bg-[var(--color-indigo)] text-white":"text-[var(--color-ink-soft)]"}`}>{level}</button>)}</div></div>
         <p className="font-mono text-xs text-[var(--color-indigo)]">{form.lessonCode}</p>
-        <h1 className="mt-1 font-[var(--font-display)] text-[26px] font-bold text-[var(--color-ink)]">{form.title}</h1>
+        <h1 className="mt-1 font-[var(--font-display)] text-[26px] font-bold text-[#34fe7b]">{form.title}</h1>
         {previewPages.length > 1 && (
           <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-y border-[var(--color-line)] py-3">
             <div>
