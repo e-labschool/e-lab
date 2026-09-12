@@ -34,13 +34,13 @@ export default function PHCalculatorVisualizer({ compact = false }) {
   const conc = concentrationFromPH(pH);
 
   const body = (
-    <div className="flex flex-col gap-3 rounded-xl border p-3 sm:p-4" style={{ borderColor: "var(--color-line)", background: "var(--color-paper)" }}>
-      <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-md border px-3 py-2 text-center" style={{ borderColor: "var(--color-line)", background: "var(--color-paper-raised)" }}>
+    <div className="mx-auto flex flex-col gap-3.5 rounded-xl border px-5 py-4" style={{ maxWidth: 900, borderColor: "var(--color-line)", background: "var(--color-paper)" }}>
+      <div className="grid grid-cols-2 gap-3.5">
+        <div className="flex min-h-[68px] flex-col justify-center rounded-md border px-3 py-2 text-center" style={{ borderColor: "var(--color-line)", background: "var(--color-paper-raised)" }}>
           <p className="text-[10px] font-medium uppercase tracking-wide" style={{ color: "var(--color-ink-faint)" }}>[H₃O⁺] mol dm⁻³</p>
           <p className="text-lg font-semibold tabular-nums" style={{ color: "var(--color-indigo)" }}>{formatDecimal(conc)}</p>
         </div>
-        <div className="rounded-md border px-3 py-2 text-center" style={{ borderColor: "var(--color-line)", background: "var(--color-paper-raised)" }}>
+        <div className="flex min-h-[68px] flex-col justify-center rounded-md border px-3 py-2 text-center" style={{ borderColor: "var(--color-line)", background: "var(--color-paper-raised)" }}>
           <p className="text-[10px] font-medium uppercase tracking-wide" style={{ color: "var(--color-ink-faint)" }}>pH</p>
           <p className="text-lg font-semibold tabular-nums" style={{ color: "var(--color-indigo)" }}>{formatPH(pH)}</p>
         </div>

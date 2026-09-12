@@ -2,9 +2,10 @@ import { useCallback, useRef } from "react";
 import { PH_MIN, PH_MAX, concentrationFromPH, formatDecimal, formatScientific } from "../lib/ph.js";
 
 const ROW_PH = Array.from({ length: PH_MAX - PH_MIN + 1 }, (_, i) => PH_MIN + i);
-const ROW_HEIGHT = 25;
+const ROW_HEIGHT = 29;
 const TRACK_HEIGHT = ROW_HEIGHT * (ROW_PH.length - 1);
 const PAD = ROW_HEIGHT / 2;
+const COLUMN_GAP = 20; // px each side of the centre line -> 40px total between columns
 
 /**
  * The whole simulation, visually: one draggable horizontal marker that
@@ -48,10 +49,10 @@ export default function LinkedScale({ pH, onChange }) {
   const markerTop = rowY(pH);
 
   return (
-    <div className="select-none">
+    <div className="mx-auto select-none" style={{ width: "min(100%, 480px)", marginTop: 14 }}>
       <div className="relative h-4 text-[10px] font-semibold uppercase tracking-wide" style={{ color: "var(--color-ink-faint)" }}>
-        <span className="absolute right-1/2 pr-2">[H₃O⁺] mol dm⁻³</span>
-        <span className="absolute left-1/2 pl-2">pH</span>
+        <span className="absolute right-1/2" style={{ paddingRight: COLUMN_GAP }}>[H₃O⁺] mol dm⁻³</span>
+        <span className="absolute left-1/2" style={{ paddingLeft: COLUMN_GAP }}>pH</span>
       </div>
 
       <div
@@ -73,13 +74,13 @@ export default function LinkedScale({ pH, onChange }) {
               className="absolute left-0 right-0"
               style={{ top: rowY(p), height: ROW_HEIGHT, transform: "translateY(-50%)" }}
             >
-              <span className="absolute right-1/2 flex items-baseline gap-1.5 pr-2" style={{ top: "50%", transform: "translateY(-50%)" }}>
+              <span className="absolute right-1/2 flex items-baseline gap-2" style={{ top: "50%", transform: "translateY(-50%)", paddingRight: COLUMN_GAP }}>
                 <span className="text-[12px] font-medium tabular-nums" style={{ color: "var(--color-ink)" }}>{formatDecimal(conc)}</span>
                 <span className="text-[9px]" style={{ color: "var(--color-ink-faint)" }}>{formatScientific(conc)}</span>
               </span>
               <span
-                className={`absolute left-1/2 whitespace-nowrap pl-2 text-[12px] tabular-nums ${isNeutral ? "font-bold" : "font-medium"}`}
-                style={{ top: "50%", transform: "translateY(-50%)", color: isNeutral ? "var(--color-teal)" : "var(--color-ink-soft)" }}
+                className={`absolute left-1/2 whitespace-nowrap text-[12px] tabular-nums ${isNeutral ? "font-bold" : "font-medium"}`}
+                style={{ top: "50%", transform: "translateY(-50%)", paddingLeft: COLUMN_GAP, color: isNeutral ? "var(--color-teal)" : "var(--color-ink-soft)" }}
               >
                 {p}{isNeutral && <span className="ml-1 text-[9px] font-medium uppercase tracking-wide">Neutral</span>}
               </span>
