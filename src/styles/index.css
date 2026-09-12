@@ -42,6 +42,17 @@
   --color-coral: #B85C4A;
   --color-coral-soft: #F8ECE9;
 
+  /* ---- Learn end-of-unit card ----
+     Warm pastel surface with intentionally stronger action buttons. */
+  --color-end-unit-bg: #FFF6D8;
+  --color-end-unit-border: #E7D7A3;
+  --color-end-unit-finish: #4F7A45;
+  --color-end-unit-finish-hover: #426A39;
+  --color-end-unit-secondary: #4B382B;
+  --color-end-unit-secondary-hover: #3D2D23;
+  --color-end-unit-next: #20242A;
+  --color-end-unit-next-hover: #111419;
+
   /* ---- Functional roles (homepage + section accents) ----
      student = indigo, teacher = amber, interactive/simulation = teal,
      resources = violet, assess = green, warnings = coral. Same physical
@@ -86,6 +97,16 @@
   --color-green-soft: #1B2416;
   --color-coral: #E0917E;
   --color-coral-soft: #2E1D18;
+
+  /* Keep the end card warm but subdued in dark mode rather than bright. */
+  --color-end-unit-bg: #2A2618;
+  --color-end-unit-border: #554D2E;
+  --color-end-unit-finish: #6E9B61;
+  --color-end-unit-finish-hover: #80AC73;
+  --color-end-unit-secondary: #6B5140;
+  --color-end-unit-secondary-hover: #7B5E49;
+  --color-end-unit-next: #363B42;
+  --color-end-unit-next-hover: #444A52;
 
   --color-block-s: #6C86EE;
   --color-block-p: #4FB3A3;

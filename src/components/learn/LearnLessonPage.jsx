@@ -190,7 +190,7 @@ export default function LearnLessonPage() {
           )}
 
           {isLastContentPage && (
-            <div className="rounded-lg border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-4 sm:p-5">
+            <div className="rounded-lg border border-[var(--color-end-unit-border)] bg-[var(--color-end-unit-bg)] p-4 sm:p-5">
               <p className="text-sm font-semibold text-[var(--color-ink)]">End of this chapter</p>
               <p className="mt-1 text-xs text-[var(--color-ink-soft)]">Finish to record this lesson in Progress, restart from Page 1, or continue to the next published lesson.</p>
               <div className="mt-4 flex flex-wrap gap-2.5">
@@ -209,7 +209,7 @@ export default function LearnLessonPage() {
                       setFinishing(false);
                     }
                   }}
-                  className="flex items-center gap-1.5 rounded-md bg-[var(--color-indigo)] px-4 py-2 text-sm font-semibold text-white disabled:cursor-default disabled:opacity-70"
+                  className="flex items-center gap-1.5 rounded-md bg-[var(--color-end-unit-finish)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[var(--color-end-unit-finish-hover)] disabled:cursor-default disabled:opacity-70"
                 >
                   <CheckCircle2 size={15} /> {finishing ? "Finishing…" : progressConceptIds.length && progressConceptIds.every((id) => statusFor(id) === "completed") ? "Finished ✓" : "Finish"}
                 </button>
@@ -219,7 +219,7 @@ export default function LearnLessonPage() {
                     progressConceptIds.forEach((id) => restartConcept(id));
                     goToContentPage(0);
                   }}
-                  className="flex items-center gap-1.5 rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] px-4 py-2 text-sm font-semibold text-[var(--color-ink)]"
+                  className="flex items-center gap-1.5 rounded-md border border-[var(--color-end-unit-secondary)] bg-[var(--color-end-unit-secondary)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[var(--color-end-unit-secondary-hover)]"
                 >
                   <RotateCcw size={15} /> Restart Chapter
                 </button>
@@ -227,7 +227,7 @@ export default function LearnLessonPage() {
                   <button
                     type="button"
                     onClick={() => navigate(`/student/learn/${adjacent.next.id}`)}
-                    className="flex items-center gap-1.5 rounded-md border border-[var(--color-indigo)] px-4 py-2 text-sm font-semibold text-[var(--color-indigo)]"
+                    className="flex items-center gap-1.5 rounded-md border border-[var(--color-end-unit-next)] bg-[var(--color-end-unit-next)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[var(--color-end-unit-next-hover)]"
                   >
                     Next Lesson <ChevronRight size={15} />
                   </button>
