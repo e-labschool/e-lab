@@ -22,21 +22,37 @@ export default function LearnBlockRenderer({ block }) {
   const c = block.content ?? {};
 
   switch (block.block_type) {
-    case "rich_text":
+    case "rich_text": {
+      const wrap = c.imageWrap || "right";
       return (
-        <section>
+        <section className="after:block after:clear-both after:content-['']">
           {c.title && <h2 className="mb-2 text-xl font-semibold tracking-tight" style={{ color: c.titleColor || "#f08484" }}>{c.title}</h2>}
-          <div className="prose-sm max-w-none text-[var(--color-ink-soft)] [&_h3]:text-lg [&_h3]:font-bold [&_h3]:text-[var(--color-ink)] [&_h4]:text-base [&_h4]:font-semibold [&_h4]:text-[var(--color-ink)] [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-[var(--color-indigo)] [&_a]:underline [&_sub]:text-[0.75em] [&_sup]:text-[0.75em] [&_sub]:relative [&_sup]:relative [&_sub]:[line-height:0] [&_sup]:[line-height:0]" dangerouslySetInnerHTML={{ __html: sanitizeHtml(resolveMathAnnotationsInHtml(c.html)) }} />
+          {c.imageUrl && wrap !== "none" && <WrappedContentImage content={c} />}
+          <div className="prose-sm max-w-none text-justify text-[var(--color-ink-soft)] [&_h3]:text-left [&_h3]:text-lg [&_h3]:font-bold [&_h3]:text-[var(--color-ink)] [&_h4]:text-left [&_h4]:text-base [&_h4]:font-semibold [&_h4]:text-[var(--color-ink)] [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-[var(--color-indigo)] [&_a]:underline [&_sub]:text-[0.75em] [&_sup]:text-[0.75em] [&_sub]:relative [&_sup]:relative [&_sub]:[line-height:0] [&_sup]:[line-height:0]" dangerouslySetInnerHTML={{ __html: sanitizeHtml(resolveMathAnnotationsInHtml(c.html)) }} />
+          {c.imageUrl && wrap === "none" && <WrappedContentImage content={c} />}
         </section>
       );
+    }
 
-    case "image":
+    case "image": {
+      const wrap = c.wrap || "none";
+      const normalWidth = c.width === "small" ? "w-1/2" : c.width === "medium" ? "w-[70%]" : c.width === "full" ? "w-full" : "w-[85%]";
+      const wrappedWidth = c.width === "small" ? "sm:w-1/3" : c.width === "medium" ? "sm:w-[42%]" : "sm:w-1/2";
+      if (wrap !== "none") {
+        return (
+          <figure className={`mb-3 w-full sm:mb-2 ${wrappedWidth} ${wrap === "left" ? "sm:float-left sm:mr-5" : "sm:float-right sm:ml-5"}`}>
+            <img src={c.url} alt={c.alt || ""} className="h-auto w-full rounded-md" />
+            {c.caption && <figcaption className="mt-1.5 text-xs text-[var(--color-ink-faint)]">{c.caption}</figcaption>}
+          </figure>
+        );
+      }
       return (
         <figure className={c.alignment === "left" ? "text-left" : c.alignment === "right" ? "text-right" : "text-center"}>
-          <img src={c.url} alt={c.alt || ""} className={`inline-block h-auto rounded-md ${c.width === "small" ? "w-1/2" : c.width === "medium" ? "w-[70%]" : c.width === "full" ? "w-full" : "w-[85%]"}`} />
+          <img src={c.url} alt={c.alt || ""} className={`inline-block h-auto rounded-md ${normalWidth}`} />
           {c.caption && <figcaption className="mt-1.5 text-xs text-[var(--color-ink-faint)]">{c.caption}</figcaption>}
         </figure>
       );
+    }
 
     case "video": {
       const url = c.url || "";
@@ -103,15 +119,20 @@ export default function LearnBlockRenderer({ block }) {
         </div>
       );
 
-    case "real_life":
+    case "real_life": {
+      // Existing Real-Life images had no wrap metadata. Default them to a
+      // compact right-side wrap so older lessons gain the new layout too.
+      const wrap = c.imageWrap || "right";
       return (
-        <div className="rounded-md border border-[#34d399]/30 bg-[#34d399]/10 p-4">
+        <div className="rounded-md border border-[#34d399]/30 bg-[#34d399]/10 p-4 after:block after:clear-both after:content-['']">
           <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[#5ee0ad]"><Globe2 size={13} /> Real-Life Connection</p>
           {c.title && <p className="mt-1.5 font-semibold text-[var(--color-ink)]">{c.title}</p>}
-          <p className="mt-0.5 whitespace-pre-wrap text-sm text-[var(--color-ink-soft)]">{c.content}</p>
-          {c.imageUrl && <img src={c.imageUrl} alt="" className="mt-2 max-w-sm rounded-md" />}
+          {c.imageUrl && wrap !== "none" && <WrappedContentImage content={c} />}
+          <p className="mt-0.5 whitespace-pre-wrap text-justify text-sm leading-relaxed text-[var(--color-ink-soft)]">{c.content}</p>
+          {c.imageUrl && wrap === "none" && <WrappedContentImage content={c} />}
         </div>
       );
+    }
 
     case "worked_example":
       return <WorkedExampleBlock content={c} />;
@@ -143,6 +164,24 @@ export default function LearnBlockRenderer({ block }) {
     default:
       return null;
   }
+}
+
+function WrappedContentImage({ content }) {
+  const wrap = content.imageWrap || "right";
+  const width = content.imageWidth || "medium";
+  const widthClass = width === "small" ? "sm:w-[30%]" : width === "large" ? "sm:w-1/2" : "sm:w-[40%]";
+  const floatClass = wrap === "left"
+    ? "sm:float-left sm:mr-5"
+    : wrap === "right"
+      ? "sm:float-right sm:ml-5"
+      : "mx-auto";
+
+  return (
+    <figure className={`my-2 w-full ${wrap === "none" ? "max-w-xl" : widthClass} ${floatClass}`}>
+      <img src={content.imageUrl} alt={content.imageAlt || ""} className="h-auto w-full rounded-md" />
+      {content.imageCaption && <figcaption className="mt-1 text-xs leading-snug text-[var(--color-ink-faint)]">{content.imageCaption}</figcaption>}
+    </figure>
+  );
 }
 
 function TopicLinkBlock({ content }) {

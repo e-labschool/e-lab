@@ -22,8 +22,8 @@ export const BLOCK_CATEGORIES = [
 ];
 
 export const BLOCK_TYPES = {
-  rich_text: { label: "Rich Text", category: "content", icon: Type, defaultContent: { title: "", titleColor: "#f08484", html: "" } },
-  image: { label: "Image", category: "content", icon: ImageIcon, defaultContent: { url: "", caption: "", alt: "", alignment: "center", width: "large" } },
+  rich_text: { label: "Rich Text", category: "content", icon: Type, defaultContent: { title: "", titleColor: "#f08484", html: "", imageUrl: "", imageAlt: "", imageCaption: "", imageWrap: "right", imageWidth: "medium" } },
+  image: { label: "Image", category: "content", icon: ImageIcon, defaultContent: { url: "", caption: "", alt: "", alignment: "center", width: "large", wrap: "none" } },
   video: { label: "Video", category: "content", icon: Video, defaultContent: { url: "", caption: "", alignment: "center", width: "large" } },
   equation: { label: "Chemical Equation / Chemistry", category: "chemistry", icon: FlaskConical, defaultContent: { markup: "" } },
   molecule_3d: { label: "3D Molecule", category: "chemistry", icon: Box, defaultContent: { presetId: "" } },
@@ -31,7 +31,7 @@ export const BLOCK_TYPES = {
   key_idea: { label: "Key Idea", category: "teaching", icon: Lightbulb, defaultContent: { text: "" } },
   definition: { label: "Definition", category: "teaching", icon: BookMarked, defaultContent: { term: "", definition: "" } },
   common_mistake: { label: "Common Mistakes / Misunderstandings", category: "teaching", icon: AlertTriangle, defaultContent: { text: "" } },
-  real_life: { label: "Real-Life Connection", category: "teaching", icon: Globe2, defaultContent: { title: "", content: "", imageUrl: "" } },
+  real_life: { label: "Real-Life Connection", category: "teaching", icon: Globe2, defaultContent: { title: "", content: "", imageUrl: "", imageAlt: "", imageCaption: "", imageWrap: "right", imageWidth: "medium" } },
   worked_example: { label: "Worked Example", category: "teaching", icon: ListChecks, defaultContent: { question: "", solution: "", displayMode: "direct" } },
   data_graph: { label: "Data / Graph", category: "teaching", icon: BarChart3, defaultContent: { title: "", rows: [], explanation: "", prompt: "" } },
   compare_contrast: { label: "Compare & Contrast", category: "teaching", icon: Columns2, defaultContent: { title: "", displayMode: "inline", columns: [{ title: "", content: "" }, { title: "", content: "" }] } },
@@ -422,6 +422,22 @@ export function BlockEditor({ blockType, content, onChange, pageId, blockId }) {
             <label className={labelCls}>Text</label>
             <RichTextEditor value={content.html ?? ""} onChange={(html) => set("html", html)} />
           </div>
+          <div className="rounded-md border border-[var(--color-line)] bg-[var(--color-paper)]/45 p-3">
+            <p className="mb-2 text-xs font-semibold text-[var(--color-ink)]">Optional image inside this text block</p>
+            <LearnMediaInput kind="image" pageId={pageId} blockId={blockId} url={content.imageUrl ?? ""} onUrlChange={(url) => set("imageUrl", url)} label="Image" />
+            {content.imageUrl && (
+              <div className="mt-2 space-y-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <div><label className={labelCls}>Text wrapping</label><select className={inputCls} value={content.imageWrap || "right"} onChange={(e) => set("imageWrap", e.target.value)}><option value="right">Image right · text wraps left</option><option value="left">Image left · text wraps right</option><option value="none">No wrap · image below text</option></select></div>
+                  <div><label className={labelCls}>Image size</label><select className={inputCls} value={content.imageWidth || "medium"} onChange={(e) => set("imageWidth", e.target.value)}><option value="small">Small · 30%</option><option value="medium">Medium · 40%</option><option value="large">Large · 50%</option></select></div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div><label className={labelCls}>Alt text</label><input className={inputCls} value={content.imageAlt ?? ""} onChange={(e) => set("imageAlt", e.target.value)} placeholder="Describe the image" /></div>
+                  <div><label className={labelCls}>Caption <span className="text-[var(--color-ink-faint)]">(optional)</span></label><input className={inputCls} value={content.imageCaption ?? ""} onChange={(e) => set("imageCaption", e.target.value)} /></div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       );
 
@@ -431,10 +447,12 @@ export function BlockEditor({ blockType, content, onChange, pageId, blockId }) {
           <LearnMediaInput kind="image" pageId={pageId} blockId={blockId} url={content.url ?? ""} onUrlChange={(url) => set("url", url)} label="Image" />
           <div><label className={labelCls}>Caption</label><input className={inputCls} value={content.caption} onChange={(e) => set("caption", e.target.value)} onPaste={equationInputPaste(content.caption ?? "", (value) => set("caption", value))} /></div>
           <div><label className={labelCls}>Alt text</label><input className={inputCls} value={content.alt} onChange={(e) => set("alt", e.target.value)} /></div>
-          <div className="grid grid-cols-2 gap-2">
-            <div><label className={labelCls}>Alignment</label><select className={inputCls} value={content.alignment} onChange={(e) => set("alignment", e.target.value)}><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></div>
+          <div className="grid grid-cols-3 gap-2">
+            <div><label className={labelCls}>Text wrapping</label><select className={inputCls} value={content.wrap || "none"} onChange={(e) => set("wrap", e.target.value)}><option value="none">No wrap</option><option value="left">Wrap · image left</option><option value="right">Wrap · image right</option></select></div>
+            <div><label className={labelCls}>Alignment</label><select className={inputCls} value={content.alignment} onChange={(e) => set("alignment", e.target.value)} disabled={(content.wrap || "none") !== "none"}><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></div>
             <div><label className={labelCls}>Width</label><select className={inputCls} value={content.width || "large"} onChange={(e) => set("width", e.target.value)}><option value="small">50%</option><option value="medium">70%</option><option value="large">85%</option><option value="full">100%</option></select></div>
           </div>
+          {(content.wrap || "none") !== "none" && <p className="text-[11px] text-[var(--color-ink-faint)]">Wrapping lets the lesson content that follows flow beside this image until the image ends. On small screens it stacks automatically.</p>}
         </div>
       );
 
@@ -535,8 +553,20 @@ export function BlockEditor({ blockType, content, onChange, pageId, blockId }) {
       return (
         <div className="space-y-2">
           <div><label className={labelCls}>Title</label><input className={inputCls} value={content.title} onChange={(e) => set("title", e.target.value)} onPaste={equationInputPaste(content.title ?? "", (value) => set("title", value))} /></div>
-          <div><label className={labelCls}>Content</label><EquationFriendlyField className={inputCls} rows={3} value={content.content} onChange={(value) => set("content", value)} /></div>
+          <div><label className={labelCls}>Content</label><EquationFriendlyField className={inputCls} rows={5} value={content.content} onChange={(value) => set("content", value)} /></div>
           <LearnMediaInput kind="image" pageId={pageId} blockId={blockId} url={content.imageUrl ?? ""} onUrlChange={(url) => set("imageUrl", url)} label="Optional image" />
+          {content.imageUrl && (
+            <div className="space-y-2 rounded-md border border-[#34d399]/20 bg-[#34d399]/5 p-3">
+              <div className="grid grid-cols-2 gap-2">
+                <div><label className={labelCls}>Text wrapping</label><select className={inputCls} value={content.imageWrap || "right"} onChange={(e) => set("imageWrap", e.target.value)}><option value="right">Image right · text wraps left</option><option value="left">Image left · text wraps right</option><option value="none">No wrap · image below text</option></select></div>
+                <div><label className={labelCls}>Image size</label><select className={inputCls} value={content.imageWidth || "medium"} onChange={(e) => set("imageWidth", e.target.value)}><option value="small">Small · 30%</option><option value="medium">Medium · 40%</option><option value="large">Large · 50%</option></select></div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div><label className={labelCls}>Alt text</label><input className={inputCls} value={content.imageAlt ?? ""} onChange={(e) => set("imageAlt", e.target.value)} placeholder="Describe the image" /></div>
+                <div><label className={labelCls}>Caption <span className="text-[var(--color-ink-faint)]">(optional)</span></label><input className={inputCls} value={content.imageCaption ?? ""} onChange={(e) => set("imageCaption", e.target.value)} /></div>
+              </div>
+            </div>
+          )}
         </div>
       );
 
