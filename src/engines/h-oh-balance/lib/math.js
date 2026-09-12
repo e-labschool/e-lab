@@ -7,6 +7,16 @@ export function nextHConcentration(currentH) {
   return Math.min(MAX_H, currentH * DROP_FACTOR);
 }
 
+// Adding NaOH is modelled the same way as adding HCl, just mirrored: the
+// [OH-] side gets the direct tenfold-style bump, and [H+] is whatever
+// keeps [H+][OH-] = Kw true afterward — never touched directly, exactly
+// like [OH-] is never touched directly on the acid path.
+export function nextHFromNaOHDrop(currentH) {
+  const currentOH = ohFromH(currentH);
+  const nextOH = Math.min(MAX_H, currentOH * DROP_FACTOR);
+  return KW / nextOH;
+}
+
 export function ohFromH(h) {
   return KW / h;
 }

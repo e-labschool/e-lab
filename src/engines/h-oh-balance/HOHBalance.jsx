@@ -4,30 +4,33 @@ import DropperBeaker from "./components/DropperBeaker.jsx";
 import ConcentrationBars from "./components/ConcentrationBars.jsx";
 import PHPanel from "./components/PHPanel.jsx";
 import StatusStrip from "./components/StatusStrip.jsx";
-import { INITIAL_H, nextHConcentration, ohFromH, pHFromH, lerpConcentration } from "./lib/math.js";
+import { INITIAL_H, nextHConcentration, nextHFromNaOHDrop, ohFromH, pHFromH, lerpConcentration } from "./lib/math.js";
 import { PALETTE } from "../particle-model-visualizer/data/palette.js";
+
+const NEUTRAL_STATUS = "Pure water: [H⁺] = [OH⁻] → Neutral";
+const REACTION_CAPTION = "H⁺ + OH⁻ → H₂O";
+const REAGENT_TEXT = {
+  hcl: { addCaption: "HCl adds H⁺", status: ["HCl added → [H⁺] ↑", "H⁺ reacts with OH⁻ → [OH⁻] ↓", "More H⁺ → lower pH"] },
+  naoh: { addCaption: "NaOH adds OH⁻", status: ["NaOH added → [OH⁻] ↑", "OH⁻ reacts with H⁺ → [H⁺] ↓", "Less H⁺ → higher pH"] },
+};
 
 /**
  * A compact, content-sized component — no 100vh/min-h-screen/full-page
- * canvas anywhere. Everything here grows only from its own content: the
- * outer card has a max-width and ordinary padding, the three columns are
- * a CSS grid with explicit fr-ratios, and the two concentration bars are
- * fixed-size indicators (not a graph — no axes, no plotted point).
- *
- * The add-drop sequence is a handful of setTimeout-scheduled state
- * changes plus a couple of small requestAnimationFrame tweens for the
- * bar heights/numbers, so [H+] visibly rises before "H+ + OH- -> H2O"
- * appears, which itself appears before [OH-] visibly falls — never all
- * at once, since that would look like OH- changes automatically rather
- * than in response to the reaction.
+ * canvas anywhere. Both reagent paths run through the same timeline
+ * shape (see handleAddReagent): whichever species the reagent directly
+ * adds rises first, then the reaction caption appears, then the OTHER
+ * species falls — so the animation always shows the added ion consuming
+ * its counterpart, never the counterpart just changing on its own. The
+ * only thing that differs between "hcl" and "naoh" is which bar/caption
+ * plays which role.
  */
 export default function HOHBalance({ compact = false }) {
-  const [hConc, setHConc] = useState(INITIAL_H); // settled value
-  const [displayH, setDisplayH] = useState(INITIAL_H); // currently shown/animating value
+  const [hConc, setHConc] = useState(INITIAL_H); // settled value — single source of truth
+  const [displayH, setDisplayH] = useState(INITIAL_H);
   const [displayOH, setDisplayOH] = useState(ohFromH(INITIAL_H));
-  const [dropFalling, setDropFalling] = useState(false);
-  const [reacting, setReacting] = useState(false);
-  const [statusIndex, setStatusIndex] = useState(0);
+  const [fallingReagent, setFallingReagent] = useState(null); // "hcl" | "naoh" | null
+  const [caption, setCaption] = useState("");
+  const [statusText, setStatusText] = useState(NEUTRAL_STATUS);
   const [animating, setAnimating] = useState(false);
 
   const timeoutsRef = useRef([]);
@@ -57,31 +60,38 @@ export default function HOHBalance({ compact = false }) {
     rafRef.current = requestAnimationFrame(step);
   }
 
-  function handleAddDrop() {
+  function handleAddReagent(reagent) {
     if (animating) return;
     setAnimating(true);
-    setStatusIndex(1);
+    const text = REAGENT_TEXT[reagent];
+    setStatusText(text.status[0]);
+    setCaption(text.addCaption);
+    setFallingReagent(reagent);
 
     const fromH = hConc;
-    const toH = nextHConcentration(hConc);
+    const toH = reagent === "hcl" ? nextHConcentration(hConc) : nextHFromNaOHDrop(hConc);
     const fromOH = ohFromH(fromH);
     const toOH = ohFromH(toH);
 
-    setDropFalling(true);
-    schedule(() => setDropFalling(false), 400);
+    schedule(() => setFallingReagent(null), 400);
 
-    // 0.5s: H+ bar begins rising
-    schedule(() => tweenConcentration(fromH, toH, 500, setDisplayH), 500);
+    // Whichever species this reagent adds directly rises first.
+    const primary = reagent === "hcl"
+      ? { setter: setDisplayH, from: fromH, to: toH }
+      : { setter: setDisplayOH, from: fromOH, to: toOH };
+    schedule(() => tweenConcentration(primary.from, primary.to, 500, primary.setter), 500);
 
-    // 1.0s: show the reaction, briefly
-    schedule(() => { setReacting(true); setStatusIndex(2); }, 1000);
-    schedule(() => setReacting(false), 1600);
+    schedule(() => { setCaption(REACTION_CAPTION); setStatusText(text.status[1]); }, 1000);
+    schedule(() => setCaption(""), 1600);
 
-    // 1.2s: OH- bar begins decreasing; settle around 1.8s
+    // The other species falls in response — never simultaneously.
+    const secondary = reagent === "hcl"
+      ? { setter: setDisplayOH, from: fromOH, to: toOH }
+      : { setter: setDisplayH, from: fromH, to: toH };
     schedule(() => {
-      tweenConcentration(fromOH, toOH, 600, setDisplayOH, () => {
+      tweenConcentration(secondary.from, secondary.to, 600, secondary.setter, () => {
         setHConc(toH);
-        setStatusIndex(3);
+        setStatusText(text.status[2]);
         setAnimating(false);
       });
     }, 1200);
@@ -92,9 +102,9 @@ export default function HOHBalance({ compact = false }) {
     setHConc(INITIAL_H);
     setDisplayH(INITIAL_H);
     setDisplayOH(ohFromH(INITIAL_H));
-    setDropFalling(false);
-    setReacting(false);
-    setStatusIndex(0);
+    setFallingReagent(null);
+    setCaption("");
+    setStatusText(NEUTRAL_STATUS);
     setAnimating(false);
   }
 
@@ -111,13 +121,19 @@ export default function HOHBalance({ compact = false }) {
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(220px,0.9fr)_minmax(300px,1.3fr)_minmax(200px,0.8fr)] md:gap-5">
         <div className="flex items-center justify-center">
-          <DropperBeaker dropFalling={dropFalling} onAddDrop={handleAddDrop} onReset={handleReset} disabled={animating} />
+          <DropperBeaker
+            fallingReagent={fallingReagent}
+            onAddHCl={() => handleAddReagent("hcl")}
+            onAddNaOH={() => handleAddReagent("naoh")}
+            onReset={handleReset}
+            disabled={animating}
+          />
         </div>
 
         <div className="flex flex-col items-center justify-center gap-2">
           <ConcentrationBars hConc={displayH} ohConc={displayOH} />
-          <p className="h-4 text-xs font-medium" style={{ color: PALETTE.textSecondary, opacity: reacting ? 1 : 0, transition: "opacity 150ms ease" }}>
-            H⁺ + OH⁻ → H₂O
+          <p className="h-4 text-xs font-medium" style={{ color: PALETTE.textSecondary, opacity: caption ? 1 : 0, transition: "opacity 150ms ease" }}>
+            {caption || "\u00A0"}
           </p>
         </div>
 
@@ -126,14 +142,14 @@ export default function HOHBalance({ compact = false }) {
         </div>
       </div>
 
-      <StatusStrip statusIndex={statusIndex} />
+      <StatusStrip statusText={statusText} />
     </div>
   );
 
   if (compact) return body;
 
   return (
-    <InteractiveFrame title="H+ - OH- Balance in Water" subtitle="Add HCl and watch [H+], [OH-] and pH move together.">
+    <InteractiveFrame title="H+ - OH- Balance in Water" subtitle="Add HCl or NaOH and watch [H+], [OH-] and pH move together.">
       {body}
     </InteractiveFrame>
   );

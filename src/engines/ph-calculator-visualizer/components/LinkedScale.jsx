@@ -49,9 +49,9 @@ export default function LinkedScale({ pH, onChange }) {
 
   return (
     <div className="select-none">
-      <div className="flex justify-between px-1 text-[10px] font-semibold uppercase tracking-wide" style={{ color: "var(--color-ink-faint)" }}>
-        <span>[H₃O⁺] mol dm⁻³</span>
-        <span>pH</span>
+      <div className="relative h-4 text-[10px] font-semibold uppercase tracking-wide" style={{ color: "var(--color-ink-faint)" }}>
+        <span className="absolute right-1/2 pr-2">[H₃O⁺] mol dm⁻³</span>
+        <span className="absolute left-1/2 pl-2">pH</span>
       </div>
 
       <div
@@ -70,16 +70,16 @@ export default function LinkedScale({ pH, onChange }) {
           return (
             <div
               key={p}
-              className="absolute left-0 right-0 flex items-center justify-between px-1"
+              className="absolute left-0 right-0"
               style={{ top: rowY(p), height: ROW_HEIGHT, transform: "translateY(-50%)" }}
             >
-              <span className="flex items-baseline gap-1.5">
+              <span className="absolute right-1/2 flex items-baseline gap-1.5 pr-2" style={{ top: "50%", transform: "translateY(-50%)" }}>
                 <span className="text-[12px] font-medium tabular-nums" style={{ color: "var(--color-ink)" }}>{formatDecimal(conc)}</span>
                 <span className="text-[9px]" style={{ color: "var(--color-ink-faint)" }}>{formatScientific(conc)}</span>
               </span>
               <span
-                className={`text-[12px] tabular-nums ${isNeutral ? "font-bold" : "font-medium"}`}
-                style={{ color: isNeutral ? "var(--color-teal)" : "var(--color-ink-soft)" }}
+                className={`absolute left-1/2 whitespace-nowrap pl-2 text-[12px] tabular-nums ${isNeutral ? "font-bold" : "font-medium"}`}
+                style={{ top: "50%", transform: "translateY(-50%)", color: isNeutral ? "var(--color-teal)" : "var(--color-ink-soft)" }}
               >
                 {p}{isNeutral && <span className="ml-1 text-[9px] font-medium uppercase tracking-wide">Neutral</span>}
               </span>
