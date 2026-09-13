@@ -49,6 +49,114 @@ const REAGENTS = {
 const ACIDS = ["HCl", "CH3COOH"];
 const BASES = ["NaOH", "NH3"];
 
+// ============================================================
+// Indicator selection + colour models.
+//
+// The indicator is chosen from the OVERALL acid/base STRENGTH
+// combination, never from which reagent happens to be in the flask --
+// this is what makes "HCl flask + NaOH burette" and "NaOH flask + HCl
+// burette" both correctly select Bromothymol blue, and what makes
+// reversing a weak/strong pair keep the SAME indicator while the colour
+// direction reverses naturally (because it's driven by pH, not by a
+// separately-encoded direction rule).
+// ============================================================
+function clamp01(t) {
+  return Math.max(0, Math.min(1, t));
+}
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+function lerpColor(c1, c2, t) {
+  return [Math.round(lerp(c1[0], c2[0], t)), Math.round(lerp(c1[1], c2[1], t)), Math.round(lerp(c1[2], c2[2], t))];
+}
+function rgbToCss([r, g, b], alpha = 1) {
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+const INDICATORS = {
+  BTB: {
+    id: "BTB",
+    label: "Bromothymol blue",
+    rangeLow: 6.0,
+    rangeHigh: 7.6,
+    description: "Yellow \u2192 Green \u2192 Blue",
+    colorAt(pH) {
+      const YELLOW = [212, 186, 74], GREEN = [96, 178, 120], BLUE = [74, 132, 196];
+      const mid = (this.rangeLow + this.rangeHigh) / 2;
+      let rgb;
+      if (pH <= this.rangeLow) rgb = YELLOW;
+      else if (pH >= this.rangeHigh) rgb = BLUE;
+      else if (pH < mid) rgb = lerpColor(YELLOW, GREEN, clamp01((pH - this.rangeLow) / (mid - this.rangeLow)));
+      else rgb = lerpColor(GREEN, BLUE, clamp01((pH - mid) / (this.rangeHigh - mid)));
+      return { css: rgbToCss(rgb, 0.55), alpha: 0.55 };
+    },
+  },
+  Phenolphthalein: {
+    id: "Phenolphthalein",
+    label: "Phenolphthalein",
+    rangeLow: 8.2,
+    rangeHigh: 10.0,
+    description: "Colourless \u2192 Pink",
+    colorAt(pH) {
+      const CLEAR = [255, 255, 255], PINK = [224, 140, 178];
+      const t = pH <= this.rangeLow ? 0 : pH >= this.rangeHigh ? 1 : clamp01((pH - this.rangeLow) / (this.rangeHigh - this.rangeLow));
+      const rgb = lerpColor(CLEAR, PINK, t);
+      const alpha = lerp(0.08, 0.55, t); // "colourless" is a very faint tint of the flask liquid, not literally invisible
+      return { css: rgbToCss(rgb, alpha), alpha };
+    },
+  },
+  MethylOrange: {
+    id: "MethylOrange",
+    label: "Methyl orange",
+    rangeLow: 3.1,
+    rangeHigh: 4.4,
+    description: "Red \u2192 Orange \u2192 Yellow",
+    colorAt(pH) {
+      const RED = [196, 74, 74], ORANGE = [214, 140, 68], YELLOW = [210, 186, 84];
+      const mid = (this.rangeLow + this.rangeHigh) / 2;
+      let rgb;
+      if (pH <= this.rangeLow) rgb = RED;
+      else if (pH >= this.rangeHigh) rgb = YELLOW;
+      else if (pH < mid) rgb = lerpColor(RED, ORANGE, clamp01((pH - this.rangeLow) / (mid - this.rangeLow)));
+      else rgb = lerpColor(ORANGE, YELLOW, clamp01((pH - mid) / (this.rangeHigh - mid)));
+      return { css: rgbToCss(rgb, 0.55), alpha: 0.55 };
+    },
+  },
+};
+
+/** Chooses the indicator from the PAIR's strengths, independent of which
+ * reagent is in the flask vs the burette -- see the comment above. */
+function getIndicatorForPair(flask, burette) {
+  const hasWeakAcid = (flask.type === "acid" && flask.strength === "weak") || (burette.type === "acid" && burette.strength === "weak");
+  const hasWeakBase = (flask.type === "base" && flask.strength === "weak") || (burette.type === "base" && burette.strength === "weak");
+  if (hasWeakAcid && hasWeakBase) return null; // weak acid + weak base -- no sufficiently sharp region for a normal indicator
+  if (hasWeakAcid) return INDICATORS.Phenolphthalein; // weak acid + strong base
+  if (hasWeakBase) return INDICATORS.MethylOrange; // strong acid + weak base
+  return INDICATORS.BTB; // strong acid + strong base
+}
+
+/** Finds the titrant volume at which the theoretical pH curve crosses
+ * `targetPH`, by bisection over volume -- pH is monotonic in volume for
+ * every titration this solver supports, in either direction, so this
+ * works for both flask/burette orderings without a separate formula per
+ * direction. Returns null if the target is never reached in range. */
+function findVolumeForPH(targetPH, pHAtVolumeFn, maxVolume = 60) {
+  let lo = 0;
+  let hi = maxVolume;
+  const pHLo = pHAtVolumeFn(lo);
+  const pHHi = pHAtVolumeFn(hi);
+  if ((pHLo - targetPH) * (pHHi - targetPH) > 0) return null;
+  const increasing = pHHi > pHLo;
+  for (let i = 0; i < 60; i++) {
+    const mid = (lo + hi) / 2;
+    const pHMid = pHAtVolumeFn(mid);
+    if (Math.abs(pHMid - targetPH) < 1e-4) return mid;
+    if (pHMid < targetPH === increasing) lo = mid;
+    else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
@@ -742,6 +850,35 @@ export default function TitrationPHCurve() {
   const burette =
     REAGENTS[buretteReagent];
 
+  // Chosen from the strength PAIR (see getIndicatorForPair) -- never
+  // recomputed per-frame from anything but the reagent selection, so it
+  // stays stable throughout a run and only the colour (a function of the
+  // live pH) changes as titrant is added.
+  const indicator = useMemo(() => getIndicatorForPair(flask, burette), [flask, burette]);
+  const indicatorColor = indicator ? indicator.colorAt(chemistry.pH) : null;
+
+  // Only meaningful when an indicator applies -- the volume at which the
+  // theoretical curve crosses the CENTRE of the indicator's transition
+  // range, shown as "Indicator endpoint" and kept visually distinct from
+  // "Equivalence Point" (see requirement 10 -- they are not the same
+  // thing, even though a well-chosen indicator's endpoint sits close to
+  // it).
+  const indicatorEndpointVolume = useMemo(() => {
+    if (!indicator) return null;
+    const targetPH = (indicator.rangeLow + indicator.rangeHigh) / 2;
+    return findVolumeForPH(targetPH, (v) =>
+      getChemistryState({
+        flaskReagent,
+        buretteReagent,
+        flaskVolumeMl,
+        titrantVolumeMl: v,
+        flaskConcentration,
+        buretteConcentration,
+      }).pH
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [indicator, flaskReagent, buretteReagent, flaskVolumeMl, flaskConcentration, buretteConcentration]);
+
   const statusText =
     chemistry.stage ===
     "equivalence"
@@ -922,6 +1059,23 @@ export default function TitrationPHCurve() {
         </label>
       </div>
 
+      <div className="indicator-card">
+        <div className="indicator-card-main">
+          <span className="indicator-card-label">Indicator</span>
+          <strong>{indicator ? indicator.label : "No suitable common indicator"}</strong>
+        </div>
+        {indicator ? (
+          <div className="indicator-card-detail">
+            <span>Transition: pH {indicator.rangeLow.toFixed(1)}\u2013{indicator.rangeHigh.toFixed(1)}</span>
+            <span>{indicator.description}</span>
+          </div>
+        ) : (
+          <div className="indicator-card-detail">
+            <span>Use the pH meter to locate the equivalence region.</span>
+          </div>
+        )}
+      </div>
+
       <div className="titration-main">
         {/* LEFT — LAB APPARATUS */}
         <div className="lab-panel">
@@ -997,7 +1151,8 @@ export default function TitrationPHCurve() {
 
               <div className="flask-body">
                 <div
-                  className={`flask-liquid ${flaskLiquidClass}`}
+                  className={`flask-liquid ${indicatorColor ? "" : flaskLiquidClass}`}
+                  style={indicatorColor ? { background: indicatorColor.css } : undefined}
                 >
                   <div className="liquid-wave" />
                 </div>
@@ -1188,6 +1343,31 @@ export default function TitrationPHCurve() {
               className="axis-line"
             />
 
+            {/* indicator transition range -- a very subtle horizontal
+                band, drawn behind the curve, so students can compare it
+                against the steep region of the curve and the
+                equivalence point. Not drawn when no suitable indicator
+                applies (weak acid + weak base). */}
+            {showFeatures && indicator && (
+              <>
+                <rect
+                  x={graph.padding.left}
+                  y={graph.y(indicator.rangeHigh)}
+                  width={graph.WIDTH - graph.padding.left - graph.padding.right}
+                  height={graph.y(indicator.rangeLow) - graph.y(indicator.rangeHigh)}
+                  className="indicator-range-band"
+                />
+                <text
+                  x={graph.WIDTH - graph.padding.right - 4}
+                  y={graph.y(indicator.rangeHigh) + 10}
+                  textAnchor="end"
+                  className="indicator-range-text"
+                >
+                  INDICATOR RANGE
+                </text>
+              </>
+            )}
+
             {/* buffer region shading -- drawn BEHIND the curve, so it
                 never competes visually with the experimental line */}
             {showFeatures && showWeakStrongFeatures && (
@@ -1296,6 +1476,32 @@ export default function TitrationPHCurve() {
                   className="half-equivalence-text"
                 >
                   {halfEquivalenceLabel}
+                </text>
+              </>
+            )}
+
+            {/* indicator endpoint -- deliberately distinct from the
+                equivalence marker above: this is where the CHOSEN
+                indicator visibly changes colour, not the calculated
+                stoichiometric point. The two are related (a
+                well-chosen indicator's endpoint sits inside the steep
+                region near equivalence) but are never labelled as the
+                same thing. */}
+            {showFeatures && indicator && indicatorEndpointVolume != null && (
+              <>
+                <circle
+                  cx={graph.x(indicatorEndpointVolume)}
+                  cy={graph.y((indicator.rangeLow + indicator.rangeHigh) / 2)}
+                  r="3.5"
+                  className="indicator-endpoint-marker"
+                />
+                <text
+                  x={graph.x(indicatorEndpointVolume)}
+                  y={graph.y((indicator.rangeLow + indicator.rangeHigh) / 2) + 15}
+                  textAnchor="middle"
+                  className="indicator-endpoint-text"
+                >
+                  Indicator endpoint
                 </text>
               </>
             )}
