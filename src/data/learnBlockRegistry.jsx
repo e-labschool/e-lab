@@ -61,6 +61,7 @@ export const SIMULATION_REGISTRY = {
   "neutralization-particle-visualizer": { label: "Neutralization Particle Visualizer" },
   "equivalence-point": { label: "Equivalence Point" },
   "titration-ph-curve": { label: "pH Curve & Titration Visualizer" },
+  "buffer-action-visualizer": { label: "Buffer Action Visualizer" },
 };
 
 // Strips HTML tags for a safe plain-text preview — never renders HTML

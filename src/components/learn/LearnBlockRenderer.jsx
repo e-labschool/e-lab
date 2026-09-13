@@ -19,6 +19,7 @@ const SIMULATION_COMPONENTS = {
   "neutralization-particle-visualizer": lazy(() => import("../../engines/neutralization-particle-visualizer/NeutralizationParticleVisualizer.jsx")),
   "equivalence-point": lazy(() => import("../../engines/equivalence-point/EquivalencePoint.jsx")),
   "titration-ph-curve": lazy(() => import("../../engines/titration-ph-curve/TitrationPHCurve.jsx")),
+  "buffer-action-visualizer": lazy(() => import("../../engines/buffer-action-visualizer/BufferActionVisualizer.jsx")),
 };
 
 export default function LearnBlockRenderer({ block }) {
