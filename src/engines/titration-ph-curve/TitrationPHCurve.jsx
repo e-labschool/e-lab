@@ -367,6 +367,69 @@ export default function TitrationPHCurve() {
     ]
   );
 
+  // ============================================================
+  // Teaching-feature derivations (Show Features) -- all computed from
+  // the SAME solvePH()/getChemistryState() machinery already used for
+  // the live experimental curve, never a separate hardcoded formula.
+  // This is what keeps them scientifically correct if Ka/Kb ever change,
+  // and what makes the equivalence pH genuinely vary per combination
+  // instead of always being assumed as 7.
+  // ============================================================
+  const equivalenceState = useMemo(
+    () =>
+      getChemistryState({
+        flaskReagent,
+        buretteReagent,
+        flaskVolumeMl,
+        titrantVolumeMl: chemistry.equivalenceTitrantVolumeMl,
+        flaskConcentration,
+        buretteConcentration,
+      }),
+    [flaskReagent, buretteReagent, flaskVolumeMl, chemistry.equivalenceTitrantVolumeMl, flaskConcentration, buretteConcentration]
+  );
+  const equivalencePH = equivalenceState.pH;
+
+  // The pH-7 neutral reference and the equivalence line coincide (within
+  // a small numerical tolerance) for a strong acid/strong base system --
+  // drawing both as separate dashed lines in that case would just be two
+  // overlapping lines, so the equivalence line is only drawn distinctly
+  // when it's genuinely away from pH 7.
+  const equivalenceNearNeutral = Math.abs(equivalencePH - 7) < 0.05;
+
+  // Buffer region / half-equivalence apply ONLY when the flask holds the
+  // WEAK species and the burette delivers the STRONG opposite reagent --
+  // NOT merely because a weak reagent is selected somewhere. This is the
+  // direction-dependent chemistry the spec calls out explicitly: a weak
+  // reagent added FROM the burette into an initially-strong flask does
+  // not produce the same pre-equivalence buffer composition.
+  const flaskInfo = REAGENTS[flaskReagent];
+  const buretteInfo = REAGENTS[buretteReagent];
+  const showWeakStrongFeatures = flaskInfo.strength === "weak" && buretteInfo.strength === "strong";
+
+  // pH = pKa +/- 1 corresponds to a conjugate-pair ratio of 10:1 to
+  // 1:10, i.e. exactly 10/11 and 1/11 of the way to equivalence for a
+  // monoprotic system -- derived from the ratio bounds themselves, never
+  // hardcoded as fixed volumes.
+  const bufferLowerVolumeMl = showWeakStrongFeatures ? chemistry.equivalenceTitrantVolumeMl * (0.1 / 1.1) : null;
+  const bufferUpperVolumeMl = showWeakStrongFeatures ? chemistry.equivalenceTitrantVolumeMl * (10 / 11) : null;
+
+  const halfEquivalenceVolumeMl = showWeakStrongFeatures ? chemistry.equivalenceTitrantVolumeMl / 2 : null;
+  const halfEquivalenceState = useMemo(() => {
+    if (!showWeakStrongFeatures) return null;
+    return getChemistryState({
+      flaskReagent,
+      buretteReagent,
+      flaskVolumeMl,
+      titrantVolumeMl: chemistry.equivalenceTitrantVolumeMl / 2,
+      flaskConcentration,
+      buretteConcentration,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showWeakStrongFeatures, flaskReagent, buretteReagent, flaskVolumeMl, chemistry.equivalenceTitrantVolumeMl, flaskConcentration, buretteConcentration]);
+  const halfEquivalencePH = halfEquivalenceState?.pH ?? null;
+  const halfEquivalenceLabel =
+    flaskInfo.type === "acid" ? "pH = pKa" : `pH = pKa(${flaskInfo.label.includes("NH") ? "NH\u2084\u207A" : "conjugate acid"})`;
+
   function resetExperiment() {
     setAutoRunning(false);
 
@@ -956,14 +1019,6 @@ export default function TitrationPHCurve() {
               </div>
             </div>
 
-            <div className="ph-probe">
-              <div className="probe-wire" />
-
-              <div className="probe-body" />
-
-              <div className="probe-tip" />
-            </div>
-
             <div className="ph-meter">
               <span className="meter-label">
                 pH METER
@@ -1133,43 +1188,114 @@ export default function TitrationPHCurve() {
               className="axis-line"
             />
 
-            {/* equivalence guide */}
+            {/* buffer region shading -- drawn BEHIND the curve, so it
+                never competes visually with the experimental line */}
+            {showFeatures && showWeakStrongFeatures && (
+              <>
+                <rect
+                  x={graph.x(bufferLowerVolumeMl)}
+                  y={graph.padding.top}
+                  width={graph.x(bufferUpperVolumeMl) - graph.x(bufferLowerVolumeMl)}
+                  height={graph.HEIGHT - graph.padding.top - graph.padding.bottom}
+                  className="buffer-region"
+                />
+                <text
+                  x={(graph.x(bufferLowerVolumeMl) + graph.x(bufferUpperVolumeMl)) / 2}
+                  y={graph.padding.top + 13}
+                  textAnchor="middle"
+                  className="buffer-region-text"
+                >
+                  BUFFER REGION
+                </text>
+              </>
+            )}
+
+            {/* equivalence guides -- vertical (volume) + horizontal
+                (the ACTUAL calculated equivalence pH, never assumed to
+                be 7) meeting at a single marker */}
             {showFeatures && (
               <>
                 <line
-                  x1={graph.x(
-                    chemistry
-                      .equivalenceTitrantVolumeMl
-                  )}
-                  x2={graph.x(
-                    chemistry
-                      .equivalenceTitrantVolumeMl
-                  )}
-                  y1={
-                    graph.padding
-                      .top
-                  }
-                  y2={
-                    graph.HEIGHT -
-                    graph.padding
-                      .bottom
-                  }
+                  x1={graph.x(chemistry.equivalenceTitrantVolumeMl)}
+                  x2={graph.x(chemistry.equivalenceTitrantVolumeMl)}
+                  y1={graph.y(equivalencePH)}
+                  y2={graph.HEIGHT - graph.padding.bottom}
                   className="equivalence-guide"
                 />
-
                 <text
-                  x={graph.x(
-                    chemistry
-                      .equivalenceTitrantVolumeMl
-                  )}
-                  y={
-                    graph.padding
-                      .top + 15
-                  }
+                  x={graph.x(chemistry.equivalenceTitrantVolumeMl)}
+                  y={graph.HEIGHT - graph.padding.bottom + 32}
+                  textAnchor="middle"
+                  className="equivalence-axis-label"
+                >
+                  {chemistry.equivalenceTitrantVolumeMl.toFixed(1)} cm³
+                </text>
+
+                {/* Only drawn as its own line when it's genuinely away
+                    from pH 7 -- for strong/strong systems this would
+                    otherwise sit directly on top of the neutral
+                    reference line. */}
+                {!equivalenceNearNeutral && (
+                  <>
+                    <line
+                      x1={graph.padding.left}
+                      x2={graph.x(chemistry.equivalenceTitrantVolumeMl)}
+                      y1={graph.y(equivalencePH)}
+                      y2={graph.y(equivalencePH)}
+                      className="equivalence-guide"
+                    />
+                    <text
+                      x={graph.padding.left - 12}
+                      y={graph.y(equivalencePH) - 5}
+                      textAnchor="end"
+                      className="equivalence-axis-label"
+                    >
+                      {equivalencePH.toFixed(2)}
+                    </text>
+                  </>
+                )}
+
+                <circle
+                  cx={graph.x(chemistry.equivalenceTitrantVolumeMl)}
+                  cy={graph.y(equivalencePH)}
+                  r="6"
+                  className="equivalence-marker"
+                />
+                <text
+                  x={graph.x(chemistry.equivalenceTitrantVolumeMl)}
+                  y={graph.y(equivalencePH) - 12}
                   textAnchor="middle"
                   className="equivalence-text"
                 >
-                  Equivalence
+                  Equivalence Point
+                </text>
+              </>
+            )}
+
+            {/* half-equivalence marker -- weak/strong systems only */}
+            {showFeatures && showWeakStrongFeatures && halfEquivalencePH != null && (
+              <>
+                <circle
+                  cx={graph.x(halfEquivalenceVolumeMl)}
+                  cy={graph.y(halfEquivalencePH)}
+                  r="4"
+                  className="half-equivalence-marker"
+                />
+                <text
+                  x={graph.x(halfEquivalenceVolumeMl)}
+                  y={graph.y(halfEquivalencePH) - 10}
+                  textAnchor="middle"
+                  className="half-equivalence-text"
+                >
+                  Half-equivalence
+                </text>
+                <text
+                  x={graph.x(halfEquivalenceVolumeMl)}
+                  y={graph.y(halfEquivalencePH) + 16}
+                  textAnchor="middle"
+                  className="half-equivalence-text"
+                >
+                  {halfEquivalenceLabel}
                 </text>
               </>
             )}
@@ -1188,6 +1314,7 @@ export default function TitrationPHCurve() {
             {points.map(
               (point, index) => (
                 <circle
+
                   key={`${point.volume}-${index}`}
                   cx={graph.x(
                     point.volume

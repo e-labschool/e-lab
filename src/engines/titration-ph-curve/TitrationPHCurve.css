@@ -181,7 +181,7 @@
   left: 0;
   bottom: 0;
 
-  width: 110px;
+  width: 58px;
   height: 19px;
 
   border-radius: 7px;
@@ -239,7 +239,7 @@
 .burette-wrap {
   position: absolute;
 
-  left: 42%;
+  left: 47%;
   top: 22px;
 
   width: 84px;
@@ -499,7 +499,7 @@
 .flask-wrap {
   position: absolute;
 
-  left: 42%;
+  left: 47%;
   bottom: 33px;
 
   width: 160px;
@@ -683,84 +683,15 @@
   color: #a8b5c3;
 }
 
-/* pH PROBE */
-
-.ph-probe {
-  position: absolute;
-
-  left: 60%;
-  bottom: 89px;
-
-  width: 85px;
-  height: 173px;
-
-  transform:
-    rotate(9deg);
-}
-
-.probe-body {
-  position: absolute;
-
-  left: 39px;
-  top: 25px;
-
-  width: 14px;
-  height: 120px;
-
-  border-radius: 7px;
-
-  background:
-    linear-gradient(
-      90deg,
-      #758394,
-      #e1e7ed 45%,
-      #647182
-    );
-}
-
-.probe-tip {
-  position: absolute;
-
-  left: 41px;
-  top: 136px;
-
-  width: 10px;
-  height: 28px;
-
-  border-radius:
-    3px 3px 6px 6px;
-
-  background: #364451;
-}
-
-.probe-wire {
-  position: absolute;
-
-  left: 46px;
-  top: 0;
-
-  width: 66px;
-  height: 48px;
-
-  border:
-    3px solid #596676;
-
-  border-left: 0;
-  border-bottom: 0;
-
-  border-radius:
-    0 25px 0 0;
-}
-
 /* pH METER */
 
 .ph-meter {
   position: absolute;
 
-  right: 18px;
-  bottom: 25px;
+  right: 10px;
+  bottom: 20px;
 
-  width: 112px;
+  width: 100px;
 
   padding: 9px 9px 10px;
 
@@ -939,6 +870,49 @@
 
   font-size: 10px;
   font-weight: 700;
+}
+
+.equivalence-axis-label {
+  fill: #9ad9bd;
+
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.equivalence-marker {
+  fill: #4ade9a;
+
+  stroke: #0b111a;
+  stroke-width: 1.5;
+
+  filter: url(#softGlow);
+}
+
+.buffer-region {
+  fill: rgba(129, 140, 248, 0.08);
+  stroke: none;
+}
+
+.buffer-region-text {
+  fill: rgba(196, 200, 255, 0.55);
+
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.half-equivalence-marker {
+  fill: #cbd5e1;
+
+  stroke: #0b111a;
+  stroke-width: 1;
+}
+
+.half-equivalence-text {
+  fill: #98a4b3;
+
+  font-size: 8px;
+  font-weight: 600;
 }
 
 /* LIVE STRIP */
