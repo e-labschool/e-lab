@@ -6,6 +6,7 @@ import Wordmark from "../../components/layout/Wordmark.jsx";
 import AccountMenu from "../../components/auth/AccountMenu.jsx";
 import ThemeToggle from "../../components/layout/ThemeToggle.jsx";
 import { useTrackLastRoute } from "../../lib/lastRoute.jsx";
+import CopyrightNotice from "../../components/layout/CopyrightNotice.jsx";
 
 // Deliberately a LEFT-SIDEBAR CMS layout, not the top-tab chrome
 // Student/TeacherLayout use — the brief is explicit this should read as a
@@ -117,6 +118,7 @@ function AdminChrome() {
         <main className="flex-1 overflow-y-auto">
           <Outlet />
         </main>
+        <CopyrightNotice className="py-1.5 text-[10px]" />
       </div>
 
       {/* Mobile drawer */}

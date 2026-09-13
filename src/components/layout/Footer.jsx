@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import Wordmark from "./Wordmark.jsx";
 import Container from "../ui/Container.jsx";
+import { COPYRIGHT_TEXT } from "../../data/copyright.js";
 
 export default function Footer() {
   return (
@@ -32,7 +33,7 @@ export default function Footer() {
         </div>
 
         <div className="mt-10 flex flex-col-reverse items-start gap-3 border-t border-[var(--color-line)] pt-6 text-xs text-[var(--color-ink-faint)] md:flex-row md:items-center md:justify-between">
-          <span>&copy; {new Date().getFullYear()} e-Lab. All rights reserved.</span>
+          <span>{COPYRIGHT_TEXT}</span>
           <span>Built for students and teachers.</span>
         </div>
       </Container>

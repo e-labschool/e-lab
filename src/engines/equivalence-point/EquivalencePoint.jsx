@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import "./EquivalencePoint.css";
+import { COPYRIGHT_TEXT_COMPACT } from "../../data/copyright.js";
 
 // ============================================================
 // Reagent definitions — equivalent factors drive the stoichiometry
@@ -355,6 +356,8 @@ export default function EquivalencePoint() {
           Replay
         </button>
       </div>
+
+      <p className="equivalence-copyright">{COPYRIGHT_TEXT_COMPACT}</p>
     </section>
   );
 }

@@ -1,6 +1,7 @@
 import { jsPDF } from "jspdf";
-import { Document, Packer, Paragraph, TextRun, AlignmentType } from "docx";
+import { Document, Packer, Paragraph, TextRun, AlignmentType, Footer } from "docx";
 import { getQuestionMarks } from "../../../../data/questions/schema.js";
+import { GENERATED_DOCUMENT_FOOTER } from "../../../../data/copyright.js";
 
 // PDF and Word export both build a real structured document from the paper
 // data directly (not a screenshot of the DOM), so text stays selectable and
@@ -481,6 +482,22 @@ export function exportPdf({ draft, totalMarks, mode }) {
   }
 
   const filename = `${(details.assessmentTitle || "question-paper").replace(/\s+/g, "-").toLowerCase()}-${mode}.pdf`;
+
+  // Small generated-by footer on every page -- added last, as its own
+  // pass over all pages, so it never disturbs the question layout, marks,
+  // or any page-break logic above. Does not claim ownership over the
+  // teacher's own question content, only states the tool used.
+  const pageCount = doc.internal.getNumberOfPages();
+  const footerY = doc.internal.pageSize.getHeight() - 28;
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setFontSize(7.5);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(150, 150, 150);
+    doc.text(GENERATED_DOCUMENT_FOOTER, doc.internal.pageSize.getWidth() / 2, footerY, { align: "center" });
+    doc.setTextColor(0, 0, 0);
+  }
+
   doc.save(filename);
 }
 
@@ -710,7 +727,19 @@ export async function exportDocx({ draft, totalMarks, mode }) {
     });
   }
 
-  const doc = new Document({ sections: [{ children: paragraphs }] });
+  // A small "generated using e-Lab" footer on every page -- purely
+  // additive (no existing footer/page-numbering config to disturb),
+  // and never claims ownership over the teacher's own question content.
+  const generatedFooter = new Footer({
+    children: [
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        children: [new TextRun({ text: GENERATED_DOCUMENT_FOOTER, size: 14, color: "999999" })],
+      }),
+    ],
+  });
+
+  const doc = new Document({ sections: [{ children: paragraphs, footers: { default: generatedFooter } }] });
   const blob = await Packer.toBlob(doc);
   const filename = `${(details.assessmentTitle || "question-paper").replace(/\s+/g, "-").toLowerCase()}-${mode}.docx`;
   downloadBlob(blob, filename);

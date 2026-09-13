@@ -7,6 +7,7 @@ import { ArrowLeft } from "lucide-react";
 import DisplaySettingsButton from "./DisplaySettingsButton.jsx";
 import SiteSearch from "./SiteSearch.jsx";
 import { useDisplaySettings } from "../../context/DisplaySettingsContext.jsx";
+import CopyrightNotice from "./CopyrightNotice.jsx";
 
 // Shared by StudentLayout and TeacherLayout.
 //
@@ -51,6 +52,8 @@ function AppSidebarLayout({ tabs, accentHex, role, subject, programmeId, subject
       <main className={`flex-1 bg-[var(--color-paper)] ${displayClass}`}>
         <Outlet context={{ subject, programmeId, subjectId }} />
       </main>
+
+      <CopyrightNotice />
     </div>
   );
 }

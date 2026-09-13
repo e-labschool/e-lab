@@ -1,6 +1,7 @@
 import { useRef } from "react";
 import ModeToggle from "../layout/ModeToggle.jsx";
 import FullscreenButton from "./FullscreenButton.jsx";
+import CopyrightNotice from "../layout/CopyrightNotice.jsx";
 
 // The shared wrapper every engine renders inside. Handles chrome common to
 // ALL interactives (title, mode toggle, fullscreen) so new engines inherit
@@ -28,6 +29,13 @@ export default function InteractiveFrame({ title, subtitle, children, compact = 
         </div>
       )}
       <div className={compact ? "p-0" : "p-5 md:p-7"}>{children}</div>
+      {/* Placed as its own row AFTER the interactive content, never
+          absolutely positioned over it -- guarantees it can never
+          overlap graphs/controls/particles/etc regardless of what a
+          given engine renders. */}
+      <div className="flex justify-end px-3 pb-2">
+        <CopyrightNotice variant="simulation" />
+      </div>
     </div>
   );
 }

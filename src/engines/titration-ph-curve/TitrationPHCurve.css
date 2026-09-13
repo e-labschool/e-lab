@@ -131,6 +131,31 @@
   font-size: 0.74rem;
 }
 
+.indicator-select {
+  padding: 3px 8px;
+
+  border-radius: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+
+  background: #111a26;
+  color: #f8fafc;
+
+  font-size: 0.85rem;
+  font-weight: 600;
+
+  outline: none;
+}
+
+.indicator-recommendation-note {
+  width: 100%;
+
+  margin-top: 2px;
+
+  color: #7d8b9c;
+  font-size: 0.68rem;
+  font-style: italic;
+}
+
 .titration-main {
   display: grid;
 

@@ -5,6 +5,7 @@ import { useAuth } from "../context/AuthContext.jsx";
 import { useSettings } from "../context/SettingsContext.jsx";
 import Container from "../components/ui/Container.jsx";
 import Wordmark from "../components/layout/Wordmark.jsx";
+import CopyrightNotice from "../components/layout/CopyrightNotice.jsx";
 import Button from "../components/ui/Button.jsx";
 import CountrySelect from "../components/ui/CountrySelect.jsx";
 
@@ -58,7 +59,8 @@ export default function AuthPage() {
   }
 
   return (
-    <Container className="flex min-h-[calc(100vh-4rem)] items-center justify-center py-12">
+    <>
+      <Container className="flex min-h-[calc(100vh-4rem)] items-center justify-center py-12">
       <div className="w-full max-w-md rounded-lg border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-8 shadow-sm">
         <div className="flex flex-col items-center text-center">
           <Wordmark />
@@ -104,7 +106,9 @@ export default function AuthPage() {
           )}
         </div>
       </div>
-    </Container>
+      </Container>
+      <CopyrightNotice />
+    </>
   );
 }
 

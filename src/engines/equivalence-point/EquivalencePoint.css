@@ -942,3 +942,12 @@
     animation: none;
   }
 }
+
+.equivalence-copyright {
+  margin-top: 10px;
+  text-align: center;
+  font-size: 10px;
+  color: #f8fafc;
+  opacity: 0.4;
+  user-select: none;
+}

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import "./TitrationPHCurve.css";
+import { COPYRIGHT_TEXT_COMPACT } from "../../data/copyright.js";
 
 const KW = 1.0e-14;
 
@@ -850,11 +851,29 @@ export default function TitrationPHCurve() {
   const burette =
     REAGENTS[buretteReagent];
 
-  // Chosen from the strength PAIR (see getIndicatorForPair) -- never
-  // recomputed per-frame from anything but the reagent selection, so it
-  // stays stable throughout a run and only the colour (a function of the
-  // live pH) changes as titrant is added.
-  const indicator = useMemo(() => getIndicatorForPair(flask, burette), [flask, burette]);
+  // The pedagogically RECOMMENDED indicator for the current pair --
+  // still computed the same way as before, used only as the default
+  // selection and for the info card's "Recommended" wording. The
+  // student's own choice (selectedIndicatorId) is what actually drives
+  // the flask colour and graph band below -- they are explicitly
+  // allowed to pick ANY indicator for ANY titration, including a
+  // "wrong" one, so they can discover for themselves why some choices
+  // give a reliable endpoint and others don't.
+  const recommendedIndicator = useMemo(() => getIndicatorForPair(flask, burette), [flask, burette]);
+
+  const [selectedIndicatorId, setSelectedIndicatorId] = useState(recommendedIndicator?.id ?? "None");
+
+  // Whenever the reagent PAIR changes, snap the selection back to the
+  // new pair's recommendation -- prevents a stale indicator choice from
+  // a previous, unrelated titration silently carrying over (e.g. still
+  // showing "Methyl orange" after switching to a weak-acid/strong-base
+  // run where it was never selected).
+  useEffect(() => {
+    setSelectedIndicatorId(recommendedIndicator?.id ?? "None");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flaskReagent, buretteReagent]);
+
+  const indicator = selectedIndicatorId === "None" ? null : INDICATORS[selectedIndicatorId];
   const indicatorColor = indicator ? indicator.colorAt(chemistry.pH) : null;
 
   // Only meaningful when an indicator applies -- the volume at which the
@@ -1061,18 +1080,33 @@ export default function TitrationPHCurve() {
 
       <div className="indicator-card">
         <div className="indicator-card-main">
-          <span className="indicator-card-label">Indicator</span>
-          <strong>{indicator ? indicator.label : "No suitable common indicator"}</strong>
+          <label htmlFor="indicator-select" className="indicator-card-label">Indicator</label>
+          <select
+            id="indicator-select"
+            value={selectedIndicatorId}
+            onChange={(e) => setSelectedIndicatorId(e.target.value)}
+            className="indicator-select"
+          >
+            <option value="BTB">Bromothymol blue</option>
+            <option value="Phenolphthalein">Phenolphthalein</option>
+            <option value="MethylOrange">Methyl orange</option>
+            <option value="None">No indicator / pH meter</option>
+          </select>
         </div>
         {indicator ? (
           <div className="indicator-card-detail">
-            <span>Transition: pH {indicator.rangeLow.toFixed(1)}\u2013{indicator.rangeHigh.toFixed(1)}</span>
+            <span>{"Transition: pH " + indicator.rangeLow.toFixed(1) + "\u2013" + indicator.rangeHigh.toFixed(1)}</span>
             <span>{indicator.description}</span>
           </div>
         ) : (
           <div className="indicator-card-detail">
             <span>Use the pH meter to locate the equivalence region.</span>
           </div>
+        )}
+        {recommendedIndicator?.id !== selectedIndicatorId && (
+          <p className="indicator-recommendation-note">
+            Recommended for this pair: {recommendedIndicator ? recommendedIndicator.label : "No suitable common indicator"}
+          </p>
         )}
       </div>
 
@@ -1693,6 +1727,8 @@ export default function TitrationPHCurve() {
           Replay
         </button>
       </div>
+
+      <p className="titration-copyright">{COPYRIGHT_TEXT_COMPACT}</p>
     </section>
   );
 }

@@ -13,6 +13,7 @@ import { useDisplaySettings } from "../../context/DisplaySettingsContext.jsx";
 import { useLearningProgress } from "../../context/ProgressContext.jsx";
 import { getConceptIdsForLessonCodes } from "../../lib/learn-tree.js";
 import { filterBlocksForStudent, filterSyllabusCodesForStudent, lessonOrderValue, canStudentAccessQuestionLevel } from "../../lib/learnLevelAccess.js";
+import CopyrightNotice from "../layout/CopyrightNotice.jsx";
 
 /** Determines prev/next PUBLISHED lesson purely from parent topic +
  * display order + curriculum hierarchy — Admin never creates nav links
@@ -243,6 +244,8 @@ export default function LearnLessonPage() {
           )}
         </div>
       )}
+
+      <CopyrightNotice variant="lesson" />
     </div>
   );
 }
