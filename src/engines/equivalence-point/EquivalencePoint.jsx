@@ -1,121 +1,418 @@
-import { useState, useCallback, useRef, useEffect } from "react";
-import InteractiveFrame from "../../components/interactive-shell/InteractiveFrame.jsx";
-import BeamBalance from "./components/BeamBalance.jsx";
-import Burette from "./components/Burette.jsx";
-import { computeTitrationState, excessFractionToBeamAngle, EQUIVALENCE_PRESSES } from "./lib/titration.js";
+import React, { useMemo, useState } from "react";
+import "./EquivalencePoint.css";
 
-const STATUS_TEXT = {
-  basic: { label: "OH\u207B in excess", sub: "BASIC" },
-  approaching: { label: "Approaching equivalence\u2026", sub: null },
-  equivalence: { label: "EQUIVALENCE POINT", sub: "Neither H\u207A nor OH\u207B is in excess." },
-  acidic: { label: "H\u207A in excess", sub: "ACIDIC" },
-};
+const INITIAL_NAOH_VOLUME_ML = 25;
+const NAOH_CONCENTRATION = 0.1;
 
-const MAX_PRESSES = EQUIVALENCE_PRESSES + 4;
-const BURETTE_X = 640, BURETTE_Y = 18;
+const HCL_CONCENTRATION = 0.1;
+const HCL_STEP_ML = 2.5;
 
-// A short, purely visual animation sequence plays on every "Add HCl"
-// press, BEFORE the underlying discrete state actually advances: the
-// droplet falls from the burette, then a brief highlight shows it
-// meeting/consuming an excess OH- (or, past equivalence, simply joining
-// the solution as excess H+) -- so the student sees acid being added
-// and reacting, not just a number changing. The real state
-// (computeTitrationState) only ever exists at integer press counts;
-// nothing about the chemistry itself is animated or interpolated.
-const DROP_FALL_MS = 550;
-const REACT_FLASH_MS = 450;
+const MAX_VISIBLE_SPHERES = 10;
 
-export default function EquivalencePoint({ compact = false }) {
-  const [presses, setPresses] = useState(0);
-  const [phase, setPhase] = useState("idle"); // idle | dropping | reacting
-  const timeoutsRef = useRef([]);
+/**
+ * Strong acid / strong base titration:
+ * NaOH in flask
+ * HCl added
+ * 25 °C
+ */
+function calculateTitration(acidVolumeMl) {
+  const baseVolumeL = INITIAL_NAOH_VOLUME_ML / 1000;
+  const acidVolumeL = acidVolumeMl / 1000;
 
-  const state = computeTitrationState(presses);
-  const beamAngle = excessFractionToBeamAngle(state.excessFraction);
-  const statusInfo = STATUS_TEXT[state.status];
-  const canAddMore = presses < MAX_PRESSES && phase === "idle";
+  const baseMoles = NAOH_CONCENTRATION * baseVolumeL;
+  const acidMoles = HCL_CONCENTRATION * acidVolumeL;
 
-  const leftCount = state.excessSpecies === "OH" ? state.sphereCount : 0;
-  const rightCount = state.excessSpecies === "H" ? state.sphereCount : 0;
+  const totalVolumeL = baseVolumeL + acidVolumeL;
 
-  function clearTimers() {
-    timeoutsRef.current.forEach(clearTimeout);
-    timeoutsRef.current = [];
+  const difference = acidMoles - baseMoles;
+
+  // Relative progress:
+  // 0 = no acid added
+  // 1 = exact equivalence
+  const equivalenceAcidVolumeMl =
+    (baseMoles / HCL_CONCENTRATION) * 1000;
+
+  const progress = acidVolumeMl / equivalenceAcidVolumeMl;
+
+  let pH;
+  let status;
+  let excessType;
+
+  const tolerance = 1e-10;
+
+  if (Math.abs(difference) < tolerance) {
+    pH = 7;
+    status = "EQUIVALENCE";
+    excessType = "none";
+  } else if (difference < 0) {
+    // OH- remains in excess
+    const excessOHMoles = Math.abs(difference);
+    const ohConcentration = excessOHMoles / totalVolumeL;
+
+    const pOH = -Math.log10(ohConcentration);
+    pH = 14 - pOH;
+
+    status = progress >= 0.8 ? "APPROACHING" : "BASIC";
+    excessType = "OH";
+  } else {
+    // H+ remains in excess
+    const excessHMoles = difference;
+    const hConcentration = excessHMoles / totalVolumeL;
+
+    pH = -Math.log10(hConcentration);
+
+    status = "ACIDIC";
+    excessType = "H";
   }
 
-  useEffect(() => clearTimers, []);
+  return {
+    acidMoles,
+    baseMoles,
+    difference,
+    totalVolumeL,
+    equivalenceAcidVolumeMl,
+    progress,
+    pH,
+    status,
+    excessType,
+  };
+}
 
-  const handleAdd = useCallback(() => {
-    if (presses >= MAX_PRESSES || phase !== "idle") return;
-    setPhase("dropping");
-    timeoutsRef.current.push(
-      setTimeout(() => {
-        setPhase("reacting");
-        timeoutsRef.current.push(
-          setTimeout(() => {
-            setPresses((p) => Math.min(MAX_PRESSES, p + 1));
-            setPhase("idle");
-          }, REACT_FLASH_MS)
-        );
-      }, DROP_FALL_MS)
-    );
-  }, [presses, phase]);
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
 
-  const handleReplay = useCallback(() => {
-    clearTimers();
-    setPhase("idle");
-    setPresses(0);
-  }, []);
+/**
+ * We use ONE balance variable.
+ *
+ * negative = OH- excess
+ * zero = equivalence
+ * positive = H+ excess
+ */
+function getBalanceState(data) {
+  const { acidMoles, baseMoles } = data;
 
-  const dropVisible = phase === "dropping";
-  const reacting = phase === "reacting";
+  const normalized =
+    (acidMoles - baseMoles) / baseMoles;
+
+  return clamp(normalized, -1, 1);
+}
+
+function getSphereCount(data) {
+  const { difference, baseMoles, excessType } = data;
+
+  if (excessType === "none") {
+    return {
+      oh: 0,
+      h: 0,
+    };
+  }
+
+  const fraction =
+    Math.abs(difference) / baseMoles;
+
+  const count = Math.max(
+    1,
+    Math.round(
+      clamp(fraction, 0, 1) * MAX_VISIBLE_SPHERES
+    )
+  );
+
+  if (excessType === "OH") {
+    return {
+      oh: count,
+      h: 0,
+    };
+  }
+
+  return {
+    oh: 0,
+    h: count,
+  };
+}
+
+function IonSphere({ type, index }) {
+  const isOH = type === "OH";
 
   return (
-    <InteractiveFrame title="Equivalence Point" subtitle="Add HCl little by little and observe what happens as the solution approaches the equivalence point." compact={compact}>
-      <div className="mx-auto w-full" style={{ maxWidth: 920 }}>
-        <div className="flex items-start justify-between px-2">
-          <div className={`rounded-md px-3 py-1.5 text-center transition-colors ${state.status === "equivalence" ? "bg-[var(--color-teal-soft)]" : "bg-[var(--color-paper-raised)]"}`}>
-            <p className={`text-sm font-bold ${state.status === "equivalence" ? "text-[var(--color-teal)]" : "text-[var(--color-ink)]"}`}>{statusInfo.label}</p>
-            {statusInfo.sub && <p className="text-xs font-medium text-[var(--color-ink-faint)]">{statusInfo.sub}</p>}
-          </div>
-          <div className="rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)] px-3 py-1.5 text-center">
-            <p className="text-[10px] font-medium uppercase tracking-wide text-[var(--color-ink-faint)]">pH</p>
-            <p className="text-lg font-bold text-[var(--color-ink)]">{state.pH.toFixed(2)}</p>
-          </div>
+    <div
+      className={`ion-sphere ${
+        isOH ? "oh-sphere" : "h-sphere"
+      }`}
+      style={{
+        "--delay": `${index * 40}ms`,
+      }}
+    >
+      {isOH ? "OH⁻" : "H⁺"}
+    </div>
+  );
+}
+
+function SphereGroup({ type, count }) {
+  return (
+    <div className="sphere-group">
+      {Array.from({ length: count }).map((_, index) => (
+        <IonSphere
+          key={`${type}-${index}`}
+          type={type}
+          index={index}
+        />
+      ))}
+    </div>
+  );
+}
+
+export default function EquivalencePoint() {
+  const [acidVolumeMl, setAcidVolumeMl] = useState(0);
+  const [dropKey, setDropKey] = useState(0);
+
+  const data = useMemo(
+    () => calculateTitration(acidVolumeMl),
+    [acidVolumeMl]
+  );
+
+  const balance = getBalanceState(data);
+
+  const sphereCount = getSphereCount(data);
+
+  /**
+   * IMPORTANT:
+   *
+   * OH- excess:
+   * balance negative
+   * beam left side DOWN
+   *
+   * H+ excess:
+   * balance positive
+   * beam right side DOWN
+   */
+  const MAX_BEAM_ANGLE = 10;
+
+  const beamAngle =
+    balance * MAX_BEAM_ANGLE;
+
+  /**
+   * Pointer moves opposite direction to beam.
+   *
+   * This is what was wrong in the previous version.
+   */
+  const MAX_POINTER_ANGLE = 22;
+
+  const pointerAngle =
+    -balance * MAX_POINTER_ANGLE;
+
+  const isEquivalent =
+    data.excessType === "none";
+
+  const maxAcidVolume =
+    data.equivalenceAcidVolumeMl * 1.6;
+
+  function addHCl() {
+    setDropKey((previous) => previous + 1);
+
+    setAcidVolumeMl((previous) =>
+      Math.min(
+        previous + HCL_STEP_ML,
+        maxAcidVolume
+      )
+    );
+  }
+
+  function reset() {
+    setAcidVolumeMl(0);
+    setDropKey((previous) => previous + 1);
+  }
+
+  let statusTitle;
+  let statusClass;
+
+  if (data.status === "EQUIVALENCE") {
+    statusTitle = "EQUIVALENCE POINT";
+    statusClass = "status-equivalence";
+  } else if (data.status === "APPROACHING") {
+    statusTitle = "Approaching equivalence...";
+    statusClass = "status-approaching";
+  } else if (data.status === "ACIDIC") {
+    statusTitle = "H⁺ in excess";
+    statusClass = "status-acidic";
+  } else {
+    statusTitle = "OH⁻ in excess";
+    statusClass = "status-basic";
+  }
+
+  return (
+    <section className="equivalence-simulation">
+      <div className="equivalence-header">
+        <div>
+          <h2>Equivalence Point</h2>
+
+          <p>
+            Add HCl little by little and observe what
+            happens as the solution approaches the
+            equivalence point.
+          </p>
         </div>
 
-        <svg viewBox="0 0 900 400" className="w-full" style={{ height: "auto", maxHeight: 400 }} role="img" aria-label={`Beam balance showing ${statusInfo.label}, pH ${state.pH.toFixed(2)}`}>
-          <BeamBalance angleDeg={beamAngle} leftCount={leftCount} rightCount={rightCount} />
-          <Burette x={BURETTE_X} y={BURETTE_Y} dropVisible={dropVisible} dropProgress={dropVisible ? 1 : 0} />
-          {reacting && (
-            <circle cx={BURETTE_X} cy={BURETTE_Y + 90 + 46} r="20" fill="var(--color-amber)" opacity="0.35">
-              <animate attributeName="r" values="6;24;6" dur="0.45s" />
-              <animate attributeName="opacity" values="0.6;0;0.6" dur="0.45s" />
-            </circle>
-          )}
-        </svg>
+        <div className="ph-display">
+          <span>pH</span>
 
-        <p className="mx-auto -mt-2 max-w-xs text-center text-sm font-medium text-[var(--color-ink-soft)]">
-          {"H\u207A + OH\u207B \u2192 H\u2082O"}
-        </p>
-        <p className="mx-auto text-center text-[11px] text-[var(--color-ink-faint)]">
-          HCl added: {Math.round(state.hclAddedMl * 10) / 10} {"cm\u00b3"}
-        </p>
-
-        <div className="mt-3 flex justify-center gap-2">
-          <button
-            type="button"
-            onClick={handleAdd}
-            disabled={!canAddMore}
-            className="rounded-md bg-[var(--color-indigo)] px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-40"
-          >
-            Add HCl
-          </button>
-          <button type="button" onClick={handleReplay} className="rounded-md border border-[var(--color-line)] px-4 py-2 text-sm font-medium text-[var(--color-ink-soft)] hover:bg-[var(--color-line)]/30">
-            Replay
-          </button>
+          <strong>
+            {Number.isFinite(data.pH)
+              ? data.pH.toFixed(2)
+              : "—"}
+          </strong>
         </div>
       </div>
-    </InteractiveFrame>
+
+      <div className="simulation-stage">
+        <div className={`status-card ${statusClass}`}>
+          <strong>{statusTitle}</strong>
+
+          {data.status === "BASIC" && (
+            <span>BASIC</span>
+          )}
+
+          {data.status === "ACIDIC" && (
+            <span>ACIDIC</span>
+          )}
+
+          {isEquivalent && (
+            <span>
+              Neither H⁺ nor OH⁻ is in excess
+            </span>
+          )}
+        </div>
+
+        {/* HCl dropper */}
+        <div className="hcl-unit">
+          <div className="burette">
+            <div className="burette-liquid" />
+
+            <div className="burette-lines">
+              <i />
+              <i />
+              <i />
+              <i />
+              <i />
+            </div>
+
+            <div className="burette-tip" />
+          </div>
+
+          <div
+            key={dropKey}
+            className={
+              dropKey > 0
+                ? "acid-drop acid-drop-active"
+                : "acid-drop"
+            }
+          />
+
+          <span className="hcl-label">HCl</span>
+        </div>
+
+        <div className="balance-wrapper">
+          {/* Gauge */}
+          <div className="balance-gauge">
+            <div className="gauge-arc">
+              <span className="tick tick-1" />
+              <span className="tick tick-2" />
+              <span className="tick tick-3" />
+              <span className="tick tick-4" />
+              <span className="tick tick-5" />
+            </div>
+
+            <div
+              className="balance-pointer"
+              style={{
+                transform: `translateX(-50%) rotate(${pointerAngle}deg)`,
+              }}
+            />
+          </div>
+
+          {/* Central stand */}
+          <div className="balance-stand">
+            <div className="stand-column" />
+            <div className="stand-base" />
+          </div>
+
+          {/* Entire beam rotates as ONE object */}
+          <div
+            className="balance-beam"
+            style={{
+              transform: `translate(-50%, -50%) rotate(${beamAngle}deg)`,
+            }}
+          >
+            <div className="beam-body" />
+
+            {/* LEFT rigid support + pan */}
+            <div className="pan-unit pan-unit-left">
+              <div className="pan-support" />
+
+              <div className="balance-pan">
+                <SphereGroup
+                  type="OH"
+                  count={sphereCount.oh}
+                />
+              </div>
+
+              <div className="pan-label oh-label">
+                OH⁻
+              </div>
+            </div>
+
+            {/* RIGHT rigid support + pan */}
+            <div className="pan-unit pan-unit-right">
+              <div className="pan-support" />
+
+              <div className="balance-pan">
+                <SphereGroup
+                  type="H"
+                  count={sphereCount.h}
+                />
+              </div>
+
+              <div className="pan-label h-label">
+                H⁺
+              </div>
+            </div>
+
+            <div className="beam-pivot-dot" />
+          </div>
+        </div>
+      </div>
+
+      <div className="reaction-row">
+        <strong>
+          H⁺ + OH⁻ → H₂O
+        </strong>
+      </div>
+
+      <div className="volume-row">
+        HCl added:{" "}
+        <strong>
+          {acidVolumeMl.toFixed(1)} cm³
+        </strong>
+      </div>
+
+      <div className="simulation-controls">
+        <button
+          type="button"
+          className="primary-control"
+          onClick={addHCl}
+          disabled={acidVolumeMl >= maxAcidVolume}
+        >
+          Add HCl
+        </button>
+
+        <button
+          type="button"
+          className="secondary-control"
+          onClick={reset}
+        >
+          Replay
+        </button>
+      </div>
+    </section>
   );
 }
