@@ -143,6 +143,42 @@
   z-index: 12;
 }
 
+/* NaOH burette — mirrors the HCl burette exactly, on the left/OH- side */
+.naoh-unit {
+  position: absolute;
+
+  left: 15%;
+  top: 12px;
+
+  width: 70px;
+  height: 165px;
+
+  z-index: 12;
+}
+
+.naoh-unit .burette-liquid {
+  background:
+    linear-gradient(
+      to bottom,
+      rgba(96, 165, 250, 0.4),
+      rgba(37, 99, 235, 0.2)
+    );
+}
+
+.naoh-unit .hcl-label {
+  background: rgba(37, 99, 235, 0.14);
+}
+
+.naoh-unit .acid-drop {
+  background:
+    radial-gradient(
+      circle at 30% 25%,
+      #ffffff,
+      #93c5fd 35%,
+      #2563eb 80%
+    );
+}
+
 .burette {
   position: absolute;
 
@@ -725,6 +761,81 @@
   text-align: center;
 
   color: #cbd5e1;
+
+  display: flex;
+  justify-content: center;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.explore-toggle-row {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+
+  margin-top: 10px;
+
+  font-size: 0.85rem;
+  color: #cbd5e1;
+}
+
+.explore-toggle-row input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+}
+
+.explore-panel {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 14px;
+
+  margin-top: 10px;
+  padding: 10px 14px;
+
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.explore-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+
+  font-size: 0.78rem;
+  color: #94a3b8;
+}
+
+.explore-field select {
+  padding: 5px 8px;
+
+  border-radius: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.8);
+  color: #f8fafc;
+
+  font-weight: 600;
+}
+
+.explore-ratio-note {
+  width: 100%;
+  text-align: center;
+
+  font-size: 0.78rem;
+  color: #94a3b8;
+}
+
+.explore-warning-note {
+  width: 100%;
+  text-align: center;
+
+  font-size: 0.75rem;
+  color: #fbbf24;
+
+  margin-top: 2px;
 }
 
 .simulation-controls {
