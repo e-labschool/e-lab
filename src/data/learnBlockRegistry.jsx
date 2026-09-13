@@ -60,6 +60,7 @@ export const SIMULATION_REGISTRY = {
   "h-oh-balance": { label: "H+ - OH- Balance in Water" },
   "neutralization-particle-visualizer": { label: "Neutralization Particle Visualizer" },
   "equivalence-point": { label: "Equivalence Point" },
+  "titration-ph-curve": { label: "pH Curve & Titration Visualizer" },
 };
 
 // Strips HTML tags for a safe plain-text preview — never renders HTML

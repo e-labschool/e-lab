@@ -18,6 +18,7 @@ const SIMULATION_COMPONENTS = {
   "h-oh-balance": lazy(() => import("../../engines/h-oh-balance/HOHBalance.jsx")),
   "neutralization-particle-visualizer": lazy(() => import("../../engines/neutralization-particle-visualizer/NeutralizationParticleVisualizer.jsx")),
   "equivalence-point": lazy(() => import("../../engines/equivalence-point/EquivalencePoint.jsx")),
+  "titration-ph-curve": lazy(() => import("../../engines/titration-ph-curve/TitrationPHCurve.jsx")),
 };
 
 export default function LearnBlockRenderer({ block }) {
