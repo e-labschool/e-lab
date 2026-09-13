@@ -11,6 +11,7 @@ export const C_NAOH = 0.100; // mol/dm3
 export const HCL_INCREMENT = 0.004; // dm3 per "Add HCl" press
 export const C_HCL = 0.100; // mol/dm3
 export const EQUIVALENCE_PRESSES = Math.round(V0_NAOH / HCL_INCREMENT); // 10
+export const MAX_SPHERES = 10; // representative cap — never a literal ion count
 
 const INITIAL_MOLES_OH = V0_NAOH * C_NAOH;
 
@@ -51,7 +52,22 @@ export function computeTitrationState(presses) {
   // of the addition and then swings violently right at equivalence.
   const excessFraction = net / INITIAL_MOLES_OH; // 1 at start, 0 at equivalence, negative beyond
 
-  return { presses, totalVolume, net, pH, status, excessFraction };
+  // ONE normalized balance value drives BOTH the beam angle and the
+  // pointer angle (see excessFractionToBeamAngle) -- there is no
+  // separate "pointer physics" anywhere in this model, so the two can
+  // never contradict each other. Positive = base (OH-) in excess,
+  // negative = acid (H+) in excess, exactly zero only at equivalence.
+  const balance = excessFraction;
+
+  // Representative sphere count -- NOT a literal ion count, capped at
+  // MAX_SPHERES so the visualization stays clean regardless of how
+  // large the actual excess is. Scales with how far from equivalence
+  // the solution currently is, using the same square-root response as
+  // the beam angle so the LAST sphere doesn't vanish prematurely.
+  const excessSpecies = excessFraction > 1e-9 ? "OH" : excessFraction < -1e-9 ? "H" : null;
+  const sphereCount = excessSpecies === null ? 0 : Math.max(1, Math.round(MAX_SPHERES * Math.sqrt(Math.min(1, Math.abs(excessFraction)))));
+
+  return { presses, totalVolume, net, pH, status, excessFraction, balance, sphereCount, excessSpecies, hclAddedMl: volumeHCl * 1000 };
 }
 
 /**
