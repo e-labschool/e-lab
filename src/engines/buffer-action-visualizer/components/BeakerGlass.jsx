@@ -2,7 +2,7 @@
 // glass walls, a rim, a visible liquid fill with a subtle surface line,
 // faint measurement markings, and a soft highlight for glass depth. Pure
 // vector, so particles rendered inside it can animate freely.
-export default function BeakerGlass({ width = 170, height = 190, liquidLevel = 0.72, children, gradientId }) {
+export default function BeakerGlass({ width = 240, height = 260, liquidLevel = 0.72, children, gradientId }) {
   const wallInset = 6;
   const rimY = 8;
   const bottomY = height - 14;

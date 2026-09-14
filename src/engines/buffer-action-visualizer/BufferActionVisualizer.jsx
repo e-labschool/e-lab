@@ -22,8 +22,11 @@ import {
 // Beaker-local coordinate space (matches BeakerGlass's default viewBox)
 // and the liquid region within it, used as the physics bounds for both
 // beakers.
-const BEAKER_W = 170, BEAKER_H = 190;
-const LIQUID_BOUNDS = { x: 10, y: 58, w: BEAKER_W - 20, h: BEAKER_H - 72 };
+// Liquid region within the beaker's local coordinate space -- matches
+// BeakerGlass's default 240x260 viewBox with liquidLevel=0.72 (computed
+// once and verified against that component's own geometry, not
+// independently guessed).
+const LIQUID_BOUNDS = { x: 10, y: 77, w: 220, h: 165 };
 const SPECTATOR_COUNT = 3;
 const RECONCILE_DELAY_MS = 900;
 
@@ -42,6 +45,36 @@ function buildBufferParticles(counts, idRef) {
   for (let i = 0; i < counts.base; i++) list.push(createParticle(`b${idRef.current++}`, "base", LIQUID_BOUNDS));
   for (let i = 0; i < SPECTATOR_COUNT; i++) list.push(createParticle(`s${idRef.current++}`, "spectator", LIQUID_BOUNDS));
   return list;
+}
+
+/** Nudges the visible acid/base particle SAMPLE back toward the target
+ * counts by flipping an existing active particle's `kind` in place --
+ * NEVER by rebuilding the array or assigning new positions. This is what
+ * keeps the representative sample synchronized with the real chemistry
+ * over many additions (a single collision-based reaction per click would
+ * otherwise drift from the true mole ratio over a long run) without
+ * ever causing the "whole beaker jumps" glitch: every particle that
+ * isn't being converted keeps its id, x, y, vx, vy untouched. */
+function reconcileBufferParticleCounts(particles, targetCounts) {
+  let acidCount = particles.filter((p) => p.kind === "acid" && p.status === "active").length;
+  let baseCount = particles.filter((p) => p.kind === "base" && p.status === "active").length;
+  const next = [...particles];
+
+  while (acidCount < targetCounts.acid && baseCount > 0) {
+    const idx = next.findIndex((p) => p.kind === "base" && p.status === "active");
+    if (idx === -1) break;
+    next[idx] = { ...next[idx], kind: "acid" };
+    acidCount += 1;
+    baseCount -= 1;
+  }
+  while (baseCount < targetCounts.base && acidCount > 0) {
+    const idx = next.findIndex((p) => p.kind === "acid" && p.status === "active");
+    if (idx === -1) break;
+    next[idx] = { ...next[idx], kind: "base" };
+    baseCount += 1;
+    acidCount -= 1;
+  }
+  return next;
 }
 
 export default function BufferActionVisualizer() {
@@ -134,20 +167,16 @@ export default function BufferActionVisualizer() {
 
       window.setTimeout(() => setActiveDrop(null), 500);
 
-      // Reconcile the buffer beaker's acid/base particle counts to the
-      // fresh chemistry state once the individual animated reaction has
-      // had time to play out -- keeps the long-run visual composition
-      // accurate to the model even though the moment-to-moment particle
-      // physics is representational, not literally counted.
+      // Nudge the visible sample toward the fresh chemistry state once
+      // the individual collision-based reaction has had time to play
+      // out -- IN PLACE (see reconcileBufferParticleCounts), never by
+      // rebuilding the array. This is what keeps the representative
+      // sample from drifting over many additions without ever causing
+      // existing particles to jump to new positions.
       if (reconcileTimeoutRef.current) clearTimeout(reconcileTimeoutRef.current);
       reconcileTimeoutRef.current = window.setTimeout(() => {
         const counts = getBufferParticleCounts(nextBuffer);
-        setBufferParticles((prev) => {
-          const spectators = prev.filter((p) => p.kind === "spectator");
-          const reacting = prev.filter((p) => p.status !== "active" && (p.kind === "acid" || p.kind === "base" || p.kind === "H" || p.kind === "OH" || p.kind === "water"));
-          const freshAcidBase = buildBufferParticles(counts, idRef).filter((p) => p.kind !== "spectator");
-          return [...freshAcidBase, ...spectators, ...reacting];
-        });
+        setBufferParticles((prev) => reconcileBufferParticleCounts(prev, counts));
       }, RECONCILE_DELAY_MS);
     },
     [additionSize, chem, currentBufferPH, currentUnbufferedPH, systemId]

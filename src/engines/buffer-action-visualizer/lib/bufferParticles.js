@@ -15,13 +15,14 @@ function randRange(min, max) {
 
 export function createParticle(id, kind, bounds, radius = 8) {
   const angle = randRange(0, Math.PI * 2);
+  const speed = randRange(SPEED * 0.75, SPEED * 1.25); // slightly different per particle -- natural, not a uniform group
   return {
     id,
     kind, // "acid" | "base" | "spectator" | "H" | "OH" | "water"
     x: randRange(bounds.x + radius, bounds.x + bounds.w - radius),
     y: randRange(bounds.y + radius, bounds.y + bounds.h - radius),
-    vx: Math.cos(angle) * SPEED,
-    vy: Math.sin(angle) * SPEED,
+    vx: Math.cos(angle) * speed,
+    vy: Math.sin(angle) * speed,
     status: "active", // active | reacting | consumed
     reactT: 0,
     meetX: 0,
@@ -31,7 +32,7 @@ export function createParticle(id, kind, bounds, radius = 8) {
 }
 
 function radiusFor(kind) {
-  return kind === "H" || kind === "OH" ? 5 : kind === "spectator" ? 6 : 8;
+  return kind === "H" || kind === "OH" ? 9 : kind === "spectator" ? 8 : kind === "water" ? 7 : 13;
 }
 
 function bounce(p, bounds, dt) {
@@ -109,7 +110,31 @@ export function stepBufferParticles(particles, bounds, dt, reactionRule, onWater
     }
   }
 
+  applyGentleSeparation(next);
+
   return next;
+}
+
+/** Simple, calm overlap relief -- NOT a full collision-physics engine.
+ * If two active particles overlap, nudge each a small fraction of the
+ * overlap apart. Deliberately gentle (a small fixed fraction, not a full
+ * correction) so particles settle rather than jitter. */
+function applyGentleSeparation(particles) {
+  const active = particles.filter((p) => p.status === "active");
+  for (let i = 0; i < active.length; i++) {
+    for (let j = i + 1; j < active.length; j++) {
+      const a = active[i], b = active[j];
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const dist = Math.hypot(dx, dy) || 0.001;
+      const minDist = radiusFor(a.kind) + radiusFor(b.kind);
+      if (dist < minDist) {
+        const overlap = (minDist - dist) * 0.15; // gentle -- a fraction of the overlap, not the whole thing
+        const nx = dx / dist, ny = dy / dist;
+        a.x -= nx * overlap; a.y -= ny * overlap;
+        b.x += nx * overlap; b.y += ny * overlap;
+      }
+    }
+  }
 }
 
 export function createWaterParticle(id, x, y) {

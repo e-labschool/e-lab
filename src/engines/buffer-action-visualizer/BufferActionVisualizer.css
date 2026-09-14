@@ -1,8 +1,8 @@
 .buffer-sim {
   width: 100%;
-  max-width: 640px;
+  max-width: 1080px;
   margin: 0 auto;
-  padding: 18px;
+  padding: 22px;
   box-sizing: border-box;
 
   border-radius: 16px;
@@ -25,8 +25,8 @@
 .buffer-beakers {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 14px;
-  margin-top: 10px;
+  gap: 28px;
+  margin-top: 12px;
 }
 
 .buffer-beaker-col {
@@ -79,7 +79,7 @@
 /* --- beaker glass --- */
 .beaker-glass-svg {
   width: 100%;
-  max-width: 170px;
+  max-width: 340px;
   height: auto;
   display: block;
 }
@@ -220,7 +220,7 @@
 
 @media (max-width: 480px) {
   .buffer-beakers { grid-template-columns: 1fr; }
-  .beaker-glass-svg { max-width: 220px; margin: 0 auto; }
+  .beaker-glass-svg { max-width: 280px; margin: 0 auto; }
 }
 
 @media (prefers-reduced-motion: reduce) {
