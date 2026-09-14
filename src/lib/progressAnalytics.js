@@ -1,9 +1,10 @@
 import { supabase } from "./supabaseClient.js";
 import { getLearnTree, summarizeProgress } from "./learn-tree.js";
 import { getStreak } from "./challengeService.js";
-import { PROGRESS_CONFIG, classifyTopic } from "./progressConfig.js";
+import { PROGRESS_CONFIG, classifyTopic, PREDICTION_CONFIG } from "./progressConfig.js";
 import { getSyllabusPointLevel } from "../data/curricula/dp-chemistry/syllabus-points-2025.js";
 import { normalizeStudentLevel } from "./learnLevelAccess.js";
+import { calculatePrediction, getActiveCycle, ensureActiveCycle, getAllCycles, canStartNewCycle, getTrend } from "./predictionEngine.js";
 
 // Nothing here stores a standalone "progress percentage" — every number
 // is computed fresh from the same two existing tables the rest of the app
@@ -166,6 +167,28 @@ export async function getProgressOverview(studentLevel = "SL") {
     percent: c.max_score > 0 ? Math.round((c.score / c.max_score) * 100) : 0,
   }));
 
+  // ---- Estimated IB Grade -- read-only here, never writes a snapshot.
+  // Snapshots are only ever created from refreshPredictionSnapshot(),
+  // triggered after a real Challenge submission (see ChallengeReport.jsx),
+  // so simply opening this page never produces a database write. ----
+  const activeCycle = await getActiveCycle(userId);
+  const allCycles = await getAllCycles(userId);
+  const cycleStartedAt = activeCycle?.started_at ?? null;
+  const prediction = await calculatePrediction({ subtopicStats, challenges, attempts, cycleStartedAt });
+  const cooldown = canStartNewCycle(allCycles);
+
+  let gradeTrendPoints = [];
+  if (activeCycle) {
+    const { data: snapshotRows } = await supabase
+      .from("prediction_snapshots")
+      .select("estimated_grade, estimated_grade_low, estimated_grade_high, calculated_at")
+      .eq("prediction_cycle_id", activeCycle.id)
+      .order("calculated_at", { ascending: true });
+    gradeTrendPoints = snapshotRows ?? [];
+  }
+  const gradeHistory = gradeTrendPoints.map((s) => s.estimated_grade ?? s.estimated_grade_high).filter((g) => g != null);
+  const predictionTrend = getTrend(gradeHistory);
+
   return {
     overallLearnedPercent,
     overallAssessedPercent: overallAssessment.assessedPercent,
@@ -185,7 +208,93 @@ export async function getProgressOverview(studentLevel = "SL") {
     recommendation,
     recentActivity,
     trend,
+    prediction,
+    predictionTrend,
+    gradeTrendPoints,
+    activeCycle,
+    allCycles,
+    cooldown,
   };
+}
+
+/**
+ * Recomputes the Estimated IB Grade and, ONLY if the result genuinely
+ * differs from the most recent snapshot (grade, range, or confidence
+ * changed), writes a new prediction_snapshots row. Called after a real
+ * Challenge submission (see ChallengeReport.jsx) -- NOT on every Progress
+ * page view -- so normal page visits never write to the database.
+ *
+ * Deliberately kept independent of challengeService.js (no import either
+ * direction) so a failure here can never affect Challenge submission
+ * itself; callers are expected to invoke this best-effort/non-blocking.
+ */
+export async function refreshPredictionSnapshot(studentLevel = "SL") {
+  if (!supabase) return null;
+  const { data: userData } = await supabase.auth.getUser();
+  const userId = userData?.user?.id;
+  if (!userId) return null;
+
+  const { subtopics } = buildSubtopicIndex(studentLevel);
+  const [{ data: learnRows }, { data: attemptRows }, { data: challengeRows }] = await Promise.all([
+    supabase.from("learning_progress").select("*").eq("user_id", userId),
+    supabase.from("challenge_questions").select("*").eq("user_id", userId),
+    supabase.from("student_challenges").select("*").eq("user_id", userId).eq("status", "submitted").order("submitted_at", { ascending: false }),
+  ]);
+  const learn = learnRows ?? [];
+  const challenges = challengeRows ?? [];
+  const submittedChallengeIds = new Set(challenges.map((c) => c.id));
+  const attempts = (attemptRows ?? []).filter((a) => submittedChallengeIds.has(a.challenge_id));
+
+  const subtopicStats = subtopics.map((s) => {
+    const { completed, total } = summarizeProgress(Object.fromEntries(learn.map((r) => [r.concept_id, r])), s.conceptIds);
+    const subtopicAttempts = attempts.filter((a) => a.topic_code === s.code);
+    const { attemptCount } = aggregateAssessment(subtopicAttempts);
+    return { ...s, totalConcepts: total, completedConcepts: completed, attemptCount };
+  });
+
+  if (challenges.length === 0) return null; // nothing to evaluate yet -- don't create a cycle for zero evidence
+
+  const earliestSubmittedAt = challenges[challenges.length - 1]?.submitted_at;
+  const activeCycle = await ensureActiveCycle(userId, earliestSubmittedAt);
+  if (!activeCycle) return null;
+
+  const prediction = await calculatePrediction({ subtopicStats, challenges, attempts, cycleStartedAt: activeCycle.started_at });
+  if (!prediction.hasEstimate) return null;
+
+  const { data: latestSnapshot } = await supabase
+    .from("prediction_snapshots")
+    .select("estimated_grade, estimated_grade_low, estimated_grade_high, confidence")
+    .eq("prediction_cycle_id", activeCycle.id)
+    .order("calculated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const unchanged =
+    latestSnapshot &&
+    latestSnapshot.estimated_grade === prediction.estimatedGrade &&
+    latestSnapshot.estimated_grade_low === prediction.estimatedGradeLow &&
+    latestSnapshot.estimated_grade_high === prediction.estimatedGradeHigh &&
+    latestSnapshot.confidence === prediction.confidence;
+  if (unchanged) return prediction; // avoid an unnecessary write when nothing actually changed
+
+  await supabase.from("prediction_snapshots").insert({
+    user_id: userId,
+    prediction_cycle_id: activeCycle.id,
+    estimated_grade: prediction.estimatedGrade,
+    estimated_grade_low: prediction.estimatedGradeLow,
+    estimated_grade_high: prediction.estimatedGradeHigh,
+    estimated_percentage: prediction.estimatedPercentage,
+    confidence: prediction.confidence,
+    overall_performance: prediction.overallPerformance,
+    recent_performance: prediction.recentPerformance,
+    syllabus_coverage: prediction.syllabusCoverage,
+    difficulty_performance: prediction.difficultyPerformance,
+    consistency_score: prediction.consistencyScore,
+    evidence_challenges: prediction.evidenceChallenges,
+    evidence_marks: prediction.evidenceMarks,
+  });
+
+  return prediction;
 }
 
 function pickRecommendation(subtopicStats) {
@@ -246,5 +355,7 @@ function emptyOverview(subtopics, topics) {
     overallLearnedPercent: 0, overallAssessedPercent: null, questionsAttempted: 0, questionsCorrect: 0, questionsWrong: 0,
     questionsNeedsReview: 0, questionsUnattempted: 0, accuracy: null, avgChallengeScore: null, challengesCompleted: 0,
     streak: { current_streak: 0 }, topicStats, subtopicStats, strengths: [], areasToStrengthen: [], recommendation: null, recentActivity: [], trend: [],
+    prediction: { hasEstimate: false, evidenceChallenges: 0, subtopicsWithEvidence: 0, requiredChallenges: PREDICTION_CONFIG.minimumEvidence.challenges, requiredSyllabusAreas: PREDICTION_CONFIG.minimumEvidence.syllabusAreas },
+    predictionTrend: null, gradeTrendPoints: [], activeCycle: null, allCycles: [], cooldown: { allowed: true, availableAt: null },
   };
 }

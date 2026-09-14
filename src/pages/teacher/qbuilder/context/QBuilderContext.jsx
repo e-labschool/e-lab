@@ -1,5 +1,4 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { getVisibleQuestions } from "../../../../data/questions/index.js";
 import { getPublishedQuestionsForBuilder } from "../lib/supabaseQuestions.js";
 import {
   resolveLatestVersionId, getDraftPaper, listSavedPapers, createPaper, updatePaperMeta,
@@ -33,7 +32,7 @@ export function QBuilderProvider({ children }) {
   useEffect(() => {
     getPublishedQuestionsForBuilder()
       .then(setSupabaseQuestions)
-      .catch(() => setSupabaseQuestions([])) // legacy bank still works even if Supabase is unreachable
+      .catch(() => setSupabaseQuestions([])) // canonical bank unavailable; never substitute stale local content
       .finally(() => setLoadingQuestions(false));
   }, []);
 
@@ -59,13 +58,10 @@ export function QBuilderProvider({ children }) {
     init();
   }, []);
 
-  // The central e-Lab Practice Questions bank: legacy JS (reviewed/
-  // published only) merged with published Supabase questions, plus the
-  // teacher's own questions. Supabase takes precedence whenever the same
-  // id exists in both, so no id is ever duplicated in the combined pool.
-  const legacyQuestions = getVisibleQuestions();
-  const supabaseIds = new Set(supabaseQuestions.map((q) => q.id));
-  const sampleQuestions = [...legacyQuestions.filter((q) => !supabaseIds.has(q.id)), ...supabaseQuestions];
+  // The central e-Lab Practice Questions bank has one canonical source:
+  // published Supabase questions. Teacher-created questions remain a
+  // separate personal bank and are never confused with canonical content.
+  const sampleQuestions = supabaseQuestions;
   const allQuestions = [...sampleQuestions, ...myQuestions];
 
   function getQuestionById(id) {
@@ -114,9 +110,8 @@ export function QBuilderProvider({ children }) {
         const questionVersionId = await resolveLatestVersionId(question.id);
         item = await addItem(paperId, { position, questionVersionId, marksOverride: null });
       } else {
-        // Legacy JS or teacher-custom question — no canonical versioned
-        // home exists for it, so a full frozen snapshot is stored
-        // directly; no attempt is made to create a Supabase question for it.
+        // Teacher-custom question — no canonical versioned home exists,
+        // so a full frozen snapshot is stored directly.
         item = await addItem(paperId, { position, customQuestion: question, marksOverride: null });
       }
       setDraftItems((prev) => [...prev, item]);

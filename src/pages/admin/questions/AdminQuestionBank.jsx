@@ -1,10 +1,12 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, Loader2, ChevronLeft, ChevronRight, Plus, HelpCircle, Upload, ImageIcon, AlertTriangle } from "lucide-react";
+import { Search, Loader2, ChevronLeft, ChevronRight, Plus, HelpCircle, Upload, ImageIcon, AlertTriangle, Eye } from "lucide-react";
 import { listQuestions, listQuestionsForVisualStats } from "../../../lib/questionBankService.js";
 import { getVisualStatus, matchesVisualFilter, VISUAL_FILTER_OPTIONS } from "./visualStatus.js";
 import Badge from "../../../components/ui/Badge.jsx";
 import Button from "../../../components/ui/Button.jsx";
+
+const StudentQuestionPreviewModal = lazy(() => import("./StudentQuestionPreviewModal.jsx"));
 
 const PAGE_SIZE = 25;
 const STATUS_TONE = { draft: "neutral", reviewed: "amber", published: "teal", archived: "coral" };
@@ -33,6 +35,7 @@ export default function AdminQuestionBank() {
   const [visualFilter, setVisualFilter] = useState("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [previewQuestion, setPreviewQuestion] = useState(null);
   // Real counts, computed from actual data — never hard-coded — via one
   // lightweight fetch of visual-relevant fields for every question.
   const [visualCounts, setVisualCounts] = useState(null);
@@ -165,6 +168,7 @@ export default function AdminQuestionBank() {
                   <th className="px-4 py-2.5 font-medium">Marks</th>
                   <th className="px-4 py-2.5 font-medium">Status</th>
                   <th className="px-4 py-2.5 font-medium">Visual</th>
+                  <th className="px-4 py-2.5 font-medium">Preview</th>
                 </tr>
               </thead>
               <tbody>
@@ -200,6 +204,11 @@ export default function AdminQuestionBank() {
                           </Badge>
                         )}
                       </td>
+                      <td className="px-4 py-2.5">
+                        <button type="button" onClick={(e) => { e.stopPropagation(); setPreviewQuestion(q); }} className="inline-flex items-center gap-1 rounded-md border border-[var(--color-line)] px-2 py-1 text-xs text-[var(--color-ink-soft)] hover:border-[var(--color-indigo)] hover:text-[var(--color-indigo)]">
+                          <Eye size={12} /> Preview
+                        </button>
+                      </td>
                     </tr>
                   );
                 })}
@@ -215,6 +224,12 @@ export default function AdminQuestionBank() {
             </div>
           </div>
         </>
+      )}
+
+      {previewQuestion && (
+        <Suspense fallback={null}>
+          <StudentQuestionPreviewModal question={previewQuestion} onClose={() => setPreviewQuestion(null)} />
+        </Suspense>
       )}
     </div>
   );

@@ -4,13 +4,10 @@ import {
   PAPERS, DIFFICULTIES, LEVELS, STATUSES, QUESTION_TYPE_GROUPS,
   getAllCurriculumCodes, getCurriculumCode,
 } from "../lib/paperUtils.js";
-import { getAllCommandTerms, getAllSkills } from "../../../../data/questions/index.js";
 import CurriculumFilterTree from "./CurriculumFilterTree.jsx";
 import CheckboxGroup from "./CheckboxGroup.jsx";
 
 const ALL_CODES = getAllCurriculumCodes();
-const ALL_COMMAND_TERMS = getAllCommandTerms();
-const ALL_SKILLS = getAllSkills();
 
 // All primary filters live here, in the left panel, as checkboxes — no
 // dropdowns for Curriculum/Level/Paper/Difficulty/Type. `allQuestions` is
@@ -20,6 +17,9 @@ const ALL_SKILLS = getAllSkills();
 // practical") in favour of staying simple and fast.
 export default function FilterPanel({ filters, onChange, onClear, allQuestions, resultCount }) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
+
+  const allCommandTerms = useMemo(() => [...new Set(allQuestions.flatMap((q) => q.commandTerms ?? []))].sort(), [allQuestions]);
+  const allSkills = useMemo(() => [...new Set(allQuestions.flatMap((q) => q.skills ?? []))].sort(), [allQuestions]);
 
   const counts = useMemo(() => {
     const byCode = {}, byLevel = {}, byPaper = {}, byDifficulty = {}, byType = {};
@@ -128,7 +128,7 @@ export default function FilterPanel({ filters, onChange, onClear, allQuestions, 
                   {["All", ...STATUSES].map((s) => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
-              {ALL_COMMAND_TERMS.length > 0 && (
+              {allCommandTerms.length > 0 && (
                 <div>
                   <label className="mb-1 block text-[11px] text-[var(--color-ink-faint)]" htmlFor="filter-command-term">Command term</label>
                   <select
@@ -137,11 +137,11 @@ export default function FilterPanel({ filters, onChange, onClear, allQuestions, 
                     onChange={(e) => set({ commandTerm: e.target.value })}
                     className="w-full rounded-md border border-[var(--color-line)] bg-transparent px-2 py-1.5 text-sm text-[var(--color-ink)]"
                   >
-                    {["All", ...ALL_COMMAND_TERMS].map((c) => <option key={c} value={c}>{c}</option>)}
+                    {["All", ...allCommandTerms].map((c) => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
               )}
-              {ALL_SKILLS.length > 0 && (
+              {allSkills.length > 0 && (
                 <div>
                   <label className="mb-1 block text-[11px] text-[var(--color-ink-faint)]" htmlFor="filter-skill">Skill</label>
                   <select
@@ -150,7 +150,7 @@ export default function FilterPanel({ filters, onChange, onClear, allQuestions, 
                     onChange={(e) => set({ skill: e.target.value })}
                     className="w-full rounded-md border border-[var(--color-line)] bg-transparent px-2 py-1.5 text-sm text-[var(--color-ink)]"
                   >
-                    {["All", ...ALL_SKILLS].map((s) => <option key={s} value={s}>{s}</option>)}
+                    {["All", ...allSkills].map((s) => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
               )}

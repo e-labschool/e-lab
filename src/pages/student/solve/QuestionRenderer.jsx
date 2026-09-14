@@ -54,18 +54,28 @@ export default function QuestionRenderer({ question, questionNumber, answer, onA
           </div>
         ) : question.questionType === "MCQ" ? (
           <div className="flex flex-col gap-2" role="radiogroup" aria-label="Answer options">
-            {question.options?.map((opt) => (
-              <label
-                key={opt.id}
-                className={`flex cursor-pointer items-center gap-3 rounded-md border px-3.5 py-2.5 text-sm transition-colors ${
-                  answer === opt.id ? "border-[var(--color-indigo)] bg-[var(--color-indigo-soft)]" : "border-[var(--color-line)] hover:border-[var(--color-ink)]"
-                }`}
-              >
-                <input type="radio" name={`q-${question.id}`} checked={answer === opt.id} onChange={() => onAnswer(opt.id)} className="accent-[var(--color-indigo)]" />
-                <span className="font-medium text-[var(--color-ink-faint)]">{opt.id}</span>
-                <span className="text-[var(--color-ink)]">{opt.text}</span>
-              </label>
-            ))}
+            {question.options?.map((opt, index) => {
+              // Canonical imports exist in two historical option shapes:
+              // { id: "A", text: "..." } and "A. ...". Render both
+              // consistently so older imported batches do not appear blank.
+              const fallbackId = String.fromCharCode(65 + index);
+              const rawText = typeof opt === "string" ? opt : opt?.text ?? "";
+              const parsed = typeof opt === "string" ? rawText.match(/^\s*([A-Z])(?:[.)]|\s*-)?\s*(.*)$/s) : null;
+              const optionId = typeof opt === "string" ? (parsed?.[1] ?? fallbackId) : (opt?.id ?? fallbackId);
+              const optionText = typeof opt === "string" ? (parsed?.[2] || rawText) : rawText;
+              return (
+                <label
+                  key={optionId}
+                  className={`flex cursor-pointer items-center gap-3 rounded-md border px-3.5 py-2.5 text-sm transition-colors ${
+                    answer === optionId ? "border-[var(--color-indigo)] bg-[var(--color-indigo-soft)]" : "border-[var(--color-line)] hover:border-[var(--color-ink)]"
+                  }`}
+                >
+                  <input type="radio" name={`q-${question.id}`} checked={answer === optionId} onChange={() => onAnswer(optionId)} className="accent-[var(--color-indigo)]" />
+                  <span className="font-medium text-[var(--color-ink-faint)]">{optionId}</span>
+                  <span className="text-[var(--color-ink)]">{optionText}</span>
+                </label>
+              );
+            })}
           </div>
         ) : question.questionType === "Calculation" ? (
           <div>

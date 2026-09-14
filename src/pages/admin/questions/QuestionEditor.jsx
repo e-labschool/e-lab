@@ -1,6 +1,6 @@
 import { useState, useEffect, lazy, Suspense } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ChevronLeft, Loader2, AlertTriangle } from "lucide-react";
+import { ChevronLeft, Loader2, AlertTriangle, Eye } from "lucide-react";
 import { getQuestion, getAdminQuestionSecrets, saveQuestionWithSecrets } from "../../../lib/questionBankService.js";
 import Button from "../../../components/ui/Button.jsx";
 
@@ -11,6 +11,7 @@ import Button from "../../../components/ui/Button.jsx";
 // every visual renderer into the JS needed for every Admin page, not
 // just the question editor.
 const VisualEditor = lazy(() => import("./VisualEditor.jsx"));
+const StudentQuestionPreviewModal = lazy(() => import("./StudentQuestionPreviewModal.jsx"));
 
 const LEVELS = ["SL", "HL", "SL/HL"];
 const PAPERS = ["Paper 1A", "Paper 1B", "Paper 2"];
@@ -46,6 +47,7 @@ export default function QuestionEditor() {
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
   // If the secure secrets read fails for an EXISTING question, saving is
   // blocked outright — there is no "confirm overwrite" path anymore.
   // Silently proceeding with blank secret fields risked wiping a real
@@ -211,8 +213,17 @@ export default function QuestionEditor() {
         </Section>
 
         {error && <p role="alert" className="text-sm text-[var(--color-coral)]">{error}</p>}
-        <Button type="submit" disabled={saving || (!isNew && secretsLoadFailed)}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Question"}</Button>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="secondary" onClick={() => setPreviewOpen(true)}><Eye size={15} /> Preview as Student</Button>
+          <Button type="submit" disabled={saving || (!isNew && secretsLoadFailed)}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Question"}</Button>
+        </div>
       </form>
+
+      {previewOpen && (
+        <Suspense fallback={null}>
+          <StudentQuestionPreviewModal question={form} onClose={() => setPreviewOpen(false)} />
+        </Suspense>
+      )}
     </div>
   );
 }

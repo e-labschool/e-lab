@@ -1,4 +1,3 @@
-import { getVisibleQuestions } from "../data/questions/index.js";
 import { getCurriculumCode } from "../pages/teacher/qbuilder/lib/paperUtils.js";
 import { supabase } from "./supabaseClient.js";
 import { resolveLatestVersionIds } from "./canonicalQuestions.js";
@@ -148,7 +147,7 @@ function buildFromEligiblePool(eligible, { topicCodes, questionCount, timeLimitM
  * Supabase questions are tried first (if enough exist for the request,
  * the whole challenge is built from them); otherwise genuine legacy-only
  * questions are tried (any legacy id that also exists in Supabase is
- * already excluded from this pool by mergeWithSupabasePrecedence — the
+ * already excluded by using the canonical Supabase pool only — the
  * caller-supplied questionPool never contains a colliding legacy id at
  * all, so no extra collision-filtering is needed here). If neither pool
  * alone can satisfy the request, a clear insufficient-questions result is
@@ -160,7 +159,7 @@ function buildFromEligiblePool(eligible, { topicCodes, questionCount, timeLimitM
  * insufficientReason is set when neither pool can satisfy the request.
  */
 export function curateChallenge({ topicCodes, level, mode, questionCount, timeLimitMinutes, style, excludeQuestionIds = [], questionPool }) {
-  const all = questionPool ?? getVisibleQuestions();
+  const all = questionPool ?? [];
   const canonicalPool = all.filter((q) => q.isSupabaseQuestion);
   const legacyPool = all.filter((q) => !q.isSupabaseQuestion);
 

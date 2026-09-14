@@ -1,5 +1,4 @@
 import { supabase } from "./supabaseClient.js";
-import { getQuestionById } from "../data/questions/index.js";
 
 // Neutral shared service under src/lib/ — deliberately NOT under
 // pages/teacher/qbuilder/, and NOT imported by Question Builder. Question
@@ -92,17 +91,6 @@ export async function resolveLatestVersionIds(questionIds) {
 }
 
 /**
- * The merged question pool Assess selects from: legacy JS questions plus
- * published Supabase questions, with Supabase taking precedence on ID
- * collision — the same rule already used in Question Builder, applied
- * independently here since Assess must not import Question Builder code.
- */
-export function mergeWithSupabasePrecedence(legacyQuestions, supabaseQuestions) {
-  const supabaseIds = new Set(supabaseQuestions.map((q) => q.id));
-  return [...legacyQuestions.filter((q) => !supabaseIds.has(q.id)), ...supabaseQuestions];
-}
-
-/**
  * Hydrates challenge_questions rows for STUDENT-FACING display —
  * ChallengeSession and ChallengeReport both use this instead of looking
  * a question up by plain question_id, since a legacy-JS id lookup can
@@ -113,8 +101,9 @@ export function mergeWithSupabasePrecedence(legacyQuestions, supabaseQuestions) 
  *   question_version_id IS NOT NULL -> content comes ONLY from that
  *     exact question_versions.content_snapshot (never the live
  *     public.questions row, never the legacy JS bank, even if the ids match).
- *   question_version_id IS NULL -> genuine legacy row, existing
- *     getQuestionById() compatibility path, unchanged.
+ *   question_version_id IS NULL -> old pre-canonical challenge row. Static
+ *     question content has intentionally been retired, so no stale question
+ *     is reconstructed from a second source.
  *
  * Batches ALL needed version snapshots in ONE query regardless of how
  * many pinned rows are in the challenge — never one request per question.
@@ -140,7 +129,10 @@ export async function hydrateChallengeQuestions(rows) {
       const snapshot = snapshotsById[row.question_version_id];
       result.set(row.id, snapshot ? mapToRenderableQuestion(snapshot) : null);
     } else {
-      result.set(row.id, getQuestionById(row.question_id));
+      // Pre-canonical historical rows cannot be safely rehydrated after the
+      // static bank is retired. Returning null is preferable to displaying
+      // a potentially different question with the same legacy ID.
+      result.set(row.id, null);
     }
   }
   return result;

@@ -1,10 +1,11 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { CheckCircle2, XCircle, HelpCircle, ArrowRight } from "lucide-react";
 import { supabase } from "../../../lib/supabaseClient.js";
 import { getChallengeQuestions } from "../../../lib/challengeService.js";
 import { hydrateChallengeQuestions, getCanonicalReviewContent } from "../../../lib/canonicalQuestions.js";
 import { getFirstConceptIdForSubtopicCode } from "../../../lib/learn-tree.js";
+import { refreshPredictionSnapshot } from "../../../lib/progressAnalytics.js";
 import ELabLoader from "../../../components/ui/ELabLoader.jsx";
 import Button from "../../../components/ui/Button.jsx";
 
@@ -66,6 +67,20 @@ export default function ChallengeReport() {
       setLoading(false);
     });
   }, [challengeId]);
+
+  // Best-effort, non-blocking: refreshes the Estimated IB Grade snapshot
+  // after a genuine submission. Deliberately isolated from the data load
+  // above and from challengeService.js entirely -- a failure here is
+  // swallowed and can never affect the Challenge report itself, and
+  // refreshPredictionSnapshot() only ever writes a new snapshot row when
+  // the estimate has actually changed, so revisiting this report later
+  // doesn't create duplicate snapshots.
+  const snapshotRefreshedRef = useRef(false);
+  useEffect(() => {
+    if (!challenge || challenge.status !== "submitted" || snapshotRefreshedRef.current) return;
+    snapshotRefreshedRef.current = true;
+    refreshPredictionSnapshot(challenge.level).catch(() => {});
+  }, [challenge]);
 
   const byTopic = useMemo(() => {
     const map = new Map();

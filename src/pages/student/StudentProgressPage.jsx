@@ -1,9 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ChevronRight, Loader2, TrendingUp, Sparkles, Flame } from "lucide-react";
+import { ChevronRight, Loader2, TrendingUp, TrendingDown, Minus, Sparkles, Flame, Info, ChevronDown, X } from "lucide-react";
 import { getProgressOverview } from "../../lib/progressAnalytics.js";
+import { startNewCycle, gradeRangeForScore } from "../../lib/predictionEngine.js";
 import { getFirstConceptIdForSubtopicCode } from "../../lib/learn-tree.js";
-import { STATUS_LABELS } from "../../lib/progressConfig.js";
+import { STATUS_LABELS, PROGRESS_CONFIG } from "../../lib/progressConfig.js";
 import Container from "../../components/ui/Container.jsx";
 import Button from "../../components/ui/Button.jsx";
 import Badge from "../../components/ui/Badge.jsx";
@@ -16,16 +17,20 @@ const STATUS_TONE = { strong: "teal", revisit: "amber", performing_well: "indigo
 
 export default function StudentProgressPage() {
   const navigate = useNavigate();
-  const { profile } = useAuth();
+  const { profile, user } = useAuth();
   const studentLevel = profile?.level;
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(null);
 
-  useEffect(() => {
+  const reload = useCallback(() => {
     setLoading(true);
     getProgressOverview(studentLevel).then(setData).finally(() => setLoading(false));
   }, [studentLevel]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
 
   if (loading) {
     return <div className="flex min-h-[50vh] items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-[var(--color-ink-faint)]" /></div>;
@@ -39,8 +44,16 @@ export default function StudentProgressPage() {
       <h1 className="font-[var(--font-display)] text-[32px] font-bold tracking-tight text-[var(--color-ink)]">Your Progress</h1>
       <p className="mt-1.5 text-[15px] text-[var(--color-ink-soft)]">See what you've learned, how you're performing, and what to focus on next.</p>
 
+      {/* Estimated IB Grade — the visual headline of this page */}
+      <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,0.42fr)_minmax(0,0.58fr)]">
+        <GradePlacard prediction={data.prediction} predictionTrend={data.predictionTrend} />
+        <SupportingPerformancePanel data={data} />
+      </div>
+
+      <PredictionCycleControls userId={user?.id} data={data} onCycleChanged={reload} />
+
       {/* Top summary metrics */}
-      <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="mt-8 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <MetricCard tone="indigo" value={hasAnyLearn ? `${data.overallLearnedPercent}%` : "0%"} label="Learning Progress" />
         <MetricCard tone="teal" value={data.accuracy != null ? `${data.accuracy}%` : "\u2014"} label="Accuracy" />
         <MetricCard tone="violet" value={data.questionsAttempted} label="Questions Attempted" />
@@ -108,7 +121,7 @@ export default function StudentProgressPage() {
           {!hasAnyLearn && <p className="mt-4 text-sm text-[var(--color-ink-faint)]">Complete a Learn concept to start tracking learning progress.</p>}
         </div>
 
-        {/* RIGHT — Assessment Performance */}
+        {/* RIGHT — Assessment Performance, now with Grade Readiness */}
         <div className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-5 shadow-[0_1px_2px_rgba(20,30,80,0.05),0_4px_12px_-4px_rgba(20,30,80,0.08)]">
           <p className="text-lg font-bold text-[var(--color-ink)]">Assessment Performance</p>
           <p className="text-xs text-[var(--color-ink-faint)]">{hasAnySolve ? `${data.overallAssessedPercent}% overall` : "Not assessed yet"}</p>
@@ -125,6 +138,7 @@ export default function StudentProgressPage() {
                 <span className="text-sm font-medium text-[var(--color-ink)]">{t.label}</span>
                 <span className="flex items-center gap-2">
                   <span className="text-sm font-semibold text-[var(--color-ink)]">{t.assessedPercent != null ? `${t.assessedPercent}%` : "\u2014"}</span>
+                  <GradeReadinessBadge topic={t} />
                   <Badge tone={STATUS_TONE[t.status]}>{STATUS_LABELS[t.status]}</Badge>
                 </span>
               </div>
@@ -172,7 +186,7 @@ export default function StudentProgressPage() {
         </div>
       </div>
 
-      {/* Strengths / Areas to Strengthen */}
+      {/* Strengths / Areas to Strengthen — enhanced with Grade Readiness, no duplicate section created */}
       <div className="mt-8 grid gap-5 sm:grid-cols-2">
         <div className="rounded-2xl border border-[var(--color-teal)]/20 bg-[var(--color-teal-soft)] p-5">
           <p className="text-sm font-bold text-[var(--color-teal)]">Your Strengths</p>
@@ -184,6 +198,9 @@ export default function StudentProgressPage() {
                 <div key={s.code} className="text-sm">
                   <span className="font-medium text-[var(--color-ink)]">{s.code} {s.label}</span>
                   <span className="ml-2 text-xs text-[var(--color-ink-faint)]">{s.assessedPercent}% &middot; {s.attemptCount} questions attempted</span>
+                  {s.attemptCount >= PROGRESS_CONFIG.minAttemptsForStrength && (
+                    <span className="ml-2 text-xs font-semibold text-[var(--color-teal)]">Grade {gradeRangeForScore(s.assessedPercent).isRange ? `${gradeRangeForScore(s.assessedPercent).low}\u2013${gradeRangeForScore(s.assessedPercent).high}` : gradeRangeForScore(s.assessedPercent).low} readiness</span>
+                  )}
                 </div>
               ))}
             </div>
@@ -200,7 +217,10 @@ export default function StudentProgressPage() {
                 return (
                   <div key={s.code} className="rounded-lg bg-[var(--color-paper-raised)]/60 p-2.5 text-sm">
                     <p className="font-medium text-[var(--color-ink)]">{s.code} {s.label}</p>
-                    <p className="text-xs text-[var(--color-ink-faint)]">Learn: {s.learnedPercent}% &middot; Assessment: {s.assessedPercent}%</p>
+                    <p className="text-xs text-[var(--color-ink-faint)]">
+                      Learn: {s.learnedPercent}% &middot; Assessment: {s.assessedPercent}%
+                      {s.attemptCount >= PROGRESS_CONFIG.minAttemptsForInsight && ` \u00b7 Grade ${gradeRangeForScore(s.assessedPercent).low} readiness`}
+                    </p>
                     <div className="mt-1.5 flex gap-2">
                       {conceptId && <Button size="sm" variant="secondary" onClick={() => navigate(`/student/learn/${conceptId}`)}>Review Concept</Button>}
                       <Button size="sm" onClick={() => navigate("/student/solve/new")}>Practice Topic</Button>
@@ -212,6 +232,9 @@ export default function StudentProgressPage() {
           )}
         </div>
       </div>
+      {data.areasToStrengthen.length > 0 && (
+        <ActionableStatement areasToStrengthen={data.areasToStrengthen} />
+      )}
 
       {/* Question Outcomes — every value here reconciles exactly with the
           top metrics above, since both come from the same computation in
@@ -270,7 +293,249 @@ export default function StudentProgressPage() {
           )}
         </div>
       </div>
+
+      <PreviousCyclesSection allCycles={data.allCycles} activeCycle={data.activeCycle} />
     </Container>
+  );
+}
+
+// ============================================================
+// Estimated IB Grade placard
+// ============================================================
+
+const TREND_ICON = { improving: TrendingUp, declining: TrendingDown, stable: Minus };
+const TREND_LABEL = { improving: "Improving", declining: "Declining", stable: "Stable" };
+const CONFIDENCE_LABEL = { low: "Low Confidence", medium: "Medium Confidence", high: "High Confidence" };
+
+function GradePlacard({ prediction, predictionTrend }) {
+  const [showInfo, setShowInfo] = useState(false);
+
+  if (!prediction?.hasEstimate) {
+    const remainingChallenges = Math.max(0, (prediction?.requiredChallenges ?? 0) - (prediction?.evidenceChallenges ?? 0));
+    return (
+      <div className="flex flex-col items-center justify-center rounded-2xl border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-6 text-center shadow-[0_1px_2px_rgba(20,30,80,0.05),0_4px_12px_-4px_rgba(20,30,80,0.08)]">
+        <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Estimated IB Grade</p>
+        <p className="mt-2 font-[var(--font-display)] text-6xl font-bold text-[var(--color-ink-faint)]">&mdash;</p>
+        <p className="mt-2 text-sm font-semibold text-[var(--color-ink-soft)]">Building Estimate</p>
+        <p className="mt-1 text-xs text-[var(--color-ink-faint)]">
+          {remainingChallenges > 0 ? `Complete ${remainingChallenges} more Challenge${remainingChallenges === 1 ? "" : "s"}` : "Complete Challenges across more syllabus areas"}
+        </p>
+        <p className="mt-2 text-[11px] text-[var(--color-ink-faint)]">
+          {prediction?.evidenceChallenges ?? 0} / {prediction?.requiredChallenges ?? 3} Challenges &middot; {prediction?.subtopicsWithEvidence ?? 0} / {prediction?.requiredSyllabusAreas ?? 2} syllabus areas
+        </p>
+      </div>
+    );
+  }
+
+  const TrendIcon = predictionTrend ? TREND_ICON[predictionTrend] : null;
+  const gradeDisplay = prediction.isRange ? `${prediction.estimatedGradeLow}\u2013${prediction.estimatedGradeHigh}` : prediction.estimatedGrade;
+
+  return (
+    <div className="relative flex flex-col items-center justify-center rounded-2xl border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-6 text-center shadow-[0_1px_2px_rgba(20,30,80,0.05),0_4px_12px_-4px_rgba(20,30,80,0.08)]">
+      <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Estimated IB Grade</p>
+      <p className="mt-1 font-[var(--font-display)] text-7xl font-bold leading-none text-[var(--color-ink)]">{gradeDisplay}</p>
+
+      {TrendIcon && (
+        <p className="mt-3 flex items-center gap-1 text-xs font-semibold text-[var(--color-ink-soft)]">
+          <TrendIcon size={13} /> {TREND_LABEL[predictionTrend]}
+        </p>
+      )}
+
+      <p className="mt-1.5 text-xs font-medium text-[var(--color-ink-faint)]">{CONFIDENCE_LABEL[prediction.confidence]}</p>
+
+      <p className="mt-3 text-[11px] text-[var(--color-ink-faint)]">Based on {prediction.evidenceChallenges} Challenges</p>
+      <p className="text-[11px] text-[var(--color-ink-faint)]">Syllabus Coverage: {Math.round(prediction.syllabusCoverage)}%</p>
+
+      <button type="button" onClick={() => setShowInfo(true)} className="mt-3 flex items-center gap-1 text-[11px] font-medium text-[var(--color-indigo)] hover:underline">
+        <Info size={12} /> How it works
+      </button>
+
+      {showInfo && <InfoModal onClose={() => setShowInfo(false)} />}
+    </div>
+  );
+}
+
+function InfoModal({ onClose }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="max-w-sm rounded-2xl border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-5 text-left shadow-lg" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start justify-between gap-3">
+          <p className="text-sm font-bold text-[var(--color-ink)]">About your Estimated IB Grade</p>
+          <button type="button" onClick={onClose} className="shrink-0 text-[var(--color-ink-faint)] hover:text-[var(--color-ink)]"><X size={16} /></button>
+        </div>
+        <p className="mt-3 text-sm leading-relaxed text-[var(--color-ink-soft)]">
+          Your estimated grade is based on your performance in e-Lab Challenges, recent results, question difficulty and syllabus coverage. As you complete more assessments, the estimate becomes more reliable. This is an e-Lab learning estimate and is not an official IB or school predicted grade.
+        </p>
+        <Button size="sm" className="mt-4" onClick={onClose}>Got it</Button>
+      </div>
+    </div>
+  );
+}
+
+function SupportingPerformancePanel({ data }) {
+  const { prediction, gradeTrendPoints } = data;
+  const gradeSequence = gradeTrendPoints
+    .map((s) => (s.estimated_grade != null ? String(s.estimated_grade) : s.estimated_grade_low != null ? `${s.estimated_grade_low}\u2013${s.estimated_grade_high}` : null))
+    .filter(Boolean)
+    .slice(-6);
+
+  return (
+    <div className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-5 shadow-[0_1px_2px_rgba(20,30,80,0.05),0_4px_12px_-4px_rgba(20,30,80,0.08)]">
+      <p className="text-sm font-bold text-[var(--color-ink)]">Current Performance</p>
+      <div className="mt-3 flex flex-col gap-2.5">
+        <SupportingRow label="Challenge Performance" value={prediction.hasEstimate ? `${Math.round(prediction.overallPerformance)}%` : "\u2014"} />
+        <SupportingRow label="Syllabus Coverage" value={prediction.hasEstimate ? `${Math.round(prediction.syllabusCoverage)}%` : "\u2014"} />
+        <SupportingRow label="Recent Performance" value={prediction.hasEstimate ? `${Math.round(prediction.recentPerformance)}%` : "\u2014"} />
+        <SupportingRow label="Challenges Completed" value={data.challengesCompleted} />
+      </div>
+      {gradeSequence.length >= 2 && (
+        <div className="mt-4 border-t border-[var(--color-line)] pt-3">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Grade Trend</p>
+          <p className="mt-1 text-sm font-semibold text-[var(--color-ink)]">{gradeSequence.join(" \u2192 ")}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SupportingRow({ label, value }) {
+  return (
+    <div className="flex items-center justify-between text-sm">
+      <span className="text-[var(--color-ink-soft)]">{label}</span>
+      <span className="font-semibold text-[var(--color-ink)]">{value}</span>
+    </div>
+  );
+}
+
+// ============================================================
+// Prediction cycle controls
+// ============================================================
+
+function PredictionCycleControls({ userId, data, onCycleChanged }) {
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState(null);
+  const { activeCycle, cooldown } = data;
+
+  async function handleConfirmStart() {
+    setStarting(true);
+    setError(null);
+    try {
+      await startNewCycle(userId);
+      setShowConfirm(false);
+      onCycleChanged();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setStarting(false);
+    }
+  }
+
+  return (
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--color-line)] bg-[var(--color-paper-raised)]/60 px-4 py-2.5 text-xs">
+      <div className="text-[var(--color-ink-soft)]">
+        <span className="font-semibold text-[var(--color-ink)]">Current Prediction Cycle</span>
+        {activeCycle ? (
+          <span> &middot; Started {new Date(activeCycle.started_at).toLocaleDateString()} &middot; {data.prediction?.evidenceChallenges ?? 0} Challenges</span>
+        ) : (
+          <span> &middot; Not started yet</span>
+        )}
+      </div>
+      <div className="flex items-center gap-3">
+        {!cooldown.allowed && cooldown.availableAt && (
+          <span className="text-[var(--color-ink-faint)]">New cycle available {cooldown.availableAt.toLocaleDateString()}</span>
+        )}
+        <button
+          type="button"
+          disabled={!cooldown.allowed}
+          onClick={() => setShowConfirm(true)}
+          className="font-semibold text-[var(--color-indigo)] hover:underline disabled:cursor-not-allowed disabled:text-[var(--color-ink-faint)] disabled:no-underline"
+        >
+          Start New Cycle
+        </button>
+      </div>
+
+      {showConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => !starting && setShowConfirm(false)}>
+          <div className="max-w-sm rounded-2xl border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-5 text-left shadow-lg" onClick={(e) => e.stopPropagation()}>
+            <p className="text-sm font-bold text-[var(--color-ink)]">Start a new prediction cycle?</p>
+            <p className="mt-2 text-sm leading-relaxed text-[var(--color-ink-soft)]">
+              Your Learn progress, Challenge history and previous results will remain saved. Only new Challenge performance will be used to build your current Estimated IB Grade.
+            </p>
+            <p className="mt-2 text-sm leading-relaxed text-[var(--color-ink-soft)]">
+              This is useful when you want a fresh measure of your current performance, especially during final DP revision.
+            </p>
+            {error && <p className="mt-2 text-sm text-[var(--color-coral)]">{error}</p>}
+            <div className="mt-4 flex justify-end gap-2">
+              <Button size="sm" variant="secondary" onClick={() => setShowConfirm(false)} disabled={starting}>Cancel</Button>
+              <Button size="sm" onClick={handleConfirmStart} disabled={starting}>{starting ? "Starting\u2026" : "Start New Cycle"}</Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PreviousCyclesSection({ allCycles, activeCycle }) {
+  const [open, setOpen] = useState(false);
+  const previous = allCycles.filter((c) => c.id !== activeCycle?.id);
+  if (previous.length === 0) return null;
+
+  return (
+    <div className="mt-8 rounded-2xl border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-5">
+      <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-center justify-between text-left">
+        <span className="text-sm font-bold text-[var(--color-ink)]">Previous Prediction Cycles</span>
+        <ChevronDown size={15} className={`text-[var(--color-ink-faint)] transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className="mt-3 flex flex-col gap-2">
+          {previous.map((c) => (
+            <div key={c.id} className="flex items-center justify-between rounded-lg border border-[var(--color-line)] px-3 py-2 text-sm">
+              <span className="font-medium text-[var(--color-ink)]">Cycle {c.cycle_number}</span>
+              <span className="text-xs text-[var(--color-ink-faint)]">
+                {new Date(c.started_at).toLocaleDateString()} &ndash; {c.ended_at ? new Date(c.ended_at).toLocaleDateString() : "Current"}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// Grade Readiness — reuses the SAME deterministic grade/range logic as
+// the main placard (predictionEngine.js), never a separate calculation.
+// ============================================================
+
+function GradeReadinessBadge({ topic }) {
+  if (topic.assessedPercent == null || topic.attemptCount < PROGRESS_CONFIG.minAttemptsForInsight) {
+    return <span className="text-[10px] text-[var(--color-ink-faint)]">More data needed</span>;
+  }
+  const { low, high, isRange } = gradeRangeForScore(topic.assessedPercent);
+  return (
+    <span className="rounded-full bg-[var(--color-indigo-soft)] px-2 py-0.5 text-[10px] font-semibold text-[var(--color-indigo)]">
+      Grade {isRange ? `${low}\u2013${high}` : low}
+    </span>
+  );
+}
+
+function ActionableStatement({ areasToStrengthen }) {
+  const eligible = areasToStrengthen.filter((s) => s.attemptCount >= PROGRESS_CONFIG.minAttemptsForInsight);
+  const insufficientEvidence = areasToStrengthen.filter((s) => s.attemptCount < PROGRESS_CONFIG.minAttemptsForInsight);
+  if (eligible.length === 0 && insufficientEvidence.length === 0) return null;
+
+  const nextGrade = Math.min(7, Math.max(...eligible.map((s) => gradeRangeForScore(s.assessedPercent).high), 5) + 1);
+  const parts = [];
+  if (eligible.length > 0) parts.push(`Improve performance in ${eligible.map((s) => s.label).join(" and ")}`);
+  if (insufficientEvidence.length > 0) parts.push(`complete more assessment evidence in ${insufficientEvidence.map((s) => s.label).join(" and ")}`);
+
+  return (
+    <div className="mt-3 rounded-xl border border-[var(--color-line)] bg-[var(--color-paper-raised)]/60 p-3 text-sm">
+      <span className="font-semibold text-[var(--color-ink)]">To move towards Grade {nextGrade}: </span>
+      <span className="text-[var(--color-ink-soft)]">{parts.join(", and ")}.</span>
+    </div>
   );
 }
 

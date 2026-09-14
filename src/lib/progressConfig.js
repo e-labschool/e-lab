@@ -43,3 +43,59 @@ export const STATUS_LABELS = {
   not_assessed: "Not Assessed",
   not_started: "Not Started",
 };
+
+// Estimated IB Grade prediction — every threshold/weight lives here so the
+// model can be retuned without touching predictionEngine.js or the UI.
+export const PREDICTION_CONFIG = {
+  weights: {
+    overallPerformance: 0.5,
+    recentPerformance: 0.2,
+    syllabusCoverage: 0.15,
+    difficultyPerformance: 0.1,
+    consistency: 0.05,
+  },
+
+  // Matches the question bank's actual DIFFICULTIES tiers (Easy/Medium/
+  // Hard/Challenge, see src/data/questions/schema.js) -- not a generic
+  // three-tier scale invented for this feature. "Challenge" extrapolates
+  // one step past "Hard" at the same spacing (1.2 -> 1.3).
+  difficultyWeights: {
+    Easy: 0.8,
+    Medium: 1.0,
+    Hard: 1.2,
+    Challenge: 1.3,
+  },
+  unknownDifficultyWeight: 1.0, // a question whose difficulty can't be resolved never excludes it, just treats it as neutral
+
+  recentChallengeCount: 6, // "the last N meaningful submitted challenges" for the recent-performance component
+
+  minimumEvidence: {
+    challenges: 3, // fewest submitted challenges before ANY estimate is shown
+    syllabusAreas: 2, // fewest distinct subtopics with meaningful evidence
+    questionsPerSubtopicForFullCoverage: 4, // a subtopic counts as FULLY covered once it has this many marked attempts
+  },
+
+  cycleCooldownDays: 30, // derived from the most recent prediction_cycles.started_at -- see canStartNewCycle() in predictionEngine.js, no extra "last reset" column
+
+  // e-Lab's own indicative estimation boundaries -- explicitly NOT official
+  // IB grade boundaries, which vary by session/component. Percentage is the
+  // MINIMUM to reach that grade (7 needs 80%+, down to 1 for anything below 30%).
+  gradeBoundaries: {
+    7: 80,
+    6: 70,
+    5: 60,
+    4: 50,
+    3: 40,
+    2: 30,
+    1: 0,
+  },
+
+  // Below this weighted-score margin from the nearest boundary, show a
+  // grade RANGE instead of a single number -- keeps the range decision
+  // deterministic (a fixed distance from the boundary), never random.
+  gradeRangeMarginPoints: 3,
+
+  // Confidence tiers, in ascending order of the composite evidence score
+  // computed in predictionEngine.js (0-100) -- see getConfidence().
+  confidenceThresholds: { medium: 40, high: 70 },
+};

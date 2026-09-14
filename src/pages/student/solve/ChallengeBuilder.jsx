@@ -4,8 +4,7 @@ import { ChevronLeft, Loader2, AlertTriangle } from "lucide-react";
 import { useAuth } from "../../../context/AuthContext.jsx";
 import CurriculumCheckboxTree from "../../../components/curriculum/CurriculumCheckboxTree.jsx";
 import { curateChallenge, estimateMinutesFor, createChallenge } from "../../../lib/challengeService.js";
-import { getPublishedCanonicalQuestions, mergeWithSupabasePrecedence } from "../../../lib/canonicalQuestions.js";
-import { getVisibleQuestions } from "../../../data/questions/index.js";
+import { getPublishedCanonicalQuestions } from "../../../lib/canonicalQuestions.js";
 import Button from "../../../components/ui/Button.jsx";
 
 const QUESTION_COUNT_OPTIONS = [5, 10, 15, 20];
@@ -30,7 +29,7 @@ export default function ChallengeBuilder() {
   const [style, setStyle] = useState("balanced");
   const [starting, setStarting] = useState(false);
   const [buildError, setBuildError] = useState(null);
-  const [pool, setPool] = useState(null); // null while loading; merged legacy+Supabase pool once ready
+  const [pool, setPool] = useState(null); // null while loading; canonical Supabase pool once ready
   const [poolError, setPoolError] = useState(null);
 
   useEffect(() => {
@@ -42,14 +41,15 @@ export default function ChallengeBuilder() {
     getPublishedCanonicalQuestions()
       .then((supabaseQuestions) => {
         if (cancelled) return;
-        setPool(mergeWithSupabasePrecedence(getVisibleQuestions(), supabaseQuestions));
+        setPool(supabaseQuestions);
+        setPoolError(null);
       })
       .catch(() => {
         if (cancelled) return;
-        // Legacy content still works even if Supabase is unreachable —
-        // never block Assess entirely over this.
-        setPool(getVisibleQuestions());
-        setPoolError("Some newer questions may not be available right now.");
+        // Supabase is the single authoritative bank. Never fall back to
+        // removed local question content, because that can surface stale IDs.
+        setPool([]);
+        setPoolError("The question bank could not be loaded. Please try again when the connection is restored.");
       });
     return () => { cancelled = true; };
   }, []);

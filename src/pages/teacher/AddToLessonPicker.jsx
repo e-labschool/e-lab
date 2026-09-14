@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { X, Presentation, Sparkles, HelpCircle, FolderOpen, FileText, MessageSquare, ClipboardList, Upload, Image as ImageIcon, Link as LinkIcon, Box } from "lucide-react";
 import { getLearnTree } from "../../lib/learn-tree.js";
-import { getVisibleQuestions } from "../../data/questions/index.js";
+import { getPublishedCanonicalQuestions } from "../../lib/canonicalQuestions.js";
 import { getAllResources } from "../../data/resources-registry.js";
 import Button from "../../components/ui/Button.jsx";
 
@@ -124,7 +124,21 @@ function InteractivePicker({ onAdd, onBack, onClose }) {
 
 function QuestionBankPicker({ topicCode, onAdd, onBack, onClose }) {
   const [selected, setSelected] = useState([]);
-  const questions = getVisibleQuestions().filter((q) => !topicCode || q.topicCode === topicCode).slice(0, 20);
+  const [questions, setQuestions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getPublishedCanonicalQuestions()
+      .then((rows) => {
+        if (cancelled) return;
+        setQuestions(rows.filter((q) => !topicCode || q.topicCode === topicCode).slice(0, 20));
+      })
+      .catch(() => { if (!cancelled) setLoadError("Question Bank could not be loaded."); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [topicCode]);
 
   function toggle(id) {
     setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -139,7 +153,11 @@ function QuestionBankPicker({ topicCode, onAdd, onBack, onClose }) {
     <Modal title="Add from Question Bank" onClose={onClose}>
       <button type="button" onClick={onBack} className="mb-3 text-xs text-[var(--color-ink-faint)] hover:text-[var(--color-ink)]">&larr; Back</button>
       <div className="flex max-h-64 flex-col gap-1.5 overflow-y-auto">
-        {questions.length === 0 ? (
+        {loading ? (
+          <p className="text-sm text-[var(--color-ink-faint)]">Loading questions…</p>
+        ) : loadError ? (
+          <p className="text-sm text-[var(--color-coral)]">{loadError}</p>
+        ) : questions.length === 0 ? (
           <p className="text-sm text-[var(--color-ink-faint)]">No matching questions found.</p>
         ) : questions.map((q) => (
           <label key={q.id} className="flex items-start gap-2 rounded-md border border-[var(--color-line)] p-2.5 text-sm">
