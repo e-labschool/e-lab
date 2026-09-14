@@ -333,7 +333,7 @@ function GradePlacard({ prediction, predictionTrend }) {
   return (
     <div className="relative flex flex-col items-center justify-center rounded-2xl border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-6 text-center shadow-[0_1px_2px_rgba(20,30,80,0.05),0_4px_12px_-4px_rgba(20,30,80,0.08)]">
       <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Estimated IB Grade</p>
-      <p className="mt-1 font-[var(--font-display)] text-7xl font-bold leading-none text-[var(--color-ink)]">{gradeDisplay}</p>
+      <p className="mt-1 font-[var(--font-display)] font-bold leading-none text-[var(--color-ink)]" style={{ fontSize: "5rem" }}>{gradeDisplay}</p>
 
       {TrendIcon && (
         <p className="mt-3 flex items-center gap-1 text-xs font-semibold text-[var(--color-ink-soft)]">
