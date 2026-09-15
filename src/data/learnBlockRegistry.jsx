@@ -62,6 +62,7 @@ export const SIMULATION_REGISTRY = {
   "equivalence-point": { label: "Equivalence Point" },
   "titration-ph-curve": { label: "pH Curve & Titration Visualizer" },
   "buffer-action-visualizer": { label: "Buffer Action Visualizer" },
+  "chocolate-wrapping-rate": { label: "Chocolate Wrapping \u2014 Understanding Rate" },
 };
 
 // Strips HTML tags for a safe plain-text preview — never renders HTML

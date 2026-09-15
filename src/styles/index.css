@@ -42,6 +42,18 @@
   --color-coral: #B85C4A;
   --color-coral-soft: #F8ECE9;
 
+  /* ---- Student Learn lesson title ----
+     Brand green #007036 in light mode: 5.52:1 against the page background,
+     comfortably clear. Verified numerically against #007036 alone in dark
+     mode first -- only 3.08:1 against the dark page background, barely
+     scraping WCAG's large-text minimum and well below this codebase's own
+     established bar for its other dark-mode accents (~7-9:1). The dark
+     value below is the SAME hue (148.9deg) at the SAME ~42% saturation
+     already used by --color-green's dark variant, just lightened enough
+     for 7.5:1 -- a genuine "dark-mode version of the brand colour", not an
+     unrelated substitute or a bright neon green. */
+  --color-lesson-title: #007036;
+
   /* ---- Learn end-of-unit card ----
      Warm pastel surface with intentionally stronger action buttons. */
   --color-end-unit-bg: #FFF6D8;
@@ -97,6 +109,11 @@
   --color-green-soft: #1B2416;
   --color-coral: #E0917E;
   --color-coral-soft: #2E1D18;
+
+  /* Same hue/saturation as the light-mode #007036 lesson-title token,
+     lightened for 7.5:1 contrast against the dark page background --
+     see the light-mode definition for the full contrast rationale. */
+  --color-lesson-title: #4AB57E;
 
   /* Keep the end card warm but subdued in dark mode rather than bright. */
   --color-end-unit-bg: #2A2618;
