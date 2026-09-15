@@ -1,35 +1,45 @@
 // Pure rate-of-process model for the Chocolate Wrapping analogy.
 //
-// Rule: 2 chocolates + 1 wrapper -> 1 wrapped pack.
+// Generalized to the wrapping RULE's chocolate:wrapper ratio (1:1 or
+// 2:1), so both options run through the exact same logic -- never two
+// parallel implementations. `chocolatesPerEvent` is the only thing that
+// differs between rules; wrappers are always 1 per event.
 //
 // Deliberately NOT a fixed decay formula or random-event model: at every
-// tick, the number of packs wrapped is a fraction of whatever pairs are
-// CURRENTLY POSSIBLE (min(floor(chocolates/2), wrappers)), clamped to at
-// least 1 while any pair remains. This is what makes the slowdown emerge
-// naturally from decreasing availability of required items -- never from
-// the "worker" getting tired -- and verified numerically to be
-// monotonically non-increasing and to finish at exactly zero of whichever
-// component runs out first.
+// simulated second, the number of packs wrapped is a fraction of
+// whatever complete sets are CURRENTLY POSSIBLE
+// (min(floor(chocolates/chocolatesPerEvent), wrappers)), clamped to at
+// least 1 while any complete set remains. This is what makes the
+// slowdown emerge naturally from decreasing availability of required
+// items -- never from the "worker" getting tired.
 export const DECAY_FRACTION = 0.35;
+export const RATE_WINDOW_SECONDS = 10;
 
-export function createInitialState(chocolates = 20, wrappers = 10) {
-  return { chocolates, wrappers, packs: 0, time: 0, lastEventCount: 0, running: false, finished: false };
+export const WRAPPING_RULES = {
+  rule1: { id: "rule1", chocolatesPerEvent: 1, label: "1 Chocolate + 1 Wrapper \u2192 1 Wrapped Pack", defaultChocolates: 20, defaultWrappers: 20 },
+  rule2: { id: "rule2", chocolatesPerEvent: 2, label: "2 Chocolates + 1 Wrapper \u2192 1 Wrapped Pack", defaultChocolates: 20, defaultWrappers: 10 },
+};
+
+export function createInitialState(chocolates, wrappers) {
+  return { chocolates, wrappers, packs: 0, time: 0, lastEventCount: 0, running: false, finished: false, eventHistory: [] };
 }
 
-/** Advances the process by exactly one tick. Returns a NEW state object
- * (never mutates the one passed in) so callers can compare before/after
- * for the animation layer. */
-export function advanceTick(state) {
-  const maxPossible = Math.min(Math.floor(state.chocolates / 2), state.wrappers);
+/** Advances the process by exactly one simulated second. Returns a NEW
+ * state object (never mutates the one passed in). `eventHistory` keeps
+ * only the last RATE_WINDOW_SECONDS entries -- enough to compute "packs
+ * per 10 s" without the array growing unbounded over a long run. */
+export function advanceTick(state, chocolatesPerEvent) {
+  const maxPossible = Math.min(Math.floor(state.chocolates / chocolatesPerEvent), state.wrappers);
   if (maxPossible <= 0) {
     return { ...state, running: false, finished: true, lastEventCount: 0 };
   }
   const eventsThisTick = Math.min(maxPossible, Math.max(1, Math.round(maxPossible * DECAY_FRACTION)));
-  const nextChocolates = state.chocolates - eventsThisTick * 2;
+  const nextChocolates = state.chocolates - eventsThisTick * chocolatesPerEvent;
   const nextWrappers = state.wrappers - eventsThisTick;
   const nextPacks = state.packs + eventsThisTick;
   const nextTime = state.time + 1;
-  const nextMaxPossible = Math.min(Math.floor(nextChocolates / 2), nextWrappers);
+  const nextMaxPossible = Math.min(Math.floor(nextChocolates / chocolatesPerEvent), nextWrappers);
+  const nextHistory = [...state.eventHistory, eventsThisTick].slice(-RATE_WINDOW_SECONDS);
   return {
     chocolates: nextChocolates,
     wrappers: nextWrappers,
@@ -38,12 +48,14 @@ export function advanceTick(state) {
     lastEventCount: eventsThisTick,
     running: state.running,
     finished: nextMaxPossible <= 0,
+    eventHistory: nextHistory,
   };
 }
 
-/** Packs-per-tick "current rate" -- the same eventsThisTick just wrapped,
- * i.e. the actual gradient of the packs-vs-time curve over the most
- * recent step, not a separately-invented number. */
-export function currentRate(state) {
-  return state.finished ? 0 : state.lastEventCount;
+/** "Packs per RATE_WINDOW_SECONDS s" -- summed from the actual recent
+ * event history, the same numbers already driving the counters and
+ * graph, never a separately-invented display value. */
+export function currentRateOverWindow(state) {
+  if (state.finished) return 0;
+  return state.eventHistory.reduce((s, n) => s + n, 0);
 }
