@@ -13,7 +13,6 @@
 // slowdown emerge naturally from decreasing availability of required
 // items -- never from the "worker" getting tired.
 export const DECAY_FRACTION = 0.35;
-export const RATE_WINDOW_SECONDS = 10;
 
 export const WRAPPING_RULES = {
   rule1: { id: "rule1", chocolatesPerEvent: 1, label: "1 Chocolate + 1 Wrapper \u2192 1 Wrapped Pack", defaultChocolates: 20, defaultWrappers: 20 },
@@ -21,17 +20,18 @@ export const WRAPPING_RULES = {
 };
 
 export function createInitialState(chocolates, wrappers) {
-  return { chocolates, wrappers, packs: 0, time: 0, lastEventCount: 0, running: false, finished: false, eventHistory: [] };
+  return { chocolates, wrappers, packs: 0, time: 0, lastEventCount: 0, finished: false };
 }
 
 /** Advances the process by exactly one simulated second. Returns a NEW
- * state object (never mutates the one passed in). `eventHistory` keeps
- * only the last RATE_WINDOW_SECONDS entries -- enough to compute "packs
- * per 10 s" without the array growing unbounded over a long run. */
+ * state object (never mutates the one passed in). One tick IS one
+ * simulated second, so `lastEventCount` after a tick already IS "packs
+ * wrapped in the most recent 1-second interval" -- the current rate is
+ * read directly from it, no separate rolling window needed. */
 export function advanceTick(state, chocolatesPerEvent) {
   const maxPossible = Math.min(Math.floor(state.chocolates / chocolatesPerEvent), state.wrappers);
   if (maxPossible <= 0) {
-    return { ...state, running: false, finished: true, lastEventCount: 0 };
+    return { ...state, finished: true, lastEventCount: 0 };
   }
   const eventsThisTick = Math.min(maxPossible, Math.max(1, Math.round(maxPossible * DECAY_FRACTION)));
   const nextChocolates = state.chocolates - eventsThisTick * chocolatesPerEvent;
@@ -39,23 +39,21 @@ export function advanceTick(state, chocolatesPerEvent) {
   const nextPacks = state.packs + eventsThisTick;
   const nextTime = state.time + 1;
   const nextMaxPossible = Math.min(Math.floor(nextChocolates / chocolatesPerEvent), nextWrappers);
-  const nextHistory = [...state.eventHistory, eventsThisTick].slice(-RATE_WINDOW_SECONDS);
   return {
     chocolates: nextChocolates,
     wrappers: nextWrappers,
     packs: nextPacks,
     time: nextTime,
     lastEventCount: eventsThisTick,
-    running: state.running,
     finished: nextMaxPossible <= 0,
-    eventHistory: nextHistory,
   };
 }
 
-/** "Packs per RATE_WINDOW_SECONDS s" -- summed from the actual recent
- * event history, the same numbers already driving the counters and
- * graph, never a separately-invented display value. */
-export function currentRateOverWindow(state) {
-  if (state.finished) return 0;
-  return state.eventHistory.reduce((s, n) => s + n, 0);
+/** Current rate in packs/second. `null` means "not a number to display
+ * as a rate" -- the CALLER (the component) decides between showing that
+ * as "\u2014" (paused) vs "0 packs s\u207B\u00B9" (naturally finished);
+ * this function only ever reports what the simulation itself is doing,
+ * never a pause/resume UI state. */
+export function currentRate(state) {
+  return state.finished ? 0 : state.lastEventCount;
 }
