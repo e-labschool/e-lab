@@ -198,13 +198,17 @@ export default function ChocolateWrappingRate({ compact = false }) {
 
         {/* Compact status strip -- quantities are NOT repeated here, they're already shown above */}
         <div className="mt-3 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 rounded-lg border border-[var(--color-line)] px-4 py-2.5 text-sm">
-          <span className="text-[var(--color-ink-soft)]">Time: <strong className="text-[var(--color-ink)]">{state.time} s</strong></span>
-          {isPaused ? (
-            <span className="font-semibold text-[var(--color-amber)]">Simulation paused &middot; Current rate: {"\u2014"}</span>
-          ) : state.finished ? (
+          <span className="text-[var(--color-ink-soft)]">Time: <strong className="text-[var(--color-ink)]">{state.time.toFixed(1)} s</strong></span>
+          {state.finished ? (
             <span className="font-semibold text-[var(--color-coral)]">{"Rate = 0 \u2014 the process has stopped"}</span>
+          ) : isPaused ? (
+            <span className="font-semibold text-[var(--color-amber)]">{"Simulation paused \u00b7 Current rate: \u2014"}</span>
+          ) : !hasStarted ? (
+            <span className="text-[var(--color-ink-soft)]">{"Current rate: \u2014"}</span>
           ) : (
-            <span className="text-[var(--color-ink-soft)]">Current rate: <strong className="text-[var(--color-ink)]">{rate} {"packs s\u207B\u00B9"}</strong></span>
+            <span className="text-[var(--color-ink-soft)]">
+              Current rate <strong className="text-base font-bold text-[var(--color-ink)]">{rate} {"packs s\u207B\u00B9"}</strong>
+            </span>
           )}
           <span className="flex gap-2">
             {!running ? (

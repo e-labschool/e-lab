@@ -21,6 +21,7 @@ const SIMULATION_COMPONENTS = {
   "titration-ph-curve": lazy(() => import("../../engines/titration-ph-curve/TitrationPHCurve.jsx")),
   "buffer-action-visualizer": lazy(() => import("../../engines/buffer-action-visualizer/BufferActionVisualizer.jsx")),
   "chocolate-wrapping-rate": lazy(() => import("../../engines/chocolate-wrapping-rate/ChocolateWrappingRate.jsx")),
+  "collision-theory-visualizer": lazy(() => import("../../engines/collision-theory-visualizer/CollisionTheoryVisualizer.jsx")),
 };
 
 export default function LearnBlockRenderer({ block }) {
