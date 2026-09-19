@@ -1,68 +1,60 @@
-// Simple fictional two-atom "ball model" molecules with a genuine
-// structural asymmetry -- each has one LARGE (non-reactive) atom and one
-// SMALL "reactive end" atom. ONE consistent definition of the reactive
-// sites is used everywhere in this simulation (container, Collision
-// mode, Activation Energy mode, Orientation mode, product formation):
+// One consistent molecular model used EVERYWHERE (vessel, magnified
+// view, activation-energy demos, orientation demos, molecule key):
 //
-//   A's reactive site = its SMALL atom (light blue), at local x=+9
-//   B's reactive site = its SMALL atom (orange),     at local x=-9
+//   A = X (large, blue)   -- Y (small, light blue)   reactive end = Y
+//   B = Z (large, red)    -- W (small, orange)        reactive end = W
 //
-// At rotation=0 for both, with A drawn to the left of B, those two small
-// atoms already face each other -- so REACTIVE_ROTATION (0 for both) is
-// the "correct orientation" pose, and the product's new bond is drawn
-// between those SAME two small atoms, never the large ones. This is
-// exported so CollisionViewer never has to re-derive/guess the geometry.
-const COLORS = {
-  aLarge: "#3654D6", aSmall: "#93A7F5",
-  bLarge: "#C23B3B", bSmall: "#EFAE6D",
+// The reaction is a partner-swap at the reactive (small) ends -- X and Z
+// keep their own bond position, but Y and W exchange which large atom
+// they're bonded to. This is what makes atom conservation trivially
+// checkable by eye: every atom that exists in A/B still exists,
+// unchanged in colour/size, somewhere in C/D.
+//
+//   C = X (large, blue)   -- W (small, orange)   [X kept, W swapped in]
+//   D = Z (large, red)    -- Y (small, light blue) [Z kept, Y swapped in]
+//
+// A single generic renderer draws all four species from one shared
+// shape, so A/B/C/D are visually guaranteed consistent rather than
+// four independently-hand-drawn shapes that could drift apart.
+export const ATOMS = {
+  X: { color: "#3654D6", r: 9 }, // A's large atom
+  Y: { color: "#93A7F5", r: 5.5 }, // A's reactive (small) atom
+  Z: { color: "#C23B3B", r: 9 }, // B's large atom
+  W: { color: "#EFAE6D", r: 5.5 }, // B's reactive (small) atom
 };
 
-export const REACTIVE_ROTATION = { a: 0, b: 0 };
-// A rotation that turns each molecule's LARGE (non-reactive) atom to
-// face inward instead -- used for the wrong-orientation demonstration.
-export const NON_REACTIVE_ROTATION = { a: 180, b: 180 };
+// species -> { largeAtom, smallAtom, label } -- the small atom is ALWAYS
+// drawn on the local +x side (the "reactive"/outward-facing side at
+// rotation=0), the large atom on the local -x side.
+export const SPECIES = {
+  A: { large: "X", small: "Y", label: "A" },
+  B: { large: "Z", small: "W", label: "B" },
+  C: { large: "X", small: "W", label: "C" },
+  D: { large: "Z", small: "Y", label: "D" },
+};
 
-export function MoleculeA({ x, y, rotation = 0, size = 1, label = true }) {
+// Reactive-orientation rotations, expressed per-role (A is drawn on the
+// left, B on the right of a facing pair). Both species use the SAME
+// local layout (small atom at local +x) -- so for their reactive ends
+// to face EACH OTHER, A stays unrotated (small atom -> local +x ->
+// world-right, toward B) while B needs a 180 deg base rotation (small
+// atom -> local +x -> after 180 deg rotation, world-left, toward A).
+// NON_REACTIVE_ROTATION swaps this, so the LARGE (non-reactive) atoms
+// face each other instead -- used for the wrong-orientation demo.
+export const REACTIVE_ROTATION = { left: 0, right: 180 };
+export const NON_REACTIVE_ROTATION = { left: 180, right: 0 };
+
+export function Molecule({ species, x, y, rotation = 0, size = 1, label = true }) {
+  const def = SPECIES[species];
+  const large = ATOMS[def.large];
+  const small = ATOMS[def.small];
   return (
     <g transform={`translate(${x},${y}) rotate(${rotation}) scale(${size})`}>
       <line x1="-9" y1="0" x2="9" y2="0" stroke="#6b7280" strokeWidth="2.5" />
-      <circle cx="-9" cy="0" r="9" fill={COLORS.aLarge} />
-      <circle cx="9" cy="0" r="5.5" fill={COLORS.aSmall} />
+      <circle cx="-9" cy="0" r={large.r} fill={large.color} />
+      <circle cx="9" cy="0" r={small.r} fill={small.color} />
       <ellipse cx="-11.5" cy="-3" rx="3" ry="2" fill="rgba(255,255,255,0.35)" />
-      {label && <text x="0" y="-15" textAnchor="middle" fontSize="9" fontWeight="700" fill="var(--color-ink-faint)">A</text>}
-    </g>
-  );
-}
-
-export function MoleculeB({ x, y, rotation = 0, size = 1, label = true }) {
-  return (
-    <g transform={`translate(${x},${y}) rotate(${rotation}) scale(${size})`}>
-      <line x1="-9" y1="0" x2="9" y2="0" stroke="#6b7280" strokeWidth="2.5" />
-      <circle cx="9" cy="0" r="9" fill={COLORS.bLarge} />
-      <circle cx="-9" cy="0" r="5.5" fill={COLORS.bSmall} />
-      <ellipse cx="6.5" cy="-3" rx="3" ry="2" fill="rgba(255,255,255,0.35)" />
-      {label && <text x="0" y="-15" textAnchor="middle" fontSize="9" fontWeight="700" fill="var(--color-ink-faint)">B</text>}
-    </g>
-  );
-}
-
-/** The product: a bent 4-atom chain formed by a NEW bond between A's and
- * B's SMALL (reactive) atoms -- the same two atoms the orientation
- * demonstration aligns -- with the two LARGE (non-reactive) atoms as the
- * chain's terminal ends. Visibly different from either starting
- * molecule's simple 2-atom shape, and geometrically consistent with
- * which atoms were actually described as "reactive" throughout. */
-export function MoleculeProduct({ x, y, rotation = 0, size = 1 }) {
-  return (
-    <g transform={`translate(${x},${y}) rotate(${rotation}) scale(${size})`}>
-      <line x1="-22" y1="-6" x2="-6" y2="0" stroke="#6b7280" strokeWidth="2.5" />
-      <line x1="-6" y1="0" x2="6" y2="0" stroke="#6b7280" strokeWidth="2.5" />
-      <line x1="6" y1="0" x2="22" y2="-6" stroke="#6b7280" strokeWidth="2.5" />
-      <circle cx="-22" cy="-6" r="9" fill={COLORS.aLarge} />
-      <circle cx="-6" cy="0" r="5.5" fill={COLORS.aSmall} />
-      <circle cx="6" cy="0" r="5.5" fill={COLORS.bSmall} />
-      <circle cx="22" cy="-6" r="9" fill={COLORS.bLarge} />
-      <text x="0" y="18" textAnchor="middle" fontSize="9" fontWeight="700" fill="var(--color-ink-faint)">Product</text>
+      {label && <text x="0" y="-15" textAnchor="middle" fontSize="9" fontWeight="700" fill="var(--color-ink-faint)">{def.label}</text>}
     </g>
   );
 }

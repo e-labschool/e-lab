@@ -1,14 +1,17 @@
-// Particle physics for the live A/B container -- smooth continuous
+// Particle physics for the live A/B reaction vessel -- smooth continuous
 // motion, wall bounce, rotation, and each particle's speed genuinely
 // drawn from the T-dependent Maxwell-Boltzmann-shaped distribution (see
 // maxwellBoltzmann.js), not a fixed or uniform-random value. Detects
-// real A-B proximity events for Collision mode's "focus a real event
-// into the Collision Viewer" behaviour.
+// real A-B proximity events for the magnified view's automatic
+// event-capture behaviour.
 import { sampleEnergy } from "./maxwellBoltzmann.js";
 
-const SPEED_SCALE = 0.9; // relates sampled "energy" to an on-screen px/s speed
-const MOLECULE_RADIUS = 16;
-const COLLISION_PROXIMITY = 26;
+// Noticeably faster than the previous version -- the vessel is also now
+// smaller (a compact 25-30% side panel), so a higher base speed keeps
+// the motion feeling active rather than sluggish in the reduced space.
+const SPEED_SCALE = 2.1;
+const MOLECULE_RADIUS = 11;
+const COLLISION_PROXIMITY = 18;
 
 function randRange(min, max) {
   return min + Math.random() * (max - min);
@@ -26,7 +29,7 @@ export function createParticle(id, kind, bounds, temperature) {
     vx: Math.cos(angle) * speed,
     vy: Math.sin(angle) * speed,
     rotation: randRange(0, 360),
-    spinRate: randRange(-40, 40), // deg/s -- molecules rotate as they drift, never uniformly
+    spinRate: randRange(-70, 70), // deg/s -- molecules rotate as they drift, never uniformly
     energy,
     highlighted: false,
   };
@@ -58,12 +61,14 @@ export function stepParticles(particles, bounds, dt) {
 }
 
 /** Finds the first genuinely close A-B pair (a real proximity event in
- * the live field), used only by Collision mode to focus an ACTUAL
- * detected encounter into the Collision Viewer -- the other three modes
- * use curated, clearly-labelled worked examples instead (see the main
- * component), since reliably waiting for a random live encounter with a
- * SPECIFIC required energy/orientation combination is not a reasonable
- * thing to depend on for a deterministic teaching demonstration. */
+ * the live field) -- used by the magnified view's automatic event
+ * capture across all four tabs. Curated worked examples (Activation
+ * Energy's Case A/B, Orientation's incorrect/correct) still override
+ * this with a specific staged scenario when the student selects them,
+ * since reliably waiting for a random live encounter with a SPECIFIC
+ * required energy/orientation combination is not reasonable to depend
+ * on for a deterministic teaching demonstration -- but the ambient
+ * capture itself is always a real detected encounter, never faked. */
 export function findCloseEncounter(particles) {
   const as = particles.filter((p) => p.kind === "A");
   const bs = particles.filter((p) => p.kind === "B");
@@ -73,6 +78,22 @@ export function findCloseEncounter(particles) {
     }
   }
   return null;
+}
+
+/** Finds the particle nearest a given point -- used for click-to-inspect
+ * in the vessel (the simpler, more reliable alternative to continuous
+ * pointer-following magnification the brief explicitly deprioritizes). */
+export function findNearestParticle(particles, x, y, maxDistance = 40) {
+  let nearest = null;
+  let nearestDist = maxDistance;
+  for (const p of particles) {
+    const d = Math.hypot(p.x - x, p.y - y);
+    if (d < nearestDist) {
+      nearestDist = d;
+      nearest = p;
+    }
+  }
+  return nearest;
 }
 
 export { MOLECULE_RADIUS };

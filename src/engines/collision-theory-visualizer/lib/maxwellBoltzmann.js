@@ -16,6 +16,12 @@ export const DEFAULT_EA = 40;
 export const MIN_TEMPERATURE = 250;
 export const MAX_TEMPERATURE = 700;
 
+// Selectable temperatures for the Maxwell-Boltzmann tab's T1/T2/T3
+// pickers -- realistic chemistry-demonstration values, never an
+// unrealistic near-zero default.
+export const TEMPERATURE_OPTIONS = [250, 300, 350, 400, 450, 500, 550, 600, 650, 700];
+export const DEFAULT_TEMPERATURES = { T1: 300, T2: 400, T3: 500 };
+
 function rawDensity(E, T) {
   const kT = K_SCALE * T;
   if (E <= 0) return 0;
