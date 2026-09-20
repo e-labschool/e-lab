@@ -1,37 +1,35 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Molecule, REACTIVE_ROTATION, NON_REACTIVE_ROTATION } from "./Molecule.jsx";
+import { buildEventGeometry, synthesizeEncounter } from "../lib/collisionGeometry.js";
 
-// The large right-hand magnified panel -- ONE continuous animated space
-// (never three separate static approach/collision/product panels).
-// `mode` controls what this panel is even ABLE to show:
+// The large right-hand magnified panel -- ONE continuous animated space.
+// Every position used here comes from buildEventGeometry(), derived
+// from a real captured vessel encounter OR a synthesized-but-varied one
+// for curated teaching cases -- BOTH go through the identical geometry
+// pipeline, so a curated case still looks like a genuinely moving pair
+// of molecules, never a visibly different "more artificial" path.
 //
-//   "collision"   -- Collision tab. Shows REAL captured vessel encounters.
-//                    Success is decided once per encounter (deterministic
-//                    per encounter id, not re-randomized on replay) --
-//                    deliberately with NO energy/orientation badges and
-//                    NO explanation, so the student just observes that
-//                    some collisions form products and some don't.
-//   "activation"  -- Activation Energy tab. Shows the energy badge only;
-//                    even a sufficient-energy case stops at "Reaction
-//                    possible", never forms a product (orientation
-//                    hasn't been considered).
-//   "orientation" -- Orientation tab. Shows both badges; only
-//                    energy-sufficient AND orientation-correct forms a
-//                    product, via a genuine bond-rearrangement sequence.
-const PHASE_DURATIONS_MS = { approach: 1100, impact: 400, rearrange: 650, outcome: 750 };
+// `mode` structurally controls what this panel is even ABLE to show:
+//   "collision"   -- real captured vessel encounters, no energy/
+//                    orientation evaluation, no product formation ever.
+//   "activation"  -- energy badge only; even sufficient energy stops at
+//                    "Reaction possible", never forms a product.
+//   "orientation" -- both badges; only energy-sufficient AND
+//                    orientation-correct forms a product, via a
+//                    continuous bond-rearrangement sequence.
+const PHASE_DURATIONS_MS = { approach: 1300, contact: 450, rearrange: 700, outcome: 850 };
+const W = 560, H = 200;
+const CX = W / 2, CY = H / 2;
+const MAGNIFY = 5.2; // scales the captured/synthesized vessel-scale geometry up to fill the panel
 
 function stableSuccessFor(encounterId) {
-  // A simple deterministic hash -- the SAME captured encounter always
-  // shows the same outcome on Replay, but different encounters vary
-  // naturally, giving the "some collisions work, some don't" mix
-  // Collision mode needs without any random flicker on replay.
   let hash = 0;
   const s = String(encounterId ?? "0");
   for (let i = 0; i < s.length; i++) hash = (hash * 31 + s.charCodeAt(i)) % 1000;
   return hash % 2 === 0;
 }
 
-export default function MagnifiedView({ mode, encounterId, energySufficient, orientationCorrect, calloutLine, resultLine, speed, onSpeedChange, replayKey }) {
+export default function MagnifiedView({ mode, encounter, encounterId, energySufficient, orientationCorrect, calloutLine, resultLine, speed, onSpeedChange, replayKey }) {
   const [phase, setPhase] = useState("approach");
   const timeoutsRef = useRef([]);
 
@@ -44,14 +42,36 @@ export default function MagnifiedView({ mode, encounterId, energySufficient, ori
   const successful = mode === "orientation" ? energySufficient && orientationCorrect : mode === "collision" ? collisionSuccess : false;
   const effectiveResultLine = mode === "collision" ? undefined : resultLine; // Collision mode deliberately gives no explanation
 
+  // The event geometry: real captured encounter if provided, otherwise a
+  // deterministic-per-replayKey synthesized one (curated demos) -- both
+  // go through buildEventGeometry() identically. For "orientation" mode,
+  // the encounter's own rotations are overridden with the correct/
+  // incorrect reactive-site alignment, since that IS the variable being
+  // taught in that tab.
+  const geometry = useMemo(() => {
+    const baseEncounter = encounter ?? synthesizeEncounter(replayKey);
+    let enc = baseEncounter;
+    if (mode === "orientation") {
+      enc = {
+        ...baseEncounter,
+        aRot: orientationCorrect ? REACTIVE_ROTATION.left : NON_REACTIVE_ROTATION.left,
+        bRot: orientationCorrect ? REACTIVE_ROTATION.right : NON_REACTIVE_ROTATION.right,
+        aSpin: 0,
+        bSpin: 0,
+      };
+    }
+    return buildEventGeometry(enc);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [encounter, replayKey, mode, orientationCorrect]);
+
   const play = useCallback(() => {
     clearTimers();
     setPhase("approach");
     const scale = 1 / speed;
     const t1 = PHASE_DURATIONS_MS.approach * scale;
-    const t2 = t1 + PHASE_DURATIONS_MS.impact * scale;
+    const t2 = t1 + PHASE_DURATIONS_MS.contact * scale;
     const t3 = t2 + (successful ? PHASE_DURATIONS_MS.rearrange * scale : 0);
-    timeoutsRef.current.push(setTimeout(() => setPhase("impact"), t1));
+    timeoutsRef.current.push(setTimeout(() => setPhase("contact"), t1));
     if (successful) {
       timeoutsRef.current.push(setTimeout(() => setPhase("rearrange"), t2));
       timeoutsRef.current.push(setTimeout(() => setPhase("outcome"), t3));
@@ -64,50 +84,58 @@ export default function MagnifiedView({ mode, encounterId, energySufficient, ori
     play();
     return clearTimers;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [replayKey, encounterId, mode, energySufficient, orientationCorrect, speed]);
+  }, [replayKey, encounterId, mode, energySufficient, orientationCorrect, speed, geometry]);
 
-  const showOrientationVisual = mode === "orientation";
-  const aRotation = !showOrientationVisual || orientationCorrect ? REACTIVE_ROTATION.left : NON_REACTIVE_ROTATION.left;
-  const bRotation = !showOrientationVisual || orientationCorrect ? REACTIVE_ROTATION.right : NON_REACTIVE_ROTATION.right;
+  // Positions at each phase, all derived from `geometry` -- never a
+  // fixed scripted coordinate. The approach position smoothly
+  // transitions (via CSS transition on `transform`) into the contact
+  // position, which then transitions into the outcome position -- the
+  // SAME <g>/<Molecule> elements throughout, never remounted, so there
+  // is nothing to "jump" or "reset" between phases.
+  const aPos = phase === "approach" ? geometry.aApproachRel : phase === "outcome" && !successful ? add(geometry.aContactRel, geometry.aSeparate) : geometry.aContactRel;
+  const bPos = phase === "approach" ? geometry.bApproachRel : phase === "outcome" && !successful ? add(geometry.bContactRel, geometry.bSeparate) : geometry.bContactRel;
 
-  const approached = phase !== "approach";
-  const separated = phase === "outcome" && !successful;
-  const aX = approached ? 210 : 110;
-  const bX = approached ? 350 : 450;
-  const aSeparateX = separated ? -70 : 0;
-  const bSeparateX = separated ? 70 : 0;
+  // Rotation continues smoothly through the approach (as if the
+  // molecules had been spinning at aSpin/bSpin the whole time) into the
+  // captured contact rotation.
+  const approachDurationS = PHASE_DURATIONS_MS.approach / 1000;
+  const aRotAtApproachStart = geometry.aRot - geometry.aSpin * approachDurationS;
+  const bRotAtApproachStart = geometry.bRot - geometry.bSpin * approachDurationS;
+  const aRotation = phase === "approach" ? aRotAtApproachStart : geometry.aRot;
+  const bRotation = phase === "approach" ? bRotAtApproachStart : geometry.bRot;
 
   const reactantsOpacity = phase === "rearrange" || (phase === "outcome" && successful) ? 0 : 1;
   const productOpacity = phase === "rearrange" ? 0.55 : phase === "outcome" && successful ? 1 : 0;
-  const productSpread = phase === "outcome" && successful ? 45 : 0;
+  const cPos = phase === "outcome" && successful ? geometry.cSeparate : { x: 0, y: 0 };
+  const dPos = phase === "outcome" && successful ? geometry.dSeparate : { x: 0, y: 0 };
 
   return (
     <div className="relative flex h-full flex-col rounded-lg border border-[var(--color-line)] bg-[var(--color-paper)] p-3">
       {calloutLine && <p className="mb-1 text-center text-xs font-medium text-[var(--color-ink-soft)]">{calloutLine}</p>}
 
-      <svg viewBox="0 0 560 200" className="w-full flex-1">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full flex-1">
         <g style={{ opacity: reactantsOpacity, transition: "opacity 350ms ease" }}>
-          <g style={{ transition: `transform ${PHASE_DURATIONS_MS.approach / speed}ms ease-in-out`, transform: `translateX(${aSeparateX}px)` }}>
-            <Molecule species="A" x={aX} y={100} rotation={aRotation} size={2.4} label={false} />
+          <g style={{ transition: `transform ${PHASE_DURATIONS_MS.approach / speed}ms ease-in-out, opacity 200ms`, transform: `translate(${CX + aPos.x * MAGNIFY}px, ${CY + aPos.y * MAGNIFY}px) rotate(${aRotation}deg)` }}>
+            <Molecule species="A" x={0} y={0} rotation={0} size={2.2} label={false} />
           </g>
-          <g style={{ transition: `transform ${PHASE_DURATIONS_MS.approach / speed}ms ease-in-out`, transform: `translateX(${bSeparateX}px)` }}>
-            <Molecule species="B" x={bX} y={100} rotation={bRotation} size={2.4} label={false} />
+          <g style={{ transition: `transform ${PHASE_DURATIONS_MS.approach / speed}ms ease-in-out, opacity 200ms`, transform: `translate(${CX + bPos.x * MAGNIFY}px, ${CY + bPos.y * MAGNIFY}px) rotate(${bRotation}deg)` }}>
+            <Molecule species="B" x={0} y={0} rotation={0} size={2.2} label={false} />
           </g>
         </g>
 
         {mode === "orientation" && (
           <g style={{ opacity: productOpacity, transition: `opacity ${PHASE_DURATIONS_MS.rearrange / speed}ms ease-in` }}>
-            <g style={{ transition: `transform ${PHASE_DURATIONS_MS.outcome / speed}ms ease-out`, transform: `translateX(${-productSpread}px)` }}>
-              <Molecule species="C" x={280} y={100} rotation={REACTIVE_ROTATION.left} size={2.4} label={false} />
+            <g style={{ transition: `transform ${PHASE_DURATIONS_MS.outcome / speed}ms ease-out`, transform: `translate(${CX + cPos.x}px, ${CY + cPos.y}px)` }}>
+              <Molecule species="C" x={0} y={0} rotation={geometry.aRot} size={2.2} label={false} />
             </g>
-            <g style={{ transition: `transform ${PHASE_DURATIONS_MS.outcome / speed}ms ease-out`, transform: `translateX(${productSpread}px)` }}>
-              <Molecule species="D" x={280} y={100} rotation={REACTIVE_ROTATION.right} size={2.4} label={false} />
+            <g style={{ transition: `transform ${PHASE_DURATIONS_MS.outcome / speed}ms ease-out`, transform: `translate(${CX + dPos.x}px, ${CY + dPos.y}px)` }}>
+              <Molecule species="D" x={0} y={0} rotation={geometry.bRot} size={2.2} label={false} />
             </g>
           </g>
         )}
 
-        {phase === "impact" && <circle cx={(aX + bX) / 2} cy={100} r="32" fill={successful ? "var(--color-teal)" : "var(--color-coral)"} opacity="0.22" />}
-        {phase === "rearrange" && <circle cx={280} cy={100} r="38" fill="var(--color-teal)" opacity="0.16" />}
+        {phase === "contact" && <circle cx={CX} cy={CY} r="30" fill={successful ? "var(--color-teal)" : "var(--color-coral)"} opacity="0.22" />}
+        {phase === "rearrange" && <circle cx={CX} cy={CY} r="36" fill="var(--color-teal)" opacity="0.16" />}
       </svg>
 
       <div className="mt-1 flex flex-wrap items-center justify-center gap-2 text-xs">
@@ -134,6 +162,10 @@ export default function MagnifiedView({ mode, encounterId, energySufficient, ori
       </div>
     </div>
   );
+}
+
+function add(a, b) {
+  return { x: a.x + b.x, y: a.y + b.y };
 }
 
 function Badge({ ok, label }) {

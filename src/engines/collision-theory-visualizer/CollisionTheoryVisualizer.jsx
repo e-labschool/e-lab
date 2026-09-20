@@ -1,7 +1,9 @@
 import { useState, useCallback } from "react";
+import { Search } from "lucide-react";
 import InteractiveFrame from "../../components/interactive-shell/InteractiveFrame.jsx";
 import ReactionVessel from "./components/ReactionVessel.jsx";
 import MagnifiedView from "./components/MagnifiedView.jsx";
+import MagnifierLiveView from "./components/MagnifierLiveView.jsx";
 import MaxwellBoltzmannGraph from "./components/MaxwellBoltzmannGraph.jsx";
 import { Molecule } from "./components/Molecule.jsx";
 import { DEFAULT_TEMPERATURE, DEFAULT_EA, TEMPERATURE_OPTIONS, DEFAULT_TEMPERATURES } from "./lib/maxwellBoltzmann.js";
@@ -19,26 +21,100 @@ const MODES = [
 const CASE_A_COLLISION_ENERGY = 25;
 const CASE_B_COLLISION_ENERGY = 65;
 
+/** Converts a captured {a, b} pair of raw vessel particles (as returned
+ * by findCloseEncounter/findNearestParticle -- full physics state:
+ * id/kind/x/y/vx/vy/rotation/spinRate) into the {aPos,bPos,aVel,bVel,
+ * aRot,bRot,aSpin,bSpin} shape buildEventGeometry() expects. This is
+ * the ONLY place real vessel state is translated for the magnified
+ * view -- everything downstream (approach extrapolation, contact,
+ * deflection) is derived from these real captured values. */
+function toEncounterShape(found) {
+  return {
+    aPos: { x: found.a.x, y: found.a.y },
+    bPos: { x: found.b.x, y: found.b.y },
+    aVel: { x: found.a.vx, y: found.a.vy },
+    bVel: { x: found.b.vx, y: found.b.vy },
+    aRot: found.a.rotation,
+    bRot: found.b.rotation,
+    aSpin: found.a.spinRate,
+    bSpin: found.b.spinRate,
+  };
+}
+
 export default function CollisionTheoryVisualizer({ compact = false }) {
   const [modeId, setModeId] = useState("collision");
   const [temperature] = useState(DEFAULT_TEMPERATURE);
   const [ea, setEa] = useState(DEFAULT_EA);
   const [speed, setSpeed] = useState(0.5);
 
-  // Collision tab -- real captured/inspected encounters from the vessel.
+  // Magnifier tool -- shared across the first three tabs. When on, the
+  // vessel reports whichever real particles are currently under the
+  // lens, every frame; the magnified panel becomes a direct live mirror
+  // of that data (see MagnifierLiveView.jsx) rather than a scripted
+  // replay, so moving the lens never causes a reset/flash.
+  const [magnifierOn, setMagnifierOn] = useState(false);
+  const [magnifierData, setMagnifierData] = useState({ particles: [], center: null });
+  const handleMagnifierUpdate = useCallback((data) => setMagnifierData(data), []);
+  function handleToggleMagnifier() {
+    setMagnifierOn((v) => {
+      const next = !v;
+      // Turning the magnifier off (or back on) should never leave a
+      // stale "viewing a replay from magnifier mode" state behind --
+      // otherwise re-enabling it later could incorrectly force-show an
+      // old captured replay instead of the live mirror.
+      if (!next) {
+        setViewingReplay(false);
+        setPendingEncounter(null);
+        setEncounter(null);
+      }
+      return next;
+    });
+  }
+
+  // Collision tab -- real captured/inspected encounters from the vessel,
+  // converted from the vessel's raw particle state into the shape
+  // buildEventGeometry() expects.
+  //
+  // Outside magnifier mode: auto-captures and immediately shows the
+  // replay, as before.
+  // Inside magnifier mode: a detected encounter is held as a PENDING
+  // prompt ("Collision detected") rather than auto-switching away from
+  // the live magnifier view -- the student explicitly chooses
+  // [View Collision], then [Return to Live View] to go back, per the
+  // LIVE BEAKER -> MAGNIFY -> CAPTURE -> REPLAY -> RETURN workflow.
   const [encounter, setEncounter] = useState(null);
   const [encounterSeq, setEncounterSeq] = useState(0);
-  const handleCloseEncounter = useCallback((found) => {
-    setEncounter((prev) => {
-      if (prev) return prev;
-      setEncounterSeq((n) => n + 1);
-      return found;
-    });
-  }, []);
+  const [pendingEncounter, setPendingEncounter] = useState(null);
+  const [viewingReplay, setViewingReplay] = useState(false);
+  const handleCloseEncounter = useCallback(
+    (found) => {
+      if (magnifierOn) {
+        setPendingEncounter((prev) => prev ?? toEncounterShape(found));
+        return;
+      }
+      setEncounter((prev) => {
+        if (prev) return prev;
+        setEncounterSeq((n) => n + 1);
+        return toEncounterShape(found);
+      });
+    },
+    [magnifierOn]
+  );
   const handleInspect = useCallback((found) => {
-    setEncounter(found);
+    setEncounter(toEncounterShape(found));
     setEncounterSeq((n) => n + 1);
   }, []);
+  function handleViewPendingCollision() {
+    if (!pendingEncounter) return;
+    setEncounter(pendingEncounter);
+    setEncounterSeq((n) => n + 1);
+    setViewingReplay(true);
+  }
+  function handleReturnToLiveView() {
+    setViewingReplay(false);
+    setPendingEncounter(null);
+    setEncounter(null);
+  }
 
   // Activation Energy tab -- two curated cases.
   const [eaCase, setEaCase] = useState("insufficient");
@@ -50,6 +126,7 @@ export default function CollisionTheoryVisualizer({ compact = false }) {
 
   // Maxwell-Boltzmann tab.
   const [temperatures, setTemperatures] = useState(DEFAULT_TEMPERATURES);
+  const [visibleCurves, setVisibleCurves] = useState({ T1: true, T2: true, T3: true });
   const [mbEa, setMbEa] = useState(DEFAULT_EA);
   const [particleView, setParticleView] = useState("T1");
 
@@ -71,22 +148,61 @@ export default function CollisionTheoryVisualizer({ compact = false }) {
           ))}
         </div>
 
+        {modeId !== "maxwell" && (
+          <div className="mt-2 flex justify-center">
+            <button
+              type="button"
+              onClick={handleToggleMagnifier}
+              aria-pressed={magnifierOn}
+              className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition-colors ${
+                magnifierOn ? "bg-[var(--color-teal)] text-white" : "border border-[var(--color-line)] text-[var(--color-ink-soft)] hover:bg-[var(--color-line)]/30"
+              }`}
+            >
+              <Search size={13} /> {magnifierOn ? "Magnifier On" : "Use Magnifier"}
+            </button>
+          </div>
+        )}
+
         {modeId === "collision" && (
           <ObservationLayout
-            vessel={<ReactionVessel temperature={temperature} active={true} onCloseEncounter={handleCloseEncounter} onInspect={handleInspect} />}
+            vessel={<ReactionVessel temperature={temperature} active={true} onCloseEncounter={handleCloseEncounter} onInspect={handleInspect} magnifierOn={magnifierOn} onMagnifierUpdate={handleMagnifierUpdate} />}
+            magnifierOn={magnifierOn}
+            magnifierData={magnifierData}
+            forceMain={viewingReplay}
             main={
               encounter ? (
-                <MagnifiedView mode="collision" encounterId={encounterSeq} calloutLine="Particles must collide for a reaction to occur." speed={speed} onSpeedChange={setSpeed} replayKey={encounterSeq} />
+                <div>
+                  <MagnifiedView mode="collision" encounter={encounter} encounterId={encounterSeq} calloutLine="Particles must collide for a reaction to occur." speed={speed} onSpeedChange={setSpeed} replayKey={encounterSeq} />
+                  {magnifierOn && (
+                    <div className="mt-2 text-center">
+                      <button type="button" onClick={handleReturnToLiveView} className="text-xs font-medium text-[var(--color-indigo)] hover:underline">
+                        {"\u2190"} Return to Live View
+                      </button>
+                    </div>
+                  )}
+                </div>
               ) : (
                 <EmptyMagnifiedView text="Watching the vessel for an A\u2013B encounter\u2026" />
               )
+            }
+            belowMain={
+              magnifierOn && pendingEncounter && !viewingReplay ? (
+                <div className="mt-2 flex items-center justify-center gap-2 rounded-lg border border-[var(--color-teal)]/40 bg-[var(--color-teal-soft)] px-3 py-2 text-xs">
+                  <span className="font-medium text-[var(--color-teal)]">Collision detected in the magnified region</span>
+                  <button type="button" onClick={handleViewPendingCollision} className="rounded-md bg-[var(--color-teal)] px-2.5 py-1 font-semibold text-white">
+                    View Collision
+                  </button>
+                </div>
+              ) : null
             }
           />
         )}
 
         {modeId === "activation" && (
           <ObservationLayout
-            vessel={<ReactionVessel temperature={temperature} active={true} />}
+            vessel={<ReactionVessel temperature={temperature} active={true} magnifierOn={magnifierOn} onMagnifierUpdate={handleMagnifierUpdate} />}
+            magnifierOn={magnifierOn}
+            magnifierData={magnifierData}
             main={
               <ActivationEnergyPanel
                 ea={ea}
@@ -104,7 +220,9 @@ export default function CollisionTheoryVisualizer({ compact = false }) {
 
         {modeId === "orientation" && (
           <ObservationLayout
-            vessel={<ReactionVessel temperature={temperature} active={true} />}
+            vessel={<ReactionVessel temperature={temperature} active={true} magnifierOn={magnifierOn} onMagnifierUpdate={handleMagnifierUpdate} />}
+            magnifierOn={magnifierOn}
+            magnifierData={magnifierData}
             main={
               <OrientationPanel
                 orientationCase={orientationCase}
@@ -121,26 +239,37 @@ export default function CollisionTheoryVisualizer({ compact = false }) {
         {modeId === "maxwell" && (
           <ObservationLayout
             vessel={<ReactionVessel temperature={temperatures[particleView]} active={true} />}
-            main={<MaxwellBoltzmannGraph temperatures={temperatures} ea={mbEa} />}
+            main={<MaxwellBoltzmannGraph temperatures={temperatures} visible={visibleCurves} ea={mbEa} />}
             belowVessel={
-              <div className="mt-2 flex justify-center gap-1">
-                {["T1", "T2", "T3"].map((key) => (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => setParticleView(key)}
-                    className={`rounded px-2 py-0.5 text-[10px] font-semibold ${particleView === key ? "bg-[var(--color-indigo)] text-white" : "border border-[var(--color-line)] text-[var(--color-ink-faint)]"}`}
-                  >
-                    {key}
-                  </button>
-                ))}
+              <div className="mt-2">
+                <p className="mb-1 text-center text-[10px] font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Particle motion</p>
+                <div className="flex justify-center gap-1">
+                  {["T1", "T2", "T3"].map((key) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setParticleView(key)}
+                      className={`rounded px-2 py-0.5 text-[10px] font-semibold ${particleView === key ? "bg-[var(--color-indigo)] text-white" : "border border-[var(--color-line)] text-[var(--color-ink-faint)]"}`}
+                    >
+                      {key}
+                    </button>
+                  ))}
+                </div>
               </div>
             }
             belowMain={
               <div className="mt-2 flex flex-wrap items-center justify-center gap-4">
                 {["T1", "T2", "T3"].map((key) => (
-                  <label key={key} className="flex items-center gap-1.5 text-xs text-[var(--color-ink-soft)]">
-                    {key}
+                  <div key={key} className="flex items-center gap-1.5 text-xs text-[var(--color-ink-soft)]">
+                    <label className="flex items-center gap-1.5">
+                      <input
+                        type="checkbox"
+                        checked={visibleCurves[key]}
+                        onChange={(e) => setVisibleCurves((prev) => ({ ...prev, [key]: e.target.checked }))}
+                        aria-label={`Show ${key} curve`}
+                      />
+                      {key}
+                    </label>
                     <select
                       value={temperatures[key]}
                       onChange={(e) => setTemperatures((prev) => clampOrdered({ ...prev, [key]: Number(e.target.value) }, key))}
@@ -151,7 +280,7 @@ export default function CollisionTheoryVisualizer({ compact = false }) {
                         <option key={t} value={t}>{t} K</option>
                       ))}
                     </select>
-                  </label>
+                  </div>
                 ))}
                 <label className="flex items-center gap-2 text-xs text-[var(--color-ink-soft)]">
                   Ea
@@ -194,8 +323,11 @@ function clampOrdered(temps, changedKey) {
 }
 
 /** The shared LEFT-vessel / RIGHT-main layout used by all four tabs --
- * one layout component, not four independently-built screens. */
-function ObservationLayout({ vessel, main, belowVessel, belowMain }) {
+ * one layout component, not four independently-built screens. When the
+ * magnifier is on, it overrides `main` with the live magnifier mirror
+ * (only for the first three tabs, which pass magnifierOn/magnifierData
+ * through). */
+function ObservationLayout({ vessel, main, belowVessel, belowMain, magnifierOn, magnifierData, forceMain = false }) {
   return (
     <div className="mt-3 flex flex-col gap-3 sm:flex-row">
       <div className="sm:w-[28%]">
@@ -203,7 +335,7 @@ function ObservationLayout({ vessel, main, belowVessel, belowMain }) {
         {belowVessel}
       </div>
       <div className="sm:w-[72%]">
-        {main}
+        {magnifierOn && !forceMain ? <MagnifierLiveView particles={magnifierData.particles} center={magnifierData.center} /> : main}
         {belowMain}
       </div>
     </div>
@@ -270,15 +402,23 @@ function OrientationPanel({ orientationCase, setOrientationCase, replayKey, bump
 
 function MoleculeKey() {
   return (
-    <div className="mt-3 flex items-center justify-center gap-5 rounded-lg border border-[var(--color-line)] bg-[var(--color-paper-raised)]/60 py-2">
-      {["A", "B", "C", "D"].map((species) => (
-        <div key={species} className="flex flex-col items-center gap-0.5">
-          <svg viewBox="0 0 32 24" width="32" height="24">
-            <Molecule species={species} x={16} y={12} size={1} label={false} />
-          </svg>
-          <span className="text-[10px] font-semibold text-[var(--color-ink-faint)]">{species}</span>
-        </div>
-      ))}
+    <div className="mt-3 rounded-lg border border-[var(--color-line)] bg-[var(--color-paper-raised)]/60 px-3 py-2.5">
+      <div className="flex flex-wrap items-center justify-center gap-x-7 gap-y-2">
+        {["A", "B", "C", "D"].map((species) => (
+          <div key={species} className="flex flex-col items-center gap-1">
+            {/* Centered on the molecule's own local origin with generous
+                margin (the shape spans roughly -18 to +14.5 horizontally
+                around its centre) -- this is what the previous version
+                got wrong: it drew the molecule off-centre inside a
+                viewBox too narrow to contain it, clipping the large atom. */}
+            <svg viewBox="-20 -14 40 28" width="44" height="30" className="overflow-visible">
+              <Molecule species={species} x={0} y={0} size={1} label={false} />
+            </svg>
+            <span className="text-[11px] font-semibold text-[var(--color-ink)]">{species}</span>
+          </div>
+        ))}
+      </div>
+      <p className="mt-1.5 text-center text-[11px] text-[var(--color-ink-faint)]">A + B {"\u2192"} C + D</p>
     </div>
   );
 }

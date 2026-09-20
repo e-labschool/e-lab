@@ -1,18 +1,29 @@
-// Maxwell-Boltzmann-shaped kinetic energy distribution -- the classic
-// textbook curve: f(E) proportional to sqrt(E) * exp(-E/kT). K_SCALE is
-// an arbitrary display-scaling constant (not the real physical Boltzmann
-// constant -- this simulation uses an arbitrary 0-100 "energy unit"
-// axis, not real joules), chosen so the curve visibly broadens across
-// the intended 250-700 K slider range.
+// The scientifically correct Maxwell-Boltzmann kinetic-energy
+// distribution for a 3D gas: f(E) proportional to sqrt(E) * exp(-E/kT).
 //
-// Verified numerically before use: as T increases, the peak shifts to
-// higher E, the (area-normalized) peak height decreases, and the
-// fraction of particles with E >= a fixed Ea genuinely increases.
-export const K_SCALE = 0.08;
-export const ENERGY_MAX = 100;
-export const ENERGY_STEP = 0.5;
+// An earlier version of this file replaced this with E*exp(-E/kT) to
+// avoid the infinite slope at E=0 -- that was the WRONG fix. The
+// correct distribution's steep initial rise is a genuine physical
+// feature, not a rendering defect, and is restored here. The visual
+// concern (the rise looking cramped/near-vertical) is instead solved
+// through axis scaling: K_SCALE and ENERGY_MAX below were chosen and
+// verified numerically so that even at the highest slider temperature
+// (700 K) the peak sits well clear of the origin and the curve's tail
+// is reasonably visible before the axis edge, rather than compressing
+// most of the distribution into a sliver of the plot -- with NO change
+// to the underlying physics.
+//
+// Verified numerically before use: f(0)=0, the peak shifts to higher E
+// and lowers (area-normalized) as T increases, the fraction with
+// E >= a fixed Ea genuinely increases with T, and the default T1/T2/T3
+// (300/450/600 K) sit at 13%/19%/25% of the axis width respectively --
+// none compressed against the left edge, all showing a genuine curve
+// shape rather than a vertical sliver.
+export const K_SCALE = 0.15;
+export const ENERGY_MAX = 180;
+export const ENERGY_STEP = 0.75;
 export const DEFAULT_TEMPERATURE = 400;
-export const DEFAULT_EA = 40;
+export const DEFAULT_EA = 45;
 export const MIN_TEMPERATURE = 250;
 export const MAX_TEMPERATURE = 700;
 
@@ -20,7 +31,7 @@ export const MAX_TEMPERATURE = 700;
 // pickers -- realistic chemistry-demonstration values, never an
 // unrealistic near-zero default.
 export const TEMPERATURE_OPTIONS = [250, 300, 350, 400, 450, 500, 550, 600, 650, 700];
-export const DEFAULT_TEMPERATURES = { T1: 300, T2: 400, T3: 500 };
+export const DEFAULT_TEMPERATURES = { T1: 300, T2: 450, T3: 600 };
 
 function rawDensity(E, T) {
   const kT = K_SCALE * T;
@@ -31,7 +42,10 @@ function rawDensity(E, T) {
 /** The full curve as {E, f} points, AREA-NORMALIZED so total probability
  * stays constant regardless of T -- this is what makes the peak
  * genuinely lower (not just visually squashed) as the distribution
- * broadens with increasing temperature. */
+ * broadens with increasing temperature. Sampled at ENERGY_STEP
+ * intervals across the full ENERGY_MAX range -- fine enough (240+
+ * points) for a smooth rendered curve, including through the initial
+ * rise near the origin. */
 export function buildCurve(T) {
   const raw = [];
   for (let E = 0; E <= ENERGY_MAX; E += ENERGY_STEP) raw.push({ E, f: rawDensity(E, T) });
@@ -50,10 +64,11 @@ export function fractionBeyond(curve, Ea) {
 }
 
 /** Draws one random kinetic energy from the T-dependent distribution via
- * rejection sampling against the curve's own peak -- used to give each
- * particle in the live container a genuinely distributed (not uniform,
- * not identical) energy/speed, verified to produce a real slow/medium/
- * fast spread rather than decorative randomness. */
+ * rejection sampling against the curve's own peak (at E=kT/2 for this
+ * form) -- used to give each particle in the live vessel a genuinely
+ * distributed (not uniform, not identical) energy/speed, verified to
+ * produce a real slow/medium/fast spread rather than decorative
+ * randomness. */
 export function sampleEnergy(T) {
   const kT = K_SCALE * T;
   const peakE = kT / 2;
