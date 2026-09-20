@@ -1,9 +1,11 @@
 // A reusable liquid fill for any container shape -- a rect clipped to
 // the container's own clip-path, with a subtle wavy top surface and a
-// light gradient for a sense of depth/transparency. `level` is 0-1 (
-// fraction of `height` filled from the bottom). Used inside Beaker,
-// the receiving vessel, and the funnel stem.
-export default function Liquid({ x, y, width, height, level, color, opacity = 0.55, clipId }) {
+// light gradient for a sense of depth/transparency. `level` is 0-1
+// (fraction of `height` filled from the bottom). `turbidity` (0-1)
+// adds a few soft, semi-transparent light patches -- a slight cloudy
+// look for a suspension like sand-in-water, WITHOUT overriding the
+// liquid's own colour (never simply tints the whole liquid brown).
+export default function Liquid({ x, y, width, height, level, color, opacity = 0.55, clipId, turbidity = 0 }) {
   if (level <= 0) return null;
   const fillHeight = height * Math.min(1, level);
   const top = y + height - fillHeight;
@@ -21,6 +23,12 @@ export default function Liquid({ x, y, width, height, level, color, opacity = 0.
         d={`M ${x} ${top + 3} Q ${x + width * 0.25} ${top - 2} ${x + width * 0.5} ${top} Q ${x + width * 0.75} ${top + 2} ${x + width} ${top - 1} L ${x + width} ${y + height} L ${x} ${y + height} Z`}
         fill={`url(#${gradId})`}
       />
+      {turbidity > 0 && (
+        <g opacity={Math.min(0.35, turbidity * 0.4)}>
+          <ellipse cx={x + width * 0.3} cy={top + fillHeight * 0.4} rx={width * 0.28} ry={fillHeight * 0.18} fill="#fff" />
+          <ellipse cx={x + width * 0.65} cy={top + fillHeight * 0.7} rx={width * 0.22} ry={fillHeight * 0.14} fill="#fff" />
+        </g>
+      )}
     </g>
   );
 }
