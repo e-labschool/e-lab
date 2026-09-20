@@ -64,6 +64,7 @@ export const SIMULATION_REGISTRY = {
   "buffer-action-visualizer": { label: "Buffer Action Visualizer" },
   "chocolate-wrapping-rate": { label: "Chocolate Wrapping \u2014 Understanding Rate" },
   "collision-theory-visualizer": { label: "Collision Theory Visualizer" },
+  "mixture-separation-explorer": { label: "Mixture Separation Explorer" },
 };
 
 // Strips HTML tags for a safe plain-text preview — never renders HTML

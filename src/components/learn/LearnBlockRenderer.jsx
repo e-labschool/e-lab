@@ -22,6 +22,7 @@ const SIMULATION_COMPONENTS = {
   "buffer-action-visualizer": lazy(() => import("../../engines/buffer-action-visualizer/BufferActionVisualizer.jsx")),
   "chocolate-wrapping-rate": lazy(() => import("../../engines/chocolate-wrapping-rate/ChocolateWrappingRate.jsx")),
   "collision-theory-visualizer": lazy(() => import("../../engines/collision-theory-visualizer/CollisionTheoryVisualizer.jsx")),
+  "mixture-separation-explorer": lazy(() => import("../../engines/mixture-separation-explorer/MixtureSeparationExplorer.jsx")),
 };
 
 export default function LearnBlockRenderer({ block }) {
