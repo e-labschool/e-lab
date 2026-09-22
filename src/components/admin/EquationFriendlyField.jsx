@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import StructuredText from "../learn/StructuredText.jsx";
 
 const SUB = {0:"₀",1:"₁",2:"₂",3:"₃",4:"₄",5:"₅",6:"₆",7:"₇",8:"₈",9:"₉","+":"₊","-":"₋","=":"₌","(":"₍",")":"₎",a:"ₐ",e:"ₑ",h:"ₕ",i:"ᵢ",j:"ⱼ",k:"ₖ",l:"ₗ",m:"ₘ",n:"ₙ",o:"ₒ",p:"ₚ",r:"ᵣ",s:"ₛ",t:"ₜ",u:"ᵤ",v:"ᵥ",x:"ₓ"};
 const SUP = {0:"⁰",1:"¹",2:"²",3:"³",4:"⁴",5:"⁵",6:"⁶",7:"⁷",8:"⁸",9:"⁹","+":"⁺","-":"⁻","=":"⁼","(":"⁽",")":"⁾",n:"ⁿ",i:"ⁱ"};
@@ -194,10 +195,64 @@ export function resolveMathAnnotationsInHtml(html) {
   return doc.body.innerHTML;
 }
 
+/** Convert rich clipboard maths (including ChatGPT/KaTeX MathML) into the
+ * structured tokens understood by StructuredText. This deliberately preserves
+ * LaTeX for display equations so a pasted fraction stays a real fraction. */
+function htmlToStructuredLessonText(html) {
+  if (!html || typeof DOMParser === "undefined") return "";
+  const doc = new DOMParser().parseFromString(html, "text/html");
+
+  for (const mathEl of [...doc.querySelectorAll("math")]) {
+    const root = mathEl.closest?.(".katex-display") || mathEl.closest?.('[class*="katex"]') || mathEl;
+    if (!root?.parentNode) continue;
+    const annotation = mathEl.querySelector("annotation");
+    const latex = annotation?.textContent?.trim();
+    const fallback = presentationMathMLToText(mathEl).replace(/\s+/g, " ").trim();
+    const source = latex || fallback;
+    root.parentNode.replaceChild(doc.createTextNode(`\n[[math:${source}]]\n`), root);
+  }
+
+  for (const el of [...doc.querySelectorAll('[class*="katex"]')]) el.remove();
+
+  const walk = (node) => {
+    if (node.nodeType === Node.TEXT_NODE) return node.nodeValue || "";
+    if (node.nodeType !== Node.ELEMENT_NODE || isHiddenDuplicateNode(node)) return "";
+    const tag = node.tagName.toLowerCase();
+    const children = () => [...node.childNodes].map(walk).join("");
+    if (tag === "sub") return mapChars(children(), SUB);
+    if (tag === "sup") return mapChars(children(), SUP);
+    if (tag === "br") return "\n";
+    const text = children();
+    return ["p", "div", "li", "tr", "h1", "h2", "h3", "h4"].includes(tag) ? `${text}\n` : text;
+  };
+  return walk(doc.body).replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function normalizeStructuredPaste(text) {
+  let s = String(text ?? "")
+    .replace(/```(?:math|latex)?\s*\n?/gi, "")
+    .replace(/```/g, "")
+    .replace(/\$\$([\s\S]*?)\$\$/g, (_, eq) => `\n[[math:${eq.trim()}]]\n`)
+    .replace(/\\\[([\s\S]*?)\\\]/g, (_, eq) => `\n[[math:${eq.trim()}]]\n`);
+
+  s = s.split("\n").map((line) => {
+    const t = line.trim();
+    if (!t || /^\[\[(?:math:|box)/.test(t)) return line;
+    if (/\\(?:frac|sum|times|cdot|sqrt|approx|pm|Delta|rightarrow|to)\b/.test(t) || /^[A-Za-z][A-Za-z0-9_{}^]*\s*=.*\\/.test(t)) {
+      return `[[math:${t}]]`;
+    }
+    return line;
+  }).join("\n");
+
+  s = s.replace(/\[\[math:\\boxed\{([^{}]+)\}\]\]/g, "[[box]]\n$1\n[[/box]]");
+  return s.replace(/\n{3,}/g, "\n\n").trim();
+}
+
 export function getEquationFriendlyClipboardText(event) {
   const html = event.clipboardData?.getData("text/html") || "";
-  const rich = htmlToChemText(html);
-  return rich || event.clipboardData?.getData("text/plain") || "";
+  const structured = htmlToStructuredLessonText(html);
+  const plain = event.clipboardData?.getData("text/plain") || "";
+  return normalizeStructuredPaste(structured || plain);
 }
 
 export function pasteEquationFriendly(event, value, onChange) {
@@ -253,14 +308,20 @@ export default function EquationFriendlyField({ value = "", onChange, className 
         <span className="self-center text-[10px] text-[var(--color-ink-faint)]">Equations support \frac, _sub, ^sup, \times, \sum</span>
       </div>
       <textarea
-      ref={ref}
-      rows={rows}
-      value={value ?? ""}
-      onChange={(e) => onChange?.(e.target.value)}
-      onPaste={(e) => pasteEquationFriendly(e, value, (next) => onChange?.(next))}
-      className={`${className} resize-y overflow-hidden font-[inherit]`}
-      {...props}
-    />
+        ref={ref}
+        rows={rows}
+        value={value ?? ""}
+        onChange={(e) => onChange?.(e.target.value)}
+        onPaste={(e) => pasteEquationFriendly(e, value, (next) => onChange?.(next))}
+        className={`${className} resize-y overflow-hidden font-[inherit]`}
+        {...props}
+      />
+      {String(value ?? "").trim() && (
+        <div className="mt-2 rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-3">
+          <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Student preview</div>
+          <StructuredText text={value} className="text-sm text-[var(--color-ink)]" />
+        </div>
+      )}
     </div>
   );
 }

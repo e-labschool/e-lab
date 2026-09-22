@@ -247,7 +247,7 @@ function WorkedExampleBlock({ content }) {
   return (
     <div className="rounded-md border border-[#fb7185]/30 bg-[#fb7185]/10 p-4">
       <p className="text-xs font-semibold uppercase tracking-wide text-[#ff8fa1]">Worked Example</p>
-      <p className="mt-1.5 whitespace-pre-wrap text-sm font-medium text-[var(--color-ink)]">{content.question}</p>
+      <StructuredText text={content.question} className="mt-1.5 text-sm font-medium text-[var(--color-ink)]" />
 
       {solution && (isReveal ? (
         <>
