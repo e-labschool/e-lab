@@ -1,40 +1,39 @@
 import Particle from "./Particle.jsx";
 
 const LABELS = {
-  proton: { name: "Proton", charge: "Charge: +1", mass: "Relative mass: 1" },
-  neutron: { name: "Neutron", charge: "Charge: 0", mass: "Relative mass: 1" },
-  electron: { name: "Electron", charge: "Charge: \u22121", mass: "Relative mass: approximately 1/1836" },
+  proton: { name: "Proton", info: "Charge +1 \u2022 Relative mass 1" },
+  neutron: { name: "Neutron", info: "Charge 0 \u2022 Relative mass 1" },
+  electron: { name: "Electron", info: "Charge \u22121 \u2022 Relative mass \u2248 1/1836" },
 };
 
-/** One tactile +/- control for a single particle type -- shows an
- * actual visual particle token (not just a text label), matching the
- * same rendering as every particle already visible in the atom itself. */
+/** One compact, tactile horizontal control -- particle token, name +
+ * inline info on one line, and the +/- stepper, all in a single row
+ * rather than several stacked lines. */
 export default function ParticleControl({ type, count, onAdd, onRemove, canRemove }) {
   const info = LABELS[type];
   return (
-    <div className="flex items-center gap-3 rounded-xl border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-3">
-      <Particle type={type} size={40} />
+    <div className="flex items-center gap-2 rounded-lg border border-[var(--color-line)] bg-[var(--color-paper-raised)] px-2.5 py-1.5">
+      <Particle type={type} size={30} />
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-bold text-[var(--color-ink)]">{info.name}</p>
-        <p className="text-[11px] text-[var(--color-ink-faint)]">{info.charge}</p>
-        <p className="text-[11px] text-[var(--color-ink-faint)]">{info.mass}</p>
+        <p className="truncate text-xs font-bold leading-tight text-[var(--color-ink)]">{info.name}</p>
+        <p className="truncate text-[10px] leading-tight text-[var(--color-ink-faint)]">{info.info}</p>
       </div>
-      <div className="flex items-center gap-1.5">
+      <div className="flex shrink-0 items-center gap-1">
         <button
           type="button"
           onClick={onRemove}
           disabled={!canRemove}
           aria-label={`Remove ${type}`}
-          className="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--color-line)] text-lg font-bold text-[var(--color-ink-soft)] transition-transform hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-30"
+          className="flex h-6 w-6 items-center justify-center rounded-full border border-[var(--color-line)] text-sm font-bold text-[var(--color-ink-soft)] transition-transform hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-30"
         >
           {"\u2212"}
         </button>
-        <span className="w-6 text-center text-base font-bold tabular-nums text-[var(--color-ink)]">{count}</span>
+        <span className="w-5 text-center text-sm font-bold tabular-nums text-[var(--color-ink)]">{count}</span>
         <button
           type="button"
           onClick={onAdd}
           aria-label={`Add ${type}`}
-          className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--color-indigo)] text-lg font-bold text-white transition-transform hover:scale-105 active:scale-95"
+          className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--color-indigo)] text-sm font-bold text-white transition-transform hover:scale-105 active:scale-95"
         >
           +
         </button>
