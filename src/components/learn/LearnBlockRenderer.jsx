@@ -4,6 +4,7 @@ import { sanitizeHtml, renderChemMarkup, MOLECULE_PRESETS, getWorkedExampleSolut
 import { resolveMathAnnotationsInHtml } from "../admin/EquationFriendlyField.jsx";
 import MoleculeViewer3D from "../3d/MoleculeViewer3D.jsx";
 import ELabLoader from "../ui/ELabLoader.jsx";
+import StructuredText from "./StructuredText.jsx";
 import { findPublishedLessonBySyllabusCode } from "../../lib/learnContentService.js";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext.jsx";
@@ -106,7 +107,7 @@ export default function LearnBlockRenderer({ block }) {
       return (
         <div className="rounded-md border-l-4 border-[#6d8cff] bg-[#6d8cff]/12 p-4">
           <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[#8da3ff]"><Lightbulb size={13} /> Key Idea</p>
-          <p className="mt-1.5 whitespace-pre-wrap text-sm text-[var(--color-ink)]">{c.text}</p>
+          <StructuredText text={c.text} className="mt-1.5 text-sm text-[var(--color-ink)]" />
         </div>
       );
 
@@ -115,7 +116,7 @@ export default function LearnBlockRenderer({ block }) {
         <div className="rounded-md border border-[#2dd4bf]/35 bg-[#2dd4bf]/10 p-4">
           <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[#45e0cd]"><BookMarked size={13} /> Definition</p>
           <p className="mt-1.5 font-semibold text-[var(--color-ink)]">{c.term}</p>
-          <p className="mt-0.5 whitespace-pre-wrap text-sm text-[var(--color-ink)]">{c.definition}</p>
+          <StructuredText text={c.definition} className="mt-0.5 text-sm text-[var(--color-ink)]" />
         </div>
       );
 
@@ -123,7 +124,7 @@ export default function LearnBlockRenderer({ block }) {
       return (
         <div className="rounded-md border-l-4 border-[#f59e0b] bg-[#f59e0b]/10 p-4">
           <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[#f7b94a]"><AlertTriangle size={13} /> Common Mistakes / Misunderstandings</p>
-          <p className="mt-1.5 whitespace-pre-wrap text-sm text-[var(--color-ink)]">{c.text}</p>
+          <StructuredText text={c.text} className="mt-1.5 text-sm text-[var(--color-ink)]" />
         </div>
       );
 
@@ -136,7 +137,7 @@ export default function LearnBlockRenderer({ block }) {
           <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[#5ee0ad]"><Globe2 size={13} /> Real-Life Connection</p>
           {c.title && <p className="mt-1.5 font-semibold text-[var(--color-ink)]">{c.title}</p>}
           {c.imageUrl && wrap !== "none" && <WrappedContentImage content={c} />}
-          <p className="mt-0.5 whitespace-pre-wrap text-justify text-sm leading-relaxed text-[var(--color-ink-soft)]">{c.content}</p>
+          <StructuredText text={c.content} className="mt-0.5 text-justify text-sm leading-relaxed text-[var(--color-ink-soft)]" />
           {c.imageUrl && wrap === "none" && <WrappedContentImage content={c} />}
         </div>
       );
@@ -260,14 +261,14 @@ function WorkedExampleBlock({ content }) {
           {revealed && (
             <>
               <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Solution</p>
-              <p className="mt-1 whitespace-pre-wrap text-sm text-[var(--color-ink-soft)]">{solution}</p>
+              <StructuredText text={solution} className="mt-1 text-sm text-[var(--color-ink-soft)]" />
             </>
           )}
         </>
       ) : (
         <>
           <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Solution</p>
-          <p className="mt-1 whitespace-pre-wrap text-sm text-[var(--color-ink-soft)]">{solution}</p>
+          <StructuredText text={solution} className="mt-1 text-sm text-[var(--color-ink-soft)]" />
         </>
       ))}
     </div>
@@ -375,11 +376,11 @@ function RevealThinkBlock({ content }) {
   return (
     <div className="rounded-md border border-[#c084fc]/35 bg-[#c084fc]/10 p-4">
       <p className="text-xs font-semibold uppercase tracking-wide text-[#d29aff]">Think</p>
-      <p className="mt-1.5 whitespace-pre-wrap text-sm text-[var(--color-ink)]">{content.prompt}</p>
+      <StructuredText text={content.prompt} className="mt-1.5 text-sm text-[var(--color-ink)]" />
       {!revealed ? (
         <button type="button" onClick={() => setRevealed(true)} className="mt-3 rounded-md border border-[var(--color-violet)] px-3 py-1.5 text-xs font-medium text-[var(--color-violet)]">Reveal</button>
       ) : (
-        <p className="mt-3 whitespace-pre-wrap rounded-md bg-[var(--color-paper-raised)] px-3 py-2 text-sm text-[var(--color-ink-soft)]">{content.reveal}</p>
+        <div className="mt-3 rounded-md bg-[var(--color-paper-raised)] px-3 py-2"><StructuredText text={content.reveal} className="text-sm text-[var(--color-ink-soft)]" /></div>
       )}
     </div>
   );

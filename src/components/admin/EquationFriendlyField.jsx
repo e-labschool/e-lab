@@ -219,6 +219,23 @@ export function pasteEquationFriendly(event, value, onChange) {
  * click anywhere, select part of it, delete/retype, Enter for a new
  * line, all standard textarea behaviour. Nothing here ever creates a
  * non-editable "equation object". */
+function insertTemplate(el, value, onChange, template, selectStartOffset = null, selectLength = 0) {
+  const start = el?.selectionStart ?? String(value ?? "").length;
+  const end = el?.selectionEnd ?? start;
+  const before = String(value ?? "").slice(0, start);
+  const after = String(value ?? "").slice(end);
+  const prefix = before && !before.endsWith("\n") ? "\n" : "";
+  const suffix = after && !after.startsWith("\n") ? "\n" : "";
+  const inserted = `${prefix}${template}${suffix}`;
+  onChange?.(`${before}${inserted}${after}`);
+  requestAnimationFrame(() => {
+    if (!el) return;
+    const base = start + prefix.length;
+    const pos = selectStartOffset == null ? base + template.length : base + selectStartOffset;
+    try { el.focus(); el.selectionStart = pos; el.selectionEnd = pos + selectLength; } catch { /* noop */ }
+  });
+}
+
 export default function EquationFriendlyField({ value = "", onChange, className = "", rows = 2, ...props }) {
   const ref = useRef(null);
   useEffect(() => {
@@ -229,7 +246,13 @@ export default function EquationFriendlyField({ value = "", onChange, className 
   }, [value]);
 
   return (
-    <textarea
+    <div>
+      <div className="mb-1 flex flex-wrap gap-1">
+        <button type="button" onClick={() => insertTemplate(ref.current, value, onChange, "[[math:A_r=\\frac{(35\\times75)+(37\\times25)}{100}]]", 7, 45)} className="rounded border border-[var(--color-line)] bg-[var(--color-paper-raised)] px-2 py-1 text-[11px] font-medium text-[var(--color-indigo)]">+ Equation</button>
+        <button type="button" onClick={() => insertTemplate(ref.current, value, onChange, "[[box]]\nKey result\n[[/box]]", 8, 10)} className="rounded border border-[var(--color-line)] bg-[var(--color-paper-raised)] px-2 py-1 text-[11px] font-medium text-[var(--color-indigo)]">+ Box</button>
+        <span className="self-center text-[10px] text-[var(--color-ink-faint)]">Equations support \frac, _sub, ^sup, \times, \sum</span>
+      </div>
+      <textarea
       ref={ref}
       rows={rows}
       value={value ?? ""}
@@ -238,5 +261,6 @@ export default function EquationFriendlyField({ value = "", onChange, className 
       className={`${className} resize-y overflow-hidden font-[inherit]`}
       {...props}
     />
+    </div>
   );
 }
