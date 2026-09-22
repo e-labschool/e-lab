@@ -107,6 +107,14 @@ export default function BuildAtomSimulation({ compact = false }) {
             </div>
           </div>
 
+          {/* Top tool row: Periodic Table + Challenge -- moved above the
+              main workspace so both are immediately visible/usable
+              without scrolling past the atom first. */}
+          <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)]">
+            <MiniPeriodicTable currentAtomicNumber={atom.protons} onSelectElement={handleSelectElement} />
+            <ChallengeMode atom={atom} derived={derived} />
+          </div>
+
           {/* Main three-column workspace: Build | Atom | Identity */}
           <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,230px)_minmax(0,1fr)_minmax(0,260px)]">
             <div className="order-2 flex flex-col gap-2 lg:order-1">
@@ -142,19 +150,13 @@ export default function BuildAtomSimulation({ compact = false }) {
             </div>
           </div>
 
-          {/* Compact row: What Changed (wider) + three concept cards */}
+          {/* Bottom learning row: What Changed (wider) + three concept cards */}
           <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,2fr)]">
             <div>
               <p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-[var(--color-ink-faint)]">What Changed?</p>
               <WhatChanged change={change} />
             </div>
             <ConceptStrip highlightedType={highlightType} />
-          </div>
-
-          {/* Periodic table + challenge row */}
-          <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
-            <MiniPeriodicTable currentAtomicNumber={atom.protons} onSelectElement={handleSelectElement} />
-            <ChallengeMode atom={atom} derived={derived} />
           </div>
         </div>
       </div>

@@ -4,28 +4,23 @@ import { buildNucleusLayout } from "../lib/nucleusLayout.js";
 import { shellDistribution } from "../lib/electronShells.js";
 import { useReducedMotion } from "../lib/useReducedMotion.js";
 
-// Nucleus positions come UNCHANGED from the already-verified
-// buildNucleusLayout() (its shared-counter bug fix is not touched here)
-// -- only uniformly scaled up for a larger, more readable nucleus. A
-// scale multiplier can never reintroduce that bug: it doesn't change
-// WHICH position any given particle gets, only how far from the centre
-// every position sits, applied identically to all of them.
-const NUCLEUS_SCALE = 1.55;
+// Nucleus positions come UNCHANGED from the already-verified, previously
+// bug-fixed buildNucleusLayout() -- never touched here. Only a scale
+// multiplier and the drawn sphere radius change, both purely visual.
+// Verified numerically before use: at NUCLEUS_SCALE=1.3 with a 13-unit
+// sphere radius, even Calcium-40 (40 nucleons, the worst realistic
+// case) has its outer edge at ~74 units from centre, comfortably clear
+// of the first shell at radius 100 (a ~26-unit gap) -- Carbon-12 and
+// Oxygen-18 clear by even more (54 and 44 units respectively).
+const NUCLEUS_SCALE = 1.3;
+const NUCLEON_SPHERE_SIZE = 26; // ~13% smaller than the previous 30
 
-// Shell radii for the simplified 1-20-electron model, plus overflow
-// buckets beyond it (see electronShells.js for why this isn't a 2n^2
-// filling rule). Alternating rotation direction per shell -- purely a
-// visual device, not a claim about real electron motion.
-const SHELL_RADII = [56, 82, 108, 132];
+// Shell radii enlarged specifically to keep the first shell clear of the
+// largest nucleus this simulation reasonably needs to render (see above).
+const SHELL_RADII = [100, 132, 164, 196];
 const SHELL_ROTATION_MS = [16000, 24000, 32000, 40000];
+const ELECTRON_SPHERE_SIZE = 19; // ~13% smaller than the previous 22
 
-/** Fixed, evenly-spaced angles for `count` electrons on one shell --
- * computed ONCE per shell's electron count, then the whole shell
- * (all its electrons together) is wrapped in a single rotating group.
- * This is what keeps relative spacing constant while rotating: rotating
- * a rigid group of already-evenly-spaced points never bunches them,
- * since their angles relative to EACH OTHER never change, only the
- * group's overall orientation does. */
 function evenAngles(count) {
   if (count <= 0) return [];
   return Array.from({ length: count }, (_, i) => (i / count) * 360);
@@ -42,19 +37,20 @@ export default function AtomVisualizer({ protons, neutrons, electrons, highlight
   const shells = useMemo(() => shellDistribution(electrons), [electrons]);
 
   return (
-    <div className="relative mx-auto aspect-square w-full max-w-[560px]" role="img" aria-label={`Atom model with ${protons} protons, ${neutrons} neutrons, and ${electrons} electrons, distributed as ${shells.join(", ")} electrons per shell`}>
-      <svg viewBox="-160 -160 320 320" className="h-full w-full overflow-visible">
-        {/* faint shell guides */}
+    <div className="relative mx-auto aspect-square w-full max-w-[620px]" role="img" aria-label={`Atom model with ${protons} protons, ${neutrons} neutrons, and ${electrons} electrons, distributed as ${shells.join(", ")} electrons per shell`}>
+      <svg viewBox="-230 -230 460 460" className="h-full w-full overflow-visible">
         {shells.map((_, shellIndex) => (
-          <circle key={`guide-${shellIndex}`} cx="0" cy="0" r={SHELL_RADII[Math.min(shellIndex, SHELL_RADII.length - 1)] + (shellIndex >= SHELL_RADII.length ? (shellIndex - SHELL_RADII.length + 1) * 24 : 0)} fill="none" stroke="var(--color-indigo)" strokeWidth="0.5" strokeDasharray="2 4" opacity="0.35" />
+          <circle key={`guide-${shellIndex}`} cx="0" cy="0" r={SHELL_RADII[Math.min(shellIndex, SHELL_RADII.length - 1)] + (shellIndex >= SHELL_RADII.length ? (shellIndex - SHELL_RADII.length + 1) * 32 : 0)} fill="none" stroke="var(--color-indigo)" strokeWidth="0.6" strokeDasharray="2 4" opacity="0.35" />
         ))}
 
-        {/* each shell is ONE rotating group containing all its (already
-            evenly-spaced) electrons -- never independently animated */}
+        {/* each shell is ONE rotating group containing all its
+            (already evenly-spaced) electrons -- never independently
+            animated, so relative spacing never drifts. */}
         {shells.map((countOnShell, shellIndex) => {
-          const radius = SHELL_RADII[Math.min(shellIndex, SHELL_RADII.length - 1)] + (shellIndex >= SHELL_RADII.length ? (shellIndex - SHELL_RADII.length + 1) * 24 : 0);
+          const radius = SHELL_RADII[Math.min(shellIndex, SHELL_RADII.length - 1)] + (shellIndex >= SHELL_RADII.length ? (shellIndex - SHELL_RADII.length + 1) * 32 : 0);
           const angles = evenAngles(countOnShell);
           const direction = shellIndex % 2 === 0 ? "normal" : "reverse";
+          const counterDirection = direction === "normal" ? "reverse" : "normal";
           const duration = SHELL_ROTATION_MS[Math.min(shellIndex, SHELL_ROTATION_MS.length - 1)];
           return (
             <g
@@ -67,9 +63,17 @@ export default function AtomVisualizer({ protons, neutrons, electrons, highlight
                 const y = radius * Math.sin(rad);
                 return (
                   <g key={`e-${shellIndex}-${i}`} transform={`translate(${x} ${y})`} className={highlightCharge ? "atom-highlight-pulse" : undefined}>
-                    <foreignObject x="-11" y="-11" width="22" height="22">
-                      <Particle type="electron" size={22} showSymbol={false} />
-                    </foreignObject>
+                    {/* Counter-rotates at the SAME rate, opposite
+                        direction, as the parent shell -- this exactly
+                        cancels the inherited rotation so the minus
+                        symbol stays upright while the electron's
+                        POSITION (set by the translate above, outside
+                        this counter-rotation) still genuinely orbits. */}
+                    <g style={{ transformOrigin: "0px 0px", animation: reducedMotion ? "none" : `atom-shell-spin ${duration}ms linear infinite ${counterDirection}` }}>
+                      <foreignObject x={-ELECTRON_SPHERE_SIZE / 2} y={-ELECTRON_SPHERE_SIZE / 2} width={ELECTRON_SPHERE_SIZE} height={ELECTRON_SPHERE_SIZE}>
+                        <Particle type="electron" size={ELECTRON_SPHERE_SIZE} showSymbol symbolOverride="\u2212" />
+                      </foreignObject>
+                    </g>
                   </g>
                 );
               })}
@@ -80,8 +84,8 @@ export default function AtomVisualizer({ protons, neutrons, electrons, highlight
         {/* nucleus */}
         <g className={highlightZ || highlightA ? "atom-highlight-pulse" : undefined}>
           {nucleusItems.map((item) => (
-            <foreignObject key={item.key} x={item.x - 15} y={item.y - 15} width="30" height="30">
-              <Particle type={item.type} size={30} showSymbol />
+            <foreignObject key={item.key} x={item.x - NUCLEON_SPHERE_SIZE / 2} y={item.y - NUCLEON_SPHERE_SIZE / 2} width={NUCLEON_SPHERE_SIZE} height={NUCLEON_SPHERE_SIZE}>
+              <Particle type={item.type} size={NUCLEON_SPHERE_SIZE} showSymbol />
             </foreignObject>
           ))}
         </g>

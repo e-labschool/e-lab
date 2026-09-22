@@ -11,7 +11,7 @@ const PARTICLE_STYLES = {
   electron: { base: "#2E6FE0", light: "#7FAEFF", dark: "#1B4A9E", symbol: "e\u207B", chargeLabel: "\u22121" },
 };
 
-export default function Particle({ type, size = 32, showSymbol = true }) {
+export default function Particle({ type, size = 32, showSymbol = true, symbolOverride }) {
   const uid = `atom-particle-${useId().replace(/:/g, "")}`;
   const style = PARTICLE_STYLES[type];
 
@@ -29,7 +29,7 @@ export default function Particle({ type, size = 32, showSymbol = true }) {
       <ellipse cx="14.5" cy="12.5" rx="5" ry="3.2" fill="rgba(255,255,255,0.4)" />
       {showSymbol && (
         <text x="20" y="24" textAnchor="middle" fontSize="13" fontWeight="700" fill="rgba(255,255,255,0.95)">
-          {style.symbol}
+          {symbolOverride ?? style.symbol}
         </text>
       )}
     </svg>
