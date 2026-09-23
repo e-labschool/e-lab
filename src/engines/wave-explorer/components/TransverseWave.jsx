@@ -4,8 +4,8 @@ import { useWavePhase } from "../lib/useWavePhase.js";
 import { useReducedMotion } from "../lib/useReducedMotion.js";
 
 const WIDTH = 400;
-const HEIGHT = 200;
-const MID_Y = 100;
+const HEIGHT = 155; // reduced ~22% from the previous 200
+const MID_Y = 75;
 const OBSERVATION_X = 320;
 
 export default function TransverseWave({ wavelengthNm, wavelengthPx, amplitudePx, paused, emphasize }) {
@@ -20,20 +20,38 @@ export default function TransverseWave({ wavelengthNm, wavelengthPx, amplitudePx
   // quarter of the view -- always a real crest, never a fixed x that
   // could drift out of alignment with the animated wave.
   const amplitudeCrestX = crests.reduce((best, x) => (Math.abs(x - WIDTH * 0.22) < Math.abs(best - WIDTH * 0.22) ? x : best), crests[0] ?? WIDTH * 0.22);
+  // A trough is exactly half a wavelength from a crest (the wave's
+  // y-offset formula is -amplitude*sin(...), so sin=+1 is a crest and
+  // sin=-1, half a cycle later, is a trough -- reusing the SAME
+  // verified crest-finding math rather than a separate computation.
+  const troughX = amplitudeCrestX + wavelengthPx / 2;
   // Wavelength arrow spans the first two consecutive crests fully
   // visible, so its length is always exactly one wavelength.
   const wavelengthCrestA = crests.find((x, i) => crests[i + 1] !== undefined) ?? crests[0];
   const wavelengthCrestB = wavelengthCrestA !== undefined ? wavelengthCrestA + wavelengthPx : undefined;
 
-  // Observation point: the wave's y-value there, and a brief pulse
-  // whenever a full cycle has just completed (cycleCount changed).
   const observationY = MID_Y - amplitudePx * Math.sin(((2 * Math.PI) / wavelengthPx) * OBSERVATION_X - phase);
 
   return (
     <div className="w-full">
-      <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} className="h-auto w-full" role="img" aria-label="Transverse wave showing crest, trough, amplitude and wavelength">
+      <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} className="h-auto w-full" role="img" aria-label="Transverse wave showing crest, trough, equilibrium position, amplitude and wavelength">
         <line x1="0" y1={MID_Y} x2={WIDTH} y2={MID_Y} stroke="var(--color-line)" strokeWidth="1" strokeDasharray="3 4" />
+        <text x="6" y={MID_Y - 6} fontSize="9.5" fill="var(--color-ink-faint)">Equilibrium position</text>
         <path d={path} fill="none" stroke="var(--color-indigo)" strokeWidth="2.5" transform={`translate(0 ${MID_Y})`} />
+        {/* re-drawn on top with a background halo -- the wave curve is
+            animated and can pass behind this label at any x depending
+            on phase, so rather than trying to find a permanently-safe
+            x (impossible for a moving curve), the label is given an
+            opaque backing and stacked above the path, staying legible
+            no matter where the curve currently is. */}
+        <rect x="0" y={MID_Y - 20} width="150" height="24" fill="var(--color-paper-raised)" opacity="1" />
+        <text x="6" y={MID_Y - 6} fontSize="9.5" fill="var(--color-ink-faint)">Equilibrium position</text>
+
+        {/* one labelled crest, one labelled trough -- not every one */}
+        <text x={amplitudeCrestX} y={MID_Y - amplitudePx - 22} textAnchor="middle" fontSize="9.5" fontWeight="600" fill="var(--color-ink-soft)">Crest</text>
+        <line x1={amplitudeCrestX} y1={MID_Y - amplitudePx - 17} x2={amplitudeCrestX} y2={MID_Y - amplitudePx - 4} stroke="var(--color-ink-faint)" strokeWidth="1" />
+        <text x={troughX} y={MID_Y + amplitudePx + 24} textAnchor="middle" fontSize="9.5" fontWeight="600" fill="var(--color-ink-soft)">Trough</text>
+        <line x1={troughX} y1={MID_Y + amplitudePx + 4} x2={troughX} y2={MID_Y + amplitudePx + 18} stroke="var(--color-ink-faint)" strokeWidth="1" />
 
         {/* amplitude: vertical double-headed arrow, equilibrium to crest */}
         {crests.length > 0 && (
@@ -53,7 +71,7 @@ export default function TransverseWave({ wavelengthNm, wavelengthPx, amplitudePx
 
         {/* observation point */}
         <g className={emphasize === "frequency" ? "wave-emphasis" : undefined}>
-          <line x1={OBSERVATION_X} y1="10" x2={OBSERVATION_X} y2={HEIGHT - 10} stroke="var(--color-amber)" strokeWidth="1" strokeDasharray="2 3" opacity="0.6" />
+          <line x1={OBSERVATION_X} y1="8" x2={OBSERVATION_X} y2={HEIGHT - 8} stroke="var(--color-amber)" strokeWidth="1" strokeDasharray="2 3" opacity="0.6" />
           <circle cx={OBSERVATION_X} cy={observationY} r="5" fill="var(--color-amber)" key={cycleCount} className={reducedMotion || paused ? undefined : "wave-observation-pulse"} />
         </g>
 

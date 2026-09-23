@@ -11,13 +11,8 @@ export function describeWaveChange(changedControl, prevValue, nextValue, waveTyp
       ? "You shortened the wavelength. Since the speed of light is constant, the frequency increased."
       : "You increased the wavelength. The frequency therefore decreased.";
   }
-  if (changedControl === "frequency") {
-    return nextValue > prevValue
-      ? "You increased the frequency. The higher frequency also means that each photon has greater energy."
-      : "You decreased the frequency. Each photon therefore has less energy.";
-  }
   if (changedControl === "amplitude") {
-    return "You changed the amplitude. Notice that this does not change the wavelength or frequency.";
+    return "You changed the amplitude. The wavelength and frequency remain unchanged.";
   }
   if (changedControl === "waveType") {
     return waveType === "longitudinal"
