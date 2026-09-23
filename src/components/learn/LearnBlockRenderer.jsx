@@ -42,6 +42,21 @@ export function renderCompactLatex(latex) {
       const g = readBraceGroup(src, i + 6);
       if (g) { out += `<span class="inline-block rounded border border-[var(--color-indigo)]/45 px-2 py-0.5 font-semibold">${renderCompactLatex(g.value)}</span>`; i = g.end; continue; }
     }
+    // \text{...} -- plain (non-italic) text within an equation, e.g.
+    // \text{isotope-35}. Its content is recursively rendered (not just
+    // escaped verbatim) so a nested command like \% inside \text{} still
+    // resolves correctly, matching real LaTeX's \text behaviour.
+    if (src.startsWith("\\text", i)) {
+      const g = readBraceGroup(src, i + 5);
+      if (g) { out += `<span class="not-italic font-sans">${renderCompactLatex(g.value)}</span>`; i = g.end; continue; }
+    }
+    // \qquad checked before \quad since both start with "\q" -- a
+    // shared prefix, so the longer command must be tried first or it
+    // would never be reached (\quad would always match its own prefix
+    // of \qquad first and leave a stray "quad" behind).
+    if (src.startsWith("\\qquad", i)) { out += `<span class="inline-block w-[2em]"></span>`; i += 6; continue; }
+    if (src.startsWith("\\quad", i)) { out += `<span class="inline-block w-[1em]"></span>`; i += 5; continue; }
+    if (src.startsWith("\\%", i)) { out += "%"; i += 2; continue; }
     const commands = [["\\times","×"],["\\cdot","·"],["\\sum","∑"],["\\pm","±"],["\\approx","≈"],["\\rightarrow","→"],["\\to","→"],["\\Delta","Δ"],["\\leq","≤"],["\\geq","≥"]];
     const cmd = commands.find(([name]) => src.startsWith(name, i));
     if (cmd) { out += cmd[1]; i += cmd[0].length; continue; }
@@ -87,6 +102,7 @@ const SIMULATION_COMPONENTS = {
   "collision-theory-visualizer": lazy(() => import("../../engines/collision-theory-visualizer/CollisionTheoryVisualizer.jsx")),
   "mixture-separation-explorer": lazy(() => import("../../engines/mixture-separation-explorer/MixtureSeparationExplorer.jsx")),
   "build-an-atom": lazy(() => import("../../engines/build-an-atom/BuildAtomSimulation.jsx")),
+  "wave-explorer": lazy(() => import("../../engines/wave-explorer/WaveExplorerSimulation.jsx")),
 };
 
 export default function LearnBlockRenderer({ block }) {

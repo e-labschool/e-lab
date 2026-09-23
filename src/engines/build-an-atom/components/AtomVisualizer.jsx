@@ -20,10 +20,22 @@ const NUCLEON_SPHERE_SIZE = 26; // ~13% smaller than the previous 30
 const SHELL_RADII = [100, 132, 164, 196];
 const SHELL_ROTATION_MS = [16000, 24000, 32000, 40000];
 const ELECTRON_SPHERE_SIZE = 19; // ~13% smaller than the previous 22
+const SPIN_RING_MS = 2600; // fast relative to any orbit period, so it visually reads as "spin" not "orbit"
 
 function evenAngles(count) {
   if (count <= 0) return [];
   return Array.from({ length: count }, (_, i) => (i / count) * 360);
+}
+
+/** Assigns each electron a visual spin direction such that its
+ * geometric opposite on the same shell (angle + 180 deg, which for an
+ * even count via evenAngles() is EXACTLY index + count/2) always gets
+ * the opposite spin -- verified numerically before use. Odd counts
+ * (only possible on a partially-filled overflow shell) split as evenly
+ * as the count allows. This is a purely visual convention, not a claim
+ * about real quantum spin pairing. */
+function spinFor(index, count) {
+  return index < count / 2 ? "cw" : "ccw";
 }
 
 export default function AtomVisualizer({ protons, neutrons, electrons, highlightZ, highlightA, highlightCharge, nucleusWarning }) {
@@ -39,28 +51,31 @@ export default function AtomVisualizer({ protons, neutrons, electrons, highlight
   return (
     <div className="relative mx-auto aspect-square w-full max-w-[620px]" role="img" aria-label={`Atom model with ${protons} protons, ${neutrons} neutrons, and ${electrons} electrons, distributed as ${shells.join(", ")} electrons per shell`}>
       <svg viewBox="-230 -230 460 460" className="h-full w-full overflow-visible">
+        <title>Electron motion and spin are represented visually. Electrons do not literally orbit or spin like small spheres.</title>
         {shells.map((_, shellIndex) => (
           <circle key={`guide-${shellIndex}`} cx="0" cy="0" r={SHELL_RADII[Math.min(shellIndex, SHELL_RADII.length - 1)] + (shellIndex >= SHELL_RADII.length ? (shellIndex - SHELL_RADII.length + 1) * 32 : 0)} fill="none" stroke="var(--color-indigo)" strokeWidth="0.6" strokeDasharray="2 4" opacity="0.35" />
         ))}
 
         {/* each shell is ONE rotating group containing all its
             (already evenly-spaced) electrons -- never independently
-            animated, so relative spacing never drifts. */}
+            animated, so relative spacing never drifts. ALL shells
+            rotate in the SAME direction (orbit direction is not the
+            visual device for distinguishing shells here -- the
+            per-electron spin ring below is). */}
         {shells.map((countOnShell, shellIndex) => {
           const radius = SHELL_RADII[Math.min(shellIndex, SHELL_RADII.length - 1)] + (shellIndex >= SHELL_RADII.length ? (shellIndex - SHELL_RADII.length + 1) * 32 : 0);
           const angles = evenAngles(countOnShell);
-          const direction = shellIndex % 2 === 0 ? "normal" : "reverse";
-          const counterDirection = direction === "normal" ? "reverse" : "normal";
           const duration = SHELL_ROTATION_MS[Math.min(shellIndex, SHELL_ROTATION_MS.length - 1)];
           return (
             <g
               key={`shell-${shellIndex}`}
-              style={{ transformOrigin: "0px 0px", animation: reducedMotion ? "none" : `atom-shell-spin ${duration}ms linear infinite ${direction}` }}
+              style={{ transformOrigin: "0px 0px", animation: reducedMotion ? "none" : `atom-shell-spin ${duration}ms linear infinite` }}
             >
               {angles.map((angleDeg, i) => {
                 const rad = (angleDeg * Math.PI) / 180;
                 const x = radius * Math.cos(rad);
                 const y = radius * Math.sin(rad);
+                const spin = spinFor(i, countOnShell);
                 return (
                   <g key={`e-${shellIndex}-${i}`} transform={`translate(${x} ${y})`} className={highlightCharge ? "atom-highlight-pulse" : undefined}>
                     {/* Counter-rotates at the SAME rate, opposite
@@ -69,7 +84,16 @@ export default function AtomVisualizer({ protons, neutrons, electrons, highlight
                         symbol stays upright while the electron's
                         POSITION (set by the translate above, outside
                         this counter-rotation) still genuinely orbits. */}
-                    <g style={{ transformOrigin: "0px 0px", animation: reducedMotion ? "none" : `atom-shell-spin ${duration}ms linear infinite ${counterDirection}` }}>
+                    <g style={{ transformOrigin: "0px 0px", animation: reducedMotion ? "none" : `atom-shell-spin ${duration}ms linear infinite reverse` }}>
+                      {/* Spin-state visual: a small ring with one bright
+                          tick, rotating independently and much faster
+                          than the orbit -- this is what shows opposite
+                          "spin" for paired electrons, never the minus
+                          symbol itself, which stays perfectly upright
+                          inside this same upright frame. */}
+                      <g style={{ transformOrigin: "0px 0px", animation: reducedMotion ? "none" : `atom-shell-spin ${SPIN_RING_MS}ms linear infinite ${spin === "cw" ? "" : "reverse"}` }}>
+                        <circle r={ELECTRON_SPHERE_SIZE / 2 + 2.5} fill="none" stroke="#7FAEFF" strokeWidth="1" strokeDasharray="3 8" opacity="0.55" />
+                      </g>
                       <foreignObject x={-ELECTRON_SPHERE_SIZE / 2} y={-ELECTRON_SPHERE_SIZE / 2} width={ELECTRON_SPHERE_SIZE} height={ELECTRON_SPHERE_SIZE}>
                         <Particle type="electron" size={ELECTRON_SPHERE_SIZE} showSymbol symbolOverride="−" />
                       </foreignObject>

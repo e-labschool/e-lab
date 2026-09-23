@@ -66,6 +66,7 @@ export const SIMULATION_REGISTRY = {
   "collision-theory-visualizer": { label: "Collision Theory Visualizer" },
   "mixture-separation-explorer": { label: "Mixture Separation Explorer" },
   "build-an-atom": { label: "Build an Atom" },
+  "wave-explorer": { label: "Wave Explorer" },
 };
 
 // Strips HTML tags for a safe plain-text preview — never renders HTML
