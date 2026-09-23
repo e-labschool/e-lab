@@ -36,7 +36,7 @@ export default function MiniPeriodicTable({ currentAtomicNumber, onSelectElement
 
       {expanded && (
         <div className="mt-3 overflow-x-auto">
-          <div className="grid min-w-[640px] gap-1" style={{ gridTemplateColumns: "repeat(18, minmax(0, 1fr))" }} role="grid" aria-label="Periodic table \u2014 click an element to set the proton count">
+          <div className="grid min-w-[640px] gap-1" style={{ gridTemplateColumns: "repeat(18, minmax(0, 1fr))" }} role="grid" aria-label="Periodic table — click an element to set the proton count">
             {allElements.map((el) => {
               const isCurrent = el.atomicNumber === currentAtomicNumber;
               return (

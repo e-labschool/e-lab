@@ -26,7 +26,7 @@ function evenAngles(count) {
   return Array.from({ length: count }, (_, i) => (i / count) * 360);
 }
 
-export default function AtomVisualizer({ protons, neutrons, electrons, highlightZ, highlightA, highlightCharge }) {
+export default function AtomVisualizer({ protons, neutrons, electrons, highlightZ, highlightA, highlightCharge, nucleusWarning }) {
   const reducedMotion = useReducedMotion();
 
   const nucleusItems = useMemo(
@@ -71,7 +71,7 @@ export default function AtomVisualizer({ protons, neutrons, electrons, highlight
                         this counter-rotation) still genuinely orbits. */}
                     <g style={{ transformOrigin: "0px 0px", animation: reducedMotion ? "none" : `atom-shell-spin ${duration}ms linear infinite ${counterDirection}` }}>
                       <foreignObject x={-ELECTRON_SPHERE_SIZE / 2} y={-ELECTRON_SPHERE_SIZE / 2} width={ELECTRON_SPHERE_SIZE} height={ELECTRON_SPHERE_SIZE}>
-                        <Particle type="electron" size={ELECTRON_SPHERE_SIZE} showSymbol symbolOverride="\u2212" />
+                        <Particle type="electron" size={ELECTRON_SPHERE_SIZE} showSymbol symbolOverride="−" />
                       </foreignObject>
                     </g>
                   </g>
@@ -82,7 +82,7 @@ export default function AtomVisualizer({ protons, neutrons, electrons, highlight
         })}
 
         {/* nucleus */}
-        <g className={highlightZ || highlightA ? "atom-highlight-pulse" : undefined}>
+        <g className={[highlightZ || highlightA ? "atom-highlight-pulse" : "", nucleusWarning ? (reducedMotion ? "atom-boundary-highlight" : "atom-nucleus-wobble") : ""].filter(Boolean).join(" ") || undefined}>
           {nucleusItems.map((item) => (
             <foreignObject key={item.key} x={item.x - NUCLEON_SPHERE_SIZE / 2} y={item.y - NUCLEON_SPHERE_SIZE / 2} width={NUCLEON_SPHERE_SIZE} height={NUCLEON_SPHERE_SIZE}>
               <Particle type={item.type} size={NUCLEON_SPHERE_SIZE} showSymbol />
@@ -101,6 +101,22 @@ export default function AtomVisualizer({ protons, neutrons, electrons, highlight
         @keyframes atom-shell-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         @keyframes atom-highlight-pulse-kf { 0%, 100% { filter: none; } 50% { filter: drop-shadow(0 0 6px var(--color-indigo)); } }
         .atom-highlight-pulse { animation: atom-highlight-pulse-kf 700ms ease-in-out 1; }
+        /* A restrained instability cue -- the whole nucleus group
+           shifts/rotates a few pixels, never independent nucleon
+           throwing, and never anything resembling decay/explosion. */
+        @keyframes atom-nucleus-wobble-kf {
+          0%, 100% { transform: translate(0, 0) rotate(0deg); }
+          20% { transform: translate(-3px, 1px) rotate(-1deg); }
+          40% { transform: translate(3px, -1px) rotate(1deg); }
+          60% { transform: translate(-2px, -1px) rotate(-0.7deg); }
+          80% { transform: translate(2px, 1px) rotate(0.7deg); }
+        }
+        .atom-nucleus-wobble { animation: atom-nucleus-wobble-kf 900ms ease-in-out 1; transform-origin: 0px 0px; }
+        /* Reduced-motion fallback: no wobble, just a brief amber/red
+           boundary highlight conveying the same "outside the curated
+           range" feedback without any motion. */
+        @keyframes atom-boundary-highlight-kf { 0%, 100% { filter: none; } 50% { filter: drop-shadow(0 0 8px var(--color-coral)); } }
+        .atom-boundary-highlight { animation: atom-boundary-highlight-kf 900ms ease-in-out 1; }
       `}</style>
     </div>
   );

@@ -8,7 +8,9 @@
 // No persistence, no scoring, no connection to the project's formal
 // Assess/Challenge system -- this is a local, lightweight practice
 // loop, deliberately kept separate.
-export const CHALLENGES = [
+import { findNuclide } from "../data/nuclides.js";
+
+const RAW_CHALLENGES = [
   { label: "Carbon-12", protons: 6, neutrons: 6, electrons: 6, prompt: "Build Carbon-12.", info: "full" },
   { label: "Carbon-14", protons: 6, neutrons: 8, electrons: 6, prompt: "Build Carbon-14.", info: "full" },
   { label: "Oxygen-18", protons: 8, neutrons: 10, electrons: 8, prompt: "Build Oxygen-18.", info: "full" },
@@ -18,6 +20,13 @@ export const CHALLENGES = [
   { label: "K\u207A", protons: 19, neutrons: 20, electrons: 18, prompt: "Build Potassium-39, K\u207A.", info: "full" },
   { label: "Ca\u00B2\u207A", protons: 20, neutrons: 20, electrons: 18, prompt: "Build Calcium-40, Ca\u00B2\u207A.", info: "full" },
 ];
+
+// Filtered against the curated nuclide dataset at load time -- a
+// defensive safeguard, not just trust in the hand-written list above:
+// if nuclides.js ever changes, a challenge target that's no longer
+// curated is automatically excluded rather than silently asking a
+// student to build something the simulation itself would reject.
+export const CHALLENGES = RAW_CHALLENGES.filter((c) => Boolean(findNuclide(c.protons, c.neutrons)));
 
 /** Per-particle-type comparison against a challenge's target -- used
  * for the Check button's detailed feedback, always computed fresh from

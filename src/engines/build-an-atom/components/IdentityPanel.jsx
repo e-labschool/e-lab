@@ -2,8 +2,15 @@ import NuclearNotation from "./NuclearNotation.jsx";
 
 const CLASSIFICATION_LABEL = { neutral: "Neutral atom", cation: "Positive ion \u2014 cation", anion: "Negative ion \u2014 anion" };
 const CLASSIFICATION_COLOR = { neutral: "var(--color-teal)", cation: "var(--color-amber)", anion: "var(--color-indigo)" };
+// "not-included" is a NEUTRAL classification, not a warning -- it means
+// this specific nuclide simply isn't part of this simulation's curated
+// teaching set, never that it doesn't exist. Styled in the same faint
+// ink tone as ordinary secondary text, not amber/red like a real
+// stability warning.
+const STABILITY_LABEL = { stable: "Stable nuclide", radioactive: "Radioactive nuclide", "not-included": "Nuclide data not included" };
+const STABILITY_COLOR = { stable: "var(--color-teal)", radioactive: "var(--color-coral)", "not-included": "var(--color-ink-faint)" };
 
-export default function IdentityPanel({ derived, highlightA, highlightZ, highlightCharge }) {
+export default function IdentityPanel({ derived, nuclideClassification, highlightA, highlightZ, highlightCharge }) {
   const { protons, neutrons, electrons, atomicNumber, massNumber, netCharge, element, nuclideName, classification } = derived;
 
   if (!element) {
@@ -21,6 +28,11 @@ export default function IdentityPanel({ derived, highlightA, highlightZ, highlig
         <NuclearNotation derived={derived} highlightA={highlightA} highlightZ={highlightZ} highlightCharge={highlightCharge} />
       </div>
       <p className="text-center text-lg font-bold text-[var(--color-ink)]">{nuclideName}</p>
+      {nuclideClassification && (
+        <p className="text-center text-[11px] font-semibold" style={{ color: STABILITY_COLOR[nuclideClassification] }}>
+          {STABILITY_LABEL[nuclideClassification]}
+        </p>
+      )}
 
       <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
         <dt className="text-[var(--color-ink-faint)]">Element</dt>

@@ -169,25 +169,6 @@ export function renderChemMarkup(markup) {
     .replace(/\^\{([^}]+)\}/g, "<sup>$1</sup>").replace(/\^(\S)/g, "<sup>$1</sup>");
 }
 
-/** Small dependency-free display-math renderer for the Learn authoring UI.
- * It intentionally supports the common IB-Chemistry notation teachers need
- * here (fractions, subscripts/superscripts and common operators), without
- * introducing a full LaTeX engine into the app. */
-export function renderDisplayMathMarkup(markup) {
-  let s = String(markup ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  let previous;
-  do {
-    previous = s;
-    s = s.replace(/\\frac\{([^{}]*)\}\{([^{}]*)\}/g, '<span style="display:inline-flex;vertical-align:middle;flex-direction:column;text-align:center;line-height:1.15;margin:0 .2em"><span style="border-bottom:1.4px solid currentColor;padding:0 .25em">$1</span><span style="padding:0 .25em">$2</span></span>');
-  } while (s !== previous);
-  return s
-    .replace(/\\times/g, "×").replace(/\\cdot/g, "·").replace(/\\sum/g, "∑").replace(/\\rightarrow|\\to/g, "→")
-    .replace(/\\approx/g, "≈").replace(/\\pm/g, "±").replace(/\\leq/g, "≤").replace(/\\geq/g, "≥")
-    .replace(/_\{([^}]+)\}/g, "<sub>$1</sub>").replace(/_(\w)/g, "<sub>$1</sub>")
-    .replace(/\^\{([^}]+)\}/g, "<sup>$1</sup>").replace(/\^(\w|[+−-])/g, "<sup>$1</sup>")
-    .replace(/\\mathrm\{([^}]*)\}/g, "$1").replace(/\\text\{([^}]*)\}/g, "$1");
-}
-
 /** Compact rich-text toolbar using contentEditable + execCommand — real
  * formatting without pulling in a WYSIWYG library. Output is sanitized
  * with DOMPurify (already an existing dependency) before ever being
@@ -301,25 +282,6 @@ export function RichTextEditor({ value, onChange }) {
     if (url) exec("createLink", url);
   }
 
-  function insertEquation() {
-    restoreSelection();
-    const source = window.prompt("Equation (supports \\frac{a}{b}, _sub, ^sup, \\times, \\sum)", "A_r=\\frac{(35\\times75)+(37\\times25)}{100}");
-    if (!source) return;
-    const html = `<div style="margin:12px 0;padding:12px 16px;text-align:center;border:1px solid #d7dce5;border-radius:8px;background:#fff;font-family:Georgia,serif;font-size:17px">${renderDisplayMathMarkup(source)}</div>`;
-    exec("insertHTML", html);
-  }
-
-  function insertBox() {
-    restoreSelection();
-    const sel = window.getSelection();
-    const selected = sel?.toString()?.trim();
-    const text = selected || window.prompt("Text to place in the box", "Key result");
-    if (!text) return;
-    const safe = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    if (selected) exec("delete");
-    exec("insertHTML", `<div style="margin:12px 0;padding:12px 16px;border:2px solid #3654D655;border-radius:8px;background:#3654D610;font-weight:600">${safe}</div>`);
-  }
-
   function applyInlineStyle(styleProp, styleValue) {
     restoreSelection();
     const sel = window.getSelection();
@@ -429,8 +391,6 @@ export function RichTextEditor({ value, onChange }) {
         <span className="mx-0.5 h-5 w-px bg-[var(--color-line)]" />
 
         <ToolbarButton label="Link" icon={Link2} saveSelection={saveSelection} onClick={handleLink} />
-        <button type="button" title="Insert equation" onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={insertEquation} className="h-7 rounded px-2 text-[11px] font-semibold text-[var(--color-indigo)] hover:bg-[var(--color-indigo-soft)]">ƒx Equation</button>
-        <button type="button" title="Insert highlighted box" onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={insertBox} className="h-7 rounded px-2 text-[11px] font-semibold text-[var(--color-indigo)] hover:bg-[var(--color-indigo-soft)]">▣ Box</button>
         <ToolbarButton label="Clear Formatting" icon={Eraser} saveSelection={saveSelection} onClick={() => exec("removeFormat")} />
       </div>
       <div

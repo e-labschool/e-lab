@@ -4,6 +4,7 @@ import InteractiveFrame from "../../components/interactive-shell/InteractiveFram
 import { deriveAtom, CARBON_12, EMPTY_ATOM } from "./lib/atomState.js";
 import { describeChange } from "./lib/whatChanged.js";
 import { useFullscreen } from "./lib/useFullscreen.js";
+import { defaultNeutronsFor, classifyNuclide } from "./data/nuclides.js";
 import AtomVisualizer from "./components/AtomVisualizer.jsx";
 import ParticleControls from "./components/ParticleControls.jsx";
 import FlyingParticle from "./components/FlyingParticle.jsx";
@@ -29,12 +30,28 @@ export default function BuildAtomSimulation({ compact = false }) {
   const derived = deriveAtom(atom);
   const expanded = isFullscreen || cssExpanded;
 
+  // Every particle button always changes its count by exactly +/-1 and
+  // always commits -- the curated nuclide dataset is used ONLY for
+  // classifying the result (stable / radioactive / not included), never
+  // as a boundary that blocks construction. The only limits are the
+  // practical floor/ceiling (can't go below 0 or above MAX_COUNT).
   const handleChange = useCallback((type, delta) => {
     setAtom((prev) => {
       const key = type === "proton" ? "protons" : type === "neutron" ? "neutrons" : "electrons";
       const nextValue = Math.max(MIN_COUNT, Math.min(MAX_COUNT, prev[key] + delta));
       if (nextValue === prev[key]) return prev;
-      const next = { ...prev, [key]: nextValue };
+      let next = { ...prev, [key]: nextValue };
+      // Changing protons changes the element -- if the new element has
+      // curated nuclide coverage, snap neutrons to its default nuclide
+      // so the student lands on a recognizable starting isotope rather
+      // than an arbitrary neutron count carried over from the previous
+      // element. Electron count is preserved, matching the existing
+      // ion/charge rules. This does NOT apply to neutron changes, which
+      // always move by exactly 1 regardless of curated coverage.
+      if (type === "proton") {
+        const defaultN = defaultNeutronsFor(nextValue);
+        if (defaultN !== null) next = { ...next, neutrons: defaultN };
+      }
       setLastChange({ type, delta: nextValue - prev[key], prevDerived: deriveAtom(prev), nextDerived: deriveAtom(next) });
       flightIdRef.current += 1;
       setFlights((f) => [...f, { id: flightIdRef.current, type, direction: delta > 0 ? "add" : "remove" }]);
@@ -47,7 +64,8 @@ export default function BuildAtomSimulation({ compact = false }) {
   function handleSelectElement(atomicNumber) {
     setAtom((prev) => {
       if (prev.protons === atomicNumber) return prev;
-      const next = { ...prev, protons: atomicNumber };
+      const defaultN = defaultNeutronsFor(atomicNumber);
+      const next = { ...prev, protons: atomicNumber, neutrons: defaultN !== null ? defaultN : prev.neutrons };
       setLastChange({ type: "proton", delta: atomicNumber - prev.protons, prevDerived: deriveAtom(prev), nextDerived: deriveAtom(next) });
       return next;
     });
@@ -77,6 +95,9 @@ export default function BuildAtomSimulation({ compact = false }) {
 
   const change = lastChange ? describeChange(lastChange.type, lastChange.delta, lastChange.prevDerived, lastChange.nextDerived) : null;
   const highlightType = lastChange?.type;
+  // Pure classification for display -- "stable" | "radioactive" |
+  // "not-included" -- never a boundary on what can be built.
+  const nuclideClassification = classifyNuclide(atom.protons, atom.neutrons);
 
   return (
     <InteractiveFrame title="Build an Atom" subtitle={expanded ? undefined : "Change the particles and discover what makes an atom what it is."} compact={compact}>
@@ -135,6 +156,7 @@ export default function BuildAtomSimulation({ compact = false }) {
                     highlightZ={highlightType === "proton"}
                     highlightA={highlightType === "neutron"}
                     highlightCharge={highlightType === "electron"}
+                    nucleusWarning={nuclideClassification === "radioactive"}
                   />
                 </div>
                 {flights.map((flight) => (
@@ -145,8 +167,8 @@ export default function BuildAtomSimulation({ compact = false }) {
 
             <div className="order-3 flex flex-col gap-2">
               <p className="text-center text-[10px] font-bold uppercase tracking-wide text-[var(--color-ink-faint)]">What Did You Build?</p>
-              <IdentityPanel derived={derived} highlightZ={highlightType === "proton"} highlightA={highlightType === "neutron"} highlightCharge={highlightType === "electron"} />
-              <IsotopeComparison protons={atom.protons} neutrons={atom.neutrons} />
+              <IdentityPanel derived={derived} nuclideClassification={nuclideClassification} highlightZ={highlightType === "proton"} highlightA={highlightType === "neutron"} highlightCharge={highlightType === "electron"} />
+              <IsotopeComparison protons={atom.protons} electrons={atom.electrons} />
             </div>
           </div>
 

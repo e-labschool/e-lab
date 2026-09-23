@@ -1,21 +1,22 @@
 import { useState } from "react";
 import { deriveAtom } from "../lib/atomState.js";
+import { curatedIsotopesFor, hasCuratedCoverage } from "../data/nuclides.js";
 
-// Generates comparison rows by varying ONLY the neutron count, reusing
-// the SAME deriveAtom() every other part of the simulation uses -- so
-// "same element, different isotopes" is demonstrated with the real
-// calculation, never separately-typed example text.
-function comparisonRows(protons, currentNeutrons) {
-  const neutronOptions = [...new Set([Math.max(0, currentNeutrons - 1), currentNeutrons, currentNeutrons + 1])];
-  return neutronOptions.map((n) => deriveAtom({ protons, neutrons: n, electrons: protons }));
+// Draws comparison rows from the CURATED isotope list for this element
+// (never an arbitrary +/-1 neutron guess), reusing the same
+// deriveAtom() every other part of the simulation uses for each row's
+// nuclide name.
+function comparisonRows(protons, electrons) {
+  return curatedIsotopesFor(protons).map((iso) => ({
+    ...deriveAtom({ protons, neutrons: iso.massNumber - protons, electrons }),
+    stability: iso.stability,
+  }));
 }
 
-/** A compact overlay/popup (not an inline page-pushing expansion) --
- * opening it never shifts the rest of the simulation layout. */
-export default function IsotopeComparison({ protons, neutrons }) {
+export default function IsotopeComparison({ protons, electrons }) {
   const [open, setOpen] = useState(false);
-  if (protons === 0) return null;
-  const rows = comparisonRows(protons, neutrons);
+  if (protons === 0 || !hasCuratedCoverage(protons)) return null;
+  const rows = comparisonRows(protons, electrons);
 
   return (
     <>
@@ -32,12 +33,15 @@ export default function IsotopeComparison({ protons, neutrons }) {
                 {"\u2715"}
               </button>
             </div>
-            <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
+            <div className="mt-3 grid gap-2 text-center text-xs" style={{ gridTemplateColumns: `repeat(${Math.min(rows.length, 3)}, minmax(0, 1fr))` }}>
               {rows.map((r) => (
                 <div key={r.massNumber} className="rounded-md bg-[var(--color-paper-raised)] p-2">
                   <p className="font-bold text-[var(--color-ink)]">{r.nuclideName}</p>
                   <p className="text-[var(--color-ink-faint)]">{r.protons} protons</p>
                   <p className="text-[var(--color-ink-faint)]">{r.neutrons} neutrons</p>
+                  <p className="mt-0.5 font-semibold" style={{ color: r.stability === "stable" ? "var(--color-teal)" : "var(--color-coral)" }}>
+                    {r.stability === "stable" ? "Stable" : "Radioactive"}
+                  </p>
                 </div>
               ))}
             </div>
@@ -46,6 +50,9 @@ export default function IsotopeComparison({ protons, neutrons }) {
               <span style={{ color: "var(--color-violet)" }}>{"DIFFERENT \u2014 number of neutrons"}</span>
             </div>
             <p className="mt-1 text-center text-xs font-semibold text-[var(--color-ink)]">Same element, different isotopes.</p>
+            <p className="mt-2 text-center text-[10px] text-[var(--color-ink-faint)]">
+              Shows the nuclides of this element included in this simulation, not every known isotope.
+            </p>
           </div>
         </div>
       )}
