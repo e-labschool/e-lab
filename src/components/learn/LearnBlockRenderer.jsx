@@ -103,6 +103,7 @@ const SIMULATION_COMPONENTS = {
   "mixture-separation-explorer": lazy(() => import("../../engines/mixture-separation-explorer/MixtureSeparationExplorer.jsx")),
   "build-an-atom": lazy(() => import("../../engines/build-an-atom/BuildAtomSimulation.jsx")),
   "wave-explorer": lazy(() => import("../../engines/wave-explorer/WaveExplorerSimulation.jsx")),
+  "orbital-explorer": lazy(() => import("../../engines/orbital-explorer/OrbitalExplorerSimulation.jsx")),
 };
 
 export default function LearnBlockRenderer({ block }) {
