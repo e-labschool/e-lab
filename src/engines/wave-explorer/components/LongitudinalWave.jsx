@@ -72,8 +72,8 @@ export default function LongitudinalWave({ wavelengthNm, wavelengthPx, amplitude
 
         {/* wavelength, compression-centre to compression-centre */}
         <g className={emphasize === "wavelength" ? "wave-emphasis" : undefined}>
-          <line x1={compressionAnchorX} y1={HEIGHT - 20} x2={compressionAnchorX + wavelengthPx} y2={HEIGHT - 20} stroke="var(--color-violet)" strokeWidth="1.5" markerStart="url(#lw-arrow)" markerEnd="url(#lw-arrow)" />
-          <text x={clampLabelX(compressionAnchorX + wavelengthPx / 2)} y={HEIGHT - 6} textAnchor="middle" fontSize="10.5" fontWeight="700" fill="var(--color-violet)">{"\u03BB"}</text>
+          <line x1={compressionAnchorX} y1={HEIGHT - 20} x2={compressionAnchorX + wavelengthPx} y2={HEIGHT - 20} stroke="var(--color-violet)" strokeWidth="1" markerStart="url(#lw-tick)" markerEnd="url(#lw-tick)" />
+          <text x={clampLabelX(compressionAnchorX + wavelengthPx / 2)} y={HEIGHT - 24} textAnchor="middle" fontSize="10" fontWeight="700" fill="var(--color-violet)">{"\u03BB"}</text>
         </g>
 
         {/* observation point -- displacement of the particle nearest it */}
@@ -83,7 +83,7 @@ export default function LongitudinalWave({ wavelengthNm, wavelengthPx, amplitude
         </g>
 
         <defs>
-          <marker id="lw-arrow" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="var(--color-violet)" /></marker>
+          <marker id="lw-tick" markerWidth="4" markerHeight="8" refX="2" refY="4" orient="auto"><path d="M0.5,0.5 L3.5,7.5" stroke="var(--color-violet)" strokeWidth="0.9" /></marker>
         </defs>
       </svg>
     </div>

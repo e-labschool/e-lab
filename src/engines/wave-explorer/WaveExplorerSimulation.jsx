@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import InteractiveFrame from "../../components/interactive-shell/InteractiveFrame.jsx";
-import { frequencyFromWavelengthNm, photonEnergyFromFrequency, formatScientific, SPEED_OF_LIGHT, PLANCK_CONSTANT } from "./lib/waveMath.js";
+import { frequencyFromWavelengthNm, wavelengthNmFromFrequency, photonEnergyFromFrequency, formatScientific, SPEED_OF_LIGHT, PLANCK_CONSTANT } from "./lib/waveMath.js";
 import { wavelengthNmToPx, AMPLITUDE_PX_MIN, AMPLITUDE_PX_MAX } from "./lib/waveDisplayScale.js";
 import { describeWaveChange } from "./lib/discoveryFeedback.js";
 import TransverseWave from "./components/TransverseWave.jsx";
@@ -26,6 +26,22 @@ export default function WaveExplorerSimulation({ compact = false }) {
   const handleWavelengthChange = useCallback((nextNm) => {
     setWavelengthNm((prev) => {
       setLastChange({ control: "wavelength", prevValue: prev, nextValue: nextNm });
+      return nextNm;
+    });
+  }, []);
+
+  // Frequency is a SLIDER (per this round's requirement), but wavelengthNm
+  // remains the one authoritative state value -- moving the frequency
+  // slider converts the new frequency straight back to a wavelength via
+  // f = c/lambda (wavelengthNmFromFrequency) and writes THAT into the
+  // same wavelengthNm state, so the two can never independently drift
+  // out of sync with each other.
+  const handleFrequencyChange = useCallback((nextFrequency) => {
+    setWavelengthNm((prev) => {
+      const prevFrequency = frequencyFromWavelengthNm(prev);
+      const nextNm = wavelengthNmFromFrequency(nextFrequency);
+      if (nextNm === null) return prev;
+      setLastChange({ control: "wavelength", prevValue: prev, nextValue: nextNm, viaFrequency: true, prevFrequency, nextFrequency });
       return nextNm;
     });
   }, []);
@@ -56,6 +72,8 @@ export default function WaveExplorerSimulation({ compact = false }) {
   const emphasizeDiscovery = lastChange?.control === "wavelength" && lastChange.nextValue < lastChange.prevValue;
   const WaveComponent = waveType === "transverse" ? TransverseWave : LongitudinalWave;
   const isTransverse = waveType === "transverse";
+  const freqMin = frequencyFromWavelengthNm(WAVELENGTH_NM_MAX);
+  const freqMax = frequencyFromWavelengthNm(WAVELENGTH_NM_MIN);
 
   return (
     <InteractiveFrame title="Wave Explorer" subtitle="Understand the basic properties of waves" compact={compact}>
@@ -95,22 +113,33 @@ export default function WaveExplorerSimulation({ compact = false }) {
           {": particle motion "}{"\u2225"}{" wave direction"}
         </p>
 
-        {/* context-sensitive controls */}
-        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {/* wavelength + frequency are the PRIMARY, bidirectionally-linked
+            controls; amplitude is secondary and fully independent */}
+        <div className="mt-3 flex flex-col gap-2.5">
           <label className="flex flex-col gap-1 text-xs">
-            <span className="font-semibold text-[var(--color-ink)]">Amplitude</span>
-            <input type="range" min="0" max="1" step="0.01" value={amplitudeT} onChange={(e) => handleAmplitudeChange(Number(e.target.value))} aria-label="Amplitude" />
-            <span className="text-[10.5px] text-[var(--color-ink-faint)]">Adjust wave height</span>
-          </label>
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="font-semibold text-[var(--color-ink)]">{"Wavelength (\u03BB = "}{wavelengthNm.toFixed(0)}{" nm)"}</span>
+            <span className="font-semibold text-[var(--color-ink)]">{"Wavelength \u03BB"}</span>
             <input type="range" min={WAVELENGTH_NM_MIN} max={WAVELENGTH_NM_MAX} step="1" value={wavelengthNm} onChange={(e) => handleWavelengthChange(Number(e.target.value))} aria-label="Wavelength in nanometres" />
-            <span className="text-[10.5px] text-[var(--color-ink-faint)]">
-              {"Frequency: f = "}{formatScientific(frequency, 3)}{" Hz "}
-              <span className="italic">{"\u2014 automatically determined from c = f\u03BB"}</span>
-            </span>
+            <span className="text-[11px] text-[var(--color-ink-soft)]">{wavelengthNm.toFixed(0)} nm</span>
+          </label>
+          {isTransverse && (
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="font-semibold text-[var(--color-ink)]">Frequency f</span>
+              <input type="range" min={freqMin} max={freqMax} step={(freqMax - freqMin) / 300} value={frequency} onChange={(e) => handleFrequencyChange(Number(e.target.value))} aria-label="Frequency in hertz" />
+              <span className="text-[11px] text-[var(--color-ink-soft)]">{formatScientific(frequency, 3)} Hz</span>
+            </label>
+          )}
+          <label className="flex flex-col gap-1 text-xs">
+            <span className="font-semibold text-[var(--color-ink)]">Amplitude A</span>
+            <input type="range" min="0" max="1" step="0.01" value={amplitudeT} onChange={(e) => handleAmplitudeChange(Number(e.target.value))} aria-label="Amplitude" />
+            <span className="text-[11px] text-[var(--color-ink-faint)]">Adjust wave height</span>
           </label>
         </div>
+
+        {isTransverse && (
+          <p className="mt-2 text-center text-[12px] font-semibold text-[var(--color-ink-soft)]">
+            {"c = f\u03BB \u2014 wavelength and frequency are linked, not independent"}
+          </p>
+        )}
 
         {isTransverse && (
           <p className="mt-2 text-center text-[11px] text-[var(--color-ink-faint)]">

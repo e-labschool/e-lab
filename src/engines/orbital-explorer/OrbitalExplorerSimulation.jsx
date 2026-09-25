@@ -7,6 +7,7 @@ import { sampleOrbitalPoints, createSampler } from "./lib/orbitalSampling.js";
 import { BASE_ORBITALS, ORIENTATIONS, ORIENTATION_LABELS, defaultOrientationFor } from "./lib/orbitalDefinitions.js";
 import ProbabilityCloud, { FAMILY_COLOR } from "./components/ProbabilityCloud.jsx";
 import { boundingRadiusFor } from "./lib/orbitalSampling.js";
+import AtomBuilder from "./components/AtomBuilder.jsx";
 
 function Nucleus() {
   return (
@@ -28,6 +29,7 @@ function familyOf(base) {
 }
 
 export default function OrbitalExplorerSimulation({ compact = false }) {
+  const [mode, setMode] = useState("explore"); // "explore" | "build"
   const [baseOrbital, setBaseOrbital] = useState("1s");
   const [orientation, setOrientation] = useState(null); // null for s orbitals (no orientation to choose)
   const [seed, setSeed] = useState(1);
@@ -67,6 +69,32 @@ export default function OrbitalExplorerSimulation({ compact = false }) {
   return (
     <InteractiveFrame title="Orbital Explorer" subtitle="Visualize atomic orbitals through their quantum-mechanical probability distributions." compact={compact}>
       <div className="mx-auto flex w-full flex-col gap-3" style={{ maxWidth: 1000 }}>
+        {/* top-level mode switcher -- Explore an Orbital (the existing,
+            preserved single-orbital viewer) vs Build an Atom (the
+            multi-orbital Atom View framework) */}
+        <div className="flex items-center justify-center gap-2">
+          <button
+            type="button"
+            onClick={() => setMode("explore")}
+            aria-pressed={mode === "explore"}
+            className={`rounded-md px-3 py-1.5 text-xs font-semibold ${mode === "explore" ? "bg-[var(--color-indigo)] text-white" : "border border-[var(--color-line)] text-[var(--color-ink-soft)]"}`}
+          >
+            Explore an Orbital
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("build")}
+            aria-pressed={mode === "build"}
+            className={`rounded-md px-3 py-1.5 text-xs font-semibold ${mode === "build" ? "bg-[var(--color-indigo)] text-white" : "border border-[var(--color-line)] text-[var(--color-ink-soft)]"}`}
+          >
+            Build an Atom
+          </button>
+        </div>
+
+        {mode === "build" && <AtomBuilder compact={compact} />}
+
+        {mode === "explore" && (
+        <>
         {/* orbital selector */}
         <div className="flex flex-wrap items-center justify-center gap-1.5">
           {BASE_ORBITALS.map((base) => (
@@ -139,6 +167,8 @@ export default function OrbitalExplorerSimulation({ compact = false }) {
             <span className="ml-auto text-xs font-semibold text-[var(--color-ink)]">{detectionCount.toLocaleString()} detections</span>
           </div>
         </div>
+        </>
+        )}
       </div>
     </InteractiveFrame>
   );

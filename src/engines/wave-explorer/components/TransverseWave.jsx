@@ -4,7 +4,7 @@ import { useWavePhase } from "../lib/useWavePhase.js";
 import { useReducedMotion } from "../lib/useReducedMotion.js";
 
 const WIDTH = 400;
-const HEIGHT = 155; // reduced ~22% from the previous 200
+const HEIGHT = 155;
 const MID_Y = 75;
 const OBSERVATION_X = 320;
 
@@ -16,17 +16,8 @@ export default function TransverseWave({ wavelengthNm, wavelengthPx, amplitudePx
   const path = useMemo(() => pointsToSvgPath(points), [points]);
 
   const crests = useMemo(() => crestPositions(wavelengthPx, phase, WIDTH), [wavelengthPx, phase]);
-  // Amplitude arrow anchors to whichever crest is nearest the left
-  // quarter of the view -- always a real crest, never a fixed x that
-  // could drift out of alignment with the animated wave.
   const amplitudeCrestX = crests.reduce((best, x) => (Math.abs(x - WIDTH * 0.22) < Math.abs(best - WIDTH * 0.22) ? x : best), crests[0] ?? WIDTH * 0.22);
-  // A trough is exactly half a wavelength from a crest (the wave's
-  // y-offset formula is -amplitude*sin(...), so sin=+1 is a crest and
-  // sin=-1, half a cycle later, is a trough -- reusing the SAME
-  // verified crest-finding math rather than a separate computation.
   const troughX = amplitudeCrestX + wavelengthPx / 2;
-  // Wavelength arrow spans the first two consecutive crests fully
-  // visible, so its length is always exactly one wavelength.
   const wavelengthCrestA = crests.find((x, i) => crests[i + 1] !== undefined) ?? crests[0];
   const wavelengthCrestB = wavelengthCrestA !== undefined ? wavelengthCrestA + wavelengthPx : undefined;
 
@@ -34,50 +25,56 @@ export default function TransverseWave({ wavelengthNm, wavelengthPx, amplitudePx
 
   return (
     <div className="w-full">
-      <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} className="h-auto w-full" role="img" aria-label="Transverse wave showing crest, trough, equilibrium position, amplitude and wavelength">
+      <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} className="h-auto w-full" role="img" aria-label="Transverse wave showing crest, trough, amplitude and wavelength">
+        {/* equilibrium line kept as a subtle visual reference -- the
+            "Equilibrium position" TEXT label was removed entirely, it
+            was visually interfering with the wave and isn't needed for
+            the amplitude/wavelength annotations to make sense on their own. */}
         <line x1="0" y1={MID_Y} x2={WIDTH} y2={MID_Y} stroke="var(--color-line)" strokeWidth="1" strokeDasharray="3 4" />
-        <text x="6" y={MID_Y - 6} fontSize="9.5" fill="var(--color-ink-faint)">Equilibrium position</text>
         <path d={path} fill="none" stroke="var(--color-indigo)" strokeWidth="2.5" transform={`translate(0 ${MID_Y})`} />
-        {/* re-drawn on top with a background halo -- the wave curve is
-            animated and can pass behind this label at any x depending
-            on phase, so rather than trying to find a permanently-safe
-            x (impossible for a moving curve), the label is given an
-            opaque backing and stacked above the path, staying legible
-            no matter where the curve currently is. */}
-        <rect x="0" y={MID_Y - 20} width="150" height="24" fill="var(--color-paper-raised)" opacity="1" />
-        <text x="6" y={MID_Y - 6} fontSize="9.5" fill="var(--color-ink-faint)">Equilibrium position</text>
 
-        {/* one labelled crest, one labelled trough -- not every one */}
-        <text x={amplitudeCrestX} y={MID_Y - amplitudePx - 22} textAnchor="middle" fontSize="9.5" fontWeight="600" fill="var(--color-ink-soft)">Crest</text>
-        <line x1={amplitudeCrestX} y1={MID_Y - amplitudePx - 17} x2={amplitudeCrestX} y2={MID_Y - amplitudePx - 4} stroke="var(--color-ink-faint)" strokeWidth="1" />
-        <text x={troughX} y={MID_Y + amplitudePx + 24} textAnchor="middle" fontSize="9.5" fontWeight="600" fill="var(--color-ink-soft)">Trough</text>
-        <line x1={troughX} y1={MID_Y + amplitudePx + 4} x2={troughX} y2={MID_Y + amplitudePx + 18} stroke="var(--color-ink-faint)" strokeWidth="1" />
+        {/* one labelled crest, one labelled trough -- subtle: small
+            font, thin short leader line, not competing with the wave */}
+        <text x={amplitudeCrestX} y={MID_Y - amplitudePx - 18} textAnchor="middle" fontSize="8.5" fontWeight="500" fill="var(--color-ink-faint)">Crest</text>
+        <line x1={amplitudeCrestX} y1={MID_Y - amplitudePx - 14} x2={amplitudeCrestX} y2={MID_Y - amplitudePx - 4} stroke="var(--color-ink-faint)" strokeWidth="0.75" />
+        <text x={troughX} y={MID_Y + amplitudePx + 19} textAnchor="middle" fontSize="8.5" fontWeight="500" fill="var(--color-ink-faint)">Trough</text>
+        <line x1={troughX} y1={MID_Y + amplitudePx + 4} x2={troughX} y2={MID_Y + amplitudePx + 14} stroke="var(--color-ink-faint)" strokeWidth="0.75" />
 
-        {/* amplitude: vertical double-headed arrow, equilibrium to crest */}
+        {/* amplitude: thin scientific dimension line, equilibrium to
+            crest, SMALL arrowheads (the previous large filled
+            triangles competed visually with the wave itself) */}
         {crests.length > 0 && (
           <g className={emphasize === "amplitude" ? "wave-emphasis" : undefined}>
-            <line x1={amplitudeCrestX} y1={MID_Y} x2={amplitudeCrestX} y2={MID_Y - amplitudePx} stroke="var(--color-teal)" strokeWidth="1.5" markerStart="url(#wave-arrow-teal)" markerEnd="url(#wave-arrow-teal)" />
-            <text x={amplitudeCrestX + 6} y={MID_Y - amplitudePx / 2} fontSize="11" fontWeight="700" fill="var(--color-teal)">A</text>
+            <line x1={amplitudeCrestX} y1={MID_Y} x2={amplitudeCrestX} y2={MID_Y - amplitudePx} stroke="var(--color-teal)" strokeWidth="1" markerStart="url(#wave-tick-teal)" markerEnd="url(#wave-tick-teal)" />
+            <text x={amplitudeCrestX + 6} y={MID_Y - amplitudePx / 2} fontSize="10" fontWeight="700" fill="var(--color-teal)">A</text>
           </g>
         )}
 
-        {/* wavelength: horizontal double-headed arrow, crest to crest */}
+        {/* wavelength: thin scientific dimension line, crest to crest,
+            with small vertical guide ticks dropping to each crest so
+            the measured span is unambiguous */}
         {wavelengthCrestA !== undefined && wavelengthCrestB !== undefined && (
           <g className={emphasize === "wavelength" ? "wave-emphasis" : undefined}>
-            <line x1={wavelengthCrestA} y1={MID_Y - amplitudePx - 14} x2={wavelengthCrestB} y2={MID_Y - amplitudePx - 14} stroke="var(--color-violet)" strokeWidth="1.5" markerStart="url(#wave-arrow-violet)" markerEnd="url(#wave-arrow-violet)" />
-            <text x={(wavelengthCrestA + wavelengthCrestB) / 2} y={MID_Y - amplitudePx - 18} textAnchor="middle" fontSize="11" fontWeight="700" fill="var(--color-violet)">{"\u03BB"}</text>
+            <line x1={wavelengthCrestA} y1={MID_Y - amplitudePx - 12} x2={wavelengthCrestA} y2={MID_Y - amplitudePx - 4} stroke="var(--color-violet)" strokeWidth="0.75" opacity="0.6" />
+            <line x1={wavelengthCrestB} y1={MID_Y - amplitudePx - 12} x2={wavelengthCrestB} y2={MID_Y - amplitudePx - 4} stroke="var(--color-violet)" strokeWidth="0.75" opacity="0.6" />
+            <line x1={wavelengthCrestA} y1={MID_Y - amplitudePx - 8} x2={wavelengthCrestB} y2={MID_Y - amplitudePx - 8} stroke="var(--color-violet)" strokeWidth="1" markerStart="url(#wave-tick-violet)" markerEnd="url(#wave-tick-violet)" />
+            <text x={(wavelengthCrestA + wavelengthCrestB) / 2} y={MID_Y - amplitudePx - 12} textAnchor="middle" fontSize="10" fontWeight="700" fill="var(--color-violet)">{"\u03BB"}</text>
           </g>
         )}
 
-        {/* observation point */}
+        {/* observation point -- kept because it's used meaningfully (a
+            visible pulse each time a full cycle passes it, the
+            frequency demonstration), now with a small explanatory
+            label rather than an unexplained dot */}
         <g className={emphasize === "frequency" ? "wave-emphasis" : undefined}>
-          <line x1={OBSERVATION_X} y1="8" x2={OBSERVATION_X} y2={HEIGHT - 8} stroke="var(--color-amber)" strokeWidth="1" strokeDasharray="2 3" opacity="0.6" />
+          <line x1={OBSERVATION_X} y1="8" x2={OBSERVATION_X} y2={HEIGHT - 8} stroke="var(--color-amber)" strokeWidth="1" strokeDasharray="2 3" opacity="0.55" />
           <circle cx={OBSERVATION_X} cy={observationY} r="5" fill="var(--color-amber)" key={cycleCount} className={reducedMotion || paused ? undefined : "wave-observation-pulse"} />
+          <text x={OBSERVATION_X} y={HEIGHT - 2} textAnchor="middle" fontSize="8" fill="var(--color-amber)">Observation point</text>
         </g>
 
         <defs>
-          <marker id="wave-arrow-teal" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="var(--color-teal)" /></marker>
-          <marker id="wave-arrow-violet" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="var(--color-violet)" /></marker>
+          <marker id="wave-tick-teal" markerWidth="5" markerHeight="5" refX="2.5" refY="2.5" orient="auto"><path d="M0.5,0.5 L4.5,4.5 M4.5,0.5 L0.5,4.5" stroke="var(--color-teal)" strokeWidth="0.9" /></marker>
+          <marker id="wave-tick-violet" markerWidth="4" markerHeight="8" refX="2" refY="4" orient="auto"><path d="M0.5,0.5 L3.5,7.5" stroke="var(--color-violet)" strokeWidth="0.9" /></marker>
         </defs>
       </svg>
       <style>{`
