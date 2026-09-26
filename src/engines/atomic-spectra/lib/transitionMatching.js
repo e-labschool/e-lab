@@ -60,4 +60,51 @@ export function matchAbsorption(fromLevel, incomingWavelengthNm) {
   return null;
 }
 
+/** Ionization energy (eV) needed to remove the electron entirely from
+ * `fromLevel` -- the transition to n=Infinity. */
+export function ionizationEnergyEv(fromLevel) {
+  return transitionEnergyEv(fromLevel, Infinity);
+}
+
+/** The PRIMARY matcher for the photon-energy-first interaction: given
+ * a photon energy directly (not a wavelength -- energy IS the
+ * student-controlled quantity in this design), returns one of three
+ * distinct outcomes, each scientifically different and never conflated:
+ *   - { kind: "bound", toLevel, deltaEv, ... } -- exact discrete
+ *     bound-to-bound absorption (tolerance-based match, same rule as
+ *     matchAbsorption above).
+ *   - { kind: "ionization", excessKeEv } -- energy at or ABOVE the
+ *     ionization threshold; the atom ionizes and any excess energy
+ *     becomes the ejected electron's kinetic energy. This is
+ *     deliberately a >= rule, not a tolerance-window match, since
+ *     ionization is a continuum process, not a discrete level --
+ *     unlike bound transitions, "more energy" genuinely still ionizes.
+ *   - null -- energy matches neither a bound transition nor meets the
+ *     ionization threshold, so nothing is absorbed. Explicitly, a
+ *     photon with MORE energy than a bound transition's ΔE (but still
+ *     below the ionization threshold) is NOT absorbed into that bound
+ *     level -- "more energy" is not automatically "good enough" for a
+ *     discrete transition, only for ionization. */
+export function matchAbsorptionByEnergy(fromLevel, photonEnergyEv) {
+  // Ionization is checked FIRST and takes priority whenever energy
+  // meets the threshold -- verified this matters: near the ionization
+  // limit, a high-n bound transition's tolerance window can numerically
+  // overlap the threshold itself (e.g. from n=1, the n=6 transition's
+  // +3% tolerance edge reaches 13.62eV, overlapping the 13.60eV
+  // threshold), and checking bound transitions first would have
+  // wrongly classified an exact-threshold photon as a bound n=6
+  // absorption instead of ionization. Checking >= threshold first
+  // keeps the two concepts cleanly separated as required.
+  const threshold = ionizationEnergyEv(fromLevel);
+  if (photonEnergyEv >= threshold) {
+    return { kind: "ionization", thresholdEv: threshold, excessKeEv: photonEnergyEv - threshold };
+  }
+  const boundCandidates = availableUpwardTransitions(fromLevel).filter((t) => t.toLevel !== Infinity);
+  for (const t of boundCandidates) {
+    const tolerance = t.deltaEv * ENERGY_TOLERANCE_FRACTION;
+    if (Math.abs(photonEnergyEv - t.deltaEv) <= tolerance) return { kind: "bound", ...t };
+  }
+  return null;
+}
+
 export { hydrogenEnergyEv };

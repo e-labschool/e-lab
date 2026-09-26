@@ -4,7 +4,9 @@ import InteractiveFrame from "../../components/interactive-shell/InteractiveFram
 import { SPECTRA, AVAILABLE_ELEMENTS } from "./data/spectra.js";
 import SpectrumDisplay from "./components/SpectrumDisplay.jsx";
 import EmissionSetup from "./components/EmissionSetup.jsx";
+import AbsorptionApparatus from "./components/AbsorptionApparatus.jsx";
 import EnergyLevelsView from "./components/EnergyLevelsView.jsx";
+import LinkedView from "./components/LinkedView.jsx";
 
 const TOP_VIEWS = [
   { id: "spectroscope", label: "Spectroscope" },
@@ -12,11 +14,18 @@ const TOP_VIEWS = [
   { id: "linked", label: "Linked View" },
 ];
 
+const SPECTROSCOPE_MODES = [
+  { id: "emission", label: "Emission" },
+  { id: "absorption", label: "Absorption" },
+  { id: "compare", label: "Compare" },
+];
+
 export default function AtomicSpectraSimulation({ compact = false }) {
   const [topView, setTopView] = useState("spectroscope");
   const [element, setElement] = useState("Na"); // default first load: Sodium
   const [selectedLineIndex, setSelectedLineIndex] = useState(null);
   const [showHelp, setShowHelp] = useState(false);
+  const [spectroscopeMode, setSpectroscopeMode] = useState("emission");
 
   const spectrum = SPECTRA[element];
 
@@ -53,7 +62,7 @@ export default function AtomicSpectraSimulation({ compact = false }) {
 
         {topView === "spectroscope" && (
           <>
-            <div className="flex items-center justify-center gap-1.5">
+            <div className="flex flex-wrap items-center justify-center gap-1.5">
               {AVAILABLE_ELEMENTS.map((sym) => (
                 <button
                   key={sym}
@@ -65,24 +74,73 @@ export default function AtomicSpectraSimulation({ compact = false }) {
                   {sym}
                 </button>
               ))}
+              <span className="mx-1 h-4 w-px bg-[var(--color-line)]" aria-hidden="true" />
+              {SPECTROSCOPE_MODES.map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => { setSpectroscopeMode(m.id); setSelectedLineIndex(null); }}
+                  aria-pressed={spectroscopeMode === m.id}
+                  className={`rounded-md px-3 py-1.5 text-xs font-semibold ${spectroscopeMode === m.id ? "bg-[var(--color-violet)] text-white" : "border border-[var(--color-line)] text-[var(--color-ink-soft)]"}`}
+                >
+                  {m.label}
+                </button>
+              ))}
             </div>
 
-            <EmissionSetup elementName={spectrum.name} species={spectrum.species} />
+            {spectroscopeMode === "emission" && (
+              <>
+                <EmissionSetup elementName={spectrum.name} species={spectrum.species} lines={spectrum.lines} />
 
-            <div className="rounded-xl border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-3">
-              <p className="mb-1.5 text-center text-[10px] font-bold uppercase tracking-wide text-[var(--color-ink-faint)]">{"Emission spectrum \u2014 "}{spectrum.name}</p>
-              <SpectrumDisplay lines={spectrum.lines} mode="emission" selectedIndex={selectedLineIndex} onSelectLine={setSelectedLineIndex} elementLabel={spectrum.name} />
-            </div>
+                <div className="rounded-xl border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-3">
+                  <p className="mb-1.5 text-center text-[10px] font-bold uppercase tracking-wide text-[var(--color-ink-faint)]">{"Emission spectrum \u2014 "}{spectrum.name}</p>
+                  <SpectrumDisplay lines={spectrum.lines} mode="emission" selectedIndex={selectedLineIndex} onSelectLine={setSelectedLineIndex} elementLabel={spectrum.name} />
+                </div>
 
-            {/* Sodium's two lines are under 1nm apart across a 370nm
-                axis -- genuinely indistinguishable at full-spectrum
-                scale, so a magnified inset is required (not optional
-                polish) to actually show two lines rather than what
-                would otherwise look like one. */}
-            {element === "Na" && (
-              <div className="rounded-xl border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-3">
-                <p className="mb-1.5 text-center text-[10px] font-bold uppercase tracking-wide text-[var(--color-ink-faint)]">{"Magnified \u2014 the sodium doublet"}</p>
-                <SpectrumDisplay lines={spectrum.lines} mode="emission" selectedIndex={selectedLineIndex} onSelectLine={setSelectedLineIndex} elementLabel={spectrum.name} rangeMin={588.5} rangeMax={590.5} />
+                {/* Sodium's two lines are under 1nm apart across a 370nm
+                    axis -- genuinely indistinguishable at full-spectrum
+                    scale, so a magnified inset is required (not optional
+                    polish) to actually show two lines rather than what
+                    would otherwise look like one. */}
+                {element === "Na" && (
+                  <div className="rounded-xl border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-3">
+                    <p className="mb-1.5 text-center text-[10px] font-bold uppercase tracking-wide text-[var(--color-ink-faint)]">{"Magnified \u2014 the sodium doublet"}</p>
+                    <SpectrumDisplay lines={spectrum.lines} mode="emission" selectedIndex={selectedLineIndex} onSelectLine={setSelectedLineIndex} elementLabel={spectrum.name} rangeMin={588.5} rangeMax={590.5} />
+                  </div>
+                )}
+              </>
+            )}
+
+            {spectroscopeMode === "absorption" && (
+              <>
+                <AbsorptionApparatus elementName={spectrum.name} species={spectrum.species} />
+
+                <div className="rounded-xl border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-3">
+                  <p className="mb-1.5 text-center text-[10px] font-bold uppercase tracking-wide text-[var(--color-ink-faint)]">{"Absorption spectrum \u2014 "}{spectrum.name}</p>
+                  <SpectrumDisplay lines={spectrum.lines} mode="absorption" selectedIndex={selectedLineIndex} onSelectLine={setSelectedLineIndex} elementLabel={spectrum.name} />
+                  <p className="mt-1.5 text-center text-[10px] text-[var(--color-ink-faint)]">{"Dark lines appear at exactly the same wavelengths the atom would emit \u2014 the same energy gaps, now absorbed from the continuous background instead."}</p>
+                </div>
+
+                {element === "Na" && (
+                  <div className="rounded-xl border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-3">
+                    <p className="mb-1.5 text-center text-[10px] font-bold uppercase tracking-wide text-[var(--color-ink-faint)]">{"Magnified \u2014 the sodium doublet"}</p>
+                    <SpectrumDisplay lines={spectrum.lines} mode="absorption" selectedIndex={selectedLineIndex} onSelectLine={setSelectedLineIndex} elementLabel={spectrum.name} rangeMin={588.5} rangeMax={590.5} />
+                  </div>
+                )}
+              </>
+            )}
+
+            {spectroscopeMode === "compare" && (
+              <div className="flex flex-col gap-2">
+                <p className="text-center text-xs text-[var(--color-ink-soft)]">{"Emission and absorption share one wavelength axis. Click a line in either spectrum \u2014 the matching line in the other lights up too."}</p>
+                <div className="rounded-xl border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-3">
+                  <p className="mb-1.5 text-center text-[10px] font-bold uppercase tracking-wide text-[var(--color-ink-faint)]">{"Emission \u2014 "}{spectrum.name}</p>
+                  <SpectrumDisplay lines={spectrum.lines} mode="emission" selectedIndex={selectedLineIndex} onSelectLine={setSelectedLineIndex} elementLabel={spectrum.name} />
+                </div>
+                <div className="rounded-xl border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-3">
+                  <p className="mb-1.5 text-center text-[10px] font-bold uppercase tracking-wide text-[var(--color-ink-faint)]">{"Absorption \u2014 "}{spectrum.name}</p>
+                  <SpectrumDisplay lines={spectrum.lines} mode="absorption" selectedIndex={selectedLineIndex} onSelectLine={setSelectedLineIndex} elementLabel={spectrum.name} />
+                </div>
               </div>
             )}
           </>
@@ -90,11 +148,7 @@ export default function AtomicSpectraSimulation({ compact = false }) {
 
         {topView === "energy-levels" && <EnergyLevelsView />}
 
-        {topView === "linked" && (
-          <div className="rounded-xl border border-dashed border-[var(--color-line)] p-6 text-center text-sm text-[var(--color-ink-faint)]">
-            Linked View is not yet built in this pass.
-          </div>
-        )}
+        {topView === "linked" && <LinkedView />}
       </div>
     </InteractiveFrame>
   );

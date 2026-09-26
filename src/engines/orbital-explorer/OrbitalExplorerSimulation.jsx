@@ -3,10 +3,9 @@ import { Info } from "lucide-react";
 import InteractiveFrame from "../../components/interactive-shell/InteractiveFrame.jsx";
 import ThreeCanvas from "../../components/3d/ThreeCanvas.jsx";
 import { ORBITAL_DEFS } from "./lib/orbitalMath.js";
-import { sampleOrbitalPoints, createSampler } from "./lib/orbitalSampling.js";
+import { sampleOrbitalPoints, createSampler, boundingRadiusFor } from "./lib/orbitalSampling.js";
 import { BASE_ORBITALS, ORIENTATIONS, ORIENTATION_LABELS, defaultOrientationFor } from "./lib/orbitalDefinitions.js";
 import ProbabilityCloud, { FAMILY_COLOR } from "./components/ProbabilityCloud.jsx";
-import { boundingRadiusFor } from "./lib/orbitalSampling.js";
 import AtomBuilder from "./components/AtomBuilder.jsx";
 
 function Nucleus() {
@@ -35,10 +34,13 @@ export default function OrbitalExplorerSimulation({ compact = false }) {
   const [seed, setSeed] = useState(1);
   const [detectionCount, setDetectionCount] = useState(INITIAL_1S_COUNT);
   const [showHelp, setShowHelp] = useState(false);
+  const [viewKey, setViewKey] = useState(0); // bumped to remount ThreeCanvas -- the camera-reset mechanism
 
   const orbitalId = orientation ?? baseOrbital;
   const def = ORBITAL_DEFS[orbitalId];
   const family = familyOf(baseOrbital);
+  const radialNodes = def.n - def.l - 1;
+  const angularNodes = def.l;
 
   const points = useMemo(() => {
     const rng = createSampler(seed);
@@ -50,6 +52,7 @@ export default function OrbitalExplorerSimulation({ compact = false }) {
     setOrientation(ORIENTATIONS[base] ? defaultOrientationFor(base) : null);
     setDetectionCount(base === "1s" ? INITIAL_1S_COUNT : 400);
     setSeed((s) => s + 1);
+    setViewKey((k) => k + 1); // auto-reframe the camera for the newly selected orbital's own scale
   }, []);
 
   const handleSelectOrientation = useCallback((o) => {
@@ -67,69 +70,20 @@ export default function OrbitalExplorerSimulation({ compact = false }) {
   }, []);
 
   return (
-    <InteractiveFrame title="Orbital Explorer" subtitle="Visualize atomic orbitals through their quantum-mechanical probability distributions." compact={compact}>
-      <div className="mx-auto flex w-full flex-col gap-3" style={{ maxWidth: 1000 }}>
-        {/* top-level mode switcher -- Explore an Orbital (the existing,
-            preserved single-orbital viewer) vs Build an Atom (the
-            multi-orbital Atom View framework) */}
+    <InteractiveFrame title="Orbital Explorer" subtitle="Explore atomic orbitals and electron probability distributions" compact={compact}>
+      <div className="mx-auto flex w-full flex-col gap-3" style={{ maxWidth: 1180 }}>
+        {/* mode tabs */}
         <div className="flex items-center justify-center gap-2">
-          <button
-            type="button"
-            onClick={() => setMode("explore")}
-            aria-pressed={mode === "explore"}
-            className={`rounded-md px-3 py-1.5 text-xs font-semibold ${mode === "explore" ? "bg-[var(--color-indigo)] text-white" : "border border-[var(--color-line)] text-[var(--color-ink-soft)]"}`}
-          >
+          <button type="button" onClick={() => setMode("explore")} aria-pressed={mode === "explore"} className={`rounded-md px-3 py-1.5 text-xs font-semibold ${mode === "explore" ? "bg-[var(--color-indigo)] text-white" : "border border-[var(--color-line)] text-[var(--color-ink-soft)]"}`}>
             Explore an Orbital
           </button>
-          <button
-            type="button"
-            onClick={() => setMode("build")}
-            aria-pressed={mode === "build"}
-            className={`rounded-md px-3 py-1.5 text-xs font-semibold ${mode === "build" ? "bg-[var(--color-indigo)] text-white" : "border border-[var(--color-line)] text-[var(--color-ink-soft)]"}`}
-          >
+          <button type="button" onClick={() => setMode("build")} aria-pressed={mode === "build"} className={`rounded-md px-3 py-1.5 text-xs font-semibold ${mode === "build" ? "bg-[var(--color-indigo)] text-white" : "border border-[var(--color-line)] text-[var(--color-ink-soft)]"}`}>
             Build an Atom
           </button>
-        </div>
-
-        {mode === "build" && <AtomBuilder compact={compact} />}
-
-        {mode === "explore" && (
-        <>
-        {/* orbital selector */}
-        <div className="flex flex-wrap items-center justify-center gap-1.5">
-          {BASE_ORBITALS.map((base) => (
-            <button
-              key={base}
-              type="button"
-              onClick={() => handleSelectBase(base)}
-              aria-pressed={baseOrbital === base}
-              className={`rounded-md px-3 py-1.5 text-xs font-semibold ${baseOrbital === base ? "text-white" : "border border-[var(--color-line)] text-[var(--color-ink-soft)]"}`}
-              style={baseOrbital === base ? { backgroundColor: FAMILY_COLOR[familyOf(base)] } : undefined}
-            >
-              {BASE_LABELS[base]}
-            </button>
-          ))}
           <button type="button" onClick={() => setShowHelp((v) => !v)} aria-label="About this simulation" className="ml-1 flex h-7 w-7 items-center justify-center rounded-full border border-[var(--color-line)] text-[var(--color-ink-faint)]">
             <Info size={13} />
           </button>
         </div>
-
-        {/* orientation selector -- only shown when relevant */}
-        {ORIENTATIONS[baseOrbital] && (
-          <div className="flex flex-wrap items-center justify-center gap-1.5">
-            {ORIENTATIONS[baseOrbital].map((o) => (
-              <button
-                key={o}
-                type="button"
-                onClick={() => handleSelectOrientation(o)}
-                aria-pressed={orientation === o}
-                className={`rounded-md px-2.5 py-1 text-[11px] font-medium ${orientation === o ? "border-[var(--color-indigo)] bg-[var(--color-indigo-soft)] text-[var(--color-indigo)] border" : "border border-[var(--color-line)] text-[var(--color-ink-faint)]"}`}
-              >
-                {ORIENTATION_LABELS[o]}
-              </button>
-            ))}
-          </div>
-        )}
 
         {showHelp && (
           <div className="rounded-lg border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-3 text-xs text-[var(--color-ink-soft)]">
@@ -142,32 +96,99 @@ export default function OrbitalExplorerSimulation({ compact = false }) {
           </div>
         )}
 
-        {/* 3D viewer */}
-        <ThreeCanvas height={compact ? 340 : 460} cameraDistance={boundingRadiusFor(def.n) * 1.9} fallbackDescription="This device can't render the 3D orbital view. Try a device with WebGL support." fallbackLabel="Orbital viewer">
-          <color attach="background" args={["#0A0E1A"]} />
-          <Nucleus />
-          <ProbabilityCloud points={points} family={family} />
-        </ThreeCanvas>
+        {mode === "build" && <AtomBuilder compact={compact} />}
 
-        {/* simulated detections */}
-        <div className="rounded-lg border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-3">
-          <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--color-ink-faint)]">Simulated Detections</p>
-          <p className="mt-0.5 text-[11px] text-[var(--color-ink-faint)]">
-            Each point represents a simulated position measurement from an identically prepared atom. Many measurements reveal the orbital probability distribution.
-          </p>
-          <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            {DETECTION_STEPS.map((step) => (
-              <button key={step} type="button" onClick={() => handleAddDetections(step)} className="rounded-md border border-[var(--color-line)] px-2.5 py-1 text-xs font-medium text-[var(--color-ink-soft)] hover:bg-[var(--color-line)]/30">
-                {`+${step}`}
-              </button>
-            ))}
-            <button type="button" onClick={handleClear} className="rounded-md border border-[var(--color-line)] px-2.5 py-1 text-xs font-medium text-[var(--color-ink-soft)] hover:bg-[var(--color-line)]/30">
-              Clear
-            </button>
-            <span className="ml-auto text-xs font-semibold text-[var(--color-ink)]">{detectionCount.toLocaleString()} detections</span>
+        {mode === "explore" && (
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-[210px_minmax(0,1fr)_230px]">
+            {/* LEFT: orbital controls */}
+            <div className="flex flex-col gap-2.5 rounded-xl border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-3">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--color-ink-faint)]">Orbital Controls</p>
+
+              <div>
+                <p className="mb-1 text-[10px] font-semibold text-[var(--color-ink-soft)]">Select an Orbital</p>
+                <div className="grid grid-cols-2 gap-1">
+                  {BASE_ORBITALS.map((base) => (
+                    <button
+                      key={base}
+                      type="button"
+                      onClick={() => handleSelectBase(base)}
+                      aria-pressed={baseOrbital === base}
+                      className={`rounded-md px-2 py-1.5 text-xs font-semibold ${baseOrbital === base ? "text-white" : "border border-[var(--color-line)] text-[var(--color-ink-soft)]"}`}
+                      style={baseOrbital === base ? { backgroundColor: FAMILY_COLOR[familyOf(base)] } : undefined}
+                    >
+                      {BASE_LABELS[base]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {ORIENTATIONS[baseOrbital] && (
+                <div>
+                  <p className="mb-1 text-[10px] font-semibold text-[var(--color-ink-soft)]">Orientation</p>
+                  <div className="flex flex-col gap-1">
+                    {ORIENTATIONS[baseOrbital].map((o) => (
+                      <button
+                        key={o}
+                        type="button"
+                        onClick={() => handleSelectOrientation(o)}
+                        aria-pressed={orientation === o}
+                        className={`rounded-md px-2 py-1 text-left text-[11px] font-medium ${orientation === o ? "border border-[var(--color-indigo)] bg-[var(--color-indigo-soft)] text-[var(--color-indigo)]" : "border border-[var(--color-line)] text-[var(--color-ink-faint)]"}`}
+                      >
+                        {ORIENTATION_LABELS[o]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <p className="mb-1 text-[10px] font-semibold text-[var(--color-ink-soft)]">Display Mode</p>
+                <button type="button" aria-pressed="true" className="w-full rounded-md border border-[var(--color-indigo)] bg-[var(--color-indigo-soft)] px-2 py-1.5 text-left text-[11px] font-semibold text-[var(--color-indigo)]">
+                  Probability Cloud
+                </button>
+                <p className="mt-1 text-[9.5px] text-[var(--color-ink-faint)]">Boundary Surface and Cross-section are not yet available.</p>
+              </div>
+            </div>
+
+            {/* CENTER: 3D viewer */}
+            <div className="relative">
+              <ThreeCanvas key={viewKey} height={compact ? 380 : 500} cameraDistance={boundingRadiusFor(def.n) * 1.9} fallbackDescription="This device can't render the 3D orbital view. Try a device with WebGL support." fallbackLabel="Orbital viewer">
+                <color attach="background" args={["#0A0E1A"]} />
+                <Nucleus />
+                <ProbabilityCloud points={points} family={family} />
+              </ThreeCanvas>
+            </div>
+
+            {/* RIGHT: detections + orbital info */}
+            <div className="flex flex-col gap-3">
+              <div className="rounded-xl border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-3">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--color-ink-faint)]">Simulated Detections</p>
+                <p className="mt-0.5 text-[10.5px] text-[var(--color-ink-faint)]">Each point is a simulated position measurement, not a separate electron.</p>
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {DETECTION_STEPS.map((step) => (
+                    <button key={step} type="button" onClick={() => handleAddDetections(step)} className="rounded-md border border-[var(--color-line)] px-2 py-1 text-[11px] font-medium text-[var(--color-ink-soft)] hover:bg-[var(--color-line)]/30">
+                      {`+${step}`}
+                    </button>
+                  ))}
+                  <button type="button" onClick={handleClear} className="rounded-md border border-[var(--color-line)] px-2 py-1 text-[11px] font-medium text-[var(--color-ink-soft)] hover:bg-[var(--color-line)]/30">
+                    Clear
+                  </button>
+                </div>
+                <p className="mt-2 text-sm font-bold text-[var(--color-ink)]">{detectionCount.toLocaleString()} detections</p>
+              </div>
+
+              <div className="rounded-xl border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-3">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--color-ink-faint)]">Orbital Information</p>
+                <p className="mt-1 text-lg font-bold" style={{ color: FAMILY_COLOR[family] }}>{ORIENTATION_LABELS[orbitalId] ? `${def.n}${ORIENTATION_LABELS[orbitalId]}` : orbitalId}</p>
+                <dl className="mt-1 grid grid-cols-2 gap-x-2 gap-y-0.5 text-[11px] text-[var(--color-ink-soft)]">
+                  <dt>n</dt><dd className="text-right">{def.n}</dd>
+                  <dt>l</dt><dd className="text-right">{def.l}</dd>
+                  <dt>Radial nodes</dt><dd className="text-right">{radialNodes}</dd>
+                  <dt>Angular nodes</dt><dd className="text-right">{angularNodes}</dd>
+                </dl>
+              </div>
+            </div>
           </div>
-        </div>
-        </>
         )}
       </div>
     </InteractiveFrame>
