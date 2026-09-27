@@ -2,89 +2,21 @@ import { useState, useEffect, lazy, Suspense } from "react";
 import { Lightbulb, BookMarked, AlertTriangle, Globe2, Beaker, Columns2, Link2, ArrowRight } from "lucide-react";
 import { sanitizeHtml, renderChemMarkup, MOLECULE_PRESETS, getWorkedExampleSolution } from "../../data/learnBlockRegistry.jsx";
 import { resolveMathAnnotationsInHtml } from "../admin/EquationFriendlyField.jsx";
+import { renderCompactLatex, renderMathMarkersInHtml, ScientificText as CompactMathText } from "../../lib/scientificContent.jsx";
 import MoleculeViewer3D from "../3d/MoleculeViewer3D.jsx";
 import ELabLoader from "../ui/ELabLoader.jsx";
 import { findPublishedLessonBySyllabusCode } from "../../lib/learnContentService.js";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext.jsx";
 
-
-function escapeMathHtml(value) {
-  return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
-function readBraceGroup(source, start) {
-  if (source[start] !== "{") return null;
-  let depth = 0;
-  for (let i = start; i < source.length; i += 1) {
-    if (source[i] === "{") depth += 1;
-    if (source[i] === "}") depth -= 1;
-    if (depth === 0) return { value: source.slice(start + 1, i), end: i + 1 };
-  }
-  return null;
-}
-
-/** Small dependency-free renderer for the equation shapes used in Learn.
- * It deliberately renders maths inline/compactly: no large equation cards. */
-export function renderCompactLatex(latex) {
-  const src = String(latex ?? "").trim();
-  let out = "";
-  for (let i = 0; i < src.length;) {
-    if (src.startsWith("\\frac", i)) {
-      const a = readBraceGroup(src, i + 5);
-      const b = a && readBraceGroup(src, a.end);
-      if (a && b) {
-        out += `<span class="inline-flex align-middle flex-col items-center leading-none mx-1"><span class="border-b border-current px-1 pb-[2px]">${renderCompactLatex(a.value)}</span><span class="px-1 pt-[2px]">${renderCompactLatex(b.value)}</span></span>`;
-        i = b.end; continue;
-      }
-    }
-    if (src.startsWith("\\boxed", i)) {
-      const g = readBraceGroup(src, i + 6);
-      if (g) { out += `<span class="inline-block rounded border border-[var(--color-indigo)]/45 px-2 py-0.5 font-semibold">${renderCompactLatex(g.value)}</span>`; i = g.end; continue; }
-    }
-    // \text{...} -- plain (non-italic) text within an equation, e.g.
-    // \text{isotope-35}. Its content is recursively rendered (not just
-    // escaped verbatim) so a nested command like \% inside \text{} still
-    // resolves correctly, matching real LaTeX's \text behaviour.
-    if (src.startsWith("\\text", i)) {
-      const g = readBraceGroup(src, i + 5);
-      if (g) { out += `<span class="not-italic font-sans">${renderCompactLatex(g.value)}</span>`; i = g.end; continue; }
-    }
-    // \qquad checked before \quad since both start with "\q" -- a
-    // shared prefix, so the longer command must be tried first or it
-    // would never be reached (\quad would always match its own prefix
-    // of \qquad first and leave a stray "quad" behind).
-    if (src.startsWith("\\qquad", i)) { out += `<span class="inline-block w-[2em]"></span>`; i += 6; continue; }
-    if (src.startsWith("\\quad", i)) { out += `<span class="inline-block w-[1em]"></span>`; i += 5; continue; }
-    if (src.startsWith("\\%", i)) { out += "%"; i += 2; continue; }
-    const commands = [["\\times","×"],["\\cdot","·"],["\\sum","∑"],["\\pm","±"],["\\approx","≈"],["\\rightarrow","→"],["\\to","→"],["\\Delta","Δ"],["\\leq","≤"],["\\geq","≥"]];
-    const cmd = commands.find(([name]) => src.startsWith(name, i));
-    if (cmd) { out += cmd[1]; i += cmd[0].length; continue; }
-    if ((src[i] === "_" || src[i] === "^") && src[i + 1] === "{") {
-      const g = readBraceGroup(src, i + 1);
-      if (g) { const tag = src[i] === "_" ? "sub" : "sup"; out += `<${tag}>${renderCompactLatex(g.value)}</${tag}>`; i = g.end; continue; }
-    }
-    if ((src[i] === "_" || src[i] === "^") && i + 1 < src.length) {
-      const tag = src[i] === "_" ? "sub" : "sup"; out += `<${tag}>${escapeMathHtml(src[i + 1])}</${tag}>`; i += 2; continue;
-    }
-    if (src[i] === "\\") {
-      const m = src.slice(i).match(/^\\([A-Za-z]+)/);
-      if (m) { out += escapeMathHtml(m[1]); i += m[0].length; continue; }
-    }
-    if (src[i] !== "{" && src[i] !== "}") out += escapeMathHtml(src[i]);
-    i += 1;
-  }
-  return out;
-}
-
-export function renderMathMarkersInHtml(html) {
-  return String(html ?? "").replace(/⟦math:([\s\S]*?)⟧/g, (_, latex) => `<span class="inline-math align-middle whitespace-nowrap font-serif text-[1.03em]">${renderCompactLatex(latex)}</span>`);
-}
-
-function CompactMathText({ text, className = "" }) {
-  const html = escapeMathHtml(text ?? "").replace(/⟦math:([\s\S]*?)⟧/g, (_, latex) => `<span class="inline-math align-middle font-serif text-[1.03em]">${renderCompactLatex(latex)}</span>`).replace(/\n/g, "<br />");
-  return <span className={className} dangerouslySetInnerHTML={{ __html: html }} />;
-}
+// The scientific-content rendering pipeline itself (⟦math:...⟧, \( \),
+// \[ \], the compact LaTeX-subset renderer) now lives in one shared,
+// dependency-free module -- src/lib/scientificContent.jsx -- so this file
+// and the admin editor's preview (EquationFriendlyField.jsx) can never
+// drift apart. renderCompactLatex is re-exported here for the one other
+// caller (renderChemMarkup's sibling usages) that historically imported
+// it from this file.
+export { renderCompactLatex };
 
 const SIMULATION_COMPONENTS = {
   "electron-configuration": lazy(() => import("../../engines/electron-configuration/ElectronConfigurationExplorer.jsx")),
@@ -195,7 +127,7 @@ export default function LearnBlockRenderer({ block }) {
       return (
         <div className="rounded-md border border-[#2dd4bf]/35 bg-[#2dd4bf]/10 p-4">
           <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[#45e0cd]"><BookMarked size={13} /> Definition</p>
-          <p className="mt-1.5 font-semibold text-[var(--color-ink)]">{c.term}</p>
+          <p className="mt-1.5 font-semibold text-[var(--color-ink)]"><CompactMathText text={c.term} /></p>
           <p className="mt-0.5 text-sm text-[var(--color-ink)]"><CompactMathText text={c.definition} /></p>
         </div>
       );
@@ -370,8 +302,8 @@ function DataGraphBlock({ content }) {
           </table>
         </div>
       )}
-      {content.explanation && <p className="mt-2 whitespace-pre-wrap text-sm text-[var(--color-ink-soft)]">{content.explanation}</p>}
-      {content.prompt && <p className="mt-2 whitespace-pre-wrap text-sm italic text-[var(--color-indigo)]">{content.prompt}</p>}
+      {content.explanation && <p className="mt-2 text-sm text-[var(--color-ink-soft)]"><CompactMathText text={content.explanation} /></p>}
+      {content.prompt && <p className="mt-2 text-sm italic text-[var(--color-indigo)]"><CompactMathText text={content.prompt} /></p>}
     </div>
   );
 }
@@ -393,7 +325,7 @@ function CompareContrastGrid({ content }) {
             {table.rows.map((row, r) => (
               <tr key={r} className="text-[var(--color-ink-soft)]">
                 {table.headers.map((_, c) => (
-                  <td key={c} className={`whitespace-pre-wrap border-b border-r border-[var(--color-line)] px-4 py-3 align-top last:border-r-0 ${c === 0 ? "font-medium text-[var(--color-ink)]" : ""}`}>{row[c] ?? ""}</td>
+                  <td key={c} className={`border-b border-r border-[var(--color-line)] px-4 py-3 align-top last:border-r-0 ${c === 0 ? "font-medium text-[var(--color-ink)]" : ""}`}><CompactMathText text={row[c] ?? ""} /></td>
                 ))}
               </tr>
             ))}
@@ -407,8 +339,8 @@ function CompareContrastGrid({ content }) {
     <div className={`grid gap-3 sm:grid-cols-${Math.min(content.columns?.length ?? 2, 3)}`}>
       {(content.columns ?? []).map((col, i) => (
         <div key={i} className="rounded-md border border-[#a78bfa]/30 bg-[#a78bfa]/8 p-4">
-          <p className="font-semibold text-[var(--color-ink)]">{col.title}</p>
-          <p className="mt-1.5 whitespace-pre-line text-sm text-[var(--color-ink-soft)]">{col.content}</p>
+          <p className="font-semibold text-[var(--color-ink)]"><CompactMathText text={col.title} /></p>
+          <p className="mt-1.5 text-sm text-[var(--color-ink-soft)]"><CompactMathText text={col.content} /></p>
         </div>
       ))}
     </div>
@@ -476,7 +408,7 @@ function PracticalBlock({ content }) {
         {sections.map((field) => (
           <div key={field}>
             <p className="text-xs font-semibold text-[var(--color-ink)]">{field[0].toUpperCase() + field.slice(1)}</p>
-            <p className="whitespace-pre-wrap text-sm text-[var(--color-ink-soft)]">{content[field]}</p>
+            <p className="text-sm text-[var(--color-ink-soft)]"><CompactMathText text={content[field]} /></p>
           </div>
         ))}
       </div>

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { ChevronLeft, ChevronRight, CheckCircle2, RotateCcw } from "lucide-react";
 import { getPublishedLesson, listPublishedLessonMeta } from "../../lib/learnContentService.js";
 import { getLearnCmsCurriculumTree } from "../../data/learnCmsCurriculum.js";
@@ -52,6 +52,7 @@ function findAdjacentLessons(currentLesson, allLessons, tree, studentLevel) {
 export default function LearnLessonPage() {
   const { conceptId: pageId } = useParams(); // param name kept as conceptId — see LearnLayout.jsx
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, profile } = useAuth();
   const studentLevel = profile?.level;
   const { settings: displaySettings } = useDisplaySettings();
@@ -65,6 +66,23 @@ export default function LearnLessonPage() {
   const [finishing, setFinishing] = useState(false);
   const [finishError, setFinishError] = useState("");
 
+  // Two genuinely different intents land on this same route, and they
+  // must NOT be conflated (this was the actual bug): a NORMAL/RESUME
+  // entry (opening Learn again, a sidebar click, a cross-reference link,
+  // browser refresh) should reopen wherever this student last was inside
+  // THIS lesson. A SEQUENTIAL entry — "Next Lesson" / "Previous Concept",
+  // which follow curriculum order rather than the student's history — must
+  // always land on a specific page of the destination lesson regardless
+  // of any old remembered position there. The two "Previous Concept" /
+  // "Next Lesson" buttons below are the ONLY call sites that set this
+  // navigation state; sidebar links, search, topic-link blocks and every
+  // resume/redirect route deliberately leave it unset, so they keep the
+  // existing resume behaviour unchanged.
+  //   learnNavIntent: "next" -> always the FIRST content page
+  //   learnNavIntent: "prev" -> always the LAST content page
+  //   (unset)               -> the student's remembered page, if any
+  const learnNavIntent = location.state?.learnNavIntent;
+
   useEffect(() => {
     setLoading(true);
     setError(null);
@@ -74,16 +92,36 @@ export default function LearnLessonPage() {
         setLesson(data);
         setAllPublishedLessons(allLessons);
         setAdjacent(findAdjacentLessons(data.page, allLessons, getLearnCmsCurriculumTree(), studentLevel));
-        // Resume the last internal page the student was on for THIS
-        // specific lesson, if remembered — a lesson last visited on
-        // page 3 reopens on page 3, not page 1. If Admin has since
-        // removed pages, the clamp below (safePage) keeps this safe.
-        const remembered = user?.id ? loadUserScopedValue(user.id, `learn:last-page:${pageId}`, 0) : 0;
-        setContentPage(remembered);
+
+        if (learnNavIntent === "next") {
+          // Sequential entry always starts a chapter from its beginning —
+          // never restores a stale remembered position, and never skips
+          // pages just because they were already marked complete on an
+          // earlier visit.
+          setContentPage(0);
+        } else if (learnNavIntent === "prev") {
+          // Symmetric case for "Previous Concept": always its LAST page.
+          // The exact index depends on pagination, which is computed at
+          // render time from the just-loaded blocks — Infinity is clamped
+          // to `pages.length - 1` by the existing safePage logic below,
+          // so this never needs to duplicate that pagination math here.
+          setContentPage(Infinity);
+        } else {
+          // Normal/resume entry: reopen the last internal page the
+          // student was on for THIS specific lesson, if remembered. If
+          // Admin has since removed pages, the clamp below (safePage)
+          // keeps this safe.
+          const remembered = user?.id ? loadUserScopedValue(user.id, `learn:last-page:${pageId}`, 0) : 0;
+          setContentPage(remembered);
+        }
         if (user?.id) saveUserScopedValue(user.id, "learn:last-lesson", pageId);
+        window.scrollTo({ top: 0, behavior: "auto" });
       })
       .catch((err) => setError(err.message || "Couldn't load this lesson."))
       .finally(() => setLoading(false));
+    // learnNavIntent is read once per navigation to this pageId, not
+    // tracked as a reactive dependency — the intent describes how THIS
+    // visit began, and must not retrigger this effect on its own.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageId, studentLevel]);
 
@@ -94,6 +132,25 @@ export default function LearnLessonPage() {
     // Only opening a different mapped lesson should trigger this.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [progressConceptIds.join("|")]);
+
+  // Keeps "last-visited" in sync with wherever the student actually ends
+  // up, independent of HOW they got there — sequential Next/Previous
+  // navigation resolves its own starting page on load (above) but must
+  // still update this record, so a normal resume later reopens exactly
+  // there (not some older remembered page). Also covers every page-button
+  // click, so goToContentPage below doesn't need its own separate persist
+  // call. Declared above the early returns (all hooks in this component
+  // must run on every render, in the same order) and computes its own
+  // safe page independently of the render-only `pages`/`safePage`
+  // variables further down, which don't exist yet before `lesson` loads.
+  useEffect(() => {
+    if (!user?.id || !lesson) return;
+    const blocks = filterBlocksForStudent(lesson.blocks, studentLevel);
+    const pageCount = splitLearnBlocksIntoPages(blocks).length;
+    const safe = Math.max(0, Math.min(contentPage, pageCount - 1));
+    saveUserScopedValue(user.id, `learn:last-page:${pageId}`, safe);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageId, contentPage, lesson, studentLevel, user?.id]);
 
   if (loading) return <div className="flex min-h-[50vh] items-center justify-center"><ELabLoader /></div>;
   if (error) return <p className="p-10 text-center text-sm text-[var(--color-coral)]">{error}</p>;
@@ -121,7 +178,6 @@ export default function LearnLessonPage() {
   function goToContentPage(nextPage) {
     const clamped = Math.max(0, Math.min(nextPage, pages.length - 1));
     setContentPage(clamped);
-    if (user?.id) saveUserScopedValue(user.id, `learn:last-page:${pageId}`, clamped);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -178,14 +234,14 @@ export default function LearnLessonPage() {
 
       {isWelcome && isLastContentPage && firstLearningLesson && (
         <div className="mt-8 flex justify-center border-t border-[var(--color-line)] pt-6">
-          <button type="button" onClick={() => navigate(`/student/learn/${firstLearningLesson.id}`)} className="inline-flex items-center gap-2 rounded-md bg-[var(--color-indigo)] px-6 py-3 text-base font-semibold text-white shadow-sm">Let’s learn! <ChevronRight size={17}/></button>
+          <button type="button" onClick={() => navigate(`/student/learn/${firstLearningLesson.id}`, { state: { learnNavIntent: "next" } })} className="inline-flex items-center gap-2 rounded-md bg-[var(--color-indigo)] px-6 py-3 text-base font-semibold text-white shadow-sm">Let’s learn! <ChevronRight size={17}/></button>
         </div>
       )}
 
       {!isWelcome && (isFirstContentPage || isLastContentPage) && (
         <div className="mt-5 border-t border-[var(--color-line)] pt-5">
           {isFirstContentPage && adjacent.prev && !isLastContentPage && (
-            <button type="button" onClick={() => navigate(`/student/learn/${adjacent.prev.id}`)} className="flex items-center gap-1 text-sm font-medium text-[var(--color-ink-soft)] hover:text-[var(--color-ink)]">
+            <button type="button" onClick={() => navigate(`/student/learn/${adjacent.prev.id}`, { state: { learnNavIntent: "prev" } })} className="flex items-center gap-1 text-sm font-medium text-[var(--color-ink-soft)] hover:text-[var(--color-ink)]">
               <ChevronLeft size={15} /> Previous Concept
             </button>
           )}
@@ -227,7 +283,7 @@ export default function LearnLessonPage() {
                 {adjacent.next && (
                   <button
                     type="button"
-                    onClick={() => navigate(`/student/learn/${adjacent.next.id}`)}
+                    onClick={() => navigate(`/student/learn/${adjacent.next.id}`, { state: { learnNavIntent: "next" } })}
                     className="flex items-center gap-1.5 rounded-md border border-[var(--color-end-unit-next)] bg-[var(--color-end-unit-next)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[var(--color-end-unit-next-hover)]"
                   >
                     Next Lesson <ChevronRight size={15} />
