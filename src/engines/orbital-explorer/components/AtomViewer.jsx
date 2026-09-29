@@ -1,7 +1,10 @@
 import { useMemo } from "react";
 import { ORBITAL_DEFS } from "../lib/orbitalMath.js";
-import { sampleOrbitalPoints, createSampler } from "../lib/orbitalSampling.js";
+import { sampleOrbitalPoints, createSampler, boundingRadiusFor } from "../lib/orbitalSampling.js";
+import { colorForOrbitalId } from "../lib/orbitalColors.js";
 import ProbabilityCloud from "./ProbabilityCloud.jsx";
+import OrbitalBoundary from "./OrbitalBoundary.jsx";
+import OrbitalAxes from "./OrbitalAxes.jsx";
 
 function Nucleus() {
   return (
@@ -12,49 +15,52 @@ function Nucleus() {
   );
 }
 
-const POINTS_PER_ORBITAL = 550; // modest per-orbital count -- several
-// orbitals render simultaneously here (unlike single-orbital Explore
-// mode), so this is deliberately lower per cloud to stay performant
-// and legible with multiple overlapping clouds at once.
+/** Renders every orbital in `visibleIds` as its own probability-density
+ * point cloud PLUS a translucent boundary region, all sharing the same
+ * nucleus/origin -- never offset apart, per the explicit requirement
+ * that Atom View shows real spatial overlap, not separate little atoms.
+ * `highlightedId`, if set, renders that one orbital at full opacity/size
+ * while others dim -- the link back to the legend/info panel and the
+ * orbital box diagram. `pointsPerOrbital` drives the adaptive quality
+ * tier (desktop defaults to the full ~10,000/orbital density). */
+export default function AtomViewer({ occupiedIds, visibleIds, highlightedId, pointsPerOrbital = 10000 }) {
+  const maxN = useMemo(() => Math.max(1, ...occupiedIds.map((id) => parseInt(id[0], 10))), [occupiedIds]);
 
-function familyOf(id) {
-  if (id.includes("s")) return "s";
-  if (id.includes("p")) return "p";
-  return "d";
-}
-
-/** Renders every orbital in `visibleIds` as its own ProbabilityCloud,
- * all sharing the same nucleus/origin -- never offset apart, per the
- * explicit requirement that Atom View shows real spatial overlap, not
- * separate little atoms. `highlightedId`, if set, renders that one
- * orbital at full opacity/size while others dim -- the link back to
- * the orbital box diagram and electron-by-electron builder. */
-export default function AtomViewer({ occupiedIds, visibleIds, highlightedId }) {
+  // Sampling is deterministic per (orbital id, point count) -- the seed
+  // never changes across renders -- so this memo only re-runs when the
+  // actual set of occupied orbitals or the density tier changes, never
+  // on unrelated UI state (toggling visibility/highlight does NOT
+  // regenerate any point cloud, it only changes which already-computed
+  // clouds are shown and at what opacity).
   const clouds = useMemo(() => {
-    return occupiedIds
-      .filter((id) => visibleIds.has(id))
-      .map((id) => {
-        const def = ORBITAL_DEFS[id];
-        const rng = createSampler(id.charCodeAt(0) * 97 + id.length); // deterministic per-orbital seed
-        const points = sampleOrbitalPoints(def.n, def.l, def.type, POINTS_PER_ORBITAL, rng);
-        return { id, points, family: familyOf(id) };
-      });
-  }, [occupiedIds, visibleIds]);
+    return occupiedIds.map((id) => {
+      const def = ORBITAL_DEFS[id];
+      const rng = createSampler(id.charCodeAt(0) * 97 + id.length + pointsPerOrbital);
+      const points = sampleOrbitalPoints(def.n, def.l, def.type, pointsPerOrbital, rng);
+      return { id, def, points, color: colorForOrbitalId(id) };
+    });
+  }, [occupiedIds, pointsPerOrbital]);
 
   const anyHighlighted = Boolean(highlightedId);
+  const axisLength = boundingRadiusFor(maxN) * 0.58;
 
   return (
     <>
       <Nucleus />
-      {clouds.map((c) => (
-        <ProbabilityCloud
-          key={c.id}
-          points={c.points}
-          family={c.family}
-          size={anyHighlighted && c.id !== highlightedId ? 0.06 : 0.09}
-          opacity={anyHighlighted ? (c.id === highlightedId ? 0.9 : 0.15) : 0.55}
-        />
-      ))}
+      <OrbitalAxes length={axisLength} />
+      {clouds
+        .filter((c) => visibleIds.has(c.id))
+        .map((c) => {
+          const dimmed = anyHighlighted && c.id !== highlightedId;
+          const cloudOpacity = anyHighlighted ? (c.id === highlightedId ? 0.92 : 0.1) : 0.62;
+          const boundaryOpacity = anyHighlighted ? (c.id === highlightedId ? 0.22 : 0.03) : 0.14;
+          return (
+            <group key={c.id}>
+              <OrbitalBoundary points={c.points} n={c.def.n} l={c.def.l} type={c.def.type} color={c.color} opacity={boundaryOpacity} />
+              <ProbabilityCloud points={c.points} color={c.color} size={dimmed ? 0.045 : 0.055} opacity={cloudOpacity} />
+            </group>
+          );
+        })}
     </>
   );
 }
