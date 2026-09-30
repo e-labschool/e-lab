@@ -13,7 +13,7 @@ const DEFAULT_ATOMIC_NUMBER = 11; // Sodium — recognizable, single valence ele
 // data — it's reachable from /topics/electron-configuration, from a DP
 // Chemistry subtopic via the resolver, and from /interactives directly,
 // and behaves identically regardless of which door was used to get here.
-export default function ElectronConfigurationExplorer({ compact = false }) {
+export default function ElectronConfigurationExplorer({ compact = false, standalone = false }) {
   const { mode } = useMode();
   const [atomicNumber, setAtomicNumber] = useState(DEFAULT_ATOMIC_NUMBER);
 
@@ -49,6 +49,7 @@ export default function ElectronConfigurationExplorer({ compact = false }) {
     <InteractiveFrame
       title="Electron Configuration Explorer"
       subtitle="Ground-state configurations for all 118 elements"
+      standalone={standalone}
     >
       {body}
     </InteractiveFrame>

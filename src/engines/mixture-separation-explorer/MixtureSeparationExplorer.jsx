@@ -12,7 +12,7 @@ function firstAvailableMethodId(mixture) {
   return mixture.methods.find((m) => simulationRegistry[m.methodId])?.methodId ?? null;
 }
 
-export default function MixtureSeparationExplorer({ compact = false }) {
+export default function MixtureSeparationExplorer({ compact = false, standalone = false }) {
   const [mixtureId, setMixtureId] = useState(MIXTURES[0].id);
   const mixture = useMemo(() => getMixture(mixtureId), [mixtureId]);
   const [methodId, setMethodId] = useState(() => firstAvailableMethodId(mixture));
@@ -26,7 +26,7 @@ export default function MixtureSeparationExplorer({ compact = false }) {
   const methodMeta = methodId ? METHODS[methodId] : null;
 
   return (
-    <InteractiveFrame title="Mixture Separation Explorer" compact={compact}>
+    <InteractiveFrame title="Mixture Separation Explorer" compact={compact} standalone={standalone}>
       <div className="mx-auto w-full" style={{ maxWidth: 1100 }}>
         <p className="text-center text-sm text-[var(--color-ink-soft)]">
           Choose a mixture and a separation method, then watch the apparatus demonstrate the separation.

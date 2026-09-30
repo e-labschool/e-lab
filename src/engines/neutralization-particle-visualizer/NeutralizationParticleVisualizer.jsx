@@ -38,7 +38,7 @@ function buildSeparateParticles() {
   return list;
 }
 
-export default function NeutralizationParticleVisualizer({ compact = false }) {
+export default function NeutralizationParticleVisualizer({ compact = false, standalone = false }) {
   const [stage, setStage] = useState(STAGE.SEPARATE);
   const [particles, setParticles] = useState(buildSeparateParticles);
 
@@ -129,7 +129,7 @@ export default function NeutralizationParticleVisualizer({ compact = false }) {
   const showCentralBeaker = stage === STAGE.POURING || stage === STAGE.MIXING || stage === STAGE.DONE;
 
   return (
-    <InteractiveFrame title="Neutralization Particle Visualizer" subtitle="What happens when HCl and NaOH solutions mix?" compact={compact}>
+    <InteractiveFrame title="Neutralization Particle Visualizer" subtitle="What happens when HCl and NaOH solutions mix?" compact={compact} standalone={standalone}>
       <div className="mx-auto w-full" style={{ maxWidth: 900 }}>
         <svg viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} className="w-full" style={{ height: "auto", maxHeight: 480 }} role="img" aria-label="Particle-level animation of HCl and NaOH solutions mixing and neutralizing">
           {showTwoBeakers && (

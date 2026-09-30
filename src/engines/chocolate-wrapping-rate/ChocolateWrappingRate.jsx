@@ -14,7 +14,7 @@ const SERIES_OPTIONS = [
   { id: "wrappers", label: "Wrappers Remaining", key: "wrappers" },
 ];
 
-export default function ChocolateWrappingRate({ compact = false }) {
+export default function ChocolateWrappingRate({ compact = false, standalone = false }) {
   const [ruleId, setRuleId] = useState("rule1");
   const rule = WRAPPING_RULES[ruleId];
 
@@ -112,7 +112,7 @@ export default function ChocolateWrappingRate({ compact = false }) {
   const maxValueForSeries = seriesId === "chocolates" ? initialChocolates : seriesId === "wrappers" ? initialWrappers : initialWrappers;
 
   return (
-    <InteractiveFrame title="Chocolate Wrapping \u2014 Understanding Rate" compact={compact}>
+    <InteractiveFrame title="Chocolate Wrapping \u2014 Understanding Rate" compact={compact} standalone={standalone}>
       <div className="mx-auto w-full" style={{ maxWidth: 1020 }}>
         <p className="text-center text-sm text-[var(--color-ink-soft)]">
           {"Choose a wrapping rule and watch how chocolates and wrappers are used to make wrapped packs. Notice how the rate changes with time."}

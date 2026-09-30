@@ -27,7 +27,7 @@ function familyOf(base) {
   return "d";
 }
 
-export default function OrbitalExplorerSimulation({ compact = false }) {
+export default function OrbitalExplorerSimulation({ compact = false, standalone = false }) {
   const [mode, setMode] = useState("explore"); // "explore" | "build"
   const [baseOrbital, setBaseOrbital] = useState("1s");
   const [orientation, setOrientation] = useState(null); // null for s orbitals (no orientation to choose)
@@ -70,7 +70,7 @@ export default function OrbitalExplorerSimulation({ compact = false }) {
   }, []);
 
   return (
-    <InteractiveFrame title="Orbital Explorer" subtitle="Explore atomic orbitals and electron probability distributions" compact={compact}>
+    <InteractiveFrame title="Orbital Explorer" subtitle="Explore atomic orbitals and electron probability distributions" compact={compact} standalone={standalone}>
       <div className="mx-auto flex w-full flex-col gap-3" style={{ maxWidth: 1180 }}>
         {/* mode tabs */}
         <div className="flex items-center justify-center gap-2">

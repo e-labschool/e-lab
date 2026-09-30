@@ -41,7 +41,7 @@ function toEncounterShape(found) {
   };
 }
 
-export default function CollisionTheoryVisualizer({ compact = false }) {
+export default function CollisionTheoryVisualizer({ compact = false, standalone = false }) {
   const [modeId, setModeId] = useState("collision");
   const [temperature] = useState(DEFAULT_TEMPERATURE);
   const [ea, setEa] = useState(DEFAULT_EA);
@@ -131,7 +131,7 @@ export default function CollisionTheoryVisualizer({ compact = false }) {
   const [particleView, setParticleView] = useState("T1");
 
   return (
-    <InteractiveFrame title="Collision Theory Visualizer" compact={compact}>
+    <InteractiveFrame title="Collision Theory Visualizer" compact={compact} standalone={standalone}>
       <div className="mx-auto w-full" style={{ maxWidth: 1060 }}>
         <div className="flex flex-wrap justify-center gap-1.5">
           {MODES.map((m) => (

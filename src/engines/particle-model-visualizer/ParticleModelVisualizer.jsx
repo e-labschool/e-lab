@@ -24,7 +24,7 @@ const FALLBACK_DESCRIPTION =
 // toward, which is what makes the state change read as a smooth,
 // synchronized transition (animation + properties together) rather than
 // three unrelated scenes being swapped.
-export default function ParticleModelVisualizer({ compact = false }) {
+export default function ParticleModelVisualizer({ compact = false, standalone = false }) {
   const [state, setState] = useState("solid");
   const [running, setRunning] = useState(true);
   const [showAttractions, setShowAttractions] = useState(false);
@@ -67,6 +67,7 @@ export default function ParticleModelVisualizer({ compact = false }) {
     <InteractiveFrame
       title="Particle Model of Solids, Liquids & Gases"
       subtitle="Switch state to see how particle arrangement, movement and properties change together."
+      standalone={standalone}
     >
       {body}
     </InteractiveFrame>

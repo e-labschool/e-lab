@@ -20,7 +20,7 @@ const FALLBACK_DESCRIPTION =
 // Visualizer (imported read-only, nothing there is modified) rather than
 // duplicating it. See PhaseParticles.jsx for how the single shared clock
 // keeps the 3D chamber and the 2D graph perfectly in step.
-export default function PhaseChangeHeatingCurve({ compact = false }) {
+export default function PhaseChangeHeatingCurve({ compact = false, standalone = false }) {
   const clockRef = useRef({ t: 0, finished: false });
   const heatingCurveRef = useRef(null);
   const temperatureRef = useRef(null);
@@ -116,7 +116,7 @@ export default function PhaseChangeHeatingCurve({ compact = false }) {
   if (compact) return body;
 
   return (
-    <InteractiveFrame title="Phase Change & Heating Curve" subtitle="See what happens to particles as energy is added.">
+    <InteractiveFrame title="Phase Change & Heating Curve" subtitle="See what happens to particles as energy is added." compact={compact} standalone={standalone}>
       {body}
     </InteractiveFrame>
   );

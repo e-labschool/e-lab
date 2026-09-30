@@ -63,7 +63,7 @@ function ToolbarButton({ onClick, children, disabled, active }) {
   );
 }
 
-export default function ExploreMatterAndStates({ compact = false }) {
+export default function ExploreMatterAndStates({ compact = false, standalone = false }) {
   const [sceneIndex, setSceneIndex] = useState(0);
   const [selectedExample, setSelectedExample] = useState(null);
   const [paused, setPaused] = useState(false);
@@ -159,7 +159,7 @@ export default function ExploreMatterAndStates({ compact = false }) {
   if (compact) return body;
 
   return (
-    <InteractiveFrame title="Explore Matter & States" subtitle="Teacher-led visual exploration">
+    <InteractiveFrame title="Explore Matter & States" subtitle="Teacher-led visual exploration" compact={compact} standalone={standalone}>
       {body}
     </InteractiveFrame>
   );

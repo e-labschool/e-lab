@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { BarChart3, LineChart as LineChartIcon } from "lucide-react";
+import { useSimulationPresentation } from "../../../components/interactive-shell/SimulationPresentation.js";
 
 const W = 720;
 const H = 260;
@@ -15,6 +16,7 @@ const PAD_R = 16;
  * for a single element span orders of magnitude -- values shown in
  * tooltips/labels are always the real kJ/mol number, never a percentage. */
 export default function IonizationGraph({ element, values, currentStep, removalOrder }) {
+  const { isViewport } = useSimulationPresentation();
   const [mode, setMode] = useState("bar");
   const [hovered, setHovered] = useState(null);
   const plotW = W - PAD_L - PAD_R;
@@ -35,8 +37,8 @@ export default function IonizationGraph({ element, values, currentStep, removalO
   });
 
   return (
-    <div className="rounded-md border border-[#1c2740] bg-[#0a0f1e] p-4">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+    <div className={isViewport ? "flex h-full min-h-0 flex-col rounded-md border border-[#1c2740] bg-[#0a0f1e] p-2.5" : "rounded-md border border-[#1c2740] bg-[#0a0f1e] p-4"}>
+      <div className={isViewport ? "mb-1.5 flex shrink-0 flex-wrap items-center justify-between gap-2" : "mb-3 flex flex-wrap items-center justify-between gap-2"}>
         <h3 className="text-xs font-semibold uppercase tracking-wide text-[#8fb4e0]">Successive Ionization Energy Graph &mdash; {element.name}</h3>
         <div className="flex overflow-hidden rounded-md border border-[#274063]">
           <button
@@ -60,7 +62,7 @@ export default function IonizationGraph({ element, values, currentStep, removalO
         </div>
       </div>
 
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full text-[#7fa8d9]" role="img" aria-label={`${element.name} successive ionization energy ${mode} graph, log scale`}>
+      <svg viewBox={`0 0 ${W} ${H}`} className={isViewport ? "w-full min-h-0 flex-1 text-[#7fa8d9]" : "w-full text-[#7fa8d9]"} preserveAspectRatio="xMidYMid meet" role="img" aria-label={`${element.name} successive ionization energy ${mode} graph, log scale`}>
         {ticks.map((t, i) => {
           const y = yFor(t);
           return (

@@ -20,7 +20,7 @@ const SPECTROSCOPE_MODES = [
   { id: "compare", label: "Compare" },
 ];
 
-export default function AtomicSpectraSimulation({ compact = false }) {
+export default function AtomicSpectraSimulation({ compact = false, standalone = false }) {
   const [topView, setTopView] = useState("spectroscope");
   const [element, setElement] = useState("Na"); // default first load: Sodium
   const [selectedLineIndex, setSelectedLineIndex] = useState(null);
@@ -30,7 +30,7 @@ export default function AtomicSpectraSimulation({ compact = false }) {
   const spectrum = SPECTRA[element];
 
   return (
-    <InteractiveFrame title="Atomic Spectra Lab" subtitle="See how electron energy transitions connect to photon energy, wavelength and atomic line spectra." compact={compact}>
+    <InteractiveFrame title="Atomic Spectra Lab" subtitle="See how electron energy transitions connect to photon energy, wavelength and atomic line spectra." compact={compact} standalone={standalone}>
       <div className="mx-auto flex w-full flex-col gap-3" style={{ maxWidth: 900 }}>
         <div className="flex flex-wrap items-center justify-center gap-1.5">
           {TOP_VIEWS.map((v) => (

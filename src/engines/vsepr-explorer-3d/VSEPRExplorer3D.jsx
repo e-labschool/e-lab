@@ -21,7 +21,7 @@ const GEOMETRY_IDS = Object.keys(GEOMETRY_LIBRARY);
 // The mode-agnostic orchestrator, reachable from /interactives directly and
 // from any concept page that links vsepr-theory / molecular-geometry via
 // the resource registry — same pattern as every other e-Lab engine.
-export default function VSEPRExplorer3D({ compact = false }) {
+export default function VSEPRExplorer3D({ compact = false, standalone = false }) {
   const [geometry, setGeometry] = useState("tetrahedral");
   const example = EXAMPLES[geometry];
 
@@ -58,7 +58,7 @@ export default function VSEPRExplorer3D({ compact = false }) {
   if (compact) return body;
 
   return (
-    <InteractiveFrame title="VSEPR Explorer (3D)" subtitle="Rotate real molecular geometries and see how electron domains — bonds and lone pairs — determine shape.">
+    <InteractiveFrame title="VSEPR Explorer (3D)" subtitle="Rotate real molecular geometries and see how electron domains — bonds and lone pairs — determine shape." compact={compact} standalone={standalone}>
       {body}
     </InteractiveFrame>
   );

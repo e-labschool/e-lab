@@ -38,7 +38,17 @@ function spinFor(index, count) {
   return index < count / 2 ? "cw" : "ccw";
 }
 
-export default function AtomVisualizer({ protons, neutrons, electrons, highlightZ, highlightA, highlightCharge, nucleusWarning }) {
+// `fillHeight`: purely a sizing switch, no scientific/geometric change.
+// Default (embedded Learn-page layout) sizes from WIDTH only, exactly as
+// before. When true (viewport/fullscreen/standalone mode, where the
+// parent stage has a real bounded height via CSS Grid `minmax(0,1fr)`),
+// the square instead sizes from `min(availableWidth, availableHeight)` --
+// `h-full` lets the aspect-ratio box grow to the parent's full height,
+// `max-w-full` caps it back down if that would overflow the column's
+// width, so the SVG (whose own viewBox already scales everything
+// proportionally) always fits both dimensions without ever exceeding
+// either one. No transform/zoom scaling involved.
+export default function AtomVisualizer({ protons, neutrons, electrons, highlightZ, highlightA, highlightCharge, nucleusWarning, fillHeight = false }) {
   const reducedMotion = useReducedMotion();
 
   const nucleusItems = useMemo(
@@ -49,7 +59,11 @@ export default function AtomVisualizer({ protons, neutrons, electrons, highlight
   const shells = useMemo(() => shellDistribution(electrons), [electrons]);
 
   return (
-    <div className="relative mx-auto aspect-square w-full max-w-[620px]" role="img" aria-label={`Atom model with ${protons} protons, ${neutrons} neutrons, and ${electrons} electrons, distributed as ${shells.join(", ")} electrons per shell`}>
+    <div
+      className={"relative mx-auto aspect-square " + (fillHeight ? "h-full max-h-full w-auto max-w-full" : "w-full max-w-[620px]")}
+      role="img"
+      aria-label={`Atom model with ${protons} protons, ${neutrons} neutrons, and ${electrons} electrons, distributed as ${shells.join(", ")} electrons per shell`}
+    >
       <svg viewBox="-230 -230 460 460" className="h-full w-full overflow-visible">
         <title>Electron motion and spin are represented visually. Electrons do not literally orbit or spin like small spheres.</title>
         {shells.map((_, shellIndex) => (

@@ -1,13 +1,15 @@
 import { useState } from "react";
 import { Zap } from "lucide-react";
 import { SLIDER_MAX, SCALE_MARKS, sliderPositionToEnergy, energyToSliderPosition, sanitizeEnergyInput } from "../lib/energyScale.js";
+import { useSimulationPresentation } from "../../../components/interactive-shell/SimulationPresentation.js";
 
 export default function EnergyControl({ atomState, suppliedEnergy, onChangeSupplied, onSupply, disabled, feedback }) {
+  const { isViewport } = useSimulationPresentation();
   const [inputMode, setInputMode] = useState("slider"); // "slider" | "type"
   const ie = atomState.nextIonizationEnergy;
 
   return (
-    <div className="rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-4">
+    <div className={isViewport ? "shrink-0 rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-2.5" : "rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-4"}>
       <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Supply Energy and Remove Electron</h3>
 
       {atomState.isFullyIonized ? (

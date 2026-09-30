@@ -11,7 +11,7 @@ const WAVELENGTH_NM_MAX = 700;
 const DEFAULT_WAVELENGTH_NM = 550;
 const DEFAULT_AMPLITUDE_T = 0.5; // 0..1, mapped to AMPLITUDE_PX_MIN..MAX
 
-export default function WaveExplorerSimulation({ compact = false }) {
+export default function WaveExplorerSimulation({ compact = false, standalone = false }) {
   const [waveType, setWaveType] = useState("transverse");
   const [wavelengthNm, setWavelengthNm] = useState(DEFAULT_WAVELENGTH_NM);
   const [amplitudeT, setAmplitudeT] = useState(DEFAULT_AMPLITUDE_T);
@@ -72,7 +72,7 @@ export default function WaveExplorerSimulation({ compact = false }) {
   const freqMax = frequencyFromWavelengthNm(WAVELENGTH_NM_MIN);
 
   return (
-    <InteractiveFrame title="Wave Explorer" subtitle="Visualise wave properties and their relationships" compact={compact}>
+    <InteractiveFrame title="Wave Explorer" subtitle="Visualise wave properties and their relationships" compact={compact} standalone={standalone}>
       <div className="mx-auto flex w-full flex-col gap-3" style={{ maxWidth: 1180 }}>
         {/* header row: type tabs + pause/reset */}
         <div className="flex flex-wrap items-center justify-center gap-2">

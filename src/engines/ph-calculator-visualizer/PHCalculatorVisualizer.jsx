@@ -8,7 +8,7 @@ import { DEFAULT_PH, concentrationFromPH, pHFromConcentration, clampPH, clampCon
 // whole simulation. No separate equation panel, no attraction-style
 // explanatory panels, no big control bar — just the numbers at the top,
 // the equation once (small), and the scale itself doing the teaching.
-export default function PHCalculatorVisualizer({ compact = false }) {
+export default function PHCalculatorVisualizer({ compact = false, standalone = false }) {
   const [pH, setPH] = useState(DEFAULT_PH);
   const [inputValue, setInputValue] = useState(() => formatDecimal(concentrationFromPH(DEFAULT_PH)));
   const [inputError, setInputError] = useState(false);
@@ -74,7 +74,7 @@ export default function PHCalculatorVisualizer({ compact = false }) {
   if (compact) return body;
 
   return (
-    <InteractiveFrame title="pH Calculator & Visualizer" subtitle="Drag the marker to link [H3O+] and pH.">
+    <InteractiveFrame title="pH Calculator & Visualizer" subtitle="Drag the marker to link [H3O+] and pH." compact={compact} standalone={standalone}>
       {body}
     </InteractiveFrame>
   );

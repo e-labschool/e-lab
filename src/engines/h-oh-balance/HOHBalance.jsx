@@ -24,7 +24,7 @@ const REAGENT_TEXT = {
  * only thing that differs between "hcl" and "naoh" is which bar/caption
  * plays which role.
  */
-export default function HOHBalance({ compact = false }) {
+export default function HOHBalance({ compact = false, standalone = false }) {
   const [hConc, setHConc] = useState(INITIAL_H); // settled value — single source of truth
   const [displayH, setDisplayH] = useState(INITIAL_H);
   const [displayOH, setDisplayOH] = useState(ohFromH(INITIAL_H));
@@ -149,7 +149,7 @@ export default function HOHBalance({ compact = false }) {
   if (compact) return body;
 
   return (
-    <InteractiveFrame title="H+ - OH- Balance in Water" subtitle="Add HCl or NaOH and watch [H+], [OH-] and pH move together.">
+    <InteractiveFrame title="H+ - OH- Balance in Water" subtitle="Add HCl or NaOH and watch [H+], [OH-] and pH move together." compact={compact} standalone={standalone}>
       {body}
     </InteractiveFrame>
   );

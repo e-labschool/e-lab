@@ -1,4 +1,5 @@
 import OrbitalDiagram from "../../orbital-explorer/components/OrbitalDiagram.jsx";
+import { useSimulationPresentation } from "../../../components/interactive-shell/SimulationPresentation.js";
 
 /** ONE compact panel showing the CURRENT electronic configuration,
  * orbital box diagram, and species label -- no "before/after" duplicate,
@@ -6,8 +7,9 @@ import OrbitalDiagram from "../../orbital-explorer/components/OrbitalDiagram.jsx
  * OrbitalDiagram box-diagram component as-is (one box per orbital, one
  * arrow per electron) rather than reimplementing it. */
 export default function ConfigurationPanel({ atomState }) {
+  const { isViewport } = useSimulationPresentation();
   return (
-    <div className="rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-4">
+    <div className={isViewport ? "min-h-0 overflow-y-auto rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-2.5" : "rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-4"}>
       <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Electronic Configuration and Orbital Diagram</h3>
 
       <p className="mt-2 flex items-center gap-2">

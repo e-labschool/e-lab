@@ -4,9 +4,14 @@ const SECTIONS = [
   { type: "electron", title: "ELECTRONS", question: "What charge?", body: "Determines whether the species is neutral or an ion.", color: "var(--color-indigo)" },
 ];
 
-export default function ConceptStrip({ highlightedType }) {
+// `stacked`: forces a single column regardless of viewport width. Needed
+// when this strip is placed inside a narrow viewport-mode sidebar column
+// -- Tailwind's `sm:` is a VIEWPORT-width breakpoint, so at a normal
+// desktop viewport it would otherwise force 3 columns into that narrow
+// column and collide, even though there's no room for them there.
+export default function ConceptStrip({ highlightedType, stacked = false }) {
   return (
-    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+    <div className={"grid grid-cols-1 gap-2" + (stacked ? "" : " sm:grid-cols-3")}>
       {SECTIONS.map((s) => (
         <div
           key={s.type}
