@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { LayoutDashboard, BookOpen, FolderOpen, HelpCircle, Users, Lock, Settings, Menu, X, ArrowLeft } from "lucide-react";
+import { LayoutDashboard, BookOpen, FolderOpen, HelpCircle, Users, Lock, DatabaseBackup, Settings, Menu, X, ArrowLeft } from "lucide-react";
 import ProtectedRoute from "../../components/auth/ProtectedRoute.jsx";
 import Wordmark from "../../components/layout/Wordmark.jsx";
 import AccountMenu from "../../components/auth/AccountMenu.jsx";
@@ -20,6 +20,7 @@ const NAV = [
   { to: "/admin/question-bank", label: "Question Bank", icon: HelpCircle },
   { to: "/admin/users", label: "Users", icon: Users },
   { to: "/admin/access", label: "Access", icon: Lock },
+  { to: "/admin/backup", label: "Backup & Restore", icon: DatabaseBackup },
   { to: "/admin/settings", label: "Settings", icon: Settings },
 ];
 

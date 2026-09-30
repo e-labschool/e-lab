@@ -49,6 +49,7 @@ import ImportQuestions from "./pages/admin/questions/ImportQuestions.jsx";
 import AdminUsers from "./pages/admin/users/AdminUsers.jsx";
 import AdminAccess from "./pages/admin/access/AdminAccess.jsx";
 import AdminSettings from "./pages/admin/settings/AdminSettings.jsx";
+import AdminBackupRestore from "./pages/admin/backup/AdminBackupRestore.jsx";
 
 
 function lazyWithChunkRefresh(factory, key) {
@@ -207,6 +208,7 @@ const router = createBrowserRouter([
       { path: "question-bank/:questionId", element: <QuestionEditor /> },
       { path: "users", element: <AdminUsers /> },
       { path: "access", element: <AdminAccess /> },
+      { path: "backup", element: <AdminBackupRestore /> },
       { path: "settings", element: <AdminSettings /> },
     ],
   },

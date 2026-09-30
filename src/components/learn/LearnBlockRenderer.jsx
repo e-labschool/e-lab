@@ -1,6 +1,6 @@
 import { useState, useEffect, Suspense } from "react";
 import { Lightbulb, BookMarked, AlertTriangle, Globe2, Beaker, Columns2, Link2, ArrowRight } from "lucide-react";
-import { sanitizeHtml, renderChemMarkup, MOLECULE_PRESETS, getWorkedExampleItems } from "../../data/learnBlockRegistry.jsx";
+import { sanitizeHtml, renderChemMarkup, MOLECULE_PRESETS, getWorkedExampleItems, getWorkedExampleQuestionItems } from "../../data/learnBlockRegistry.jsx";
 import { SIMULATION_COMPONENTS } from "../../data/simulationEngineComponents.js";
 import { resolveMathAnnotationsInHtml } from "../admin/EquationFriendlyField.jsx";
 import { renderCompactLatex, renderMathMarkersInHtml, ScientificText as CompactMathText } from "../../lib/scientificContent.jsx";
@@ -264,6 +264,14 @@ function WorkedExampleItemView({ item }) {
 function WorkedExampleBlock({ content }) {
   const [revealed, setRevealed] = useState(false);
   const items = getWorkedExampleItems(content);
+  const questionItems = getWorkedExampleQuestionItems(content);
+  // An old block never had questionItems — its question was always a
+  // single plain string. Render that exact old paragraph markup
+  // (pixel-identical to before) rather than the generic items sequence,
+  // so nothing already published changes appearance. The moment a block
+  // has a real questionItems array (added a table, a second paragraph,
+  // etc.), it renders through the shared item-sequence view instead.
+  const hasQuestionItems = Array.isArray(content.questionItems) && content.questionItems.length > 0;
   // Undefined (every block saved before this existed) behaves exactly
   // like "direct" — nothing already published changes appearance.
   const isReveal = content.displayMode === "reveal";
@@ -278,7 +286,13 @@ function WorkedExampleBlock({ content }) {
   return (
     <div className="rounded-md border border-[#fb7185]/30 bg-[#fb7185]/10 p-4">
       <p className="text-xs font-semibold uppercase tracking-wide text-[#ff8fa1]">Worked Example</p>
-      <p className="mt-1.5 text-sm font-medium text-[var(--color-ink)]"><CompactMathText text={content.question} /></p>
+      {hasQuestionItems ? (
+        <div className="mt-1.5 text-sm font-medium text-[var(--color-ink)]">
+          {questionItems.map((item, i) => <WorkedExampleItemView key={i} item={item} />)}
+        </div>
+      ) : (
+        <p className="mt-1.5 text-sm font-medium text-[var(--color-ink)]"><CompactMathText text={content.question} /></p>
+      )}
 
       {items.length > 0 && (isReveal ? (
         <>

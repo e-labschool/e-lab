@@ -35,7 +35,7 @@ export const BLOCK_TYPES = {
   definition: { label: "Definition", category: "teaching", icon: BookMarked, defaultContent: { term: "", definition: "" } },
   common_mistake: { label: "Common Mistakes / Misunderstandings", category: "teaching", icon: AlertTriangle, defaultContent: { text: "" } },
   real_life: { label: "Real-Life Connection", category: "teaching", icon: Globe2, defaultContent: { title: "", content: "", imageUrl: "", imageAlt: "", imageCaption: "", imageWrap: "right", imageWidth: "medium" } },
-  worked_example: { label: "Worked Example", category: "teaching", icon: ListChecks, defaultContent: { question: "", solution: "", items: [], displayMode: "direct" } },
+  worked_example: { label: "Worked Example", category: "teaching", icon: ListChecks, defaultContent: { question: "", solution: "", questionItems: [], items: [], displayMode: "direct" } },
   data_graph: { label: "Data / Graph", category: "teaching", icon: BarChart3, defaultContent: { title: "", rows: [], explanation: "", prompt: "" } },
   compare_contrast: { label: "Compare & Contrast", category: "teaching", icon: Columns2, defaultContent: { title: "", displayMode: "inline", columns: [{ title: "", content: "" }, { title: "", content: "" }] } },
   reveal_think: { label: "Reveal / Think", category: "teaching", icon: HelpCircle, defaultContent: { prompt: "", reveal: "" } },
@@ -184,6 +184,18 @@ export function getWorkedExampleItems(content) {
   if (Array.isArray(content?.items) && content.items.length) return content.items;
   const solution = getWorkedExampleSolution(content);
   return solution ? [{ type: "text", value: solution }] : [];
+}
+
+/** Same additive-items convention as getWorkedExampleItems() above, for
+ * the Question side. Old blocks only ever had a single plain `question`
+ * string (no tables, no mixed content) — that keeps working forever,
+ * unread and unmigrated in storage, wrapped as one { type: "text" } item
+ * so it shows/edits in the exact same items-sequence UI as Solution. The
+ * moment an admin edits/adds a question item, the block starts saving
+ * `questionItems` going forward; `question` is simply left alone. */
+export function getWorkedExampleQuestionItems(content) {
+  if (Array.isArray(content?.questionItems) && content.questionItems.length) return content.questionItems;
+  return content?.question ? [{ type: "text", value: content.question }] : [];
 }
 
 export const WORKED_EXAMPLE_ITEM_TYPES = [
@@ -722,65 +734,87 @@ function WorkedExampleItemEditor({ item, onChange, onRemove, onMoveUp, onMoveDow
   );
 }
 
+/** Shared add/update/remove/move logic for an items-sequence editor —
+ * used identically by both the Question and the Solution sides of a
+ * Worked Example, so there is exactly one implementation of "edit an
+ * ordered list of mixed content items", not two. */
+function itemsController(items, setItems) {
+  return {
+    items,
+    update: (i, next) => setItems(items.map((it, idx) => (idx === i ? next : it))),
+    remove: (i) => setItems(items.filter((_, idx) => idx !== i)),
+    move: (i, dir) => {
+      const j = i + dir;
+      if (j < 0 || j >= items.length) return;
+      const next = [...items];
+      [next[i], next[j]] = [next[j], next[i]];
+      setItems(next);
+    },
+    add: (type) => setItems([...items, newWorkedExampleItem(type)]),
+  };
+}
+
+/** The reusable items-sequence editor UI — one list of
+ * WorkedExampleItemEditor cards plus "add item" buttons. Used for both
+ * Question and Solution (see WorkedExampleEditor below) so a table, or
+ * any other item type, is inserted identically in either section; there
+ * is no separate QuestionTable/SolutionTable implementation. */
+function WorkedExampleItemsList({ controller, emptyLabel }) {
+  const { items } = controller;
+  return (
+    <div>
+      <div className="space-y-2">
+        {items.map((item, i) => (
+          <WorkedExampleItemEditor
+            key={i}
+            item={item}
+            onChange={(next) => controller.update(i, next)}
+            onRemove={() => controller.remove(i)}
+            onMoveUp={() => controller.move(i, -1)}
+            onMoveDown={() => controller.move(i, 1)}
+            isFirst={i === 0}
+            isLast={i === items.length - 1}
+          />
+        ))}
+        {items.length === 0 && <p className="text-[11px] text-[var(--color-ink-faint)]">{emptyLabel}</p>}
+      </div>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {WORKED_EXAMPLE_ITEM_TYPES.map(({ type, label, icon: Icon }) => (
+          <button key={type} type="button" onClick={() => controller.add(type)} className="flex items-center gap-1 rounded-md border border-[var(--color-line)] px-2 py-1 text-[11px] font-medium text-[var(--color-indigo)] hover:border-[var(--color-indigo)] hover:bg-[var(--color-indigo-soft)]">
+            <Plus size={11} /> <Icon size={12} /> {label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function WorkedExampleEditor({ content, set }) {
-  // See getWorkedExampleItems() above for exactly how old (`solution` /
-  // `steps` + `finalAnswer`) and new (`items`) blocks are unified into
-  // one editing surface without ever migrating storage.
+  // See getWorkedExampleItems() / getWorkedExampleQuestionItems() above
+  // for exactly how old (plain `question` string; `solution` / `steps` +
+  // `finalAnswer`) and new (`questionItems` / `items`) blocks are
+  // unified into one editing surface without ever migrating storage.
+  const questionItems = getWorkedExampleQuestionItems(content);
   const items = getWorkedExampleItems(content);
   // Existing blocks saved before displayMode existed have no such key at
-  // all \u2014 undefined must behave exactly like "direct" so nothing already
+  // all — undefined must behave exactly like "direct" so nothing already
   // published silently changes appearance (same convention as
   // Compare & Contrast's displayMode).
   const displayMode = content.displayMode ?? "direct";
 
-  function setItems(next) {
-    set("items", next);
-  }
-  function updateItem(i, next) {
-    setItems(items.map((it, idx) => (idx === i ? next : it)));
-  }
-  function removeItem(i) {
-    setItems(items.filter((_, idx) => idx !== i));
-  }
-  function moveItem(i, dir) {
-    const j = i + dir;
-    if (j < 0 || j >= items.length) return;
-    const next = [...items];
-    [next[i], next[j]] = [next[j], next[i]];
-    setItems(next);
-  }
-  function addItem(type) {
-    setItems([...items, newWorkedExampleItem(type)]);
-  }
+  const questionController = itemsController(questionItems, (next) => set("questionItems", next));
+  const solutionController = itemsController(items, (next) => set("items", next));
 
   return (
     <div className="space-y-2">
-      <div><label className={labelCls}>Question / Problem</label><EquationFriendlyField className={inputCls} rows={2} value={content.question} onChange={(value) => set("question", value)} /></div>
+      <div>
+        <label className={labelCls}>Question — a sequence of text, subheadings, equations, tables and an answer</label>
+        <WorkedExampleItemsList controller={questionController} emptyLabel="No content yet — add a piece of the question below." />
+      </div>
 
       <div>
         <label className={labelCls}>Solution — a sequence of text, subheadings, equations, tables and an answer</label>
-        <div className="space-y-2">
-          {items.map((item, i) => (
-            <WorkedExampleItemEditor
-              key={i}
-              item={item}
-              onChange={(next) => updateItem(i, next)}
-              onRemove={() => removeItem(i)}
-              onMoveUp={() => moveItem(i, -1)}
-              onMoveDown={() => moveItem(i, 1)}
-              isFirst={i === 0}
-              isLast={i === items.length - 1}
-            />
-          ))}
-          {items.length === 0 && <p className="text-[11px] text-[var(--color-ink-faint)]">No content yet — add a piece of the solution below.</p>}
-        </div>
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {WORKED_EXAMPLE_ITEM_TYPES.map(({ type, label, icon: Icon }) => (
-            <button key={type} type="button" onClick={() => addItem(type)} className="flex items-center gap-1 rounded-md border border-[var(--color-line)] px-2 py-1 text-[11px] font-medium text-[var(--color-indigo)] hover:border-[var(--color-indigo)] hover:bg-[var(--color-indigo-soft)]">
-              <Plus size={11} /> <Icon size={12} /> {label}
-            </button>
-          ))}
-        </div>
+        <WorkedExampleItemsList controller={solutionController} emptyLabel="No content yet — add a piece of the solution below." />
       </div>
 
       <div>
