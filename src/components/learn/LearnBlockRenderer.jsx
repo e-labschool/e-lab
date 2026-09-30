@@ -37,6 +37,7 @@ const SIMULATION_COMPONENTS = {
   "wave-explorer": lazy(() => import("../../engines/wave-explorer/WaveExplorerSimulation.jsx")),
   "orbital-explorer": lazy(() => import("../../engines/orbital-explorer/OrbitalExplorerSimulation.jsx")),
   "atomic-spectra-lab": lazy(() => import("../../engines/atomic-spectra/AtomicSpectraSimulation.jsx")),
+  "ionization-energy-explorer": lazy(() => import("../../engines/ionization-energy-explorer/IonizationEnergyExplorer.jsx")),
 };
 
 export default function LearnBlockRenderer({ block }) {

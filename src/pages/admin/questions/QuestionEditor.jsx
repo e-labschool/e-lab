@@ -1,8 +1,9 @@
 import { useState, useEffect, lazy, Suspense } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ChevronLeft, Loader2, AlertTriangle, Eye } from "lucide-react";
+import { ChevronLeft, Loader2, AlertTriangle, Eye, Plus, Trash2 } from "lucide-react";
 import { getQuestion, getAdminQuestionSecrets, saveQuestionWithSecrets } from "../../../lib/questionBankService.js";
 import Button from "../../../components/ui/Button.jsx";
+import EquationFriendlyField from "../../../components/admin/EquationFriendlyField.jsx";
 
 // Lazy-loaded specifically because it pulls in the real StimulusRenderer
 // (and, through it, all 30+ visual sub-renderer components) — required
@@ -36,6 +37,92 @@ function jsonOrEmpty(value) {
 }
 function jsonToText(value) {
   return value ? JSON.stringify(value, null, 2) : "";
+}
+
+// MCQ options are stored (and saved) as the exact same JSON-array-of-
+// {id,text} shape the rest of the app already reads (QuestionRenderer.jsx,
+// canonical import, etc) -- this editor is just a friendlier UI over that
+// same `form.options` JSON-text field, not a parallel data model.
+function parseOptionsArray(text) {
+  if (!text) return [];
+  try {
+    const val = JSON.parse(text);
+    if (!Array.isArray(val)) return [];
+    return val.map((opt, i) => {
+      const fallbackId = String.fromCharCode(65 + i);
+      if (typeof opt === "string") {
+        const m = opt.match(/^\s*([A-Z])(?:[.)]|\s*-)?\s*(.*)$/s);
+        return { id: m?.[1] || fallbackId, text: m?.[2] ?? opt };
+      }
+      return { id: opt?.id || fallbackId, text: opt?.text ?? "" };
+    });
+  } catch {
+    return [];
+  }
+}
+function optionsArrayToText(arr) {
+  return arr.length ? JSON.stringify(arr, null, 2) : "";
+}
+
+// Per-option scientific-content editor for MCQ answer choices -- reuses
+// EquationFriendlyField (the exact same authoring component/toolbar/paste
+// handling/live-preview the Question Content field and every Learn field
+// use) instead of the previous raw-JSON textarea, so options support the
+// same superscript/subscript/⟦math:...⟧/LaTeX authoring as everything
+// else, with no parallel renderer or paste handler. `showToolbar={false}`
+// keeps each row compact (a single small "Symbols / Equation" trigger is
+// still available above the whole group) rather than four full toolbars.
+function MCQOptionsEditor({ value, onChange }) {
+  const options = parseOptionsArray(value);
+  const rows = options.length ? options : ["A", "B", "C", "D"].map((id) => ({ id, text: "" }));
+
+  function updateRows(nextRows) {
+    onChange(optionsArrayToText(nextRows));
+  }
+  function updateOption(index, text) {
+    const next = rows.map((opt, i) => (i === index ? { ...opt, text } : opt));
+    updateRows(next);
+  }
+  function addOption() {
+    const nextId = String.fromCharCode(65 + rows.length);
+    updateRows([...rows, { id: nextId, text: "" }]);
+  }
+  function removeOption(index) {
+    const next = rows.filter((_, i) => i !== index).map((opt, i) => ({ ...opt, id: String.fromCharCode(65 + i) }));
+    updateRows(next);
+  }
+
+  return (
+    <div className="space-y-2.5">
+      {rows.map((opt, i) => (
+        <div key={i} className="flex items-start gap-2">
+          <span className="mt-2 w-5 shrink-0 text-sm font-semibold text-[var(--color-ink-faint)]">{opt.id}</span>
+          <div className="flex-1">
+            <EquationFriendlyField
+              value={opt.text}
+              onChange={(next) => updateOption(i, next)}
+              rows={1}
+              className={`${inputClasses} min-h-[38px]`}
+              aria-label={`Option ${opt.id} text`}
+            />
+          </div>
+          {rows.length > 2 && (
+            <button type="button" onClick={() => removeOption(i)} aria-label={`Remove option ${opt.id}`} className="mt-2 shrink-0 text-[var(--color-ink-faint)] hover:text-[var(--color-coral)]">
+              <Trash2 size={14} />
+            </button>
+          )}
+        </div>
+      ))}
+      <div className="flex items-center justify-between">
+        {rows.length < 8 ? (
+          <button type="button" onClick={addOption} className="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-indigo)] hover:underline">
+            <Plus size={13} /> Add option
+          </button>
+        ) : <span />}
+        <p className="text-[10px] text-[var(--color-ink-faint)]">Superscript/subscript, ⟦math:...⟧, \( \) and \[ \] all supported — same as Question Content. Use each option's "Symbols / Equation" button, or paste formatted text/equations directly.</p>
+      </div>
+    </div>
+  );
 }
 
 export default function QuestionEditor() {
@@ -189,7 +276,13 @@ export default function QuestionEditor() {
 
         <Section title="Question Content">
           <Field label="Question Content"><textarea required rows={4} className={inputClasses} value={form.questionContent} onChange={(e) => set("questionContent", e.target.value)} /></Field>
-          <Field label="Options (JSON array, MCQ only)"><textarea rows={3} className={`${inputClasses} font-mono text-xs`} value={form.options} onChange={(e) => set("options", e.target.value)} placeholder='[{"id":"A","text":"..."},{"id":"B","text":"..."}]' /></Field>
+          {form.questionType === "MCQ" ? (
+            <Field label="Answer Options (A/B/C/D)">
+              <MCQOptionsEditor value={form.options} onChange={(v) => set("options", v)} />
+            </Field>
+          ) : (
+            <Field label="Options (JSON array, MCQ only)"><textarea rows={3} className={`${inputClasses} font-mono text-xs`} value={form.options} onChange={(e) => set("options", e.target.value)} placeholder='[{"id":"A","text":"..."},{"id":"B","text":"..."}]' /></Field>
+          )}
           <Field label="Parts (JSON array, multipart only)"><textarea rows={3} className={`${inputClasses} font-mono text-xs`} value={form.parts} onChange={(e) => set("parts", e.target.value)} placeholder='[{"id":"a","questionText":"...","marks":1}]' /></Field>
         </Section>
 

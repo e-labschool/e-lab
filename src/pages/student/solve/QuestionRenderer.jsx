@@ -1,5 +1,6 @@
 import StimulusRenderer from "../../teacher/qbuilder/components/visuals/StimulusRenderer.jsx";
 import StimulusErrorBoundary from "../../../components/ui/StimulusErrorBoundary.jsx";
+import { ScientificText } from "../../../lib/scientificContent.jsx";
 
 // Renders a question during an active challenge — no correctness
 // feedback, no explanations, no hints, ever (enforced by simply never
@@ -30,7 +31,7 @@ export default function QuestionRenderer({ question, questionNumber, answer, onA
         </div>
       )}
 
-      <p className="whitespace-pre-line text-[15px] leading-relaxed text-[var(--color-ink)]">{question.questionText}</p>
+      <p className="text-[15px] leading-relaxed text-[var(--color-ink)]"><ScientificText text={question.questionText} /></p>
 
       <div className="mt-5">
         {question.parts?.length > 0 ? (
@@ -38,7 +39,7 @@ export default function QuestionRenderer({ question, questionNumber, answer, onA
             {question.parts.map((part) => (
               <div key={part.id}>
                 <p className="flex items-baseline justify-between text-sm text-[var(--color-ink-soft)]">
-                  <span><span className="font-medium text-[var(--color-ink)]">({part.id})</span> {part.questionText}</span>
+                  <span><span className="font-medium text-[var(--color-ink)]">({part.id})</span> <ScientificText text={part.questionText} /></span>
                   {part.marks != null && <span className="ml-1.5 shrink-0 text-xs text-[var(--color-ink-faint)]">[{part.marks} mark{part.marks === 1 ? "" : "s"}]</span>}
                 </p>
                 <textarea
@@ -72,7 +73,7 @@ export default function QuestionRenderer({ question, questionNumber, answer, onA
                 >
                   <input type="radio" name={`q-${question.id}`} checked={answer === optionId} onChange={() => onAnswer(optionId)} className="accent-[var(--color-indigo)]" />
                   <span className="font-medium text-[var(--color-ink-faint)]">{optionId}</span>
-                  <span className="text-[var(--color-ink)]">{optionText}</span>
+                  <ScientificText text={optionText} className="text-[var(--color-ink)]" />
                 </label>
               );
             })}

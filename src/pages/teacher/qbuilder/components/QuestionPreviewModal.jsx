@@ -2,6 +2,7 @@ import { X } from "lucide-react";
 import Badge from "../../../../components/ui/Badge.jsx";
 import { getQuestionMarks } from "../../../../data/questions/schema.js";
 import StimulusRenderer from "./visuals/StimulusRenderer.jsx";
+import { ScientificText } from "../../../../lib/scientificContent.jsx";
 
 export default function QuestionPreviewModal({ question, onClose }) {
   if (!question) return null;
@@ -31,7 +32,7 @@ export default function QuestionPreviewModal({ question, onClose }) {
           <Badge tone="neutral">{question.questionType}</Badge>
         </div>
 
-        <p className="whitespace-pre-line text-sm leading-relaxed text-[var(--color-ink)]">{question.questionText}</p>
+        <p className="text-sm leading-relaxed text-[var(--color-ink)]"><ScientificText text={question.questionText} /></p>
 
         {question.stimulus && (
           <div className="mt-3">
@@ -42,7 +43,7 @@ export default function QuestionPreviewModal({ question, onClose }) {
         {question.questionType === "MCQ" && Array.isArray(question.options) && (
           <ul className="mt-3 flex flex-col gap-1 text-sm text-[var(--color-ink-soft)]">
             {question.options.map((opt) => (
-              <li key={opt.id}>{opt.id}. {opt.text}</li>
+              <li key={opt.id}>{opt.id}. <ScientificText text={opt.text} /></li>
             ))}
           </ul>
         )}

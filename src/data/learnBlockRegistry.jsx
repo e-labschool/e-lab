@@ -69,6 +69,7 @@ export const SIMULATION_REGISTRY = {
   "wave-explorer": { label: "Wave Explorer" },
   "orbital-explorer": { label: "Orbital Explorer" },
   "atomic-spectra-lab": { label: "Atomic Spectra Lab" },
+  "ionization-energy-explorer": { label: "Ionization Energy Explorer" },
 };
 
 // Strips HTML tags for a safe plain-text preview — never renders HTML
