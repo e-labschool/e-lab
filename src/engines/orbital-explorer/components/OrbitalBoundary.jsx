@@ -45,8 +45,17 @@ function percentile(sortedArr, p) {
   return sortedArr[idx];
 }
 
+// Keyed by the single-letter axis suffix ("x"/"y"/"z"), matching what
+// LobePair is actually called with below (type.slice(-1)) -- these were
+// previously keyed "px"/"py"/"pz", which never matched, so the lookup
+// silently fell through to the [1,0,0] fallback for EVERY p orbital:
+// px's dumbbell rendered correctly by coincidence (fallback == its own
+// axis), but py and pz's boundary also rendered along x instead of
+// their own axis, while their probability-point clouds (sampled
+// separately, correctly, straight from the wavefunction) were never
+// affected -- hence "dots move, but no separate dumbbell appears".
 const AXIS_DIR = {
-  px: [1, 0, 0], py: [0, 1, 0], pz: [0, 0, 1],
+  x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1],
 };
 
 function SphereShell({ radius, color, opacity }) {
