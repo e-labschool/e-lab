@@ -50,27 +50,15 @@ export const MOLECULE_PRESETS = {
   "nh3-trigonal-pyramidal": { label: "Ammonia (NH\u2083) \u2014 trigonal pyramidal", geometry: "trigonal-pyramidal", centralLabel: "N", bondLabels: ["H", "H", "H"] },
 };
 
-export const SIMULATION_REGISTRY = {
-  "electron-configuration": { label: "Electron Configuration Explorer" },
-  "vsepr-explorer-3d": { label: "VSEPR Explorer (3D)" },
-  "explore-matter-and-states": { label: "Explore Matter & States" },
-  "particle-model-visualizer": { label: "Particle Model Visualizer" },
-  "phase-change-heating-curve": { label: "Phase Change & Heating Curve" },
-  "ph-calculator-visualizer": { label: "pH Calculator & Visualizer" },
-  "h-oh-balance": { label: "H+ - OH- Balance in Water" },
-  "neutralization-particle-visualizer": { label: "Neutralization Particle Visualizer" },
-  "equivalence-point": { label: "Equivalence Point" },
-  "titration-ph-curve": { label: "pH Curve & Titration Visualizer" },
-  "buffer-action-visualizer": { label: "Buffer Action Visualizer" },
-  "chocolate-wrapping-rate": { label: "Chocolate Wrapping \u2014 Understanding Rate" },
-  "collision-theory-visualizer": { label: "Collision Theory Visualizer" },
-  "mixture-separation-explorer": { label: "Mixture Separation Explorer" },
-  "build-an-atom": { label: "Build an Atom" },
-  "wave-explorer": { label: "Wave Explorer" },
-  "orbital-explorer": { label: "Orbital Explorer" },
-  "atomic-spectra-lab": { label: "Atomic Spectra Lab" },
-  "ionization-energy-explorer": { label: "Ionization Energy Explorer" },
-};
+// Moved to its own module (simulationRegistry.js) so the shared
+// simulation chrome (InteractiveFrame, the /simulation/:simulationId
+// standalone route) can read it without pulling in this whole
+// admin-editor file's dependencies. Imported (and re-exported below) so
+// both this file's own internal uses AND every existing
+// `import { SIMULATION_REGISTRY } from "./learnBlockRegistry.jsx"` keep
+// working unchanged.
+import { SIMULATION_REGISTRY } from "./simulationRegistry.js";
+export { SIMULATION_REGISTRY };
 
 // Strips HTML tags for a safe plain-text preview — never renders HTML
 // inside an Admin list card, and never mutates the actual stored content.

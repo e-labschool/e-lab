@@ -156,6 +156,17 @@ body {
   outline-offset: 2px;
 }
 
+/* The Fullscreen API's own backdrop (rendered behind whatever element is
+   fullscreened) defaults to opaque black in every browser, regardless of
+   page styling -- and requestFullscreen()'d elements themselves aren't
+   covered by ordinary page CSS unless :fullscreen is targeted explicitly.
+   Without this, entering Full Screen on a simulation would flash/show
+   browser black instead of e-Lab's own paper background, in both themes. */
+:fullscreen,
+::backdrop {
+  background-color: var(--color-paper);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.001ms !important;

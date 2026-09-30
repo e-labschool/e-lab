@@ -85,7 +85,7 @@ export default function IonizationEnergyExplorer({ compact = false }) {
 
   return (
     <InteractiveFrame title="Ionization Energy Explorer" subtitle="Supply energy to successively remove electrons and watch the atom respond" compact={compact}>
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[220px_1fr_300px]">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[200px_1fr_280px]">
         {/* LEFT: element selector + data table */}
         <div className="flex flex-col gap-3 lg:order-1">
           <div>
@@ -111,8 +111,14 @@ export default function IonizationEnergyExplorer({ compact = false }) {
           </button>
         </div>
 
-        {/* CENTRE: hero atom visualization */}
-        <div className="flex items-center justify-center rounded-md border border-[#1c2740] bg-[#070b14] p-4 lg:order-2">
+        {/* CENTRE: hero atom visualization -- the dominant visual area.
+            Explicit min-heights (not just "grow to match siblings") are
+            what actually make the atom large: AtomVisualization measures
+            THIS panel via ResizeObserver and derives every coordinate
+            from its real size, so a taller panel directly means a bigger,
+            more dominant atom. Taller again in fullscreen, where there's
+            real extra viewport height to use. */}
+        <div className="flex aspect-square flex-col rounded-md border border-[#1c2740] bg-[#070b14] p-3 sm:aspect-[4/3] lg:order-2 lg:aspect-auto lg:min-h-[560px] [:fullscreen_&]:aspect-auto [:fullscreen_&]:min-h-[70vh] [:fullscreen_&]:lg:min-h-[78vh]">
           <AtomVisualization
             atomState={atomState}
             removing={removing}

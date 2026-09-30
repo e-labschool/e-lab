@@ -10,6 +10,7 @@ import Topics from "./pages/Topics.jsx";
 import ConceptPage from "./pages/ConceptPage.jsx";
 import Interactives from "./pages/Interactives.jsx";
 import InteractivePage from "./pages/InteractivePage.jsx";
+import SimulationStandalonePage from "./pages/SimulationStandalonePage.jsx";
 import Teachers from "./pages/Teachers.jsx";
 import About from "./pages/About.jsx";
 import AuthPage from "./pages/AuthPage.jsx";
@@ -116,6 +117,17 @@ const router = createBrowserRouter([
 
       { path: "*", element: <NotFound /> },
     ],
+  },
+  {
+    // Deliberately OUTSIDE Shell -- "Open in New Tab" opens a focused,
+    // standalone simulation experience, not the public site chrome (full
+    // header/nav/footer) wrapped around it. No role/auth gate: any e-Lab
+    // simulation is already reachable unauthenticated via a Learn page
+    // block, so this route mirrors that, just without the surrounding
+    // chapter content. See PART 2/PART 8 of the simulation-controls brief
+    // this route was added for.
+    path: "/simulation/:simulationId",
+    element: <SimulationStandalonePage />,
   },
   {
     path: "/student",

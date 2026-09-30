@@ -1,6 +1,7 @@
-import { useState, useEffect, lazy, Suspense } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { Lightbulb, BookMarked, AlertTriangle, Globe2, Beaker, Columns2, Link2, ArrowRight } from "lucide-react";
 import { sanitizeHtml, renderChemMarkup, MOLECULE_PRESETS, getWorkedExampleSolution } from "../../data/learnBlockRegistry.jsx";
+import { SIMULATION_COMPONENTS } from "../../data/simulationEngineComponents.js";
 import { resolveMathAnnotationsInHtml } from "../admin/EquationFriendlyField.jsx";
 import { renderCompactLatex, renderMathMarkersInHtml, ScientificText as CompactMathText } from "../../lib/scientificContent.jsx";
 import MoleculeViewer3D from "../3d/MoleculeViewer3D.jsx";
@@ -17,28 +18,6 @@ import { useAuth } from "../../context/AuthContext.jsx";
 // caller (renderChemMarkup's sibling usages) that historically imported
 // it from this file.
 export { renderCompactLatex };
-
-const SIMULATION_COMPONENTS = {
-  "electron-configuration": lazy(() => import("../../engines/electron-configuration/ElectronConfigurationExplorer.jsx")),
-  "vsepr-explorer-3d": lazy(() => import("../../engines/vsepr-explorer-3d/VSEPRExplorer3D.jsx")),
-  "explore-matter-and-states": lazy(() => import("../../engines/explore-matter-and-states/ExploreMatterAndStates.jsx")),
-  "particle-model-visualizer": lazy(() => import("../../engines/particle-model-visualizer/ParticleModelVisualizer.jsx")),
-  "phase-change-heating-curve": lazy(() => import("../../engines/phase-change-heating-curve/PhaseChangeHeatingCurve.jsx")),
-  "ph-calculator-visualizer": lazy(() => import("../../engines/ph-calculator-visualizer/PHCalculatorVisualizer.jsx")),
-  "h-oh-balance": lazy(() => import("../../engines/h-oh-balance/HOHBalance.jsx")),
-  "neutralization-particle-visualizer": lazy(() => import("../../engines/neutralization-particle-visualizer/NeutralizationParticleVisualizer.jsx")),
-  "equivalence-point": lazy(() => import("../../engines/equivalence-point/EquivalencePoint.jsx")),
-  "titration-ph-curve": lazy(() => import("../../engines/titration-ph-curve/TitrationPHCurve.jsx")),
-  "buffer-action-visualizer": lazy(() => import("../../engines/buffer-action-visualizer/BufferActionVisualizer.jsx")),
-  "chocolate-wrapping-rate": lazy(() => import("../../engines/chocolate-wrapping-rate/ChocolateWrappingRate.jsx")),
-  "collision-theory-visualizer": lazy(() => import("../../engines/collision-theory-visualizer/CollisionTheoryVisualizer.jsx")),
-  "mixture-separation-explorer": lazy(() => import("../../engines/mixture-separation-explorer/MixtureSeparationExplorer.jsx")),
-  "build-an-atom": lazy(() => import("../../engines/build-an-atom/BuildAtomSimulation.jsx")),
-  "wave-explorer": lazy(() => import("../../engines/wave-explorer/WaveExplorerSimulation.jsx")),
-  "orbital-explorer": lazy(() => import("../../engines/orbital-explorer/OrbitalExplorerSimulation.jsx")),
-  "atomic-spectra-lab": lazy(() => import("../../engines/atomic-spectra/AtomicSpectraSimulation.jsx")),
-  "ionization-energy-explorer": lazy(() => import("../../engines/ionization-energy-explorer/IonizationEnergyExplorer.jsx")),
-};
 
 export default function LearnBlockRenderer({ block }) {
   const c = block.content ?? {};
