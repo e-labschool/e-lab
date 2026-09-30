@@ -8,6 +8,8 @@ import {
   Upload,
   ShieldAlert,
   FileJson,
+  FileArchive,
+  Lock,
 } from "lucide-react";
 import Button from "../../../components/ui/Button.jsx";
 import { useAuth } from "../../../context/AuthContext.jsx";
@@ -15,6 +17,9 @@ import { supabase } from "../../../lib/supabaseClient.js";
 import { exportElabContent, downloadBackup, backupFileName } from "../../../lib/backup/exportContent.js";
 import { validateBackup } from "../../../lib/backup/validateBackup.js";
 import { planRestore, restoreElabContent } from "../../../lib/backup/restoreContent.js";
+import { createDisasterBackup, downloadDisasterBackup, disasterBackupFileName } from "../../../lib/backup/disasterExport.js";
+import { validateDisasterBackup } from "../../../lib/backup/disasterValidate.js";
+import { planDisasterRestore, restoreDisasterBackup, buildIdentityMap } from "../../../lib/backup/disasterRestore.js";
 
 const cardClasses = "rounded-lg border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-5";
 const selectClasses =
@@ -384,9 +389,350 @@ function RestoreSection() {
   );
 }
 
+// ==================== COMPLETE DISASTER RECOVERY (create) ====================
+
+const DISASTER_INCLUDES = [
+  "Learn content", "Questions", "Media files", "Content ordering",
+  "User application data", "Learning progress", "Assessment data", "Required metadata",
+];
+const DISASTER_EXCLUDES = ["Passwords", "Sessions", "API secrets", "Service credentials"];
+
+function DisasterBackupSection() {
+  const [progress, setProgress] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const [result, setResult] = useState(null); // { zip, manifest, integrity, verification }
+
+  async function handleCreate() {
+    setBusy(true);
+    setError(null);
+    setResult(null);
+    try {
+      const outcome = await createDisasterBackup({ includeUserData: true, onProgress: setProgress });
+      setResult(outcome);
+    } catch (err) {
+      setError(err.message || "Disaster backup failed.");
+    } finally {
+      setBusy(false);
+      setProgress(null);
+    }
+  }
+
+  async function handleDownload() {
+    if (result) await downloadDisasterBackup(result.zip, result.manifest);
+  }
+
+  const v = result?.verification;
+
+  return (
+    <div className={cardClasses}>
+      <h2 className="flex items-center gap-2 font-[var(--font-display)] text-lg font-semibold text-[var(--color-ink)]">
+        <FileArchive size={18} /> Complete Disaster Recovery
+      </h2>
+      <p className="mt-1 text-sm text-[var(--color-ink-soft)]">
+        Create a portable recovery package containing e-Lab's educational content, media and recoverable application data — a single
+        .zip, not just a JSON dump of URLs.
+      </p>
+
+      <div className="mt-3 flex items-start gap-2 rounded-md border border-[#A5362A]/40 bg-[#A5362A]/5 p-3 text-xs text-[var(--color-ink-soft)]">
+        <Lock size={14} className="mt-0.5 shrink-0 text-[#A5362A]" />
+        <span>This backup contains user and student data. Store it securely. Only authorized administrators may create or restore it.</span>
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Includes</p>
+          <ul className="mt-1 space-y-0.5 text-sm text-[var(--color-ink-soft)]">
+            {DISASTER_INCLUDES.map((i) => (
+              <li key={i} className="flex items-center gap-1.5">
+                <CheckCircle2 size={13} className="text-emerald-600" /> {i}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-[#A5362A]">Does not include</p>
+          <ul className="mt-1 space-y-0.5 text-sm text-[var(--color-ink-soft)]">
+            {DISASTER_EXCLUDES.map((i) => (
+              <li key={i} className="flex items-center gap-1.5">
+                <XCircle size={13} className="text-[#A5362A]" /> {i}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+
+      <Button className="mt-5" onClick={handleCreate} disabled={busy}>
+        {busy ? <Loader2 size={16} className="animate-spin" /> : <FileArchive size={16} />}
+        {busy ? progress || "Preparing…" : "Create Disaster Backup"}
+      </Button>
+
+      {error && (
+        <p className="mt-3 flex items-start gap-2 text-sm text-[#A5362A]">
+          <AlertTriangle size={15} className="mt-0.5 shrink-0" /> {error}
+        </p>
+      )}
+
+      {result && (
+        <div className="mt-4 rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] p-4">
+          <p className="text-sm font-medium text-[var(--color-ink)]">
+            Backup created {new Date(result.manifest.createdAt).toLocaleString()} · file: {disasterBackupFileName(result.manifest)}
+          </p>
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <StatPill label="Pages" value={result.integrity.expectedCounts.pages} />
+            <StatPill label="Blocks" value={result.integrity.expectedCounts.blocks} />
+            <StatPill label="Media files" value={result.manifest.mediaFileCount} />
+            <StatPill label="Users" value={result.integrity.expectedCounts.profiles ?? 0} />
+            <StatPill label="Progress rows" value={result.integrity.expectedCounts.learning_progress ?? 0} />
+            <StatPill label="Assessments" value={result.integrity.expectedCounts.student_challenges ?? 0} />
+            <StatPill label="Size" value={`${(result.manifest.mediaTotalBytes / 1024).toFixed(0)} KB media`} />
+          </div>
+
+          <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Verification</p>
+          <ul className="mt-1 text-sm">
+            <CheckRow item={{ pass: v.databaseRecordsVerified, label: "Database records verified" }} />
+            <CheckRow item={{ pass: v.relationshipsVerified, label: "Relationships verified", detail: v.relationshipWarnings.slice(0, 3).join("; ") }} />
+            <CheckRow item={{ pass: v.mediaVerified, label: "Media verified", detail: v.mediaFailures.length ? `${v.mediaFailures.length} file(s) could not be downloaded` : "" }} />
+            <CheckRow item={{ pass: v.checksumsVerified, label: "Checksums verified", detail: v.mediaMismatches.length ? `${v.mediaMismatches.length} mismatch(es)` : "" }} />
+          </ul>
+
+          {!v.mediaVerified || !v.checksumsVerified ? (
+            <p className="mt-3 flex items-start gap-2 text-sm font-medium text-[#A5362A]">
+              <AlertTriangle size={15} className="mt-0.5 shrink-0" /> Verification did not fully pass — this backup is downloadable for
+              inspection, but should not be treated as a guaranteed-complete disaster-recovery package until the issues above are
+              resolved.
+            </p>
+          ) : (
+            <Button className="mt-4" onClick={handleDownload}>
+              <Download size={16} /> Download Disaster Backup
+            </Button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ==================== COMPLETE DISASTER RECOVERY (restore) ====================
+
+const DSTEP = { IDLE: "idle", VALIDATED: "validated", PLANNED: "planned", RESTORING: "restoring", DONE: "done" };
+const CONFIRM_PHRASE = "RESTORE ELAB";
+
+function DisasterRestoreSection() {
+  const [step, setStep] = useState(DSTEP.IDLE);
+  const [fileName, setFileName] = useState("");
+  const [validated, setValidated] = useState(null);
+  const [plan, setPlan] = useState(null);
+  const [identityMapText, setIdentityMapText] = useState("");
+  const [confirmText, setConfirmText] = useState("");
+  const [progress, setProgress] = useState(null);
+  const [error, setError] = useState(null);
+  const [result, setResult] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  function reset() {
+    setStep(DSTEP.IDLE);
+    setFileName("");
+    setValidated(null);
+    setPlan(null);
+    setIdentityMapText("");
+    setConfirmText("");
+    setError(null);
+    setResult(null);
+  }
+
+  async function handleFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    reset();
+    setFileName(file.name);
+    setBusy(true);
+    setError(null);
+    try {
+      const v = await validateDisasterBackup(file);
+      setValidated(v);
+      setStep(DSTEP.VALIDATED);
+      if (v.valid) {
+        const p = await planDisasterRestore(v);
+        setPlan(p);
+        setIdentityMapText(JSON.stringify(buildIdentityMap(p.usersData), null, 2));
+        setStep(DSTEP.PLANNED);
+      }
+    } catch (err) {
+      setError(err.message || "Could not read this file.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleRestore() {
+    setBusy(true);
+    setStep(DSTEP.RESTORING);
+    setError(null);
+    try {
+      let identityMap = {};
+      try {
+        identityMap = JSON.parse(identityMapText || "{}");
+      } catch {
+        throw new Error("Identity map is not valid JSON — see the field above.");
+      }
+      const outcome = await restoreDisasterBackup(validated, {
+        includeUserData: validated.manifest.includesUserData,
+        identityMap,
+        onProgress: setProgress,
+      });
+      setResult(outcome);
+      setStep(DSTEP.DONE);
+    } catch (err) {
+      setError(err.message || "Restore failed.");
+      setStep(DSTEP.PLANNED);
+    } finally {
+      setBusy(false);
+      setProgress(null);
+    }
+  }
+
+  const canRestore = step === DSTEP.PLANNED && !busy && confirmText.trim() === CONFIRM_PHRASE;
+
+  return (
+    <div className={cardClasses}>
+      <h2 className="flex items-center gap-2 font-[var(--font-display)] text-lg font-semibold text-[var(--color-ink)]">
+        <FileArchive size={18} /> Restore Disaster Backup
+      </h2>
+      <p className="mt-1 text-sm text-[var(--color-ink-soft)]">
+        Select → read manifest → verify package → verify checksums → validate compatibility → show restore plan → your confirmation →
+        restore → post-restore verification. Nothing is written until you confirm.
+      </p>
+
+      <div className="mt-4">
+        <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-dashed border-[var(--color-line)] px-4 py-3 text-sm text-[var(--color-ink-soft)] hover:border-[var(--color-indigo)] hover:text-[var(--color-ink)]">
+          <Upload size={16} />
+          {fileName || "Select an e-Lab disaster backup file (.zip)"}
+          <input type="file" accept=".zip,application/zip" className="hidden" onChange={handleFile} disabled={busy} />
+        </label>
+        {step !== DSTEP.IDLE && (
+          <button type="button" onClick={reset} className="ml-3 text-xs text-[var(--color-ink-faint)] underline">
+            Choose a different file
+          </button>
+        )}
+      </div>
+
+      {error && (
+        <p className="mt-3 flex items-start gap-2 text-sm text-[#A5362A]">
+          <AlertTriangle size={15} className="mt-0.5 shrink-0" /> {error}
+        </p>
+      )}
+
+      {validated && (
+        <div className="mt-4 rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] p-4">
+          <p className={`text-sm font-semibold ${validated.valid ? "text-emerald-700" : "text-[#A5362A]"}`}>
+            {validated.valid ? "✓ Valid e-Lab disaster backup" : "✗ This file failed validation — nothing will be modified"}
+          </p>
+          <ul className="mt-2 max-h-56 overflow-y-auto">
+            {validated.checks.map((c) => (
+              <CheckRow key={c.id} item={c} />
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {plan && validated?.valid && (
+        <div className="mt-4 rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] p-4">
+          <p className="text-sm font-medium text-[var(--color-ink)]">Restore plan</p>
+          <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 text-sm text-[var(--color-ink-soft)] sm:grid-cols-4">
+            <span>Backup date: {new Date(validated.manifest.createdAt).toLocaleDateString()}</span>
+            <span>Version: {validated.manifest.disasterBackupVersion}</span>
+            <span>Pages: {validated.manifest.recordCounts?.pages}</span>
+            <span>Media: {validated.manifest.mediaFileCount}</span>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <StatPill label="New pages" value={plan.contentPlan.summary.newPages} />
+            <StatPill label="Existing matches" value={plan.contentPlan.summary.matchingPages} />
+            <StatPill label="Profiles in file" value={plan.userSummary.totalProfiles} />
+            <StatPill label="Same-id matches" value={plan.userSummary.matchingSameId} />
+          </div>
+
+          <p className="mt-4 flex items-start gap-2 text-sm text-[var(--color-ink-soft)]">
+            <AlertTriangle size={15} className="mt-0.5 shrink-0 text-[#A5362A]" /> Current environment contains existing data.
+            Restoration may replace existing records (content is restored in Replace mode; user data is upserted by identity map below).
+          </p>
+
+          <div className="mt-4">
+            <label className="mb-1 block text-xs font-medium text-[var(--color-ink-soft)]">
+              Identity map (old user id → target user id already present in this project's auth.users). Defaults to "same id" — only
+              correct if restoring into the same/preserved auth users. Edit if you re-invited users elsewhere; see
+              docs/DISASTER_RECOVERY.md.
+            </label>
+            <textarea
+              className="h-28 w-full rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] px-3 py-2 font-mono text-xs text-[var(--color-ink)]"
+              value={identityMapText}
+              onChange={(e) => setIdentityMapText(e.target.value)}
+            />
+          </div>
+
+          <div className="mt-4 rounded-md border border-[#A5362A]/40 bg-[#A5362A]/5 p-3">
+            <p className="flex items-start gap-2 text-sm font-medium text-[#A5362A]">
+              <ShieldAlert size={16} className="mt-0.5 shrink-0" /> Destructive restore — type {CONFIRM_PHRASE} to confirm.
+            </p>
+            <input
+              className="mt-2 w-full rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] px-3 py-2 text-sm"
+              placeholder={CONFIRM_PHRASE}
+              value={confirmText}
+              onChange={(e) => setConfirmText(e.target.value)}
+            />
+          </div>
+
+          <Button variant="danger" className="mt-4" onClick={handleRestore} disabled={!canRestore}>
+            {busy ? <Loader2 size={16} className="animate-spin" /> : null}
+            {busy ? progress || "Restoring…" : "Restore e-Lab"}
+          </Button>
+        </div>
+      )}
+
+      {step === DSTEP.DONE && result && (
+        <div className="mt-4 rounded-md border border-emerald-600/40 bg-emerald-600/5 p-4">
+          <p className="flex items-center gap-2 text-sm font-semibold text-emerald-700">
+            <CheckCircle2 size={16} /> Restore complete
+          </p>
+          <ul className="mt-2 text-sm text-[var(--color-ink-soft)]">
+            <li>Pages inserted: {result.contentResult.pagesInserted}, updated: {result.contentResult.pagesUpdated}</li>
+            <li>Blocks inserted: {result.contentResult.blocksInserted}</li>
+            {result.userDataResult && (
+              <li>
+                User data: {Object.entries(result.userDataResult)
+                  .map(([t, c]) => `${t}: ${c.restored} restored / ${c.skippedNoIdentity} skipped`)
+                  .join(" · ")}
+              </li>
+            )}
+            <li>
+              Media: {result.mediaResults.verified} verified / {result.mediaResults.uploaded} uploaded
+              {result.mediaResults.failed.length ? ` — ${result.mediaResults.failed.length} FAILED (see below)` : ""}
+            </li>
+          </ul>
+          {result.mediaResults.failed.length > 0 && (
+            <div className="mt-2 max-h-32 overflow-y-auto rounded-md border border-[#A5362A]/40 p-2 text-xs text-[#A5362A]">
+              {result.mediaResults.failed.map((f) => (
+                <div key={`${f.bucket}/${f.path}`}>{f.bucket}/{f.path}: {f.error}</div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const TABS = [
+  { id: "content", label: "1. Educational Content" },
+  { id: "disaster", label: "2. Complete Disaster Recovery" },
+  { id: "restore", label: "3. Restore" },
+];
+
 export default function AdminBackupRestore() {
   const { isConfigured } = useAuth();
   const scopeLabel = useMemo(() => "Backup & Restore", []);
+  const [tab, setTab] = useState("content");
 
   if (!isConfigured) {
     return <p className="p-10 text-sm text-[var(--color-ink-soft)]">Backup &amp; Restore requires Supabase to be connected.</p>;
@@ -395,11 +741,37 @@ export default function AdminBackupRestore() {
   return (
     <div className="mx-auto max-w-4xl px-6 py-10">
       <h1 className="font-[var(--font-display)] text-2xl font-semibold tracking-tight text-[var(--color-ink)]">{scopeLabel}</h1>
-      <p className="mt-1 text-sm text-[var(--color-ink-soft)]">Protect your e-Lab educational content with portable backups.</p>
+      <p className="mt-1 text-sm text-[var(--color-ink-soft)]">
+        Protect your e-Lab educational content with portable backups, and extend to a complete disaster-recovery package when you need
+        more than content alone.
+      </p>
 
-      <div className="mt-8 flex flex-col gap-6">
-        <BackupSection />
-        <RestoreSection />
+      <div className="mt-6 flex flex-wrap gap-2 border-b border-[var(--color-line)]">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setTab(t.id)}
+            className={`rounded-t-md px-4 py-2 text-sm font-medium transition-colors ${
+              tab === t.id
+                ? "border-b-2 border-[var(--color-indigo)] text-[var(--color-ink)]"
+                : "text-[var(--color-ink-faint)] hover:text-[var(--color-ink-soft)]"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-6 flex flex-col gap-6">
+        {tab === "content" && <BackupSection />}
+        {tab === "disaster" && <DisasterBackupSection />}
+        {tab === "restore" && (
+          <>
+            <RestoreSection />
+            <DisasterRestoreSection />
+          </>
+        )}
       </div>
     </div>
   );

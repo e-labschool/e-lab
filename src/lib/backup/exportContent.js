@@ -21,12 +21,18 @@ function chunk(array, size) {
   return out;
 }
 
-/** Reads every row of `table`, optionally filtered, in PAGE_BATCH_SIZE pages. */
-async function fetchAllRows(table, { applyFilter } = {}, onProgress) {
+/**
+ * Reads every row of `table`, optionally filtered, in PAGE_BATCH_SIZE
+ * pages. Exported (not just used internally) so the Complete Disaster
+ * Recovery exporter (disasterExport.js) can read the audited user/
+ * progress/assessment/settings tables with the exact same paginated,
+ * arbitrarily-large-table-safe logic — rather than reimplementing it.
+ */
+export async function fetchAllRows(table, { applyFilter, orderColumn = "id" } = {}, onProgress) {
   const rows = [];
   let from = 0;
   for (;;) {
-    let query = supabase.from(table).select("*").order("id", { ascending: true }).range(from, from + PAGE_BATCH_SIZE - 1);
+    let query = supabase.from(table).select("*").order(orderColumn, { ascending: true }).range(from, from + PAGE_BATCH_SIZE - 1);
     if (applyFilter) query = applyFilter(query);
     const { data, error } = await query;
     if (error) throw new Error(`Failed reading ${table}: ${error.message}`);
