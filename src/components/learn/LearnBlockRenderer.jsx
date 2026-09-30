@@ -1,10 +1,11 @@
 import { useState, useEffect, Suspense } from "react";
 import { Lightbulb, BookMarked, AlertTriangle, Globe2, Beaker, Columns2, Link2, ArrowRight } from "lucide-react";
-import { sanitizeHtml, renderChemMarkup, MOLECULE_PRESETS, getWorkedExampleSolution } from "../../data/learnBlockRegistry.jsx";
+import { sanitizeHtml, renderChemMarkup, MOLECULE_PRESETS, getWorkedExampleItems } from "../../data/learnBlockRegistry.jsx";
 import { SIMULATION_COMPONENTS } from "../../data/simulationEngineComponents.js";
 import { resolveMathAnnotationsInHtml } from "../admin/EquationFriendlyField.jsx";
 import { renderCompactLatex, renderMathMarkersInHtml, ScientificText as CompactMathText } from "../../lib/scientificContent.jsx";
 import MoleculeViewer3D from "../3d/MoleculeViewer3D.jsx";
+import TableView from "./TableView.jsx";
 import ELabLoader from "../ui/ELabLoader.jsx";
 import { findPublishedLessonBySyllabusCode } from "../../lib/learnContentService.js";
 import { useNavigate } from "react-router-dom";
@@ -100,6 +101,7 @@ export default function LearnBlockRenderer({ block }) {
         <div className="rounded-md border-l-4 border-[#6d8cff] bg-[#6d8cff]/12 p-4">
           <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[#8da3ff]"><Lightbulb size={13} /> Key Idea</p>
           <p className="mt-1.5 text-sm text-[var(--color-ink)]"><CompactMathText text={c.text} /></p>
+          {c.table && <div className="mt-3"><TableView table={c.table} /></div>}
         </div>
       );
 
@@ -117,6 +119,7 @@ export default function LearnBlockRenderer({ block }) {
         <div className="rounded-md border-l-4 border-[#f59e0b] bg-[#f59e0b]/10 p-4">
           <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[#f7b94a]"><AlertTriangle size={13} /> Common Mistakes / Misunderstandings</p>
           <p className="mt-1.5 text-sm text-[var(--color-ink)]"><CompactMathText text={c.text} /></p>
+          {c.table && <div className="mt-3"><TableView table={c.table} /></div>}
         </div>
       );
 
@@ -130,6 +133,7 @@ export default function LearnBlockRenderer({ block }) {
           {c.title && <p className="mt-1.5 font-semibold text-[var(--color-ink)]">{c.title}</p>}
           {c.imageUrl && wrap !== "none" && <WrappedContentImage content={c} />}
           <p className="mt-0.5 text-justify text-sm leading-relaxed text-[var(--color-ink-soft)]"><CompactMathText text={c.content} /></p>
+          {c.table && <div className="mt-3"><TableView table={c.table} /></div>}
           {c.imageUrl && wrap === "none" && <WrappedContentImage content={c} />}
         </div>
       );
@@ -229,19 +233,54 @@ function PlaceholderBlock({ label }) {
   return <div className="flex items-center justify-center rounded-md border border-dashed border-[var(--color-line)] bg-[var(--color-paper)] p-8 text-xs text-[var(--color-ink-faint)]">{label}</div>;
 }
 
+/** Renders one item of a Worked Example's content sequence. text is the
+ * exact same paragraph markup the block always used (so an old block —
+ * rendered as a single { type: "text" } item by getWorkedExampleItems —
+ * looks pixel-identical to before); subheading/equation/table/answer are
+ * new, additive visual treatments. Every text-bearing type goes through
+ * the one shared ScientificText/CompactMathText pipeline — no separate
+ * renderer for table cells or any other item type. */
+function WorkedExampleItemView({ item }) {
+  switch (item.type) {
+    case "subheading":
+      return <p className="mt-3 text-sm font-semibold text-[var(--color-ink)] first:mt-0"><CompactMathText text={item.value} /></p>;
+    case "equation":
+      return <p className="mt-2 rounded-md bg-[var(--color-paper)] px-3 py-2 text-center text-sm leading-relaxed text-[var(--color-ink)]"><CompactMathText text={item.value} /></p>;
+    case "table":
+      return <div className="mt-2"><TableView table={item} /></div>;
+    case "answer":
+      return (
+        <div className="mt-3 rounded-md border border-[#fb7185]/40 bg-[#fb7185]/15 p-3">
+          <p className="text-[10px] font-bold uppercase tracking-wide text-[#ff8fa1]">Answer</p>
+          <p className="mt-1 text-sm font-medium leading-relaxed text-[var(--color-ink)]"><CompactMathText text={item.value} /></p>
+        </div>
+      );
+    case "text":
+    default:
+      return <p className="mt-1 text-sm leading-relaxed text-[var(--color-ink-soft)] first:mt-0"><CompactMathText text={item.value} /></p>;
+  }
+}
+
 function WorkedExampleBlock({ content }) {
   const [revealed, setRevealed] = useState(false);
-  const solution = getWorkedExampleSolution(content);
+  const items = getWorkedExampleItems(content);
   // Undefined (every block saved before this existed) behaves exactly
   // like "direct" — nothing already published changes appearance.
   const isReveal = content.displayMode === "reveal";
+
+  const solutionBody = items.length > 0 && (
+    <>
+      <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Solution</p>
+      {items.map((item, i) => <WorkedExampleItemView key={i} item={item} />)}
+    </>
+  );
 
   return (
     <div className="rounded-md border border-[#fb7185]/30 bg-[#fb7185]/10 p-4">
       <p className="text-xs font-semibold uppercase tracking-wide text-[#ff8fa1]">Worked Example</p>
       <p className="mt-1.5 text-sm font-medium text-[var(--color-ink)]"><CompactMathText text={content.question} /></p>
 
-      {solution && (isReveal ? (
+      {items.length > 0 && (isReveal ? (
         <>
           <button
             type="button"
@@ -250,19 +289,9 @@ function WorkedExampleBlock({ content }) {
           >
             {revealed ? "Hide Solution" : "Show Solution"}
           </button>
-          {revealed && (
-            <>
-              <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Solution</p>
-              <p className="mt-1 text-sm leading-relaxed text-[var(--color-ink-soft)]"><CompactMathText text={solution} /></p>
-            </>
-          )}
+          {revealed && solutionBody}
         </>
-      ) : (
-        <>
-          <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Solution</p>
-          <p className="mt-1 text-sm leading-relaxed text-[var(--color-ink-soft)]"><CompactMathText text={solution} /></p>
-        </>
-      ))}
+      ) : solutionBody)}
     </div>
   );
 }
@@ -372,7 +401,10 @@ function RevealThinkBlock({ content }) {
       {!revealed ? (
         <button type="button" onClick={() => setRevealed(true)} className="mt-3 rounded-md border border-[var(--color-violet)] px-3 py-1.5 text-xs font-medium text-[var(--color-violet)]">Reveal</button>
       ) : (
-        <div className="mt-3 border-l-2 border-[var(--color-violet)]/35 pl-3 text-sm text-[var(--color-ink-soft)]"><CompactMathText text={content.reveal} /></div>
+        <div className="mt-3 border-l-2 border-[var(--color-violet)]/35 pl-3 text-sm text-[var(--color-ink-soft)]">
+          <CompactMathText text={content.reveal} />
+          {content.table && <div className="mt-3"><TableView table={content.table} /></div>}
+        </div>
       )}
     </div>
   );

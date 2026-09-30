@@ -2,13 +2,16 @@ import { useState, useRef } from "react";
 import DOMPurify from "dompurify";
 import LearnMediaInput from "../components/admin/LearnMediaInput.jsx";
 import EquationFriendlyField, { pasteEquationFriendly, resolveMathAnnotationsInHtml } from "../components/admin/EquationFriendlyField.jsx";
+import TableEditor from "../components/admin/learn/TableEditor.jsx";
+import { parseTabularPaste, createEmptyTable } from "../lib/tableParsing.js";
 import { getSyllabusCodeOptions } from "../lib/learn-tree.js";
 import {
   Type, Image as ImageIcon, Video, FlaskConical, Box, PlayCircle,
   Lightbulb, BookMarked, AlertTriangle, Globe2, ListChecks, BarChart3,
-  Columns2, HelpCircle, Beaker, Files, Link2,
+  Columns2, HelpCircle, Beaker, Files, Link2, Table2,
   Bold, Italic, Underline, Superscript, Subscript,
   List, ListOrdered, AlignLeft, AlignCenter, AlignRight, Eraser,
+  Plus, Trash2, ChevronUp, ChevronDown, Heading, Sigma, MessageSquareQuote,
 } from "lucide-react";
 
 // ============================================================
@@ -32,7 +35,7 @@ export const BLOCK_TYPES = {
   definition: { label: "Definition", category: "teaching", icon: BookMarked, defaultContent: { term: "", definition: "" } },
   common_mistake: { label: "Common Mistakes / Misunderstandings", category: "teaching", icon: AlertTriangle, defaultContent: { text: "" } },
   real_life: { label: "Real-Life Connection", category: "teaching", icon: Globe2, defaultContent: { title: "", content: "", imageUrl: "", imageAlt: "", imageCaption: "", imageWrap: "right", imageWidth: "medium" } },
-  worked_example: { label: "Worked Example", category: "teaching", icon: ListChecks, defaultContent: { question: "", solution: "", displayMode: "direct" } },
+  worked_example: { label: "Worked Example", category: "teaching", icon: ListChecks, defaultContent: { question: "", solution: "", items: [], displayMode: "direct" } },
   data_graph: { label: "Data / Graph", category: "teaching", icon: BarChart3, defaultContent: { title: "", rows: [], explanation: "", prompt: "" } },
   compare_contrast: { label: "Compare & Contrast", category: "teaching", icon: Columns2, defaultContent: { title: "", displayMode: "inline", columns: [{ title: "", content: "" }, { title: "", content: "" }] } },
   reveal_think: { label: "Reveal / Think", category: "teaching", icon: HelpCircle, defaultContent: { prompt: "", reveal: "" } },
@@ -133,9 +136,9 @@ export function getLearnBlockDisplayLabel(block) {
   return { typeLabel, preview: truncate(preview) };
 }
 
-const inputCls = "w-full rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] px-3 py-2 text-sm text-[var(--color-ink)] focus:border-[var(--color-indigo)] focus:outline-none";
-const labelCls = "mb-1 block text-xs font-medium text-[var(--color-ink-soft)]";
-const equationInputPaste = (value, setter) => (e) => pasteEquationFriendly(e, value, setter);
+export const inputCls = "w-full rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] px-3 py-2 text-sm text-[var(--color-ink)] focus:border-[var(--color-indigo)] focus:outline-none";
+export const labelCls = "mb-1 block text-xs font-medium text-[var(--color-ink-soft)]";
+export const equationInputPaste = (value, setter) => (e) => pasteEquationFriendly(e, value, setter);
 
 /** Worked Example used to store { question, steps: [...], finalAnswer } —
  * now it's just { question, solution }. Old blocks are never rewritten in
@@ -149,6 +152,47 @@ export function getWorkedExampleSolution(content) {
   if (content?.finalAnswer) parts.push(`Final answer: ${content.finalAnswer}`);
   return parts.join("\n");
 }
+
+// ============================================================
+// Worked Example — reusable mixed-content items.
+//
+// Worked Example used to store a solution as one restricted string
+// (`solution`, or before that `steps`/`finalAnswer` — see above). That
+// can't hold a real worked solution: a table of ionization energies
+// alongside step-by-step text and a highlighted final answer. `items` is
+// the new, additive field: an ordered sequence of small content pieces —
+// { type: "text" | "subheading" | "equation" | "answer", value } for
+// scientific text (all four share the same EquationFriendlyField
+// authoring surface and the same ScientificText rendering pipeline, and
+// differ only in visual treatment), or { type: "table", headers, rows,
+// hasHeaderRow, hasHeaderColumn } for the reusable Table content element
+// (see src/lib/tableParsing.js, TableEditor.jsx, TableView.jsx).
+//
+// Nothing is migrated in storage. getWorkedExampleItems() is the single
+// place (used by both the editor and the student renderer) that decides
+// what to show: a real `items` array if the block already has one,
+// otherwise the old solution text (via getWorkedExampleSolution, which
+// itself already handles the even older steps/finalAnswer shape) wrapped
+// as a single { type: "text" } item — so an old block renders/edits
+// exactly as it always has, in the very same items-sequence UI, without
+// ever touching what's stored in Supabase. The moment an admin edits
+// that item (or adds another one), the block starts saving `items` going
+// forward; the old `solution`/`steps`/`finalAnswer` fields are simply
+// left alone in the stored row, unread from then on — same convention
+// already used for the solution/steps migration above. */
+export function getWorkedExampleItems(content) {
+  if (Array.isArray(content?.items) && content.items.length) return content.items;
+  const solution = getWorkedExampleSolution(content);
+  return solution ? [{ type: "text", value: solution }] : [];
+}
+
+export const WORKED_EXAMPLE_ITEM_TYPES = [
+  { type: "text", label: "Text", icon: Type },
+  { type: "subheading", label: "Subheading", icon: Heading },
+  { type: "equation", label: "Equation", icon: Sigma },
+  { type: "table", label: "Table", icon: Table2 },
+  { type: "answer", label: "Answer", icon: MessageSquareQuote },
+];
 
 /** Converts simple chemistry markup (H_2O, SO_4^2-) into safe HTML with
  * real <sub>/<sup> tags — avoids a heavy LaTeX/MathJax dependency while
@@ -501,7 +545,12 @@ export function BlockEditor({ blockType, content, onChange, pageId, blockId }) {
 
     case "key_idea":
     case "common_mistake":
-      return <EquationFriendlyField className={inputCls} rows={3} value={content.text} onChange={(value) => set("text", value)} placeholder={blockType === "common_mistake" ? "Add a common mistake, misconception or misunderstanding students may have…" : "Add the key idea…"} />;
+      return (
+        <div className="space-y-2">
+          <EquationFriendlyField className={inputCls} rows={3} value={content.text} onChange={(value) => set("text", value)} placeholder={blockType === "common_mistake" ? "Add a common mistake, misconception or misunderstanding students may have…" : "Add the key idea…"} />
+          <OptionalTableField table={content.table} onChange={(table) => set("table", table)} />
+        </div>
+      );
 
     case "page_break":
       return (
@@ -554,6 +603,7 @@ export function BlockEditor({ blockType, content, onChange, pageId, blockId }) {
         <div className="space-y-2">
           <div><label className={labelCls}>Title</label><input className={inputCls} value={content.title} onChange={(e) => set("title", e.target.value)} onPaste={equationInputPaste(content.title ?? "", (value) => set("title", value))} /></div>
           <div><label className={labelCls}>Content</label><EquationFriendlyField className={inputCls} rows={5} value={content.content} onChange={(value) => set("content", value)} /></div>
+          <OptionalTableField table={content.table} onChange={(table) => set("table", table)} />
           <LearnMediaInput kind="image" pageId={pageId} blockId={blockId} url={content.imageUrl ?? ""} onUrlChange={(url) => set("imageUrl", url)} label="Optional image" />
           {content.imageUrl && (
             <div className="space-y-2 rounded-md border border-[#34d399]/20 bg-[#34d399]/5 p-3">
@@ -584,6 +634,7 @@ export function BlockEditor({ blockType, content, onChange, pageId, blockId }) {
         <div className="space-y-2">
           <div><label className={labelCls}>Prompt (Think)</label><EquationFriendlyField className={inputCls} rows={2} value={content.prompt} onChange={(value) => set("prompt", value)} /></div>
           <div><label className={labelCls}>Reveal content</label><EquationFriendlyField className={inputCls} rows={2} value={content.reveal} onChange={(value) => set("reveal", value)} /></div>
+          <OptionalTableField table={content.table} onChange={(table) => set("table", table)} />
         </div>
       );
 
@@ -604,28 +655,134 @@ export function BlockEditor({ blockType, content, onChange, pageId, blockId }) {
   }
 }
 
+/** A single optional table attached to an otherwise plain-text block (Key
+ * Idea, Common Mistakes, Real-Life Connection, Reveal/Think's reveal
+ * side). Reuses the exact same TableEditor as Worked Example's table
+ * content-item — same behaviour and appearance everywhere a table can
+ * appear — just without the full mixed-content-sequence UI those simpler
+ * blocks don't otherwise need. Additive and optional: `content.table` is
+ * undefined for every block saved before this existed, so nothing
+ * already published changes appearance. */
+function OptionalTableField({ table, onChange }) {
+  if (!table) {
+    return (
+      <button type="button" onClick={() => onChange(createEmptyTable())} className="flex items-center gap-1 text-[11px] font-medium text-[var(--color-indigo)]">
+        <Table2 size={12} /> + Add table
+      </button>
+    );
+  }
+  return <TableEditor table={table} onChange={onChange} onRemove={() => onChange(null)} />;
+}
+
+function newWorkedExampleItem(type) {
+  if (type === "table") return { type: "table", ...createEmptyTable() };
+  return { type, value: "" };
+}
+
+const WORKED_EXAMPLE_ITEM_STYLE = {
+  text: { label: "Text", rows: 2, placeholder: "Paragraph text\u2026" },
+  subheading: { label: "Subheading", rows: 1, placeholder: "e.g. Step 1 \u2014 Find the largest jump" },
+  equation: { label: "Equation", rows: 1, placeholder: "e.g. 578 \u2192 1817 \u2192 2745 \u2192 11577 \u2192 14842" },
+  answer: { label: "Answer / Callout", rows: 3, placeholder: "The final answer, highlighted for the student\u2026" },
+};
+
+/** One item in the Worked Example content sequence \u2014 a compact card with
+ * a type label, reorder/remove controls, and the type-specific editor.
+ * Text/subheading/equation/answer all share EquationFriendlyField (the
+ * same scientific-text authoring surface used everywhere else in Admin
+ * Learn) and differ only in rows/placeholder/visual role; table uses the
+ * shared, reusable TableEditor so its behaviour matches every other
+ * block that can contain a table. */
+function WorkedExampleItemEditor({ item, onChange, onRemove, onMoveUp, onMoveDown, isFirst, isLast }) {
+  const meta = WORKED_EXAMPLE_ITEM_TYPES.find((t) => t.type === item.type) ?? WORKED_EXAMPLE_ITEM_TYPES[0];
+  const Icon = meta.icon;
+  return (
+    <div className="rounded-md border border-[var(--color-line)] bg-[var(--color-paper)]/50 p-2.5">
+      <div className="mb-1.5 flex items-center justify-between gap-2">
+        <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-[var(--color-ink-faint)]"><Icon size={12} /> {meta.label}</span>
+        <div className="flex items-center gap-1">
+          <button type="button" title="Move up" disabled={isFirst} onClick={onMoveUp} className="text-[var(--color-ink-faint)] hover:text-[var(--color-indigo)] disabled:opacity-25"><ChevronUp size={14} /></button>
+          <button type="button" title="Move down" disabled={isLast} onClick={onMoveDown} className="text-[var(--color-ink-faint)] hover:text-[var(--color-indigo)] disabled:opacity-25"><ChevronDown size={14} /></button>
+          <button type="button" title="Remove" onClick={onRemove} className="text-[var(--color-ink-faint)] hover:text-[var(--color-coral)]"><Trash2 size={14} /></button>
+        </div>
+      </div>
+      {item.type === "table" ? (
+        <TableEditor table={item} onChange={(table) => onChange({ type: "table", ...table })} />
+      ) : (
+        <EquationFriendlyField
+          className={inputCls}
+          rows={WORKED_EXAMPLE_ITEM_STYLE[item.type]?.rows ?? 2}
+          value={item.value ?? ""}
+          onChange={(value) => onChange({ ...item, value })}
+          placeholder={WORKED_EXAMPLE_ITEM_STYLE[item.type]?.placeholder}
+          showToolbar={item.type !== "subheading"}
+        />
+      )}
+    </div>
+  );
+}
+
 function WorkedExampleEditor({ content, set }) {
-  // Migration is a read-time concern, not a write-time one — we never
-  // silently rewrite an old block's stored shape just by opening the
-  // editor. The Solution field shows the combined text (old steps +
-  // final answer, if that's what this block still has); once the admin
-  // edits it, it's saved into the new `solution` field going forward.
-  // The old `steps`/`finalAnswer` values, if any, are simply left alone
-  // in the stored content — harmless, and no longer read once `solution`
-  // has a value.
-  const solutionValue = content.solution ?? getWorkedExampleSolution(content);
+  // See getWorkedExampleItems() above for exactly how old (`solution` /
+  // `steps` + `finalAnswer`) and new (`items`) blocks are unified into
+  // one editing surface without ever migrating storage.
+  const items = getWorkedExampleItems(content);
   // Existing blocks saved before displayMode existed have no such key at
-  // all — undefined must behave exactly like "direct" so nothing already
+  // all \u2014 undefined must behave exactly like "direct" so nothing already
   // published silently changes appearance (same convention as
   // Compare & Contrast's displayMode).
   const displayMode = content.displayMode ?? "direct";
+
+  function setItems(next) {
+    set("items", next);
+  }
+  function updateItem(i, next) {
+    setItems(items.map((it, idx) => (idx === i ? next : it)));
+  }
+  function removeItem(i) {
+    setItems(items.filter((_, idx) => idx !== i));
+  }
+  function moveItem(i, dir) {
+    const j = i + dir;
+    if (j < 0 || j >= items.length) return;
+    const next = [...items];
+    [next[i], next[j]] = [next[j], next[i]];
+    setItems(next);
+  }
+  function addItem(type) {
+    setItems([...items, newWorkedExampleItem(type)]);
+  }
+
   return (
     <div className="space-y-2">
       <div><label className={labelCls}>Question / Problem</label><EquationFriendlyField className={inputCls} rows={2} value={content.question} onChange={(value) => set("question", value)} /></div>
+
       <div>
-        <label className={labelCls}>Solution</label>
-        <EquationFriendlyField className={inputCls} rows={6} value={solutionValue} onChange={(value) => set("solution", value)} placeholder={"Paste or type the full worked solution, with line breaks preserved — e.g.\npH = \u2212log\u2081\u2080[H\u2083O\u207A]\npH = \u2212log\u2081\u2080(2.5 \u00d7 10\u207B\u00b3)\npH = 2.60"} />
+        <label className={labelCls}>Solution — a sequence of text, subheadings, equations, tables and an answer</label>
+        <div className="space-y-2">
+          {items.map((item, i) => (
+            <WorkedExampleItemEditor
+              key={i}
+              item={item}
+              onChange={(next) => updateItem(i, next)}
+              onRemove={() => removeItem(i)}
+              onMoveUp={() => moveItem(i, -1)}
+              onMoveDown={() => moveItem(i, 1)}
+              isFirst={i === 0}
+              isLast={i === items.length - 1}
+            />
+          ))}
+          {items.length === 0 && <p className="text-[11px] text-[var(--color-ink-faint)]">No content yet — add a piece of the solution below.</p>}
+        </div>
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {WORKED_EXAMPLE_ITEM_TYPES.map(({ type, label, icon: Icon }) => (
+            <button key={type} type="button" onClick={() => addItem(type)} className="flex items-center gap-1 rounded-md border border-[var(--color-line)] px-2 py-1 text-[11px] font-medium text-[var(--color-indigo)] hover:border-[var(--color-indigo)] hover:bg-[var(--color-indigo-soft)]">
+              <Plus size={11} /> <Icon size={12} /> {label}
+            </button>
+          ))}
+        </div>
       </div>
+
       <div>
         <label className="mb-1 block text-xs font-medium text-[var(--color-ink-soft)]">Display Mode</label>
         <div className="flex flex-col gap-1.5 text-sm text-[var(--color-ink-soft)]">
@@ -669,46 +826,14 @@ function DataGraphEditor({ content, set }) {
   );
 }
 
-function parsePastedCompareTable({ html = "", text = "" }) {
-  let matrix = [];
-
-  // Word/Google Docs commonly place a real HTML <table> on the clipboard.
-  // Prefer it because it preserves cell boundaries even when cell text contains spaces.
-  if (html && typeof DOMParser !== "undefined") {
-    try {
-      const doc = new DOMParser().parseFromString(html, "text/html");
-      const table = doc.querySelector("table");
-      if (table) {
-        matrix = Array.from(table.querySelectorAll("tr")).map((row) =>
-          Array.from(row.querySelectorAll("th,td")).map((cell) => (cell.innerText || cell.textContent || "").trim())
-        );
-      }
-    } catch {
-      matrix = [];
-    }
-  }
-
-  // Excel/Google Sheets copy cells as tab-separated rows. Also accept CSV-ish
-  // pasted text as a convenience, without trying to be a full CSV importer.
-  if (!matrix.length && text) {
-    const lines = text.replace(/\r/g, "").split("\n").filter((line) => line.trim().length);
-    const delimiter = lines.some((line) => line.includes("\t")) ? "\t" : (lines.some((line) => line.includes(",")) ? "," : null);
-    if (delimiter) matrix = lines.map((line) => line.split(delimiter).map((cell) => cell.trim()));
-  }
-
-  matrix = matrix
-    .map((row) => row.map((cell) => String(cell ?? "").trim()))
-    .filter((row) => row.some(Boolean));
-
-  if (matrix.length < 2) return null;
-  const width = Math.max(...matrix.map((row) => row.length));
-  if (width < 2) return null;
-  const normalized = matrix.map((row) => Array.from({ length: width }, (_, i) => row[i] ?? ""));
-
-  // First row is the header row. This maps naturally to the common comparison
-  // table copied from Word/Excel: Property | A | B | ...
-  return { headers: normalized[0], rows: normalized.slice(1) };
-}
+// parseTabularPaste (src/lib/tableParsing.js) now holds this parsing
+// logic — extracted so the reusable Table content element's own "Paste
+// table data" flow (TableEditor.jsx) shares exactly one parser with
+// Compare & Contrast's original paste-a-table feature, instead of two
+// implementations that could quietly drift apart. Behaviour here is
+// unchanged: HTML <table> preferred, else tab/comma-delimited text,
+// first row is always the header.
+const parsePastedCompareTable = parseTabularPaste;
 
 function CompareTablePreview({ table }) {
   if (!table?.headers?.length) return null;

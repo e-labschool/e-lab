@@ -59,11 +59,48 @@ const LATEX_COMMANDS = [
   ["\\rho", "ρ"], ["\\theta", "θ"],
 ];
 
+// Chemistry-notation preprocessing -- additive only, never removes or
+// duplicates spacing the author already typed.
+//
+// Root cause this fixes: this renderer emits literal source characters
+// (including plain spaces) as-is -- it does NOT collapse whitespace the
+// way real LaTeX math mode does. So "Mg:1s^2" renders exactly as typed,
+// with "Mg:" and "1s^2" visually touching, simply because the author's
+// raw source has no space/space-command between the colon and the
+// electron-configuration term. This is a preprocessing gap, not a
+// whitespace-collapsing bug.
+//
+// Fix: recognise the narrow "<label>:<config-term>" shape -- a colon
+// immediately (zero characters in between) followed by an orbital term
+// (`\d[spdf]^`, e.g. `1s^2`) or a noble-gas core (`[Ne]`, `[Ar]`, `[Kr]`,
+// `[Xe]`) -- and insert a `\,` (thin space, the same space command
+// already used between orbital terms) right after the colon.
+//
+// Deliberately narrow: the lookahead requires the config-term to sit
+// *immediately* after the colon, so it only fires on the true
+// "just-typed-without-a-space" case:
+//   - Any colon that already has a space or a space command after it
+//     (`Mg: 1s^2`, `Mg:\,1s^2`, `Mg:\;1s^2`, `Mg:\quad 1s^2`, ...) is left
+//     completely untouched -- the lookahead's next character would be a
+//     space/backslash, not a digit or `[`, so it never matches.
+//   - A colon anywhere else in ordinary maths/prose (`f(x): domain`,
+//     ratios, labels, etc.) is untouched -- the lookahead specifically
+//     requires the electron-configuration shape right after it.
+//   - It never doubles up: since it only matches when there is NOTHING
+//     between the colon and the config-term, a colon that already got a
+//     `\,` inserted (by this same rule or by the author) can never match
+//     again on a second pass.
+const CHEM_LABEL_COLON_RE = /:(?=\d[spdf]\^|\[(?:He|Ne|Ar|Kr|Xe|Rn)\])/g;
+
+function preprocessChemistryNotation(src) {
+  return src.replace(CHEM_LABEL_COLON_RE, ":\\,");
+}
+
 /** Small dependency-free renderer for the equation shapes used in Learn.
  * Deliberately renders maths inline/compactly: no large equation cards,
  * no heavy math-typesetting library loaded per paragraph. */
 export function renderCompactLatex(latex) {
-  const src = String(latex ?? "").trim();
+  const src = preprocessChemistryNotation(String(latex ?? "").trim());
   let out = "";
   for (let i = 0; i < src.length;) {
     if (src.startsWith("\\frac", i)) {
