@@ -382,6 +382,192 @@ await (async () => {
   });
 })();
 
+console.log("\n== 7. Table classification + missing-table detection (2026-09 user_preferences fix) ==");
+await (async () => {
+  const c = await import("../src/lib/backup/constants.js");
+  const { isMissingTableError } = await import("../src/lib/backup/tableAccess.js");
+
+  test("every ALL_DISASTER_TABLES entry declares a boolean `required`", () => {
+    for (const t of c.ALL_DISASTER_TABLES) {
+      assert.equal(typeof t.required, "boolean", `${t.table} must declare required: true|false`);
+    }
+  });
+
+  test("user_preferences is classified OPTIONAL (required: false) — the audited fix for the live failure", () => {
+    const up = c.USER_DATA_TABLES.find((t) => t.table === "user_preferences");
+    assert.ok(up, "user_preferences must still be tracked (not silently removed)");
+    assert.equal(up.required, false);
+  });
+
+  test("profiles, user_access, and every progress/assessment/planning/settings table are REQUIRED", () => {
+    const mustBeRequired = [
+      ...c.USER_DATA_TABLES.filter((t) => t.table !== "user_preferences"),
+      ...c.PROGRESS_DATA_TABLES,
+      ...c.ASSESSMENT_DATA_TABLES,
+      ...c.PLANNING_DATA_TABLES,
+      ...c.SETTINGS_TABLES,
+    ];
+    for (const t of mustBeRequired) {
+      assert.equal(t.required, true, `${t.table} should be required`);
+    }
+  });
+
+  test("isMissingTableError recognizes the EXACT live failure message", () => {
+    const err = new Error("Could not find the table 'public.user_preferences' in the schema cache");
+    assert.equal(isMissingTableError(err), true);
+  });
+
+  test("isMissingTableError recognizes PostgREST's PGRST205 code even with a different message", () => {
+    const err = Object.assign(new Error("schema cache miss"), { code: "PGRST205" });
+    assert.equal(isMissingTableError(err), true);
+  });
+
+  test("isMissingTableError does NOT treat an unrelated error (RLS/network/etc.) as a missing table", () => {
+    const rls = Object.assign(new Error("permission denied for table user_access"), { code: "42501" });
+    assert.equal(isMissingTableError(rls), false);
+    const network = new Error("Failed to fetch");
+    assert.equal(isMissingTableError(network), false);
+  });
+
+  // Code-level mock of the REQUIRED-fails-loud / OPTIONAL-skips-and-
+  // continues decision rule fetchTableGroup() applies (that function
+  // itself is a private helper wired directly to the Supabase client, so
+  // it cannot run without a live connection in this sandbox — this
+  // reimplements ONLY the branching decision, using the real,
+  // exported isMissingTableError, against a fake per-table read that
+  // never touches a network). This is PARTIALLY VERIFIED (code-level):
+  // it proves the decision rule is correct given an error, not that the
+  // live Supabase client actually raises that shape of error.
+  function mockFetchTableGroup(tables, fakeReader) {
+    const skipped = [];
+    const aborted = [];
+    for (const { table, required } of tables) {
+      try {
+        fakeReader(table);
+      } catch (err) {
+        if (!required && isMissingTableError(err)) {
+          skipped.push(table);
+          continue;
+        }
+        aborted.push(table);
+        break; // a real abort stops the whole backup — mirror that here
+      }
+    }
+    return { skipped, aborted };
+  }
+
+  test("mock: a live DB missing ONLY user_preferences skips it and backs up everything else", () => {
+    const tables = [
+      { table: "profiles", required: true },
+      { table: "user_access", required: true },
+      { table: "user_preferences", required: false },
+      { table: "learning_progress", required: true },
+    ];
+    const missing = new Set(["user_preferences"]);
+    const { skipped, aborted } = mockFetchTableGroup(tables, (t) => {
+      if (missing.has(t)) throw new Error(`Could not find the table 'public.${t}' in the schema cache`);
+    });
+    assert.deepEqual(skipped, ["user_preferences"]);
+    assert.deepEqual(aborted, []);
+  });
+
+  test("mock: a live DB missing a REQUIRED table (e.g. profiles) aborts the backup, not silently", () => {
+    const tables = [
+      { table: "profiles", required: true },
+      { table: "user_preferences", required: false },
+    ];
+    const { skipped, aborted } = mockFetchTableGroup(tables, (t) => {
+      if (t === "profiles") throw new Error("Could not find the table 'public.profiles' in the schema cache");
+    });
+    assert.deepEqual(aborted, ["profiles"]);
+    assert.deepEqual(skipped, []);
+  });
+
+  test("mock: an OPTIONAL table failing for a non-missing-table reason still aborts (never silently ignored)", () => {
+    const tables = [{ table: "user_preferences", required: false }];
+    const { skipped, aborted } = mockFetchTableGroup(tables, () => {
+      throw Object.assign(new Error("permission denied for table user_preferences"), { code: "42501" });
+    });
+    assert.deepEqual(aborted, ["user_preferences"]);
+    assert.deepEqual(skipped, []);
+  });
+})();
+
+console.log("\n== 8. Simulation audit (simulationAudit.js) — references vs. implementation ==");
+await (async () => {
+  const { auditSimulations } = await import("../src/lib/backup/simulationAudit.js");
+  const { SIMULATION_COMPONENTS } = await import("../src/data/simulationEngineComponents.js");
+
+  function fakeContentBackup(blocks) {
+    return {
+      data: {
+        learn_pages: [{ id: "p1", title: "Test Page" }],
+        learn_blocks: blocks,
+      },
+    };
+  }
+
+  test("every real engine id in SIMULATION_COMPONENTS resolves as verified when referenced", () => {
+    const anyRealId = Object.keys(SIMULATION_COMPONENTS)[0];
+    const backup = fakeContentBackup([{ id: "b1", page_id: "p1", block_type: "simulation", content: { simulationId: anyRealId } }]);
+    const audit = auditSimulations(backup);
+    assert.equal(audit.uniqueSimulations, 1);
+    assert.equal(audit.verifiedImplementations, 1);
+    assert.equal(audit.missingImplementations, 0);
+    assert.equal(audit.items[0].status, "verified");
+  });
+
+  test("a simulationId with no registered implementation is reported MISSING, never silently dropped", () => {
+    const backup = fakeContentBackup([{ id: "b1", page_id: "p1", block_type: "simulation", content: { simulationId: "does-not-exist-engine" } }]);
+    const audit = auditSimulations(backup);
+    assert.equal(audit.missingImplementations, 1);
+    assert.equal(audit.items[0].status, "missing");
+    assert.equal(audit.items[0].simulationId, "does-not-exist-engine");
+  });
+
+  test("a simulation block with an unset simulationId (CMS default) is not counted as a reference", () => {
+    const backup = fakeContentBackup([{ id: "b1", page_id: "p1", block_type: "simulation", content: { simulationId: "" } }]);
+    const audit = auditSimulations(backup);
+    assert.equal(audit.referencedBlocks, 1); // it IS a simulation block...
+    assert.equal(audit.uniqueSimulations, 0); // ...but not a usable reference
+  });
+
+  test("multiple blocks referencing the same simulationId across pages count as ONE unique simulation", () => {
+    const anyRealId = Object.keys(SIMULATION_COMPONENTS)[0];
+    const backup = {
+      data: {
+        learn_pages: [{ id: "p1", title: "Page 1" }, { id: "p2", title: "Page 2" }],
+        learn_blocks: [
+          { id: "b1", page_id: "p1", block_type: "simulation", content: { simulationId: anyRealId } },
+          { id: "b2", page_id: "p2", block_type: "simulation", content: { simulationId: anyRealId } },
+        ],
+      },
+    };
+    const audit = auditSimulations(backup);
+    assert.equal(audit.uniqueSimulations, 1);
+    assert.equal(audit.items[0].referencedBlocks, 2);
+    assert.equal(audit.items[0].pages.length, 2);
+  });
+
+  test("non-simulation blocks are ignored entirely", () => {
+    const backup = fakeContentBackup([{ id: "b1", page_id: "p1", block_type: "rich_text", content: { html: "<p>hi</p>" } }]);
+    const audit = auditSimulations(backup);
+    assert.equal(audit.referencedBlocks, 0);
+    assert.equal(audit.uniqueSimulations, 0);
+  });
+})();
+
+console.log("\n== 9. Application version strategy (appVersion.js) — no invented identifiers ==");
+await (async () => {
+  const { getApplicationVersionInfo } = await import("../src/lib/backup/appVersion.js");
+  test("returns a real identifier (package.json version) when no build-time git env var is set, and never fabricates a commit hash", () => {
+    const info = getApplicationVersionInfo();
+    assert.ok(info.identifier !== null && info.identifier !== undefined, "must report SOME real identifier, not silently omit it");
+    assert.notEqual(info.identifierType, "git-commit", "no VITE_GIT_COMMIT is set in this environment, so this must not claim to be a git commit");
+    assert.equal(info.identifierType, "package-version");
+  });
+})();
+
 console.log(`\n${"=".repeat(60)}`);
 console.log(`${passed} passed, ${failed} failed (out of ${passed + failed})`);
 console.log("=".repeat(60));

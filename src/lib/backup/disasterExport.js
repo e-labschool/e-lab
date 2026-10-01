@@ -33,6 +33,9 @@ import {
 import { exportElabContent, fetchAllRows } from "./exportContent.js";
 import { packageMediaFiles, verifyZippedMediaChecksums } from "./mediaPackage.js";
 import { sha256HexOfString } from "./checksums.js";
+import { auditSimulations } from "./simulationAudit.js";
+import { getApplicationVersionInfo } from "./appVersion.js";
+import { isMissingTableError } from "./tableAccess.js";
 
 // student_streaks/user_preferences use their user_id column as primary
 // key (no separate `id` column) — ordering must use the column that
@@ -43,15 +46,46 @@ const ORDER_COLUMN_OVERRIDES = {
   platform_settings: "id",
 };
 
+/**
+ * Reads every table in `tables` (each `{ table, required }`, see
+ * constants.js for the audited classification). A REQUIRED table whose
+ * read fails for any reason aborts the whole backup with a clear error.
+ * An OPTIONAL table whose read fails specifically because the table does
+ * not exist is skipped — recorded in the returned `skipped` list, never
+ * silently dropped — and the backup continues; any other error on an
+ * optional table still aborts, identically to a required one.
+ */
 async function fetchTableGroup(tables, onProgress) {
   const out = {};
   const counts = {};
-  for (const { table } of tables) {
-    const rows = await fetchAllRows(table, { orderColumn: ORDER_COLUMN_OVERRIDES[table] || "id" }, onProgress);
-    out[table] = rows;
-    counts[table] = rows.length;
+  const skipped = [];
+  for (const { table, required = true } of tables) {
+    try {
+      const rows = await fetchAllRows(table, { orderColumn: ORDER_COLUMN_OVERRIDES[table] || "id" }, onProgress);
+      out[table] = rows;
+      counts[table] = rows.length;
+    } catch (err) {
+      if (!required && isMissingTableError(err)) {
+        out[table] = [];
+        counts[table] = 0;
+        skipped.push({
+          table,
+          reason: `Classified OPTIONAL — this table does not exist in this Supabase project's schema cache. Skipped intentionally; this backup carries zero rows for it rather than failing the whole export.`,
+        });
+        onProgress?.(`Skipping ${table} (table not present — optional) …`);
+        continue;
+      }
+      // Either a required table, or an optional table that failed for a
+      // reason OTHER than "does not exist" (RLS, network, etc.) — never
+      // silently swallowed, always aborts the backup.
+      throw new Error(
+        required
+          ? `Required table "${table}" could not be read — Complete Disaster Recovery aborted. ${err.message}`
+          : `Table "${table}" could not be read (not a "table missing" error, so this is not treated as optional) — Complete Disaster Recovery aborted. ${err.message}`
+      );
+    }
   }
-  return { out, counts };
+  return { out, counts, skipped };
 }
 
 /**
@@ -78,6 +112,7 @@ export async function createDisasterBackup({ includeUserData = true, onProgress 
   let planning = { class_plans: [], lesson_blocks: [] };
   let settings = { platform_settings: null };
   let tableCounts = {};
+  let tablesSkipped = [];
 
   if (includeUserData) {
     onProgress("Exporting user application data…");
@@ -97,10 +132,20 @@ export async function createDisasterBackup({ includeUserData = true, onProgress 
     planning = pl.out;
 
     onProgress("Reading platform settings…");
-    const { data: settingsRows } = await supabase.from("platform_settings").select("*").eq("id", 1).limit(1);
+    // platform_settings is REQUIRED (category H, singleton config) — the
+    // Supabase error is now checked rather than silently discarded (the
+    // previous code destructured only `data`, so a query error here was
+    // invisible and the backup would quietly report zero settings as if
+    // that were a legitimate empty result — exactly the "silently ignore
+    // unexpected database errors" failure mode spec §2 forbids).
+    const { data: settingsRows, error: settingsError } = await supabase.from("platform_settings").select("*").eq("id", 1).limit(1);
+    if (settingsError) {
+      throw new Error(`Required table "platform_settings" could not be read — Complete Disaster Recovery aborted. ${settingsError.message}`);
+    }
     settings = { platform_settings: settingsRows?.[0] || null };
 
     tableCounts = { ...u.counts, ...p.counts, ...a.counts, ...pl.counts, platform_settings: settings.platform_settings ? 1 : 0 };
+    tablesSkipped = [...u.skipped, ...p.skipped, ...a.skipped, ...pl.skipped];
   }
 
   // ---- 3. Media — actual files, deduplicated, from the content manifest ----
@@ -157,8 +202,21 @@ export async function createDisasterBackup({ includeUserData = true, onProgress 
   };
   zip.file("integrity/checksums.json", JSON.stringify(integrity, null, 2));
 
+  // ---- 6b. Simulation audit (spec §3-8): every simulationId referenced
+  // by the just-exported Learn content, cross-checked against the
+  // application's own simulation registry/engine components. ----
+  onProgress("Verifying simulation references…");
+  const simulations = auditSimulations(contentBackup);
+
+  // ---- 6c. Application source/version strategy (spec §6/§13) ----
+  const applicationSource = {
+    protectedBy: "Git repository (application source, including every simulation engine, is NOT duplicated into this package — see docs/DISASTER_RECOVERY.md).",
+    ...getApplicationVersionInfo(),
+  };
+
   // ---- 7. Manifest ----
   onProgress("Creating disaster package…");
+  const skippedTableNames = new Set(tablesSkipped.map((s) => s.table));
   const manifest = {
     format: DISASTER_FORMAT,
     disasterBackupVersion: DISASTER_VERSION,
@@ -169,14 +227,21 @@ export async function createDisasterBackup({ includeUserData = true, onProgress 
     includesUserData: includeUserData,
     tablesIncluded: [
       "learn_pages", "learn_blocks", "learn_check_questions", "learn_manual_questions", "learn_manual_question_secrets",
-      ...(includeUserData ? ALL_DISASTER_TABLES.map((t) => t.table) : []),
+      ...(includeUserData ? ALL_DISASTER_TABLES.map((t) => t.table).filter((t) => !skippedTableNames.has(t)) : []),
     ],
+    // Optional tables that were queried but turned out not to exist on
+    // this Supabase project — skipped intentionally, never silently
+    // (spec §2: "handled intentionally and reported in the manifest").
+    // Empty on a project where every optional table happens to exist.
+    tablesSkipped,
     tablesExcluded: EXCLUDED_TABLES,
     storageBuckets: STORAGE_BUCKETS,
     recordCounts: integrity.expectedCounts,
     mediaFileCount: mediaChecksums.length,
     mediaTotalBytes: totalMediaBytes,
     mediaFailureCount: mediaFailures.length,
+    simulations,
+    applicationSource,
     requiredForRestore: [
       "The target Supabase project must already have every migration in supabase/migrations/*.sql and supabase/*.sql applied (schema first — see docs/DISASTER_RECOVERY.md).",
       "Storage buckets (" + STORAGE_BUCKETS.map((b) => b.bucket).join(", ") + ") must exist (created automatically by the relevant migration's `insert into storage.buckets`).",
@@ -208,10 +273,17 @@ export async function createDisasterBackup({ includeUserData = true, onProgress 
     relationshipsVerified: relationshipWarnings.length === 0,
     mediaVerified: mismatches.length === 0 && mediaFailures.length === 0,
     checksumsVerified: verified === mediaChecksums.length,
+    simulationsVerified: simulations.missingImplementations === 0,
     mediaVerifiedCount: verified,
     mediaMismatches: mismatches,
     mediaFailures,
     relationshipWarnings,
+    simulationWarnings:
+      simulations.missingImplementations > 0
+        ? simulations.items
+            .filter((i) => i.status === "missing")
+            .map((i) => `Learn content references simulationId "${i.simulationId}" (${i.referencedBlocks} block(s)) but no implementation is registered in src/data/simulationEngineComponents.js.`)
+        : [],
   };
 
   if (!verification.checksumsVerified || !verification.mediaVerified) {
@@ -220,6 +292,17 @@ export async function createDisasterBackup({ includeUserData = true, onProgress 
     // what DID work) but the caller must surface this as a failed/partial
     // verification, never a plain success.
     manifest.verificationFailed = true;
+  }
+  if (!verification.simulationsVerified) {
+    // Per spec §7: "If a Learn page references simulationId = xyz but
+    // there is no corresponding simulation implementation: show a
+    // WARNING. Do not silently produce a supposedly complete backup."
+    // This is a warning, not a hard failure (the content itself was
+    // captured faithfully; it's the application-source side that can't
+    // be verified as reconstructable) — it does NOT set
+    // verificationFailed, but it is always present in the returned
+    // result for the caller (the Admin UI) to surface.
+    manifest.simulationWarning = `${simulations.missingImplementations} referenced simulation(s) have no matching implementation in this build — see manifest.simulations.items.`;
   }
 
   onProgress("Backup complete.");

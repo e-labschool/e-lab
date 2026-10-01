@@ -11,6 +11,29 @@ architecture with ID remapping.
 If you are reading this years from now because e-Lab's Supabase project
 is gone: start at §5 ("How to recreate a fresh Supabase environment").
 
+### To completely recover e-Lab, you need all four of:
+
+1. **The e-Lab application source / Git repository** — restores the
+   application itself, *including every simulation engine* (§3.6/§3.7).
+2. **Compatible environment variables/secrets, recreated securely** —
+   `VITE_SUPABASE_URL` / `VITE_SUPABASE_PUBLISHABLE_KEY` for the target
+   project (§1, §5).
+3. **A fresh, compatible Supabase environment** — schema applied from
+   this repo's migrations, in order (§5).
+4. **The Complete Disaster Recovery `.zip`** — restores content, user/
+   progress/assessment/planning/settings data, and media.
+
+Then, concretely: source code restores the application **and every
+simulation**; the database restore (this `.zip`'s `data/*.json` via
+`restore_elab_disaster_data`/`restore_elab_content`) restores content,
+user, progress and assessment data; the Storage restore (this `.zip`'s
+`media/`) restores media files; and the simulation **references** inside
+the restored Learn content (`learn_blocks.content.simulationId`)
+automatically reconnect to the simulation **engines** once (1) has been
+deployed — no separate "relink simulations" step is needed, because the
+reference is just a string id the restored React app already knows how
+to resolve via `SIMULATION_COMPONENTS`.
+
 ---
 
 ## 1. What e-Lab stores, and where
@@ -55,20 +78,50 @@ schema/schema-manifest.json pointer to the repo's migrations as schema source of
 
 Audited directly from every `supabase/*.sql` and `supabase/migrations/*.sql`
 file in this repo (not assumed). See `src/lib/backup/constants.js` for the
-machine-readable version of this table.
+machine-readable version of this table, including the `required` flag
+every table now carries (2026-09 fix — see the note below the table).
 
-| Category (spec) | Tables | In package? |
-|---|---|---|
-| A/B. Curriculum & educational content | `learn_pages`, `learn_blocks`, `learn_check_questions`, `learn_manual_questions`, `learn_manual_question_secrets` | Yes — via `data/content.json` |
-| C. Media | `learn-media`, `resources`, `question-media` Storage buckets | Yes — actual files referenced from Learn content, under `media/` |
-| D. User profile data | `profiles` | Yes — `data/users.json` |
-| E. Access/subscription | `user_access` | Yes — `data/users.json` |
-| F. Student learning progress | `learning_progress`, `concept_attempts`, `prediction_cycles`, `prediction_snapshots`, `student_streaks`, `class_plans`, `lesson_blocks` | Yes — `data/progress.json`, `data/planning.json` |
-| G. Assessment data | `student_challenges`, `challenge_questions` | Yes — `data/assessments.json` |
-| H. Application settings | `platform_settings`, `user_preferences` | Yes — `data/settings.json`, `data/users.json` |
-| I. Authentication data | `auth.users` (Supabase-managed) | **No** — see §4 |
-| J. Ephemeral UI state | `sessionStorage` drafts, open/closed UI panels, in-progress unsaved editor state, browser cache | **No**, by design (spec §34) — never was, never will be |
-| K. Secrets | Service-role key, JWT secret, DB password, API keys, sessions/tokens | **No**, never captured anywhere in this codebase (see `src/lib/supabaseClient.js`) |
+| Category (spec) | Tables | Required? | In package? |
+|---|---|---|---|
+| A/B. Curriculum & educational content | `learn_pages`, `learn_blocks`, `learn_check_questions`, `learn_manual_questions`, `learn_manual_question_secrets` | Required | Yes — via `data/content.json` |
+| C. Media | `learn-media`, `resources`, `question-media` Storage buckets | Required | Yes — actual files referenced from Learn content, under `media/` |
+| D. User profile data | `profiles` | Required | Yes — `data/users.json` |
+| E. Access/subscription | `user_access` | Required | Yes — `data/users.json` |
+| F. Student learning progress | `learning_progress`, `concept_attempts`, `prediction_cycles`, `prediction_snapshots`, `student_streaks`, `class_plans`, `lesson_blocks` | Required | Yes — `data/progress.json`, `data/planning.json` |
+| G. Assessment data | `student_challenges`, `challenge_questions` | Required | Yes — `data/assessments.json` |
+| H. Application settings | `platform_settings` | Required | Yes — `data/settings.json` |
+| H. Application settings (per-user) | `user_preferences` | **Optional** | Yes, if present — `data/users.json`. Skipped (recorded in `manifest.tablesSkipped`, not silently) if this Supabase project's schema cache reports the table missing. |
+| I. Authentication data | `auth.users` (Supabase-managed) | — | **No** — see §4 |
+| J. Ephemeral UI state | `sessionStorage` drafts, open/closed UI panels, in-progress unsaved editor state, browser cache | — | **No**, by design (spec §34) — never was, never will be |
+| K. Secrets | Service-role key, JWT secret, DB password, API keys, sessions/tokens | — | **No**, never captured anywhere in this codebase (see `src/lib/supabaseClient.js`) |
+
+**REQUIRED vs OPTIONAL, and the 2026-09 `user_preferences` fix.** A live
+"Create Disaster Backup" run failed with `Failed reading
+user_preferences: Could not find the table 'public.user_preferences' in
+the schema cache` — the exporter was treating every table, including
+this one, as required, so one missing optional table aborted the entire
+backup. The re-audit found `user_preferences` is the **only** table in
+the disaster inventory that has no dedicated `*_incremental.sql` /
+`*-migration.sql` file of its own (it is defined solely inside
+`supabase/schema.sql`, the single "run this once" bootstrap file whose
+own header says re-running an already-applied section is unnecessary),
+and that the application itself
+(`src/context/PreferencesContext.jsx`) already treats a failed/missing
+read of it as non-critical (falls back to `{}`, never throws). Every
+other table above has its own dedicated migration and the application
+code that reads it always surfaces a Supabase error rather than
+swallowing it — so every other table stays REQUIRED: if a required
+table's read fails for **any** reason, the backup aborts loudly, exactly
+as before. `user_preferences` alone is classified OPTIONAL: if (and
+only if) its specific read fails because the table itself does not
+exist, the exporter skips it, records the skip (table name + reason) in
+`manifest.tablesSkipped`, and continues — it never silently drops it,
+and any *other* kind of error on it (RLS, network, …) still aborts the
+backup exactly like a required table would. This same REQUIRED/OPTIONAL
+mechanism (`src/lib/backup/constants.js`'s `required` flag +
+`disasterExport.js`'s `isMissingTableError` check) now covers every
+table, so a future missing table fails the same intentional way instead
+of crashing on the next one.
 
 **Deliberately still excluded**, same boundary the existing Content
 Backup already draws, now carried into the disaster manifest's
@@ -172,6 +225,80 @@ byte-for-byte rather than rewritten by a heuristic URL parser (spec
 §5's "do not flatten / do not silently drop fields" bar cuts against
 inventing a URL-rewriting pass that could corrupt unrelated text).
 
+### 3.6 Simulations — references vs. implementation vs. datasets (spec §3-8)
+
+A Learn content block with `block_type: "simulation"` only ever stores a
+**reference/placement** — `content.simulationId` (see
+`src/data/learnBlockRegistry.jsx`'s `simulation` entry and
+`src/components/learn/LearnBlockRenderer.jsx`'s `"simulation"` case).
+The actual simulation code is **application source**, not database
+content, split three ways:
+
+| Layer | Where it lives | Protected by |
+|---|---|---|
+| A. Simulation **reference/placement** | `learn_blocks.content.simulationId` (Supabase) | This backup's `data/content.json` (it's an ordinary Learn block) |
+| B. Simulation **implementation** (the React component) | `src/engines/<name>/` (e.g. `src/engines/build-an-atom/`), wired to its registry id in `src/data/simulationEngineComponents.js` (`SIMULATION_COMPONENTS`) and labeled in `src/data/simulationRegistry.js` (`SIMULATION_REGISTRY`) | The **Git repository** — never duplicated into the disaster `.zip` |
+| C. Simulation **datasets/assets** | Plain source-controlled `.js` files under each engine's own `src/engines/<name>/data/` directory (and `src/data/chemistry/`) — e.g. `ionization-energy-explorer/lib/ionizationData.js`, `atomic-spectra/data/spectra.js`, `build-an-atom/data/nuclides.js` | The **Git repository** (SOURCE-CONTROLLED DEPENDENCY) — audited directly, none found in Supabase tables or Storage, so none are duplicated into the `.zip` either (spec §8) |
+
+As of this audit, e-Lab has **19 simulations** registered in
+`SIMULATION_COMPONENTS`/`SIMULATION_REGISTRY` (discovered from
+`src/engines/`, not assumed from any example list): Electron
+Configuration Explorer, VSEPR Explorer (3D), Explore Matter & States,
+Particle Model Visualizer, Phase Change & Heating Curve, pH Calculator &
+Visualizer, H⁺–OH⁻ Balance in Water, Neutralization Particle Visualizer,
+Equivalence Point, pH Curve & Titration Visualizer, Buffer Action
+Visualizer, Chocolate Wrapping (Understanding Rate), Collision Theory
+Visualizer, Mixture Separation Explorer, Build an Atom, Wave Explorer,
+Orbital Explorer, Atomic Spectra Lab, Ionization Energy Explorer.
+
+**Every "Create Disaster Backup" run now verifies simulations
+automatically** (`src/lib/backup/simulationAudit.js`, wired into
+`disasterExport.js`): it reads the just-exported `learn_blocks`, collects
+every unique `content.simulationId` actually referenced, and cross-checks
+each one against `SIMULATION_COMPONENTS`. The result is written into
+`manifest.simulations`:
+
+```json
+"simulations": {
+  "referencedBlocks": 16,
+  "uniqueSimulations": 12,
+  "verifiedImplementations": 12,
+  "missingImplementations": 0,
+  "items": [
+    { "simulationId": "build-an-atom", "pages": ["..."], "pageTitles": ["..."],
+      "referencedBlocks": 3, "implementationLocation": "src/engines/…",
+      "datasets": "…", "status": "verified" }
+  ]
+}
+```
+
+If a Learn page references a `simulationId` with **no** matching
+implementation, that item's `status` is `"missing"`, the backup's
+`verification.simulationsVerified` is `false`, and the Admin UI shows an
+explicit warning listing which `simulationId`(s) are missing — the
+backup is **not** silently reported as a complete success in that case
+(spec §7), though it is not treated as a hard failure either (the
+content itself, unlike the app source, was still captured faithfully).
+
+### 3.7 Application source/version (spec §6/§13)
+
+Simulation code (and all other application source) is protected by the
+**Git repository**, not duplicated into every disaster `.zip`. To know
+which source version a given backup is compatible with,
+`manifest.applicationSource` records a real, non-invented identifier
+(`src/lib/backup/appVersion.js`):
+
+1. A git commit hash, **only if** one is exposed at build time via a
+   `VITE_GIT_COMMIT` (or `VITE_VERCEL_GIT_COMMIT_SHA`) build environment
+   variable — not set by this repository as shipped (there is no `.git`
+   directory in this project, so there is no commit hash to record).
+2. Otherwise, `package.json`'s `"version"` field — the safest identifier
+   actually available — with the manifest explicitly noting this is
+   **not** a git commit and recommending you add a build-time
+   `VITE_GIT_COMMIT` env var (e.g. `VITE_GIT_COMMIT=$(git rev-parse
+   HEAD) vite build`) to your deploy pipeline if you want true commit
+   traceability going forward. Nothing is ever fabricated.
+
 ## 4. Authentication — the part that CANNOT be fully automated from this app
 
 `public.profiles.id` is a foreign key into `auth.users.id`. Creating an
@@ -260,8 +387,12 @@ carried over, by design.
 Run `npm run test:disaster-recovery` — see §"Tests performed" in the
 final implementation report for exactly what this harness does and does
 not prove. It exercises dependency-order derivation, checksum
-computation, zip assembly/round-trip, identity-map parsing, and a
-synthetic export→restore structural deep-equal, all without a live
+computation, zip assembly/round-trip, identity-map parsing, a
+synthetic export→restore structural deep-equal, table REQUIRED/OPTIONAL
+classification + missing-table detection (including a mock of the
+"required table missing aborts / optional table missing skips" decision
+rule against the exact error message the live failure reported), and
+the simulation-reference-vs-implementation audit — all without a live
 database. **A genuine round-trip test against a real Supabase project
 (create backup → wipe a test project → restore → compare) has not been
 run in this session** (no live Supabase credentials in this sandbox —

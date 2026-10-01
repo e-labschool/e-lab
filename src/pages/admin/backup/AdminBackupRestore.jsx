@@ -392,7 +392,7 @@ function RestoreSection() {
 // ==================== COMPLETE DISASTER RECOVERY (create) ====================
 
 const DISASTER_INCLUDES = [
-  "Learn content", "Questions", "Media files", "Content ordering",
+  "Learn content", "Questions", "Media files", "Content ordering", "Simulation references",
   "User application data", "Learning progress", "Assessment data", "Required metadata",
 ];
 const DISASTER_EXCLUDES = ["Passwords", "Sessions", "API secrets", "Service credentials"];
@@ -494,7 +494,54 @@ function DisasterBackupSection() {
             <CheckRow item={{ pass: v.relationshipsVerified, label: "Relationships verified", detail: v.relationshipWarnings.slice(0, 3).join("; ") }} />
             <CheckRow item={{ pass: v.mediaVerified, label: "Media verified", detail: v.mediaFailures.length ? `${v.mediaFailures.length} file(s) could not be downloaded` : "" }} />
             <CheckRow item={{ pass: v.checksumsVerified, label: "Checksums verified", detail: v.mediaMismatches.length ? `${v.mediaMismatches.length} mismatch(es)` : "" }} />
+            <CheckRow item={{ pass: v.simulationsVerified, label: "Simulation references verified", detail: v.simulationWarnings?.slice(0, 3).join("; ") }} />
           </ul>
+
+          <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Simulations</p>
+          <ul className="mt-1 space-y-0.5 text-sm text-[var(--color-ink-soft)]">
+            <li>Referenced simulation blocks: {result.manifest.simulations?.referencedBlocks ?? 0}</li>
+            <li>Unique simulations: {result.manifest.simulations?.uniqueSimulations ?? 0}</li>
+            <li>Implementations verified: {result.manifest.simulations?.verifiedImplementations ?? 0}</li>
+            <li className={result.manifest.simulations?.missingImplementations ? "font-medium text-[#A5362A]" : ""}>
+              Missing: {result.manifest.simulations?.missingImplementations ?? 0}
+            </li>
+          </ul>
+          {result.manifest.simulations?.missingImplementations > 0 && (
+            <ul className="mt-1 space-y-0.5 text-xs text-[#A5362A]">
+              {result.manifest.simulations.items
+                .filter((i) => i.status === "missing")
+                .map((i) => (
+                  <li key={i.simulationId} className="flex items-start gap-1.5">
+                    <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+                    simulationId "{i.simulationId}" is referenced by {i.referencedBlocks} block(s) but has no registered implementation.
+                  </li>
+                ))}
+            </ul>
+          )}
+
+          <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Application source</p>
+          <p className="mt-1 text-sm text-[var(--color-ink-soft)]">Protected by Git repository (not duplicated into this package).</p>
+          <p className="text-sm text-[var(--color-ink-soft)]">
+            Source/build version:{" "}
+            {result.manifest.applicationSource?.identifier ?? "no version identifier available"}
+            {result.manifest.applicationSource?.identifierType === "package-version" ? " (package.json version — no git commit hash was available at build time)" : ""}
+          </p>
+
+          {result.manifest.tablesSkipped?.length > 0 && (
+            <>
+              <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Optional tables skipped</p>
+              <ul className="mt-1 space-y-0.5 text-sm text-[var(--color-ink-soft)]">
+                {result.manifest.tablesSkipped.map((s) => (
+                  <li key={s.table} className="flex items-start gap-1.5">
+                    <AlertTriangle size={13} className="mt-0.5 shrink-0 text-amber-600" />
+                    <span>
+                      <strong>{s.table}</strong> — {s.reason}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
 
           {!v.mediaVerified || !v.checksumsVerified ? (
             <p className="mt-3 flex items-start gap-2 text-sm font-medium text-[#A5362A]">

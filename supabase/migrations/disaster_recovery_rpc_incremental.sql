@@ -68,6 +68,12 @@ declare
   v_old_challenge_id text;
   v_new_challenge_id uuid;
   v_challenge_id_map jsonb := '{}'::jsonb;
+  -- user_preferences is audited OPTIONAL (src/lib/backup/constants.js) --
+  -- small per-user UI-state table that may not exist on every project
+  -- (see that file's audit note). If the TARGET database restored into
+  -- also lacks it, this flag records that rather than aborting the
+  -- whole restore transaction over one non-critical table.
+  v_user_preferences_table_missing boolean := false;
 begin
   if not public.is_admin() then
     raise exception 'Not authorized';
@@ -112,22 +118,32 @@ begin
   end loop;
   v_counts := jsonb_set(v_counts, '{user_access}', jsonb_build_object('restored', v_inserted, 'skippedNoIdentity', v_skipped));
 
-  -- ---------------- user_preferences ----------------
+  -- ---------------- user_preferences (OPTIONAL — see declare block) ----------------
   v_inserted := 0; v_skipped := 0;
-  for v_row in select * from jsonb_array_elements(coalesce(p_payload->'user_preferences', '[]'::jsonb))
-  loop
-    v_new_uid := nullif(p_id_map->>(v_row->>'user_id'), '')::uuid;
-    if v_new_uid is null or not exists (select 1 from public.profiles where id = v_new_uid) then
-      v_skipped := v_skipped + 1; continue;
-    end if;
-    insert into public.user_preferences (user_id, last_student_route, last_concept_id, sidebar_collapsed, theme)
-    values (v_new_uid, v_row->>'last_student_route', v_row->>'last_concept_id', coalesce((v_row->>'sidebar_collapsed')::boolean, false), v_row->>'theme')
-    on conflict (user_id) do update set
-      last_student_route = excluded.last_student_route, last_concept_id = excluded.last_concept_id,
-      sidebar_collapsed = excluded.sidebar_collapsed, theme = excluded.theme;
-    v_inserted := v_inserted + 1;
-  end loop;
-  v_counts := jsonb_set(v_counts, '{user_preferences}', jsonb_build_object('restored', v_inserted, 'skippedNoIdentity', v_skipped));
+  begin
+    for v_row in select * from jsonb_array_elements(coalesce(p_payload->'user_preferences', '[]'::jsonb))
+    loop
+      v_new_uid := nullif(p_id_map->>(v_row->>'user_id'), '')::uuid;
+      if v_new_uid is null or not exists (select 1 from public.profiles where id = v_new_uid) then
+        v_skipped := v_skipped + 1; continue;
+      end if;
+      insert into public.user_preferences (user_id, last_student_route, last_concept_id, sidebar_collapsed, theme)
+      values (v_new_uid, v_row->>'last_student_route', v_row->>'last_concept_id', coalesce((v_row->>'sidebar_collapsed')::boolean, false), v_row->>'theme')
+      on conflict (user_id) do update set
+        last_student_route = excluded.last_student_route, last_concept_id = excluded.last_concept_id,
+        sidebar_collapsed = excluded.sidebar_collapsed, theme = excluded.theme;
+      v_inserted := v_inserted + 1;
+    end loop;
+  exception when undefined_table then
+    -- The target database genuinely doesn't have this OPTIONAL table.
+    -- Recorded, not raised — restoring every other (required) table must
+    -- still succeed and commit.
+    v_user_preferences_table_missing := true;
+  end;
+  v_counts := jsonb_set(
+    v_counts, '{user_preferences}',
+    jsonb_build_object('restored', v_inserted, 'skippedNoIdentity', v_skipped, 'tableMissing', v_user_preferences_table_missing)
+  );
 
   -- ---------------- learning_progress ----------------
   v_inserted := 0; v_skipped := 0;

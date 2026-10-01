@@ -64,23 +64,52 @@ export const STORAGE_BUCKETS = [
 // Each entry names the table, the column that is (or resolves to) the
 // auth user id needing ID-remapping on restore, and which classification
 // bucket (per the user's spec, §1) it belongs to.
+// `required` (audited 2026-09, fixing the live "Could not find the table
+// 'public.user_preferences'" failure): true aborts the whole Complete
+// Disaster Recovery run if the table read fails for any reason,
+// including "table does not exist" (spec: "Required tables failing
+// should stop the backup"). false means the table is OPTIONAL
+// functionality that may genuinely not exist — the exporter skips ONLY
+// a "table does not exist" error for it, records the skip in the
+// manifest, and continues; any other error (RLS, network, etc.) still
+// aborts, same as a required table.
+//
+// `user_preferences` is the one table classified OPTIONAL here:
+//   - It is defined ONLY in supabase/schema.sql, the single "run this
+//     once" bootstrap file whose own header says re-running an
+//     already-applied section is unnecessary — unlike every other table
+//     below, it has no dedicated `*_incremental.sql` / `*-migration.sql`
+//     file of its own documenting an independent migration step, so
+//     there is no guarantee that step was (re-)run on a given project.
+//   - The application itself already treats it as non-critical:
+//     src/context/PreferencesContext.jsx reads it with `.maybeSingle()`
+//     and ignores `error` (falls back to `{}`), and its `upsert` merely
+//     skips the state update on error — the app never throws or blocks
+//     on this table being absent. It stores only small UI convenience
+//     state (sidebar-collapsed, last route/concept, theme).
+// Every other table below is REQUIRED: each has its own dedicated
+// migration file, and the application code that reads it
+// (accessService.js, challengeService.js, classPlannerService.js,
+// predictionEngine.js, settingsService.js) always throws/surfaces the
+// Supabase error rather than swallowing it — the app itself treats
+// these as load-bearing.
 export const USER_DATA_TABLES = [
-  { table: "profiles", userIdColumn: "id", category: "D" }, // D: user profile data
-  { table: "user_access", userIdColumn: "user_id", category: "E" }, // E: access/subscription
-  { table: "user_preferences", userIdColumn: "user_id", category: "H" }, // H: app settings (per-user)
+  { table: "profiles", userIdColumn: "id", category: "D", required: true }, // D: user profile data
+  { table: "user_access", userIdColumn: "user_id", category: "E", required: true }, // E: access/subscription
+  { table: "user_preferences", userIdColumn: "user_id", category: "H", required: false }, // H: app settings (per-user) — OPTIONAL, see audit note above
 ];
 
 export const PROGRESS_DATA_TABLES = [
-  { table: "learning_progress", userIdColumn: "user_id", category: "F" },
-  { table: "concept_attempts", userIdColumn: "user_id", category: "F" },
-  { table: "prediction_cycles", userIdColumn: "user_id", category: "F" },
-  { table: "prediction_snapshots", userIdColumn: "user_id", category: "F" },
-  { table: "student_streaks", userIdColumn: "user_id", category: "F" },
+  { table: "learning_progress", userIdColumn: "user_id", category: "F", required: true },
+  { table: "concept_attempts", userIdColumn: "user_id", category: "F", required: true },
+  { table: "prediction_cycles", userIdColumn: "user_id", category: "F", required: true },
+  { table: "prediction_snapshots", userIdColumn: "user_id", category: "F", required: true },
+  { table: "student_streaks", userIdColumn: "user_id", category: "F", required: true },
 ];
 
 export const ASSESSMENT_DATA_TABLES = [
-  { table: "student_challenges", userIdColumn: "user_id", category: "G" },
-  { table: "challenge_questions", userIdColumn: "user_id", category: "G" },
+  { table: "student_challenges", userIdColumn: "user_id", category: "G", required: true },
+  { table: "challenge_questions", userIdColumn: "user_id", category: "G", required: true },
 ];
 
 // Teacher-authored planning data — application/user-owned content, not
@@ -89,13 +118,13 @@ export const ASSESSMENT_DATA_TABLES = [
 // possible"), kept in its own group since it has its own FK shape
 // (class_plans -> lesson_blocks, not a bare user_id leaf table).
 export const PLANNING_DATA_TABLES = [
-  { table: "class_plans", userIdColumn: "user_id", category: "F" },
-  { table: "lesson_blocks", userIdColumn: "user_id", category: "F" }, // also FKs class_plan_id
+  { table: "class_plans", userIdColumn: "user_id", category: "F", required: true },
+  { table: "lesson_blocks", userIdColumn: "user_id", category: "F", required: true }, // also FKs class_plan_id
 ];
 
 // Singleton application configuration — one row, id = 1, no user_id at
 // all. Included verbatim (H: application settings); never remapped.
-export const SETTINGS_TABLES = [{ table: "platform_settings", userIdColumn: null, category: "H" }];
+export const SETTINGS_TABLES = [{ table: "platform_settings", userIdColumn: null, category: "H", required: true }];
 
 // Tables the disaster backup explicitly and deliberately EXCLUDES, with
 // the audited reason — surfaced verbatim in the manifest's
