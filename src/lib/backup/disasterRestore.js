@@ -44,6 +44,28 @@ export async function planDisasterRestore(validated) {
     existingProfileIds = new Set((data || []).map((r) => r.id));
   }
 
+  // 2026-10 gap closure: dry-run must recognize the new Question Bank /
+  // Question Paper datasets too, not just content + users — may be absent
+  // entirely in a package produced before this update.
+  const qbFile = validated.zip.file("data/question-bank.json");
+  const qpFile = validated.zip.file("data/question-papers.json");
+  const questionBankData = qbFile ? JSON.parse(await qbFile.async("string")) : null;
+  const questionPapersData = qpFile ? JSON.parse(await qpFile.async("string")) : null;
+  const questionBankSummary = questionBankData
+    ? {
+        questions: (questionBankData.questions || []).length,
+        questionSecrets: (questionBankData.question_secrets || []).length,
+        questionVersions: (questionBankData.question_versions || []).length,
+        questionVersionSecrets: (questionBankData.question_version_secrets || []).length,
+      }
+    : null;
+  const questionPaperSummary = questionPapersData
+    ? {
+        papers: (questionPapersData.question_papers || []).length,
+        paperItems: (questionPapersData.question_paper_items || []).length,
+      }
+    : null;
+
   return {
     contentPlan,
     usersData,
@@ -51,6 +73,8 @@ export async function planDisasterRestore(validated) {
       totalProfiles: oldIds.length,
       matchingSameId: oldIds.filter((id) => existingProfileIds.has(id)).length,
     },
+    questionBankSummary,
+    questionPaperSummary,
   };
 }
 
@@ -88,6 +112,7 @@ export async function restoreDisasterBackup(validated, { includeUserData = true,
   const contentResult = await restoreElabContent(contentBackup, "replace");
 
   let userDataResult = null;
+  let questionBankResult = null;
   if (includeUserData) {
     onProgress("Restoring user application data, progress and assessments…");
     const [users, progress, assessments, planning, settings, library] = await Promise.all([
@@ -102,6 +127,23 @@ export async function restoreDisasterBackup(validated, { includeUserData = true,
     const { data, error } = await supabase.rpc("restore_elab_disaster_data", { p_payload: payload, p_id_map: identityMap });
     if (error) throw new Error(`User/progress/assessment restore failed: ${error.message}`);
     userDataResult = data;
+
+    // ---- Question Bank / Question Paper restore (2026-10 gap closure) —
+    // a SEPARATE RPC call (restore_elab_question_bank_data), per the
+    // staged-restore design these tables' SCHEMA RECOVERY GAP requires
+    // (see question_bank_disaster_recovery_rpc_incremental.sql's header).
+    // May be absent entirely in a package produced before this update. ----
+    onProgress("Restoring Question Bank and Question Papers…");
+    const [questionBank, questionPapers] = await Promise.all([
+      readJsonFromZip(zip, "data/question-bank.json", null),
+      readJsonFromZip(zip, "data/question-papers.json", null),
+    ]);
+    if (questionBank || questionPapers) {
+      const qbPayload = { ...(questionBank || {}), ...(questionPapers || {}) };
+      const { data: qbData, error: qbError } = await supabase.rpc("restore_elab_question_bank_data", { p_payload: qbPayload, p_id_map: identityMap });
+      if (qbError) throw new Error(`Question Bank / Question Paper restore failed: ${qbError.message}`);
+      questionBankResult = qbData;
+    }
   }
 
   onProgress("Restoring media files…");
@@ -139,6 +181,7 @@ export async function restoreDisasterBackup(validated, { includeUserData = true,
   return {
     contentResult,
     userDataResult,
+    questionBankResult,
     mediaResults,
     datasetsNotDeployed,
     fullySuccessful: mediaResults.failed.length === 0,

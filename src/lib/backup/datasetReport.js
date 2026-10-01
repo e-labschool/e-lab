@@ -24,7 +24,17 @@ function sourceStatusFor(entry) {
   // source" — a claim about THIS repository, never about whether it is
   // actually deployed on any particular live project (see liveStatus,
   // decided per-export below).
-  return entry.deploymentTier === DEPLOYMENT_TIER.EXCLUDED ? "excluded_from_backup" : "present_in_source";
+  //
+  // 2026-10 Question Bank / Question Paper gap closure: a handful of
+  // entries (`entry.schemaRecoveryGap === true`, see SCHEMA_RECOVERY_GAPS
+  // in constants.js) are real, live, application-queried tables that have
+  // NO migration backing them at all — a materially different claim than
+  // "present in source" (which implies a genuine migration exists). These
+  // report as their own distinct status so the dataset report never
+  // implies a migration exists when it does not.
+  if (entry.deploymentTier === DEPLOYMENT_TIER.EXCLUDED) return "excluded_from_backup";
+  if (entry.schemaRecoveryGap) return "present_in_source_schema_gap";
+  return "present_in_source";
 }
 
 /**

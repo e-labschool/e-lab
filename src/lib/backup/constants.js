@@ -175,6 +175,32 @@ export const DEPLOYMENT_TIER = {
 export function describeDatasetAbsence(entry) {
   switch (entry.deploymentTier) {
     case DEPLOYMENT_TIER.NOT_DEPLOYED_IF_MISSING:
+      if (entry.schemaRecoveryGap) {
+        // 2026-10 Question Bank / Question Paper reconciliation: these
+        // tables are DIFFERENT from class_plans/lesson_blocks — there is
+        // no `create table` migration for them ANYWHERE in this
+        // repository (a genuine SCHEMA RECOVERY GAP, see
+        // SCHEMA_RECOVERY_GAPS below and docs/DISASTER_RECOVERY.md), so
+        // this backup cannot even point at a migration file that "simply
+        // hasn't been applied here" the way it can for class_plans. A
+        // confirmed missing-relation is still tolerated (never aborts),
+        // for exactly the same reason it would be reckless to treat this
+        // table as iron-clad `required` with no source-of-truth schema
+        // backing it — but the wording must not claim a migration exists
+        // when none does.
+        return (
+          `NOT DEPLOYED — the "${entry.table}" table is read/written by real ` +
+          "application code in this repository, but this Supabase project's " +
+          "schema cache reports it does not exist, AND this repository has " +
+          "no `create table` migration for it at all (a SCHEMA RECOVERY GAP " +
+          "— see SCHEMA_RECOVERY_GAPS in this file and docs/DISASTER_RECOVERY.md). " +
+          `This backup records "${entry.table}" with zero rows (never ` +
+          "fabricated) and continues; restoring this table's schema on a " +
+          "fresh project requires manually reconstructing it first (see the " +
+          "schema recovery gap report in the manifest), since no migration " +
+          "file can be pointed at to do it automatically."
+        );
+      }
       return (
         `NOT DEPLOYED — the "${entry.table}" table has a genuine migration ` +
         "and real application code that queries it in this repository, but " +
@@ -224,10 +250,20 @@ export const DISASTER_VERSION = 1;
 // BACKUP_DATASETS; its Storage file BYTES, and question-media's, are not
 // — a documented future extension, not a silent gap (see
 // docs/DISASTER_RECOVERY.md).
+// 2026-10 Question Bank / storage-gap closure: `resources` uploaded files
+// and `question-media` stimulus images are now ACTUALLY downloaded and
+// packaged (media/resources/… and media/question-media/…), extending the
+// exact same packageMediaFiles()/verifyZippedMediaChecksums() path
+// learn-media has always used — not a second storage system. `resources`
+// rows that store an `external_url` (not an uploaded file) are never
+// treated as a Storage object — see disasterExport.js's resource-file
+// collection and disasterValidate.js's integrity check for that
+// distinction, per the explicit spec requirement not to download external
+// websites into the package.
 export const STORAGE_BUCKETS = [
   { bucket: "learn-media", description: "Student Learn lesson media (images/GIFs/video) referenced from learn_blocks/learn_manual_questions content.", required: true, filesPackaged: true },
-  { bucket: "resources", description: "Teacher/student downloadable resource files (private bucket; accessed via signed URLs). Row metadata is in the `resources` table; file bytes are NOT yet packaged by this feature.", required: false, filesPackaged: false },
-  { bucket: "question-media", description: "Question Bank stimulus images (MCQ/short-answer visual_data). The Question Bank itself is out of scope (see EXCLUDED_TABLES); file bytes are NOT packaged by this feature.", required: false, filesPackaged: false },
+  { bucket: "resources", description: "Teacher/student downloadable resource files (private bucket; accessed via signed URLs). Row metadata is in the `resources` table. Uploaded file bytes ARE packaged (media/resources/<file_path>); rows that store an external_url instead of an uploaded file are metadata-only by design, never treated as a missing Storage object.", required: false, filesPackaged: true },
+  { bucket: "question-media", description: "Question Bank stimulus images (MCQ/short-answer visual_data/options/parts, and question_versions.content_snapshot). File bytes referenced by backed-up Question Bank content ARE packaged (media/question-media/<path>).", required: false, filesPackaged: true },
 ];
 
 // ============================================================
@@ -377,6 +413,167 @@ export const BACKUP_DATASETS = [
   // creator is still restored (creator attribution set to null, row never
   // dropped).
   { table: "resources", userIdColumn: "created_by", category: "I", group: "library", required: true, deploymentTier: DEPLOYMENT_TIER.FEATURE_DEPLOYED },
+
+  // ============================================================
+  // 2026-10 QUESTION BANK / QUESTION PAPER GAP CLOSURE
+  //
+  // Phase 1 audit (this update) re-examined the EXCLUDED_TABLES reasoning
+  // below from before — specifically the claim that `questions /
+  // question_versions / question_version_secrets / question_secrets` and
+  // `question_papers / question_paper_items` have "NO create-table
+  // migration anywhere". That claim was CORRECT (confirmed again,
+  // exhaustively, across every supabase/*.sql AND supabase/migrations/*.sql
+  // file — see SCHEMA_RECOVERY_GAPS below for the precise per-table
+  // finding) — but the CONCLUSION drawn from it (exclude the data
+  // entirely) was wrong per this update's explicit instruction: a table
+  // being live and readable, with real teacher/admin-authored persistent
+  // content behind it, makes it eligible for disaster backup EVEN THOUGH
+  // its schema migration is missing from source control. The two
+  // concerns are independent: whether to BACK UP the data (yes, now) vs.
+  // whether the data can be FULLY SCHEMA-RESTORED onto a brand-new
+  // project with no manual intervention (no — surfaced explicitly as a
+  // SCHEMA RECOVERY GAP, never silently papered over with a guessed
+  // migration).
+  //
+  // deploymentTier: NOT_DEPLOYED_IF_MISSING, like class_plans/
+  // lesson_blocks — but with `schemaRecoveryGap: true`, a NEW flag these
+  // two groups are the first to use (see describeDatasetAbsence() above
+  // and docs/DISASTER_RECOVERY.md). This is deliberate, not a weaker
+  // classification: `required: true` is reserved, by this file's own
+  // non-negotiable rule (see the 2026-10 SCHEMA RECONCILIATION note
+  // above, and scripts/test-disaster-recovery.mjs §6c, which enforces
+  // this as an executable test), for tables with a genuine `create table`
+  // migration in this repo — these tables have none. Marking them
+  // `required: true` anyway would be exactly the kind of unfounded
+  // confidence this whole reconciliation exists to prevent. A CONFIRMED
+  // missing-relation on any of them is tolerated (recorded as not
+  // deployed, zero rows, never fabricated) for that reason; any OTHER
+  // failure (permission/RLS, network, a real server error from the new
+  // bulk secret-export RPCs below) still aborts the whole backup,
+  // identically to every other tier — see datasetFetch.js, unchanged.
+  //
+  // Column evidence for every table below (never guessed) — see
+  // SCHEMA_RECOVERY_GAPS for the exact citation per table:
+  //   questions                — INSERT list in
+  //                              save_question_with_secrets()
+  //                              (supabase/bulk-question-import-migration.sql).
+  //   question_secrets         — same INSERT list, plus the SELECT list in
+  //                              get_admin_question_secrets()
+  //                              (supabase/get-admin-question-secrets-migration.sql).
+  //                              Table-level SELECT is revoked entirely
+  //                              (confirmed by that file's own header
+  //                              comment) — backed up via a NEW bulk
+  //                              admin-only export RPC, same pattern as
+  //                              learn_manual_question_secrets, see
+  //                              disasterExport.js / the new
+  //                              question_bank_disaster_recovery_rpc_incremental.sql.
+  //   question_versions        — SELECT lists in canonicalQuestions.js /
+  //                              paperService.js (id, question_id,
+  //                              version_number, content_snapshot). The
+  //                              function that actually POPULATES this
+  //                              table, maybe_create_question_version(),
+  //                              is itself called by
+  //                              save_question_with_secrets() but its own
+  //                              CREATE FUNCTION body is nowhere in this
+  //                              repository either — a deeper gap than a
+  //                              bare missing table (see
+  //                              SCHEMA_RECOVERY_GAPS).
+  //   question_version_secrets — SELECT lists inside the Learn marking
+  //                              RPCs (learn_content_cms.sql /
+  //                              learn_sl_hl_access_and_flow_incremental.sql):
+  //                              question_version_id, correct_answer_data,
+  //                              explanation. Also table-level-revoked
+  //                              (SECURITY DEFINER-only access pattern,
+  //                              same as question_secrets) — same new bulk
+  //                              export RPC approach.
+  //   question_papers           — full CRUD call sites in paperService.js:
+  //                              id, user_id, title, paper, level, status,
+  //                              created_at/updated_at (timestamps read via
+  //                              select("*"), never individually named, so
+  //                              not independently itemized here).
+  //   question_paper_items      — paperService.js: id, paper_id, position,
+  //                              question_version_id, custom_question,
+  //                              marks_override.
+  // ============================================================
+  { table: "questions", userIdColumn: "created_by", category: "J", group: "question_bank", required: false, deploymentTier: DEPLOYMENT_TIER.NOT_DEPLOYED_IF_MISSING, schemaRecoveryGap: true },
+  { table: "question_secrets", userIdColumn: null, category: "J", group: "question_bank", required: false, deploymentTier: DEPLOYMENT_TIER.NOT_DEPLOYED_IF_MISSING, schemaRecoveryGap: true },
+  { table: "question_versions", userIdColumn: null, category: "J", group: "question_bank", required: false, deploymentTier: DEPLOYMENT_TIER.NOT_DEPLOYED_IF_MISSING, schemaRecoveryGap: true },
+  { table: "question_version_secrets", userIdColumn: null, category: "J", group: "question_bank", required: false, deploymentTier: DEPLOYMENT_TIER.NOT_DEPLOYED_IF_MISSING, schemaRecoveryGap: true },
+
+  { table: "question_papers", userIdColumn: "user_id", category: "K", group: "question_papers", required: false, deploymentTier: DEPLOYMENT_TIER.NOT_DEPLOYED_IF_MISSING, schemaRecoveryGap: true },
+  { table: "question_paper_items", userIdColumn: null, category: "K", group: "question_papers", required: false, deploymentTier: DEPLOYMENT_TIER.NOT_DEPLOYED_IF_MISSING, schemaRecoveryGap: true },
+];
+
+// ============================================================
+// SCHEMA RECOVERY GAPS — Phase 8's required explicit report. Every one of
+// these tables is LIVE and read/written by real, unmodified application
+// code (never guessed), but this repository has NO `create table`
+// migration for it anywhere under supabase/*.sql or
+// supabase/migrations/*.sql (exhaustively grepped, re-verified for this
+// update — see the audit note above BACKUP_DATASETS). Per explicit
+// instruction: do NOT fabricate a migration from assumptions. This array
+// is the honest, structured alternative — surfaced verbatim in the
+// disaster manifest (manifest.schemaRecoveryGaps) so an admin restoring
+// onto a brand-new Supabase project knows EXACTLY which tables need
+// manual schema reconstruction before `restore_elab_question_bank_data`
+// (see the new RPC) can succeed, rather than discovering it as a cryptic
+// runtime failure.
+// ============================================================
+export const SCHEMA_RECOVERY_GAPS = [
+  {
+    table: "questions",
+    liveApplicationTable: true,
+    migrationExists: false,
+    restoreSchemaReproducible: "partial",
+    missingArtifact: "No `create table public.questions` statement exists anywhere in supabase/*.sql or supabase/migrations/*.sql.",
+    columnEvidence: "Deterministically reconstructable (not guessed) from the INSERT column list in save_question_with_secrets() (supabase/bulk-question-import-migration.sql): id, curriculum_section, topic_code, topic_title, unit_code, unit_title, concept, level, paper, question_type, difficulty, marks, command_terms, tags, question_content, visual_data, parts, options, estimated_minutes, data_booklet_required, calculator_required, status, source, syllabus_version, created_by (+ presumably created_at/updated_at, never individually named by any INSERT/SELECT so not independently confirmed).",
+    recommendation: "Run `pg_dump --schema-only -t public.questions` (or the Supabase Studio \"Download schema\" tool) against the LIVE project and commit the exact output as a new supabase/migrations/*.sql file. Do not hand-write a CREATE TABLE from the column list above — it is sufficient to restore DATA into an already-existing table, but is not proven to be the complete, exact column/constraint/index/RLS definition.",
+  },
+  {
+    table: "question_secrets",
+    liveApplicationTable: true,
+    migrationExists: false,
+    restoreSchemaReproducible: "partial",
+    missingArtifact: "No `create table public.question_secrets` statement exists in source control. Table-level SELECT is also revoked entirely (confirmed by get-admin-question-secrets-migration.sql's own header comment) — the only read path before this update was the single-question get_admin_question_secrets() RPC.",
+    columnEvidence: "question_id (PK/FK to questions.id), correct_answer_data (jsonb), markscheme (jsonb), explanation (text) — from the same save_question_with_secrets() INSERT and get_admin_question_secrets()'s SELECT list.",
+    recommendation: "Same as `questions`: pg_dump --schema-only against the live project and commit the real migration. This update adds a NEW bulk admin-only export RPC (admin_export_question_secrets) to make backup possible without a schema migration, but restoring onto a schema-less fresh project still requires this table to be manually recreated first.",
+  },
+  {
+    table: "question_versions",
+    liveApplicationTable: true,
+    migrationExists: false,
+    restoreSchemaReproducible: "partial",
+    missingArtifact: "No `create table public.question_versions` statement in source control. Deeper than a bare missing table: the function that actually POPULATES it, maybe_create_question_version(), is called by save_question_with_secrets() but its own CREATE FUNCTION body is not present anywhere in this repository either — the version-creation LOGIC itself, not just the table shape, is unrecovered from source.",
+    columnEvidence: "id, question_id, version_number, content_snapshot (jsonb) — from SELECT lists in canonicalQuestions.js and paperService.js.",
+    recommendation: "pg_dump --schema-only for the table AND pg_get_functiondef('public.maybe_create_question_version') for the function, both committed as a new migration. Restoring question_versions data without this function is possible (this update's new restore RPC inserts rows directly, preserving their original ids), but the AUTOMATIC version-creation behavior on a fresh project would not exist until this function is recovered.",
+  },
+  {
+    table: "question_version_secrets",
+    liveApplicationTable: true,
+    migrationExists: false,
+    restoreSchemaReproducible: "partial",
+    missingArtifact: "No `create table public.question_version_secrets` statement in source control. Table-level access is revoked (SECURITY DEFINER-only, same pattern as question_secrets) with no existing bulk or even single-row read RPC prior to this update.",
+    columnEvidence: "question_version_id (FK to question_versions.id), correct_answer_data (jsonb), explanation (text) — from the SELECT lists inside the Learn canonical-marking RPCs in learn_content_cms.sql / learn_sl_hl_access_and_flow_incremental.sql. A `markscheme` column, if one exists on this table, is NOT referenced anywhere in source and so is NOT confirmed — do not assume parity with question_secrets' column set.",
+    recommendation: "Same as question_versions: pg_dump --schema-only and commit. This update adds a NEW bulk admin-only export RPC (admin_export_question_version_secrets).",
+  },
+  {
+    table: "question_papers",
+    liveApplicationTable: true,
+    migrationExists: false,
+    restoreSchemaReproducible: "partial",
+    missingArtifact: "No `create table public.question_papers` statement anywhere in source control — provisioned directly against the live project outside version control.",
+    columnEvidence: "id, user_id, title, paper, level, status (+ created_at/updated_at, read via select(\"*\") but never individually named) — from every call site in src/pages/teacher/qbuilder/lib/paperService.js.",
+    recommendation: "pg_dump --schema-only against the live project and commit as a new migration.",
+  },
+  {
+    table: "question_paper_items",
+    liveApplicationTable: true,
+    migrationExists: false,
+    restoreSchemaReproducible: "partial",
+    missingArtifact: "No `create table public.question_paper_items` statement anywhere in source control.",
+    columnEvidence: "id, paper_id, position, question_version_id, custom_question (jsonb), marks_override — from paperService.js.",
+    recommendation: "pg_dump --schema-only against the live project and commit as a new migration.",
+  },
 ];
 
 function byGroup(group) {
@@ -391,14 +588,23 @@ export const ASSESSMENT_DATA_TABLES = byGroup("assessments");
 export const PLANNING_DATA_TABLES = byGroup("planning");
 export const SETTINGS_TABLES = byGroup("settings");
 export const LIBRARY_DATA_TABLES = byGroup("library");
+export const QUESTION_BANK_TABLES = byGroup("question_bank");
+export const QUESTION_PAPER_TABLES = byGroup("question_papers");
 
 // Tables the disaster backup explicitly and deliberately EXCLUDES, with
 // the audited reason — surfaced verbatim in the manifest's
 // `tablesExcluded` so nothing "silently" disappears (spec §41.4).
 export const EXCLUDED_TABLES = [
   { table: "auth.users", reason: "Supabase-managed authentication identities. Requires the service-role Admin API (server-side only, never in this React frontend). See docs/DISASTER_RECOVERY.md — NOT PORTABLE by this package; a documented relinking procedure is provided instead.", deploymentTier: DEPLOYMENT_TIER.EXCLUDED },
-  { table: "questions / question_versions / question_version_secrets / question_secrets", reason: "The separate Question Bank system. Learn pages only store a reference (question_id + pinned question_version_id) to it, by the same deliberate scope boundary the existing Content Backup already documents — restoring it is a future extension, not this feature's job.", deploymentTier: DEPLOYMENT_TIER.EXCLUDED },
-  { table: "question_papers / question_paper_items", reason: "Confirmed by code audit (grep -rn \"question_paper\" src/) to be a real, actively-used teacher feature (src/pages/teacher/qbuilder/) with NO create-table migration anywhere in supabase/*.sql or supabase/migrations/*.sql — it was provisioned directly against the live Supabase project outside version control, exactly like the Question Bank it composes from. Grouped with the Question Bank under the same documented scope boundary (docs/BACKUP_AND_DISASTER_RECOVERY.md §4/§5) rather than guessed at: this backup cannot safely assume its columns/RLS, and restoring a question paper without its referenced canonical questions would be incomplete anyway.", deploymentTier: DEPLOYMENT_TIER.EXCLUDED },
+  // 2026-10 gap closure: questions/question_versions/question_version_secrets/
+  // question_secrets and question_papers/question_paper_items are NO LONGER
+  // excluded — see BACKUP_DATASETS (group "question_bank"/"question_papers")
+  // and SCHEMA_RECOVERY_GAPS above. They were excluded here previously
+  // purely because their migrations are missing from source control; this
+  // update's explicit instruction is that live, readable, persistent
+  // application data is eligible for backup regardless of that gap, with
+  // the gap itself surfaced honestly instead of used as a reason to drop
+  // real data from Complete Disaster Recovery.
   { table: "user_access_overview / platform_settings_public", reason: "Both are Postgres VIEWs (create or replace view — see admin-access-migration.sql / admin-settings-migration.sql), not base tables: they have no rows of their own to back up. Their underlying base tables (user_access, platform_settings) ARE in BACKUP_DATASETS above; restoring those automatically makes the views correct again.", deploymentTier: DEPLOYMENT_TIER.EXCLUDED },
   { table: "Supabase Auth sessions/tokens/refresh tokens", reason: "Secrets — never captured anywhere in application code or this backup, by design (spec §12/§35).", deploymentTier: DEPLOYMENT_TIER.EXCLUDED },
 ];

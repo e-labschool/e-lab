@@ -60,6 +60,35 @@ const EDGES = [
   // restores fine with no mappable creator (attribution is simply null),
   // so it only depends on the schema existing, not on profiles/auth_users.
   ["schema", "resources"],
+  // Uploaded resource files must exist before the metadata row that
+  // references them is considered fully restored (same non-enforced-by-
+  // Postgres-but-verification-matters rationale as media_files -> learn_blocks).
+  ["media_files", "resources"],
+
+  // 2026-10 Question Bank / Question Paper gap closure (SCHEMA RECOVERY
+  // GAP — see constants.js/docs/DISASTER_RECOVERY.md: these six tables
+  // have no migration in this repository, so "schema" here really means
+  // "whatever schema reconstruction the admin has performed for these
+  // specific tables", not a guarantee this repo's migrations provide it).
+  // questions is the root of the whole graph; question_secrets and
+  // question_versions both depend only on questions; question_version_secrets
+  // depends on question_versions; question_papers is independent of the
+  // Question Bank itself (a paper can reference custom/legacy questions
+  // only); question_paper_items depends on BOTH its parent paper and
+  // (when set) a question_versions row, and ids are preserved exactly, so
+  // no remapping step sits between them the way profiles/auth_users does.
+  ["schema", "questions"],
+  ["questions", "question_secrets"],
+  ["questions", "question_versions"],
+  ["question_versions", "question_version_secrets"],
+  // question-media stimulus images referenced from questions.visual_data/
+  // options/parts and question_versions.content_snapshot — same
+  // media-before-content-that-points-at-it rationale as learn-media.
+  ["media_files", "questions"],
+  ["media_files", "question_versions"],
+  ["schema", "question_papers"],
+  ["question_papers", "question_paper_items"],
+  ["question_versions", "question_paper_items"],
 ];
 
 /** Kahn's algorithm topological sort over the declared EDGES above. */
@@ -119,4 +148,10 @@ export const DISASTER_RESTORE_NODES = [
   "lesson_blocks",
   "platform_settings",
   "resources",
+  "questions",
+  "question_secrets",
+  "question_versions",
+  "question_version_secrets",
+  "question_papers",
+  "question_paper_items",
 ];

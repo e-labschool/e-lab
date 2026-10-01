@@ -106,6 +106,14 @@ than failing the whole restore. **The Question Bank needs its own,
 separate backup** — a natural, clearly-scoped future addition, not
 something this feature silently assumes.
 
+> **2026-10 update**: that separate backup now exists — see
+> `docs/DISASTER_RECOVERY.md` §9. It lives entirely in the *Complete
+> Disaster Recovery* package (`data/question-bank.json` /
+> `data/question-papers.json`), not in this document's plain Content
+> Backup (`data/content.json`), which still exports only the
+> `question_id`/`question_version_id` reference described above — that
+> design is unchanged.
+
 ## 6. How media is handled
 
 Learn media is uploaded to the public `learn-media` Supabase Storage

@@ -118,6 +118,82 @@ export async function validateDisasterBackup(file) {
   }
   check(checks, "mediaChecksums", "Packaged media files match their recorded SHA-256 checksums", mediaMismatchCount === 0, `${mediaMismatchCount} mismatch(es)/missing file(s) out of ${mediaCheckedCount} checked`);
 
+  // ---- Question Bank / Question Paper integrity (Phase 6) — may be
+  // absent entirely in a package produced before the 2026-10 gap closure;
+  // absence is reported as a pass (nothing to check), never a failure. ----
+  const qbFile = zip.file("data/question-bank.json");
+  const qpFile = zip.file("data/question-papers.json");
+  let questionBankData = null;
+  let questionPapersData = null;
+  if (qbFile) {
+    try {
+      questionBankData = JSON.parse(await qbFile.async("string"));
+      check(checks, "questionBankJson", "data/question-bank.json parses as JSON", true);
+    } catch {
+      check(checks, "questionBankJson", "data/question-bank.json parses as JSON", false);
+    }
+  }
+  if (qpFile) {
+    try {
+      questionPapersData = JSON.parse(await qpFile.async("string"));
+      check(checks, "questionPapersJson", "data/question-papers.json parses as JSON", true);
+    } catch {
+      check(checks, "questionPapersJson", "data/question-papers.json parses as JSON", false);
+    }
+  }
+  if (questionBankData) {
+    const questionIds = new Set((questionBankData.questions || []).map((q) => q.id));
+    const versionIds = new Set((questionBankData.question_versions || []).map((v) => v.id));
+    const badVersions = (questionBankData.question_versions || []).filter((v) => !questionIds.has(v.question_id));
+    check(checks, "questionVersionsResolve", "Every question_versions row points to a question present in this package", badVersions.length === 0, badVersions.length ? `${badVersions.length} orphaned version(s)` : "");
+    const badSecrets = (questionBankData.question_secrets || []).filter((s) => !questionIds.has(s.question_id));
+    check(checks, "questionSecretsResolve", "Every question_secrets row points to a question present in this package", badSecrets.length === 0, badSecrets.length ? `${badSecrets.length} orphaned secret(s)` : "");
+    const badVersionSecrets = (questionBankData.question_version_secrets || []).filter((s) => !versionIds.has(s.question_version_id));
+    check(checks, "questionVersionSecretsResolve", "Every question_version_secrets row points to a question_versions row present in this package", badVersionSecrets.length === 0, badVersionSecrets.length ? `${badVersionSecrets.length} orphaned version secret(s)` : "");
+
+    if (questionPapersData) {
+      const paperIds = new Set((questionPapersData.question_papers || []).map((p) => p.id));
+      const items = questionPapersData.question_paper_items || [];
+      const badPaperRef = items.filter((i) => !paperIds.has(i.paper_id));
+      check(checks, "paperItemsResolveToPapers", "Every question_paper_items row points to a question_papers row present in this package", badPaperRef.length === 0, badPaperRef.length ? `${badPaperRef.length} orphaned item(s)` : "");
+      const badVersionRef = items.filter((i) => i.question_version_id && !versionIds.has(i.question_version_id));
+      check(checks, "paperItemsResolveToVersions", "Every question_paper_items row's question_version_id (when set) resolves to a question_versions row present in this package", badVersionRef.length === 0, badVersionRef.length ? `${badVersionRef.length} unresolved reference(s)` : "");
+      const positionsOk = items.every((i) => Number.isInteger(i.position));
+      check(checks, "paperItemOrderingPreserved", "Every question_paper_items row carries an integer `position` (ordering preserved)", positionsOk);
+    }
+  }
+
+  // ---- Resources: uploaded-file metadata resolves to a packaged media
+  // object; an external_url row is NEVER flagged as a missing file (spec:
+  // "external URL resources are not incorrectly flagged as missing
+  // files"). ----
+  const libraryFile = zip.file("data/library.json");
+  if (libraryFile) {
+    try {
+      const library = JSON.parse(await libraryFile.async("string"));
+      const resources = library.resources || [];
+      const packagedResourcePaths = new Set((integrity?.mediaChecksums || []).filter((m) => m.bucket === "resources").map((m) => m.path));
+      const uploadedFileRows = resources.filter((r) => r.file_path && !r.external_url);
+      const unresolvedUploads = uploadedFileRows.filter((r) => !packagedResourcePaths.has(r.file_path));
+      check(
+        checks,
+        "resourceUploadsResolve",
+        "Every uploaded Resource file resolves to a packaged media object",
+        unresolvedUploads.length === 0,
+        unresolvedUploads.length ? `${unresolvedUploads.length} resource(s) with file_path not found under media/resources/` : ""
+      );
+      // External URL resources are never checked against packagedResourcePaths
+      // at all (see uploadedFileRows' `&& !r.external_url` filter above) —
+      // that omission IS the guarantee spec asks for: an external_url row
+      // can never appear in unresolvedUploads, so it can never be reported
+      // as a missing Storage file.
+      const externalUrlCount = resources.filter((r) => r.external_url).length;
+      check(checks, "externalUrlResourcesNotFlagged", "External URL resources are recorded as metadata-only, never as a missing Storage file", true, `${externalUrlCount} external URL resource(s) in this package`);
+    } catch {
+      check(checks, "libraryJson", "data/library.json parses as JSON", false);
+    }
+  }
+
   // ---- schema compatibility (best-effort: version number only — this
   // sandbox cannot introspect a live target database's actual schema) ----
   check(checks, "schemaCompatibility", "Disaster backup version is understood by this app build", versionOk);

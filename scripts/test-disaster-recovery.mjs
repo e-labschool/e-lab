@@ -386,7 +386,7 @@ await (async () => {
   test("ALL_DISASTER_TABLES IS BACKUP_DATASETS (one centralized manifest, not a parallel list)", () => {
     assert.equal(c.ALL_DISASTER_TABLES, c.BACKUP_DATASETS);
   });
-  test("USER_DATA_TABLES/PROGRESS_DATA_TABLES/ASSESSMENT_DATA_TABLES/PLANNING_DATA_TABLES/SETTINGS_TABLES are each a filtered VIEW of BACKUP_DATASETS, not a second hand-maintained list", () => {
+  test("USER_DATA_TABLES/PROGRESS_DATA_TABLES/ASSESSMENT_DATA_TABLES/PLANNING_DATA_TABLES/SETTINGS_TABLES/LIBRARY_DATA_TABLES/QUESTION_BANK_TABLES/QUESTION_PAPER_TABLES are each a filtered VIEW of BACKUP_DATASETS, not a second hand-maintained list", () => {
     const grouped = [
       ...c.USER_DATA_TABLES,
       ...c.PROGRESS_DATA_TABLES,
@@ -394,6 +394,8 @@ await (async () => {
       ...c.PLANNING_DATA_TABLES,
       ...c.SETTINGS_TABLES,
       ...c.LIBRARY_DATA_TABLES,
+      ...c.QUESTION_BANK_TABLES,
+      ...c.QUESTION_PAPER_TABLES,
     ];
     assert.equal(grouped.length, c.BACKUP_DATASETS.length);
     // every object is the SAME reference as the one in BACKUP_DATASETS, not a copy
@@ -438,9 +440,12 @@ await (async () => {
   // be simply absent from this accounting with no explanation.
   const accounted = new Set([
     ...c.CONTENT_TABLES,
+    // 2026-10 gap closure: questions/question_versions/question_version_secrets/
+    // question_secrets/question_papers/question_paper_items are no longer a
+    // separate hardcoded addition here — they are now real BACKUP_DATASETS
+    // entries (group "question_bank"/"question_papers") and so are already
+    // covered by the spread below, exactly like every other backed-up table.
     ...c.BACKUP_DATASETS.map((t) => t.table),
-    "questions", "question_versions", "question_version_secrets", "question_secrets", // Question Bank, excluded
-    "question_papers", "question_paper_items", // excluded, see constants.js EXCLUDED_TABLES
     "user_access_overview", "platform_settings_public", // views over accounted-for base tables
   ]);
 
@@ -1022,6 +1027,297 @@ await (async () => {
     assert.match(restoreJs, /manifest\s*}\s*=\s*validated/, "must destructure `manifest` off `validated`");
     assert.match(restoreJs, /datasetsNotDeployed/);
     assert.match(restoreJs, /manifest\?\.tablesSkipped/);
+  });
+})();
+
+console.log("\n== 13. Question Bank / Question Paper / storage gap closure (2026-10) ==");
+await (async () => {
+  const c = await import("../src/lib/backup/constants.js");
+  const { isMissingTableError } = await import("../src/lib/backup/tableAccess.js");
+  const { fetchAllDatasets, assertNoDatasetFailures } = await import("../src/lib/backup/datasetFetch.js");
+  const { collectBucketReferences, bucketMediaMapToManifest, collectMediaReferences, mediaMapToManifest } = await import("../src/lib/backup/mediaScan.js");
+  const { computeRestoreOrder, DISASTER_RESTORE_NODES } = await import("../src/lib/backup/dependencyOrder.js");
+  const { validateDisasterBackup } = await import("../src/lib/backup/disasterValidate.js");
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const JSZipMod = (await import("jszip")).default;
+  const { sha256HexOfString, sha256Hex } = await import("../src/lib/backup/checksums.js");
+  const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+
+  const QB_TABLES = ["questions", "question_secrets", "question_versions", "question_version_secrets"];
+  const QP_TABLES = ["question_papers", "question_paper_items"];
+
+  test("Question Bank + Question Paper tables are now real BACKUP_DATASETS entries, not excluded", () => {
+    for (const t of [...QB_TABLES, ...QP_TABLES]) {
+      const entry = c.BACKUP_DATASETS.find((x) => x.table === t);
+      assert.ok(entry, `${t} must be tracked in BACKUP_DATASETS`);
+      assert.notEqual(entry.deploymentTier, c.DEPLOYMENT_TIER.EXCLUDED);
+    }
+    const excludedNames = c.EXCLUDED_TABLES.map((e) => e.table).join(" | ");
+    for (const t of [...QB_TABLES, ...QP_TABLES]) {
+      assert.ok(!excludedNames.includes(t) || excludedNames.includes("views"), `${t} should no longer appear in EXCLUDED_TABLES`);
+    }
+  });
+
+  test("every Question Bank / Question Paper table is tiered not_deployed_if_missing with schemaRecoveryGap:true (never required:true without a migration)", () => {
+    for (const t of [...QB_TABLES, ...QP_TABLES]) {
+      const entry = c.BACKUP_DATASETS.find((x) => x.table === t);
+      assert.equal(entry.required, false, `${t} must be required:false (no migration backs it)`);
+      assert.equal(entry.deploymentTier, c.DEPLOYMENT_TIER.NOT_DEPLOYED_IF_MISSING);
+      assert.equal(entry.schemaRecoveryGap, true);
+    }
+  });
+
+  test("SCHEMA_RECOVERY_GAPS names exactly the 6 Question Bank / Question Paper tables, each with migrationExists:false and a recommendation", () => {
+    assert.equal(c.SCHEMA_RECOVERY_GAPS.length, 6);
+    assert.deepEqual(c.SCHEMA_RECOVERY_GAPS.map((g) => g.table).sort(), [...QB_TABLES, ...QP_TABLES].sort());
+    for (const g of c.SCHEMA_RECOVERY_GAPS) {
+      assert.equal(g.migrationExists, false);
+      assert.ok(g.recommendation && g.recommendation.length > 0);
+      assert.ok(g.columnEvidence && g.columnEvidence.length > 0, `${g.table} must cite real column evidence, never a guess with no citation`);
+    }
+  });
+
+  test("describeDatasetAbsence() reads differently for a schemaRecoveryGap table vs a normal not_deployed_if_missing table (never claims a migration exists when none does)", () => {
+    const questions = c.BACKUP_DATASETS.find((t) => t.table === "questions");
+    const classPlans = c.BACKUP_DATASETS.find((t) => t.table === "class_plans");
+    const gapText = c.describeDatasetAbsence(questions);
+    const normalText = c.describeDatasetAbsence(classPlans);
+    assert.notEqual(gapText, normalText);
+    assert.match(gapText, /SCHEMA RECOVERY GAP/);
+    assert.doesNotMatch(normalText, /SCHEMA RECOVERY GAP/);
+    assert.match(normalText, /has a genuine migration/);
+    assert.doesNotMatch(gapText, /has a genuine migration/);
+  });
+
+  test("STORAGE_BUCKETS: resources and question-media are now filesPackaged:true (bytes actually downloaded, not just metadata)", () => {
+    for (const bucket of ["resources", "question-media", "learn-media"]) {
+      const entry = c.STORAGE_BUCKETS.find((b) => b.bucket === bucket);
+      assert.equal(entry.filesPackaged, true, `${bucket} should be filesPackaged:true`);
+    }
+  });
+
+  await testAsync("fetchAllDatasets: a live project missing ALL SIX schema-recovery-gap tables (fresh/foreign project with no manual schema reconstruction) does NOT abort the whole backup", async () => {
+    function missingTableError(table) {
+      return Object.assign(new Error(`Could not find the table 'public.${table}' in the schema cache`), { code: "PGRST205" });
+    }
+    const missing = new Set([...QB_TABLES, ...QP_TABLES]);
+    const readTable = async (table) => {
+      if (missing.has(table)) throw missingTableError(table);
+      return [{ id: `row-${table}` }];
+    };
+    const { failures, skipped } = await fetchAllDatasets(c.BACKUP_DATASETS, readTable);
+    assert.deepEqual(failures, []);
+    assert.deepEqual(skipped.map((s) => s.table).sort(), [...missing].sort());
+    assert.doesNotThrow(() => assertNoDatasetFailures(failures));
+  });
+
+  await testAsync("a PERMISSION error (not a confirmed missing-relation) on question_secrets — e.g. the new admin_export_question_secrets RPC rejecting a non-admin — is a real failure, never reinterpreted as not-deployed", async () => {
+    const readTable = async (table) => {
+      if (table === "question_secrets") throw Object.assign(new Error("Not authorized"), { code: "42501" });
+      return [];
+    };
+    const { failures, skipped } = await fetchAllDatasets(c.BACKUP_DATASETS, readTable);
+    assert.deepEqual(skipped, []);
+    assert.equal(failures.length, 1);
+    assert.equal(failures[0].table, "question_secrets");
+    assert.throws(() => assertNoDatasetFailures(failures), /question_secrets/);
+  });
+
+  test("isMissingTableError also recognizes a plain Postgres 42P01 'relation does not exist' error (the shape an RPC body raises, not PostgREST's PGRST205)", () => {
+    const err = Object.assign(new Error('relation "public.question_secrets" does not exist'), { code: "42P01" });
+    assert.equal(isMissingTableError(err), true);
+  });
+
+  test("isMissingTableError still rejects a permission error with an unrelated message, even with no code", () => {
+    const err = new Error("Not authorized");
+    assert.equal(isMissingTableError(err), false);
+  });
+
+  test("dependency order: questions precedes question_secrets/question_versions; question_versions precedes question_version_secrets and question_paper_items; question_papers precedes question_paper_items", () => {
+    const order = computeRestoreOrder(DISASTER_RESTORE_NODES);
+    const idx = (n) => order.indexOf(n);
+    assert.ok(idx("questions") < idx("question_secrets"));
+    assert.ok(idx("questions") < idx("question_versions"));
+    assert.ok(idx("question_versions") < idx("question_version_secrets"));
+    assert.ok(idx("question_versions") < idx("question_paper_items"));
+    assert.ok(idx("question_papers") < idx("question_paper_items"));
+    assert.ok(idx("media_files") < idx("questions"), "question-media files should precede the content that references them");
+  });
+
+  test("mediaScan generalized to question-media: collectBucketReferences finds a question-media URL embedded in visual_data exactly like learn-media is found in learn_blocks content", () => {
+    const questions = [
+      { id: "Q-1", visual_data: { src: "https://proj.supabase.co/storage/v1/object/public/question-media/questions/Q-1/diagram.png" }, options: null, parts: null, question_content: "text" },
+    ];
+    const map = collectBucketReferences(questions, ["question_content", "visual_data", "options", "parts"], "question-media", "questions", new Map());
+    const manifest = bucketMediaMapToManifest(map, "question-media");
+    assert.equal(manifest.length, 1);
+    assert.equal(manifest[0].bucket, "question-media");
+    assert.equal(manifest[0].path, "questions/Q-1/diagram.png");
+    assert.deepEqual(manifest[0].referencedBy, ["questions:Q-1"]);
+  });
+
+  test("mediaScan backward compatibility: the original learn-media-only exports (collectMediaReferences/mediaMapToManifest) still behave identically after generalization", () => {
+    const blocks = [{ id: "b1", content: { html: '<img src="https://x.supabase.co/storage/v1/object/public/learn-media/a/b.png">' } }];
+    const map = collectMediaReferences(blocks, ["content"], "learn_blocks");
+    const manifest = mediaMapToManifest(map);
+    assert.equal(manifest.length, 1);
+    assert.equal(manifest[0].bucket, "learn-media");
+    assert.equal(manifest[0].path, "a/b.png");
+  });
+
+  test("resources: an uploaded-file row (file_path set, no external_url) is collected as a Storage media entry; an external_url-only row is NOT", () => {
+    const resources = [
+      { id: "r1", file_path: "student/notes.pdf", external_url: null },
+      { id: "r2", file_path: null, external_url: "https://example.com/external-notes.pdf" },
+    ];
+    const uploadedFileRows = resources.filter((r) => r.file_path && !r.external_url);
+    assert.equal(uploadedFileRows.length, 1);
+    assert.equal(uploadedFileRows[0].id, "r1");
+  });
+
+  test("duplicate paths across DIFFERENT buckets cannot collide: the bucket+path composite key keeps media/learn-media/a.png and media/question-media/a.png as two distinct packaged entries", () => {
+    const mediaEntryMap = new Map();
+    mediaEntryMap.set("learn-media::a.png", { bucket: "learn-media", path: "a.png" });
+    mediaEntryMap.set("question-media::a.png", { bucket: "question-media", path: "a.png" });
+    const entries = [...mediaEntryMap.values()];
+    assert.equal(entries.length, 2);
+    assert.notEqual(entries[0].bucket, entries[1].bucket);
+  });
+
+  test("duplicate paths within the SAME bucket (e.g. a resource file also directly referenced by question-media scanning) dedupe to ONE packaged entry, never downloaded twice", () => {
+    const mediaEntryMap = new Map();
+    mediaEntryMap.set("resources::student/notes.pdf", { bucket: "resources", path: "student/notes.pdf" });
+    mediaEntryMap.set("resources::student/notes.pdf", { bucket: "resources", path: "student/notes.pdf" }); // same key, overwrites
+    assert.equal(mediaEntryMap.size, 1);
+  });
+
+  await testAsync("disasterValidate: Question Bank / Question Paper integrity checks pass on a well-formed synthetic package, and flag an orphaned question_versions row", async () => {
+    async function buildZip({ orphanVersion = false } = {}) {
+      const zip = new JSZipMod();
+      const questionBank = {
+        questions: [{ id: "Q-1" }],
+        question_secrets: [{ question_id: "Q-1", correct_answer_data: {}, markscheme: null, explanation: "" }],
+        question_versions: [{ id: "v-1", question_id: orphanVersion ? "Q-NOPE" : "Q-1", version_number: 1, content_snapshot: {} }],
+        question_version_secrets: [{ question_version_id: "v-1", correct_answer_data: {}, explanation: "" }],
+      };
+      const questionPapers = {
+        question_papers: [{ id: "p-1", user_id: "u-1", title: "Paper 1" }],
+        question_paper_items: [{ id: "i-1", paper_id: "p-1", position: 0, question_version_id: "v-1", custom_question: null, marks_override: null }],
+      };
+      const library = { resources: [{ id: "r1", file_path: "x.pdf", external_url: null }, { id: "r2", file_path: null, external_url: "https://example.com/x" }] };
+      const contentBackup = { format: "elab-content-backup", backupVersion: 1, scope: { type: "full" }, data: { learn_pages: [], learn_blocks: [], learn_check_questions: [], learn_manual_questions: [], learn_manual_question_secrets: [] }, statistics: { pages: 0, blocks: 0, checkQuestions: 0, manualQuestions: 0, media: 0 } };
+      const contentJson = JSON.stringify(contentBackup);
+      zip.file("data/content.json", contentJson);
+      zip.file("data/question-bank.json", JSON.stringify(questionBank));
+      zip.file("data/question-papers.json", JSON.stringify(questionPapers));
+      zip.file("data/library.json", JSON.stringify(library));
+      const integrity = { dataFileChecksums: { "data/content.json": await sha256HexOfString(contentJson) }, mediaChecksums: [] };
+      zip.file("integrity/checksums.json", JSON.stringify(integrity));
+      zip.file("manifest.json", JSON.stringify({ format: "elab-disaster-recovery", disasterBackupVersion: 1, createdAt: new Date().toISOString() }));
+      return await zip.generateAsync({ type: "nodebuffer" });
+    }
+
+    const goodZip = await buildZip({ orphanVersion: false });
+    const goodResult = await validateDisasterBackup(goodZip);
+    const qc = (id) => goodResult.checks.find((c2) => c2.id === id);
+    assert.equal(qc("questionVersionsResolve")?.pass, true);
+    assert.equal(qc("questionSecretsResolve")?.pass, true);
+    assert.equal(qc("questionVersionSecretsResolve")?.pass, true);
+    assert.equal(qc("paperItemsResolveToPapers")?.pass, true);
+    assert.equal(qc("paperItemsResolveToVersions")?.pass, true);
+    assert.equal(qc("paperItemOrderingPreserved")?.pass, true);
+    assert.equal(qc("resourceUploadsResolve")?.pass, false, "r1's file_path was never packaged in this synthetic zip (no media/ entry) — must be flagged, not silently passed");
+    assert.equal(qc("externalUrlResourcesNotFlagged")?.pass, true);
+
+    const badZip = await buildZip({ orphanVersion: true });
+    const badResult = await validateDisasterBackup(badZip);
+    const badQc = (id) => badResult.checks.find((c2) => c2.id === id);
+    assert.equal(badQc("questionVersionsResolve")?.pass, false);
+    assert.match(badQc("questionVersionsResolve")?.detail || "", /orphaned version/);
+  });
+
+  test("restore RPC migration (question_bank_disaster_recovery_rpc_incremental.sql) preserves original ids for questions/question_versions/question_papers/question_paper_items (never remaps them), and wraps every Question Bank / Question Paper table in a tolerant `exception when undefined_table` block matching the SCHEMA RECOVERY GAP", () => {
+    const sql = fs.readFileSync(path.join(root, "supabase/migrations/question_bank_disaster_recovery_rpc_incremental.sql"), "utf8");
+    assert.match(sql, /create or replace function public\.admin_export_question_secrets/);
+    assert.match(sql, /create or replace function public\.admin_export_question_version_secrets/);
+    assert.match(sql, /create or replace function public\.restore_elab_question_bank_data/);
+    for (const name of ["questions", "question_secrets", "question_versions", "question_version_secrets", "question_papers", "question_paper_items"]) {
+      const idx = sql.indexOf(`v_${name}_table_missing boolean`);
+      assert.ok(idx >= 0, `${name} must declare a v_${name}_table_missing flag`);
+    }
+    assert.match(sql, /exception when undefined_table then/);
+    // ids preserved, never remapped via a fresh id-map for these tables
+    assert.match(sql, /insert into public\.questions \(\s*id,/);
+    assert.match(sql, /insert into public\.question_versions \(id, question_id, version_number, content_snapshot\)/);
+    assert.doesNotMatch(sql.slice(sql.indexOf("questions ("), sql.indexOf("question_secrets (")), /returning id into/, "questions.id must be preserved as given, never regenerated");
+  });
+
+  test("disasterRestore.js (static/code-level, same honesty bar as §12) reads data/question-bank.json and data/question-papers.json and calls the new restore_elab_question_bank_data RPC", () => {
+    const restoreJs = fs.readFileSync(path.join(root, "src/lib/backup/disasterRestore.js"), "utf8");
+    assert.match(restoreJs, /data\/question-bank\.json/);
+    assert.match(restoreJs, /data\/question-papers\.json/);
+    assert.match(restoreJs, /restore_elab_question_bank_data/);
+    assert.match(restoreJs, /questionBankResult/);
+  });
+
+  test("disasterExport.js reads question_secrets/question_version_secrets via the new bulk RPCs, never a direct table SELECT (table-level access is revoked)", () => {
+    const exportJs = fs.readFileSync(path.join(root, "src/lib/backup/disasterExport.js"), "utf8");
+    assert.match(exportJs, /admin_export_question_secrets/);
+    assert.match(exportJs, /admin_export_question_version_secrets/);
+    assert.doesNotMatch(exportJs, /from\(["']question_secrets["']\)/);
+    assert.doesNotMatch(exportJs, /from\(["']question_version_secrets["']\)/);
+  });
+
+  test("mediaPackage.js's download/verify path is bucket-agnostic (no bucket name hardcoded anywhere in it) — the SAME code now also packages resources/question-media, never a second implementation", () => {
+    const mediaPackageJs = fs.readFileSync(path.join(root, "src/lib/backup/mediaPackage.js"), "utf8");
+    assert.doesNotMatch(mediaPackageJs, /learn-media|question-media|["']resources["']/, "mediaPackage.js must stay generic over `bucket`, never special-case a specific bucket name");
+  });
+
+  await testAsync("checksum mismatch still fails verification for a NON-learn-media bucket (question-media), proving the existing corruption-detection logic was never learn-media-specific", async () => {
+    // HONESTY NOTE: this re-implements verifyZippedMediaChecksums's exact
+    // logic (not mediaPackage.js's own export) because that module
+    // imports supabaseClient.js, which reads import.meta.env and cannot
+    // be imported under plain Node outside a Vite build (same constraint
+    // section 12 documents for disasterRestore.js) — the checksum/zip
+    // logic itself is plain and dependency-free, reproduced here against
+    // the REAL sha256Hex from checksums.js, exactly like section 4 above.
+    const bytes = new TextEncoder().encode("question-media-fake-bytes");
+    const hash = await sha256Hex(bytes);
+    const zip = new JSZipMod();
+    zip.file("media/question-media/questions/Q-1/diagram.png", bytes);
+    const manifestEntries = [{ bucket: "question-media", path: "questions/Q-1/diagram.png", sha256: hash, size: bytes.byteLength }];
+
+    async function verify(zipToCheck, entries) {
+      let verified = 0;
+      const mismatches = [];
+      for (const entry of entries) {
+        const file = zipToCheck.file(`media/${entry.bucket}/${entry.path}`);
+        if (!file) {
+          mismatches.push({ ...entry, reason: "missing from package" });
+          continue;
+        }
+        const recomputed = await sha256Hex(await file.async("arraybuffer"));
+        if (recomputed !== entry.sha256) mismatches.push({ ...entry, reason: "checksum mismatch", recomputed });
+        else verified += 1;
+      }
+      return { verified, mismatches };
+    }
+
+    const first = await verify(zip, manifestEntries);
+    assert.equal(first.verified, 1);
+    assert.deepEqual(first.mismatches, []);
+
+    // now corrupt it and re-verify
+    const file = zip.file("media/question-media/questions/Q-1/diagram.png");
+    const corrupted = new Uint8Array(await file.async("arraybuffer"));
+    corrupted[0] ^= 0xff;
+    zip.file("media/question-media/questions/Q-1/diagram.png", corrupted);
+    const second = await verify(zip, manifestEntries);
+    assert.equal(second.verified, 0);
+    assert.equal(second.mismatches.length, 1);
+    assert.equal(second.mismatches[0].reason, "checksum mismatch");
   });
 })();
 

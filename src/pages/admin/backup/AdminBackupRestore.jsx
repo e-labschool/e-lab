@@ -98,6 +98,65 @@ function DatasetReportTable({ rows }) {
   );
 }
 
+function StorageReportTable({ rows }) {
+  if (!rows?.length) return null;
+  return (
+    <div className="mt-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Storage report</p>
+      <div className="mt-1 max-h-72 overflow-auto rounded-md border border-[var(--color-line)]">
+        <table className="w-full text-left text-xs">
+          <thead className="sticky top-0 bg-[var(--color-paper-raised)] text-[var(--color-ink-faint)]">
+            <tr>
+              <th className="px-2 py-1.5 font-medium">Bucket</th>
+              <th className="px-2 py-1.5 font-medium">Discovered</th>
+              <th className="px-2 py-1.5 font-medium">Packaged</th>
+              <th className="px-2 py-1.5 font-medium">Bytes</th>
+              <th className="px-2 py-1.5 font-medium">Failed</th>
+              <th className="px-2 py-1.5 font-medium">Checksum status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.bucket} className="border-t border-[var(--color-line)] align-top">
+                <td className="px-2 py-1.5 font-medium text-[var(--color-ink)]">{r.bucket}</td>
+                <td className="px-2 py-1.5 text-[var(--color-ink-soft)]">{r.objectsDiscovered}</td>
+                <td className="px-2 py-1.5 text-[var(--color-ink-soft)]">{r.objectsPackaged}</td>
+                <td className="px-2 py-1.5 text-[var(--color-ink-soft)]">{(r.bytesPackaged / 1024).toFixed(1)} KB</td>
+                <td className="px-2 py-1.5">
+                  <span className={r.failedObjects > 0 ? "font-medium text-[#A5362A]" : "text-[var(--color-ink-soft)]"}>{r.failedObjects}</span>
+                </td>
+                <td className="px-2 py-1.5 text-[var(--color-ink-faint)]">{r.checksumStatus}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function SchemaRecoveryGapSection({ gaps }) {
+  if (!gaps?.length) return null;
+  return (
+    <div className="mt-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">
+        Schema recovery gaps (no source-controlled migration)
+      </p>
+      <ul className="mt-1 space-y-1.5 text-xs text-[var(--color-ink-soft)]">
+        {gaps.map((g) => (
+          <li key={g.table} className="rounded-md border border-amber-300/60 bg-amber-50/60 p-2">
+            <p className="font-medium text-[var(--color-ink)]">
+              {g.table} — {g.observedThisRun === "confirmed_absent_on_this_project" ? "not present on this project" : g.observedThisRun === "readable_on_this_project" ? "live and backed up" : g.observedThisRun}
+            </p>
+            <p className="mt-0.5">{g.missingArtifact}</p>
+            <p className="mt-0.5 text-[var(--color-ink-faint)]">{g.recommendation}</p>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function CheckRow({ item }) {
   return (
     <li className="flex items-start gap-2 py-1 text-sm">
@@ -550,6 +609,8 @@ function DisasterBackupSection() {
             <StatPill label="Progress rows" value={result.integrity.expectedCounts.learning_progress ?? 0} />
             <StatPill label="Assessments" value={result.integrity.expectedCounts.student_challenges ?? 0} />
             <StatPill label="Size" value={`${(result.manifest.mediaTotalBytes / 1024).toFixed(0)} KB media`} />
+            <StatPill label="Question Bank records" value={result.manifest.questionBankReport?.totalRecords ?? 0} />
+            <StatPill label="Question Papers" value={result.manifest.questionPaperReport?.papers ?? 0} />
           </div>
 
           <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Verification</p>
@@ -661,6 +722,8 @@ function DisasterBackupSection() {
           )}
 
           <DatasetReportTable rows={result.manifest.datasetReport} />
+          <StorageReportTable rows={result.manifest.storageReport} />
+          <SchemaRecoveryGapSection gaps={result.manifest.schemaRecoveryGaps} />
 
           {!v.mediaVerified || !v.checksumsVerified ? (
             <p className="mt-3 flex items-start gap-2 text-sm font-medium text-[#A5362A]">
@@ -817,6 +880,8 @@ function DisasterRestoreSection() {
             <StatPill label="Existing matches" value={plan.contentPlan.summary.matchingPages} />
             <StatPill label="Profiles in file" value={plan.userSummary.totalProfiles} />
             <StatPill label="Same-id matches" value={plan.userSummary.matchingSameId} />
+            {plan.questionBankSummary && <StatPill label="Questions in file" value={plan.questionBankSummary.questions} />}
+            {plan.questionPaperSummary && <StatPill label="Papers in file" value={plan.questionPaperSummary.papers} />}
           </div>
 
           <p className="mt-4 flex items-start gap-2 text-sm text-[var(--color-ink-soft)]">
@@ -868,6 +933,13 @@ function DisasterRestoreSection() {
               <li>
                 User data: {Object.entries(result.userDataResult)
                   .map(([t, c]) => `${t}: ${c.restored} restored / ${c.skippedNoIdentity} skipped`)
+                  .join(" · ")}
+              </li>
+            )}
+            {result.questionBankResult && (
+              <li>
+                Question Bank / Papers: {Object.entries(result.questionBankResult)
+                  .map(([t, c]) => `${t}: ${c.restored} restored${c.tableMissing ? " (table missing — schema recovery gap)" : ""}`)
                   .join(" · ")}
               </li>
             )}

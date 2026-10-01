@@ -534,8 +534,47 @@ action before relying on this feature for a real disaster.
   is reported, not retried automatically; re-run the restore (idempotent
   — `upsert: true`) or re-upload the specific failed files manually via
   the Supabase Storage dashboard using the paths shown in the failure list.
-- The Question Bank (`questions`/`question_versions`/`question_secrets`)
-  is out of scope, same boundary the existing Content Backup already draws.
 - This feature has been **code-reviewed and structurally tested against
   synthetic data**, not run against a live Supabase project, in this
   session — see the implementation report's honesty breakdown (spec §40).
+
+## 9. 2026-10 update — Question Bank / Question Paper / storage gap closure
+
+A previous version of this document (and `src/lib/backup/constants.js`)
+excluded the Question Bank (`questions`/`question_versions`/
+`question_secrets`/`question_version_secrets`) and Question Papers
+(`question_papers`/`question_paper_items`) entirely, reasoning that
+neither has a `create table` migration anywhere in this repository. That
+audit finding was correct — it still is, after re-checking exhaustively
+for this update — but the conclusion was wrong: live, readable,
+teacher/admin-authored persistent data is eligible for Complete Disaster
+Recovery even when its schema migration is missing from source control.
+This update:
+
+- **Backs up** all six tables (`src/lib/backup/constants.js`,
+  `deploymentTier: not_deployed_if_missing`, `schemaRecoveryGap: true`),
+  written to `data/question-bank.json` / `data/question-papers.json`.
+  `question_secrets`/`question_version_secrets` are read via two NEW
+  admin-only bulk RPCs (`admin_export_question_secrets` /
+  `admin_export_question_version_secrets`, see
+  `supabase/migrations/question_bank_disaster_recovery_rpc_incremental.sql`)
+  because table-level SELECT on them is revoked entirely, the same
+  pattern `learn_manual_question_secrets` already used.
+- **Packages** actual uploaded Resource files (`media/resources/…`) and
+  Question Bank stimulus images (`media/question-media/…`) — extending
+  `mediaScan.js`/`mediaPackage.js`, never a second storage system. A
+  `resources` row with only an `external_url` is metadata-only by
+  design and is never treated as a missing Storage object.
+- **Restores** all six tables via a NEW `restore_elab_question_bank_data`
+  RPC, preserving original primary keys/foreign keys exactly (no
+  remapping, unlike user-owned tables) — see the same migration file.
+- **Reports a SCHEMA RECOVERY GAP honestly** (`manifest.schemaRecoveryGaps`
+  / `SCHEMA_RECOVERY_GAPS` in constants.js): these six tables have no
+  migration in this repository, so a restore onto a genuinely fresh
+  Supabase project will fail at this step until an admin runs
+  `pg_dump --schema-only` against the live project and commits the
+  result as a real migration. Restoring onto the SAME (or a manually
+  schema-matched) project works today.
+- Does **not** change `questions`/`question_versions`'s own application
+  behavior, the Question Bank/Builder UI, or any RLS policy — purely
+  additive backup/restore plumbing.

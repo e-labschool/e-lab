@@ -26,9 +26,11 @@ import {
   EXCLUDED_TABLES,
   ALL_DISASTER_TABLES,
   DEPLOYMENT_TIER,
+  SCHEMA_RECOVERY_GAPS,
 } from "./constants.js";
 import { exportElabContent, fetchAllRows } from "./exportContent.js";
 import { packageMediaFiles, verifyZippedMediaChecksums } from "./mediaPackage.js";
+import { collectBucketReferences, bucketMediaMapToManifest } from "./mediaScan.js";
 import { sha256HexOfString } from "./checksums.js";
 import { auditSimulations } from "./simulationAudit.js";
 import { getApplicationVersionInfo } from "./appVersion.js";
@@ -57,12 +59,34 @@ async function readPlatformSettingsRow(onProgress) {
   return data ?? [];
 }
 
+/**
+ * question_secrets / question_version_secrets have table-level SELECT
+ * revoked entirely (confirmed by get-admin-question-secrets-migration.sql's
+ * own header comment) — the only read path is the new bulk admin-only RPC
+ * added by question_bank_disaster_recovery_rpc_incremental.sql. A real RPC
+ * failure here (permission, network, the table genuinely missing) throws
+ * normally and is handled by fetchAllDatasets exactly like any other
+ * table's failure — never silently treated as "not deployed" unless it is
+ * a genuine Postgres "undefined_table" signal (isMissingTableError also
+ * recognizes plain Postgres error code 42P01, which is what an RPC whose
+ * BODY references a missing table raises at call time, unlike a direct
+ * PostgREST `.from()` read's distinct PGRST205 shape).
+ */
+async function readViaRpc(rpcName, onProgress, label) {
+  const { data, error } = await supabase.rpc(rpcName);
+  if (error) throw error;
+  onProgress?.(`Reading ${label}… (${data?.length ?? 0})`);
+  return data ?? [];
+}
+
 /** readTable callback for fetchAllDatasets — real Supabase reads, used by
  * createDisasterBackup. Kept as a thin adapter so the actual decision
  * logic (datasetFetch.js) stays testable without a live connection. */
 function makeReadTable(onProgress) {
   return async (table) => {
     if (table === "platform_settings") return readPlatformSettingsRow(onProgress);
+    if (table === "question_secrets") return readViaRpc("admin_export_question_secrets", onProgress, table);
+    if (table === "question_version_secrets") return readViaRpc("admin_export_question_version_secrets", onProgress, table);
     return fetchAllRows(table, { orderColumn: ORDER_COLUMN_OVERRIDES[table] || "id" }, onProgress);
   };
 }
@@ -97,6 +121,14 @@ export async function createDisasterBackup({ includeUserData = true, onProgress 
   let planning = { class_plans: [], lesson_blocks: [] };
   let settings = { platform_settings: null };
   let library = { resources: [] };
+  // 2026-10 Question Bank / Question Paper gap closure — see
+  // constants.js's BACKUP_DATASETS "question_bank"/"question_papers"
+  // groups and SCHEMA_RECOVERY_GAPS. Kept as two separate data files
+  // (data/question-bank.json, data/question-papers.json) rather than
+  // folded into data/library.json, matching Phase 5's explicit separate
+  // manifest sections.
+  let questionBank = { questions: [], question_secrets: [], question_versions: [], question_version_secrets: [] };
+  let questionPapers = { question_papers: [], question_paper_items: [] };
   let tableCounts = {};
   let tablesSkipped = [];
   let datasetFailures = [];
@@ -117,6 +149,13 @@ export async function createDisasterBackup({ includeUserData = true, onProgress 
     planning = { class_plans: out.class_plans ?? [], lesson_blocks: out.lesson_blocks ?? [] };
     settings = { platform_settings: out.platform_settings?.[0] ?? null };
     library = { resources: out.resources ?? [] };
+    questionBank = {
+      questions: out.questions ?? [],
+      question_secrets: out.question_secrets ?? [],
+      question_versions: out.question_versions ?? [],
+      question_version_secrets: out.question_version_secrets ?? [],
+    };
+    questionPapers = { question_papers: out.question_papers ?? [], question_paper_items: out.question_paper_items ?? [] };
 
     tableCounts = { ...counts, platform_settings: settings.platform_settings ? 1 : 0 };
     tablesSkipped = skipped;
@@ -129,9 +168,39 @@ export async function createDisasterBackup({ includeUserData = true, onProgress 
     assertNoDatasetFailures(datasetFailures);
   }
 
-  // ---- 3. Media — actual files, deduplicated, from the content manifest ----
+  // ---- 3. Media — actual files, deduplicated, from the content manifest,
+  // PLUS (2026-10 gap closure) uploaded Resource files and Question Bank
+  // stimulus images — extending the exact same packageMediaFiles()/
+  // verifyZippedMediaChecksums() path learn-media has always used, never
+  // a second storage system. Deduplicated across all three sources by
+  // bucket+path before download, so a file referenced twice is only
+  // fetched once. ----
   onProgress("Collecting media…");
-  const mediaEntries = (contentBackup.mediaManifest || []).map((m) => ({ bucket: m.bucket, path: m.path }));
+  const mediaEntryMap = new Map(); // key: `${bucket}::${path}` -> { bucket, path }
+  for (const m of contentBackup.mediaManifest || []) {
+    mediaEntryMap.set(`${m.bucket}::${m.path}`, { bucket: m.bucket, path: m.path });
+  }
+
+  // Resources: ONLY rows with an actual uploaded file (file_path set, no
+  // external_url) are Storage objects — per spec, an external URL is
+  // never treated as a missing/expected Storage file.
+  const resourceFileEntries = (library.resources || []).filter((r) => r.file_path && !r.external_url);
+  for (const r of resourceFileEntries) {
+    mediaEntryMap.set(`resources::${r.file_path}`, { bucket: "resources", path: r.file_path });
+  }
+
+  // Question Bank stimulus images: scanned the same way learn-media
+  // references are found inside JSONB content — public Storage URLs
+  // embedded in questions.question_content/visual_data/options/parts and
+  // question_versions.content_snapshot (the pinned, frozen copy a paper
+  // item or canonical challenge actually renders from).
+  const questionMediaMap = new Map();
+  collectBucketReferences(questionBank.questions, ["question_content", "visual_data", "options", "parts"], "question-media", "questions", questionMediaMap);
+  collectBucketReferences(questionBank.question_versions, ["content_snapshot"], "question-media", "question_versions", questionMediaMap);
+  const questionMediaManifest = bucketMediaMapToManifest(questionMediaMap, "question-media");
+  for (const m of questionMediaManifest) mediaEntryMap.set(`${m.bucket}::${m.path}`, { bucket: m.bucket, path: m.path });
+
+  const mediaEntries = [...mediaEntryMap.values()];
   const { manifestEntries: mediaChecksums, failures: mediaFailures } = await packageMediaFiles(mediaEntries, zip, onProgress);
 
   // ---- 4. Verify relationships (lightweight structural cross-check) ----
@@ -145,6 +214,35 @@ export async function createDisasterBackup({ includeUserData = true, onProgress 
     for (const row of assessments.student_challenges) {
       if (!profileIds.has(row.user_id)) relationshipWarnings.push(`student_challenges row references profile ${row.user_id} not present in this export`);
     }
+
+    // ---- Question Bank / Question Paper integrity cross-checks (Phase 6) ----
+    const questionIds = new Set(questionBank.questions.map((q) => q.id));
+    const versionIds = new Set(questionBank.question_versions.map((v) => v.id));
+    const paperIds = new Set(questionPapers.question_papers.map((p) => p.id));
+    for (const row of questionBank.question_versions) {
+      if (!questionIds.has(row.question_id)) relationshipWarnings.push(`question_versions row ${row.id} references question ${row.question_id} not present in this export`);
+    }
+    for (const row of questionBank.question_secrets) {
+      if (!questionIds.has(row.question_id)) relationshipWarnings.push(`question_secrets row references question ${row.question_id} not present in this export`);
+    }
+    for (const row of questionBank.question_version_secrets) {
+      if (!versionIds.has(row.question_version_id)) relationshipWarnings.push(`question_version_secrets row references question_versions id ${row.question_version_id} not present in this export`);
+    }
+    for (const row of questionPapers.question_paper_items) {
+      if (!paperIds.has(row.paper_id)) relationshipWarnings.push(`question_paper_items row ${row.id} references question_papers id ${row.paper_id} not present in this export`);
+      if (row.question_version_id && !versionIds.has(row.question_version_id)) {
+        relationshipWarnings.push(`question_paper_items row ${row.id} references question_versions id ${row.question_version_id} not present in this export`);
+      }
+    }
+    // Resources: an uploaded-file row must resolve to a packaged media
+    // entry; an external_url row must NEVER be flagged as a missing file
+    // (per spec, it was never supposed to be a Storage object).
+    const packagedResourcePaths = new Set(mediaChecksums.filter((m) => m.bucket === "resources").map((m) => m.path));
+    for (const row of library.resources) {
+      if (row.file_path && !row.external_url && !packagedResourcePaths.has(row.file_path)) {
+        relationshipWarnings.push(`resources row ${row.id} has file_path "${row.file_path}" but it was not packaged (see mediaFailures)`);
+      }
+    }
   }
 
   // ---- 5. Data files ----
@@ -156,6 +254,8 @@ export async function createDisasterBackup({ includeUserData = true, onProgress 
     "data/planning.json": planning,
     "data/settings.json": settings,
     "data/library.json": library,
+    "data/question-bank.json": questionBank,
+    "data/question-papers.json": questionPapers,
   };
   const dataChecksums = {};
   for (const [path, obj] of Object.entries(dataFiles)) {
@@ -246,6 +346,69 @@ export async function createDisasterBackup({ includeUserData = true, onProgress 
     failures: datasetFailures,
   });
 
+  // ---- 6f. Per-bucket storage report (Phase 5: "bucket | live status |
+  // object count discovered | objects packaged | bytes packaged | failed
+  // objects | checksum status"), built from the SAME mediaEntries/
+  // mediaChecksums/mediaFailures this run just produced — never a second,
+  // hand-maintained accounting. ----
+  const storageReport = STORAGE_BUCKETS.map((b) => {
+    const discovered = mediaEntries.filter((m) => m.bucket === b.bucket);
+    const packaged = mediaChecksums.filter((m) => m.bucket === b.bucket);
+    const failed = mediaFailures.filter((m) => m.bucket === b.bucket);
+    const bytesPackaged = packaged.reduce((sum, m) => sum + m.size, 0);
+    return {
+      bucket: b.bucket,
+      liveStatus: discovered.length > 0 ? "objects_referenced" : "no_objects_referenced_this_run",
+      objectsDiscovered: discovered.length,
+      objectsPackaged: packaged.length,
+      bytesPackaged,
+      failedObjects: failed.length,
+      // checksum status at this point reflects packaging-time computation
+      // (every packaged file has its SHA-256 recorded already); the
+      // independent RE-hash/compare pass runs in step 8 below and sets
+      // manifest.verificationFailed if any packaged file's bytes don't
+      // match what was recorded here.
+      checksumStatus: failed.length === 0 ? "computed_pending_verification" : "incomplete_see_failedObjects",
+      filesPackaged: b.filesPackaged,
+    };
+  });
+
+  // ---- 6g. Question Bank / Question Paper reconciliation sections
+  // (Phase 5: explicit sections distinct from the generic datasetReport
+  // rows, naming tables detected/backed up, total records, and schema
+  // recovery warnings together in one place). ----
+  const questionBankTableNames = ["questions", "question_secrets", "question_versions", "question_version_secrets"];
+  const questionPaperTableNames = ["question_papers", "question_paper_items"];
+  const questionBankReport = {
+    tablesDetected: questionBankTableNames,
+    tablesBackedUp: includeUserData ? questionBankTableNames.filter((t) => !skippedTableNames.has(t)) : [],
+    totalRecords: includeUserData
+      ? questionBankTableNames.reduce((sum, t) => sum + (tableCounts[t] || 0), 0)
+      : null,
+    schemaRecoveryWarnings: SCHEMA_RECOVERY_GAPS.filter((g) => questionBankTableNames.includes(g.table)),
+  };
+  const questionPaperReport = {
+    papers: includeUserData ? (tableCounts.question_papers || 0) : null,
+    paperItems: includeUserData ? (tableCounts.question_paper_items || 0) : null,
+    schemaRecoveryWarnings: SCHEMA_RECOVERY_GAPS.filter((g) => questionPaperTableNames.includes(g.table)),
+  };
+
+  // ---- 6h. Schema recovery gap report (Phase 8) — every table this
+  // backup protects despite having NO source-controlled migration,
+  // annotated with what THIS run actually observed (whether it was
+  // readable here or confirmed absent), never just the static audit text
+  // alone. ----
+  const schemaRecoveryGaps = SCHEMA_RECOVERY_GAPS.map((gap) => ({
+    ...gap,
+    observedThisRun: includeUserData
+      ? skippedTableNames.has(gap.table)
+        ? "confirmed_absent_on_this_project"
+        : datasetFailures.some((f) => f.table === gap.table)
+          ? "read_failed_this_run"
+          : "readable_on_this_project"
+      : "not_evaluated_this_run",
+  }));
+
   // ---- 7. Manifest ----
   onProgress("Creating disaster package…");
   const skippedTableNames = new Set(tablesSkipped.map((s) => s.table));
@@ -275,15 +438,20 @@ export async function createDisasterBackup({ includeUserData = true, onProgress 
     simulations,
     schemaAudit,
     datasetReport,
+    storageReport,
+    questionBankReport,
+    questionPaperReport,
+    schemaRecoveryGaps,
     applicationSource,
     requiredForRestore: [
       "The target Supabase project must already have every migration in supabase/migrations/*.sql and supabase/*.sql applied (schema first — see docs/DISASTER_RECOVERY.md).",
       "Storage buckets (" + STORAGE_BUCKETS.map((b) => b.bucket).join(", ") + ") must exist (created automatically by the relevant migration's `insert into storage.buckets`).",
-      "Only " +
-        STORAGE_BUCKETS.filter((b) => b.filesPackaged).map((b) => b.bucket).join(", ") +
-        " file BYTES are actually packaged under media/ by this backup — " +
-        STORAGE_BUCKETS.filter((b) => !b.filesPackaged).map((b) => b.bucket).join(" and ") +
-        " bucket files must still be recovered from Supabase Storage's own backup/replication (row metadata for resources IS captured, in data/library.json).",
+      STORAGE_BUCKETS.every((b) => b.filesPackaged)
+        ? "Every Storage bucket's file bytes (" + STORAGE_BUCKETS.map((b) => b.bucket).join(", ") + ") are packaged under media/ by this backup where a corresponding row/reference was found — a resource row with only an external_url, or a question with no stimulus image, simply has nothing to package, which is expected, not a gap."
+        : "Only " +
+          STORAGE_BUCKETS.filter((b) => b.filesPackaged).map((b) => b.bucket).join(", ") +
+          " file bytes are packaged under media/ by this backup — the remaining bucket(s) must be recovered from Supabase Storage's own backup/replication.",
+      "SCHEMA RECOVERY GAP: questions, question_secrets, question_versions, question_version_secrets, question_papers and question_paper_items have NO `create table` migration anywhere in this repository (see manifest.schemaRecoveryGaps). Their DATA is captured in data/question-bank.json / data/question-papers.json and CAN be restored by restore_elab_question_bank_data — but ONLY onto a target database that already has these exact tables (the same live project, or one where an admin has manually run `pg_dump --schema-only` against the source project first, per each gap's `recommendation`). Restoring onto a genuinely fresh/empty Supabase project will fail at this step until that schema is recreated.",
       "For user data: an explicit old-user-id -> new-user-id identity map, built via the Supabase-native account recovery/relinking procedure documented in docs/DISASTER_RECOVERY.md — auth.users itself is NOT in this package.",
     ],
   };
