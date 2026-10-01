@@ -620,7 +620,48 @@ function DisasterBackupSection() {
             <CheckRow item={{ pass: v.mediaVerified, label: "Media verified", detail: v.mediaFailures.length ? `${v.mediaFailures.length} file(s) could not be downloaded` : "" }} />
             <CheckRow item={{ pass: v.checksumsVerified, label: "Checksums verified", detail: v.mediaMismatches.length ? `${v.mediaMismatches.length} mismatch(es)` : "" }} />
             <CheckRow item={{ pass: v.simulationsVerified, label: "Simulation references verified", detail: v.simulationWarnings?.slice(0, 3).join("; ") }} />
+            <CheckRow
+              item={{
+                pass: v.cardinalityVerified,
+                label: "Question Bank secret-table cardinality verified (1:1)",
+                detail: v.cardinalityVerified
+                  ? ""
+                  : v.cardinalityChecks
+                      ?.filter((c) => !c.ok)
+                      .map(
+                        (c) =>
+                          `${c.parentLabel} (${c.parentCount}) vs ${c.childLabel} (${c.childCount}) — ${c.missingChildrenCount} missing, ${c.orphanChildrenCount} orphaned`
+                      )
+                      .join("; "),
+              }}
+            />
           </ul>
+
+          {v.cardinalityChecks?.some((c) => !c.ok) && (
+            <>
+              <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-[#A5362A]">
+                Question Bank cardinality mismatch — do not treat as a complete backup
+              </p>
+              <ul className="mt-1 space-y-1 text-xs text-[#A5362A]">
+                {v.cardinalityChecks
+                  .filter((c) => !c.ok)
+                  .map((c) => (
+                    <li key={`${c.parentLabel}-${c.childLabel}`} className="flex items-start gap-1.5">
+                      <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+                      <span>
+                        <strong>
+                          {c.parentLabel} ({c.parentCount}) ↔ {c.childLabel} ({c.childCount})
+                        </strong>{" "}
+                        — {c.missingChildrenCount} {c.parentLabel} row(s) have no matching {c.childLabel} row
+                        {c.orphanChildrenCount ? `, ${c.orphanChildrenCount} ${c.childLabel} row(s) are orphaned` : ""}
+                        {c.duplicateChildKeysCount ? `, ${c.duplicateChildKeysCount} duplicate ${c.childLabel} key(s)` : ""}. This secret export is
+                        truncated or incomplete — investigate before relying on this backup for Question Bank recovery.
+                      </span>
+                    </li>
+                  ))}
+              </ul>
+            </>
+          )}
 
           <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Disaster Recovery Schema Audit</p>
           <ul className="mt-1 space-y-0.5 text-sm text-[var(--color-ink-soft)]">

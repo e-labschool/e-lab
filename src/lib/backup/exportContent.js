@@ -14,6 +14,7 @@ import {
   SECRET_FETCH_CONCURRENCY,
 } from "./constants.js";
 import { collectMediaReferences, mediaMapToManifest } from "./mediaScan.js";
+import { fetchAllPages } from "./paginate.js";
 
 function chunk(array, size) {
   const out = [];
@@ -23,25 +24,23 @@ function chunk(array, size) {
 
 /**
  * Reads every row of `table`, optionally filtered, in PAGE_BATCH_SIZE
- * pages. Exported (not just used internally) so the Complete Disaster
- * Recovery exporter (disasterExport.js) can read the audited user/
- * progress/assessment/settings tables with the exact same paginated,
+ * pages — built on the shared fetchAllPages() loop (paginate.js).
+ * Exported (not just used internally) so the Complete Disaster Recovery
+ * exporter (disasterExport.js) can read the audited user/progress/
+ * assessment/settings tables with the exact same paginated,
  * arbitrarily-large-table-safe logic — rather than reimplementing it.
  */
 export async function fetchAllRows(table, { applyFilter, orderColumn = "id" } = {}, onProgress) {
-  const rows = [];
-  let from = 0;
-  for (;;) {
-    let query = supabase.from(table).select("*").order(orderColumn, { ascending: true }).range(from, from + PAGE_BATCH_SIZE - 1);
-    if (applyFilter) query = applyFilter(query);
-    const { data, error } = await query;
-    if (error) throw new Error(`Failed reading ${table}: ${error.message}`);
-    rows.push(...data);
-    onProgress?.(`Reading ${table}… (${rows.length})`);
-    if (!data.length || data.length < PAGE_BATCH_SIZE) break;
-    from += PAGE_BATCH_SIZE;
-  }
-  return rows;
+  return fetchAllPages(
+    async (from, to) => {
+      let query = supabase.from(table).select("*").order(orderColumn, { ascending: true }).range(from, to);
+      if (applyFilter) query = applyFilter(query);
+      const { data, error } = await query;
+      if (error) throw new Error(`Failed reading ${table}: ${error.message}`);
+      return data;
+    },
+    { pageSize: PAGE_BATCH_SIZE, onProgress, label: table }
+  );
 }
 
 /** Reads every row of `table` whose page_id is in pageIds, chunking the IN-list. */

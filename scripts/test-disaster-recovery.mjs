@@ -1380,6 +1380,315 @@ await (async () => {
   });
 })();
 
+console.log("\n== 15a. fetchAllPages() — the shared pagination loop (paginate.js), against a synthetic fetchPage ==");
+await (async () => {
+  const { fetchAllPages } = await import("../src/lib/backup/paginate.js");
+
+  await testAsync("accumulates every page across a multi-page result and stops on a short final page", async () => {
+    const pages = [Array.from({ length: 500 }, (_, i) => i), Array.from({ length: 500 }, (_, i) => 500 + i), Array.from({ length: 305 }, (_, i) => 1000 + i)];
+    let calls = 0;
+    const rows = await fetchAllPages(
+      async (from, _to) => {
+        const page = pages[calls];
+        calls++;
+        assert.equal(from, calls === 1 ? 0 : (calls - 1) * 500, "from should advance by exactly pageSize each call");
+        return page;
+      },
+      { pageSize: 500 }
+    );
+    assert.equal(calls, 3, "a 1305-row result over pageSize 500 must make exactly 3 page requests");
+    assert.equal(rows.length, 1305);
+    assert.deepEqual(rows, Array.from({ length: 1305 }, (_, i) => i), "rows must be returned in page order with no gaps or duplicates");
+  });
+
+  await testAsync("does NOT stop merely because a page returned exactly pageSize rows (no hardcoded 1000/500 assumption)", async () => {
+    // Exactly 1000 rows over pageSize 500: two full pages, THEN a page
+    // request that returns empty — proving termination is driven by an
+    // actually-short page, never by reaching any particular total.
+    let calls = 0;
+    const rows = await fetchAllPages(
+      async () => {
+        calls++;
+        if (calls <= 2) return Array.from({ length: 500 }, (_, i) => i);
+        return [];
+      },
+      { pageSize: 500 }
+    );
+    assert.equal(calls, 3, "must request a 3rd page after two full 500-row pages before concluding exhaustion");
+    assert.equal(rows.length, 1000);
+  });
+
+  await testAsync("an empty first page terminates immediately with zero rows", async () => {
+    let calls = 0;
+    const rows = await fetchAllPages(
+      async () => {
+        calls++;
+        return [];
+      },
+      { pageSize: 500 }
+    );
+    assert.equal(calls, 1);
+    assert.deepEqual(rows, []);
+  });
+
+  await testAsync("a failure on a LATER page propagates — partial rows from earlier pages are never returned as if complete", async () => {
+    let calls = 0;
+    await assert.rejects(
+      fetchAllPages(
+        async () => {
+          calls++;
+          if (calls === 1) return Array.from({ length: 500 }, (_, i) => i);
+          throw new Error("simulated later-page failure");
+        },
+        { pageSize: 500 }
+      ),
+      /simulated later-page failure/
+    );
+    assert.equal(calls, 2, "the failure must occur on the second page request, proving pagination actually continued past the first page");
+  });
+})();
+
+console.log("\n== 15b. checkOneToOneCardinality() — Question Bank secret-table integrity check (cardinalityCheck.js) ==");
+await (async () => {
+  const { checkOneToOneCardinality } = await import("../src/lib/backup/cardinalityCheck.js");
+
+  test("passes when parent and child id sets match exactly (equal cardinality)", () => {
+    const parents = [{ id: "a" }, { id: "b" }, { id: "c" }];
+    const children = [{ question_id: "a" }, { question_id: "b" }, { question_id: "c" }];
+    const result = checkOneToOneCardinality(parents, children, { childKey: "question_id", parentLabel: "questions", childLabel: "question_secrets" });
+    assert.equal(result.ok, true);
+    assert.equal(result.missingChildrenCount, 0);
+    assert.equal(result.orphanChildrenCount, 0);
+  });
+
+  test("flags a truncated child export — equal-looking shortfall, never silently healthy", () => {
+    const parents = Array.from({ length: 1305 }, (_, i) => ({ id: `q${i}` }));
+    const children = Array.from({ length: 1000 }, (_, i) => ({ question_id: `q${i}` })); // exactly the real bug's shape
+    const result = checkOneToOneCardinality(parents, children, { childKey: "question_id", parentLabel: "questions", childLabel: "question_secrets" });
+    assert.equal(result.ok, false);
+    assert.equal(result.missingChildrenCount, 305);
+    assert.equal(result.orphanChildrenCount, 0);
+  });
+
+  test("equal COUNTS with a DIFFERENT id set is still caught (not just a length comparison)", () => {
+    const parents = [{ id: "a" }, { id: "b" }, { id: "c" }];
+    const children = [{ question_id: "a" }, { question_id: "b" }, { question_id: "z" }]; // "z" not a real parent; "c" has no secret
+    const result = checkOneToOneCardinality(parents, children, { childKey: "question_id", parentLabel: "questions", childLabel: "question_secrets" });
+    assert.equal(result.ok, false);
+    assert.equal(result.parentCount, result.childCount, "counts are equal — this must still fail on id-set comparison");
+    assert.equal(result.missingChildrenCount, 1);
+    assert.equal(result.orphanChildrenCount, 1);
+  });
+
+  test("a duplicated child key also violates strict 1:1", () => {
+    const parents = [{ id: "a" }, { id: "b" }];
+    const children = [{ question_id: "a" }, { question_id: "a" }];
+    const result = checkOneToOneCardinality(parents, children, { childKey: "question_id", parentLabel: "questions", childLabel: "question_secrets" });
+    assert.equal(result.ok, false);
+    assert.equal(result.duplicateChildKeysCount, 1);
+  });
+
+  test("never includes secret VALUES, only ids — rows passed in carry no secret-value fields read by this function", () => {
+    const parents = [{ id: "a" }];
+    const children = [{ question_id: "a", correct_answer_data: { TOP_SECRET_MARKER: true }, markscheme: "zzzMARKSCHEMEVALUEzzz" }];
+    const result = checkOneToOneCardinality(parents, children, { childKey: "question_id", parentLabel: "questions", childLabel: "question_secrets" });
+    const serialized = JSON.stringify(result);
+    assert.ok(
+      !serialized.includes("TOP_SECRET_MARKER") && !serialized.includes("zzzMARKSCHEMEVALUEzzz"),
+      "cardinality result must never carry secret row contents"
+    );
+  });
+})();
+
+console.log("\n== 15c. REGRESSION: real createDisasterBackup() end-to-end with >1,000-row RPC pagination (2026-10 fix) ==");
+await (async () => {
+  // HONESTY NOTE: like section 14, this imports and RUNS the real,
+  // unmodified createDisasterBackup() (and therefore the real, unmodified
+  // readViaRpc()/fetchAllRows()/fetchAllPages() it calls) via the module
+  // hook, against a mock Supabase client configured per test through
+  // globalThis.__elabTestMock (see test-disaster-recovery-loader-hooks.mjs
+  // for exactly what it mocks and how it enforces real range semantics).
+  // This does NOT exercise a live Supabase connection, real PostgREST, or
+  // the production esbuild/Rollup bundle — see section 14's note for what
+  // "REGRESSION" does and doesn't prove here. Final acceptance for the
+  // real bug this fixes is a NEW live disaster ZIP independently showing
+  // question_secrets = 1,305 and question_version_secrets = 1,331 (see
+  // this session's final report) — these tests prove the pagination LOGIC
+  // is correct against a mock that genuinely enforces range slicing, not
+  // that the live Supabase project is now fixed.
+  const { createDisasterBackup } = await import("../src/lib/backup/disasterExport.js");
+
+  function pad(n) {
+    return String(n).padStart(6, "0");
+  }
+  function makeQuestions(n) {
+    return Array.from({ length: n }, (_, i) => ({ id: `question-${pad(i)}`, created_by: null, question_content: {}, visual_data: null, options: null, parts: null }));
+  }
+  function makeSecretsFor(questions) {
+    return questions.map((q) => ({ question_id: q.id, correct_answer_data: { value: "x" }, markscheme: null, explanation: null }));
+  }
+  function makeVersions(n, questionId) {
+    return Array.from({ length: n }, (_, i) => ({ id: `version-${pad(i)}`, question_id: questionId, version_number: i + 1, content_snapshot: {} }));
+  }
+  function makeVersionSecretsFor(versions) {
+    return versions.map((v) => ({ question_version_id: v.id, correct_answer_data: { value: "y" }, explanation: null }));
+  }
+
+  function resetMock() {
+    globalThis.__elabTestMock = { tables: {}, rpcs: {}, calls: { table: {}, rpc: {} } };
+  }
+
+  async function readZipJson(zip, path) {
+    const text = await zip.file(path).async("string");
+    return JSON.parse(text);
+  }
+
+  await testAsync("1,305 questions + 1,305 question_secrets (the real live backup's exact shortfall, now matched 1:1) — all rows exported, no duplicates, cardinality passes, ZIP + manifest correct", async () => {
+    resetMock();
+    const questions = makeQuestions(1305);
+    const secrets = makeSecretsFor(questions);
+    globalThis.__elabTestMock.tables.questions = questions;
+    globalThis.__elabTestMock.rpcs.admin_export_question_secrets = { rows: secrets };
+
+    const result = await createDisasterBackup({ includeUserData: true, onProgress: () => {} });
+
+    assert.equal(result.manifest.recordCounts.questions, 1305);
+    assert.equal(result.manifest.recordCounts.question_secrets, 1305);
+    assert.equal(globalThis.__elabTestMock.calls.table.questions.length, 3, "1305 rows over pageSize 500 must be read in exactly 3 pages");
+    assert.equal(globalThis.__elabTestMock.calls.rpc.admin_export_question_secrets.length, 3, "1305 secret rows must be read in exactly 3 RPC pages, not truncated at one unpaginated call");
+
+    const qb = await readZipJson(result.zip, "data/question-bank.json");
+    assert.equal(qb.questions.length, 1305);
+    assert.equal(qb.question_secrets.length, 1305);
+    assert.equal(new Set(qb.questions.map((q) => q.id)).size, 1305, "no duplicate question ids introduced by pagination");
+    assert.equal(new Set(qb.question_secrets.map((s) => s.question_id)).size, 1305, "no duplicate secret rows introduced by pagination");
+    assert.deepEqual(qb.questions.map((q) => q.id), questions.map((q) => q.id), "row order/data preserved across pages");
+
+    const check = result.manifest.cardinalityChecks.find((c) => c.childLabel === "question_secrets");
+    assert.equal(check.ok, true, "equal 1:1 cardinality must pass");
+    assert.equal(result.verification.cardinalityVerified, true);
+    assert.equal(result.manifest.cardinalityFailed, undefined, "no cardinality failure flag when counts/ids match");
+
+    const blob = await result.zip.generateAsync({ type: "uint8array" });
+    assert.ok(blob.byteLength > 0);
+  });
+
+  await testAsync("1,331 question_versions + 1,331 question_version_secrets (the live backup's other exact shortfall) — all rows exported, no duplicates, cardinality passes", async () => {
+    resetMock();
+    const versions = makeVersions(1331, "question-000000");
+    const versionSecrets = makeVersionSecretsFor(versions);
+    globalThis.__elabTestMock.tables.question_versions = versions;
+    globalThis.__elabTestMock.rpcs.admin_export_question_version_secrets = { rows: versionSecrets };
+
+    const result = await createDisasterBackup({ includeUserData: true, onProgress: () => {} });
+
+    assert.equal(result.manifest.recordCounts.question_versions, 1331);
+    assert.equal(result.manifest.recordCounts.question_version_secrets, 1331);
+    assert.equal(globalThis.__elabTestMock.calls.table.question_versions.length, 3);
+    assert.equal(globalThis.__elabTestMock.calls.rpc.admin_export_question_version_secrets.length, 3, "1331 version-secret rows must be fully paginated across 3 RPC pages");
+
+    const qb = await readZipJson(result.zip, "data/question-bank.json");
+    assert.equal(qb.question_versions.length, 1331);
+    assert.equal(qb.question_version_secrets.length, 1331);
+    assert.equal(new Set(qb.question_version_secrets.map((s) => s.question_version_id)).size, 1331);
+
+    const check = result.manifest.cardinalityChecks.find((c) => c.childLabel === "question_version_secrets");
+    assert.equal(check.ok, true);
+
+    const blob = await result.zip.generateAsync({ type: "uint8array" });
+    assert.ok(blob.byteLength > 0);
+  });
+
+  await testAsync("exactly 1,000 rows (the old PostgREST default cap) — pagination continues past the old hardcoded assumption, not just up to it", async () => {
+    resetMock();
+    const questions = makeQuestions(1000);
+    const secrets = makeSecretsFor(questions);
+    globalThis.__elabTestMock.tables.questions = questions;
+    globalThis.__elabTestMock.rpcs.admin_export_question_secrets = { rows: secrets };
+
+    const result = await createDisasterBackup({ includeUserData: true, onProgress: () => {} });
+    assert.equal(result.manifest.recordCounts.question_secrets, 1000);
+    assert.equal(
+      globalThis.__elabTestMock.calls.rpc.admin_export_question_secrets.length,
+      3,
+      "must still request a 3rd (empty, confirming-exhaustion) page after two full 500-row pages — never assume 1000 is the cap"
+    );
+  });
+
+  await testAsync("1,001 rows — a one-row final page is still fully captured (classic off-by-one boundary)", async () => {
+    resetMock();
+    const questions = makeQuestions(1001);
+    const secrets = makeSecretsFor(questions);
+    globalThis.__elabTestMock.tables.questions = questions;
+    globalThis.__elabTestMock.rpcs.admin_export_question_secrets = { rows: secrets };
+
+    const result = await createDisasterBackup({ includeUserData: true, onProgress: () => {} });
+    assert.equal(result.manifest.recordCounts.question_secrets, 1001);
+    assert.equal(globalThis.__elabTestMock.calls.rpc.admin_export_question_secrets.length, 3);
+    const qb = await readZipJson(result.zip, "data/question-bank.json");
+    assert.equal(new Set(qb.question_secrets.map((s) => s.question_id)).size, 1001, "no duplicate/dropped row at the final short-page boundary");
+  });
+
+  await testAsync("empty result — zero questions and zero secrets still produces a valid, passing backup", async () => {
+    resetMock();
+    const result = await createDisasterBackup({ includeUserData: true, onProgress: () => {} });
+    assert.equal(result.manifest.recordCounts.questions, 0);
+    assert.equal(result.manifest.recordCounts.question_secrets, 0);
+    const check = result.manifest.cardinalityChecks.find((c) => c.childLabel === "question_secrets");
+    assert.equal(check.ok, true, "0 vs 0 is a trivially satisfied 1:1 relationship");
+  });
+
+  await testAsync("an RPC error on a LATER page aborts the backup — never silently returns the rows collected from earlier pages as a complete export", async () => {
+    resetMock();
+    const questions = makeQuestions(600);
+    const secrets = makeSecretsFor(questions);
+    globalThis.__elabTestMock.tables.questions = questions;
+    // Page 1 (from=0) succeeds; page 2 (from=500) fails — proving a
+    // failure strictly after the first page is handled, not just a
+    // failure on the very first call.
+    globalThis.__elabTestMock.rpcs.admin_export_question_secrets = { rows: secrets, errorOnFrom: 500, errorMessage: "simulated PostgREST failure on page 2" };
+
+    await assert.rejects(createDisasterBackup({ includeUserData: true, onProgress: () => {} }), (err) => {
+      assert.ok(
+        /question_secrets/.test(err.message) && /simulated PostgREST failure on page 2/.test(err.message),
+        `aggregated failure must name the failing table and surface the underlying error, got: ${err.message}`
+      );
+      return true;
+    });
+  });
+
+  await testAsync("cardinality mismatch (1,305 questions, only 1,200 question_secrets) — reported as an integrity failure, never a silently healthy backup; no rows fabricated to close the gap", async () => {
+    resetMock();
+    const questions = makeQuestions(1305);
+    const secrets = makeSecretsFor(questions.slice(0, 1200)); // genuinely only 1,200 secrets exist
+    globalThis.__elabTestMock.tables.questions = questions;
+    globalThis.__elabTestMock.rpcs.admin_export_question_secrets = { rows: secrets };
+
+    const result = await createDisasterBackup({ includeUserData: true, onProgress: () => {} });
+
+    // Not a pagination bug this time (every page was requested and
+    // returned honestly) — a genuine data-shape integrity problem, which
+    // must still surface loudly rather than read as a healthy backup.
+    assert.equal(result.manifest.recordCounts.questions, 1305);
+    assert.equal(result.manifest.recordCounts.question_secrets, 1200, "the genuinely smaller secret count must be reported exactly, never padded/fabricated up to 1305");
+
+    const check = result.manifest.cardinalityChecks.find((c) => c.childLabel === "question_secrets");
+    assert.equal(check.ok, false);
+    assert.equal(check.missingChildrenCount, 105);
+    assert.equal(check.orphanChildrenCount, 0);
+
+    assert.equal(result.verification.cardinalityVerified, false);
+    assert.equal(result.manifest.cardinalityFailed, true);
+    assert.equal(result.manifest.verificationFailed, true, "a cardinality mismatch must force verificationFailed, the same severity as a checksum/media failure");
+    assert.ok(
+      result.verification.relationshipWarnings.some((w) => w.includes("INTEGRITY FAILURE") && w.includes("question_secrets")),
+      "the mismatch must also appear in relationshipWarnings, the Admin UI's existing integrity-surfacing mechanism"
+    );
+  });
+
+  resetMock();
+})();
+
 console.log(`\n${"=".repeat(60)}`);
 console.log(`${passed} passed, ${failed} failed (out of ${passed + failed})`);
 console.log("=".repeat(60));

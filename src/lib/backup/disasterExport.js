@@ -27,8 +27,11 @@ import {
   ALL_DISASTER_TABLES,
   DEPLOYMENT_TIER,
   SCHEMA_RECOVERY_GAPS,
+  PAGE_BATCH_SIZE,
 } from "./constants.js";
 import { exportElabContent, fetchAllRows } from "./exportContent.js";
+import { fetchAllPages } from "./paginate.js";
+import { checkOneToOneCardinality } from "./cardinalityCheck.js";
 import { packageMediaFiles, verifyZippedMediaChecksums } from "./mediaPackage.js";
 import { collectBucketReferences, bucketMediaMapToManifest } from "./mediaScan.js";
 import { sha256HexOfString } from "./checksums.js";
@@ -71,12 +74,47 @@ async function readPlatformSettingsRow(onProgress) {
  * recognizes plain Postgres error code 42P01, which is what an RPC whose
  * BODY references a missing table raises at call time, unlike a direct
  * PostgREST `.from()` read's distinct PGRST205 shape).
+ *
+ * 2026-10 PAGINATION FIX — confirmed root cause of a real live backup
+ * silently truncating question_secrets and question_version_secrets at
+ * exactly 1,000 rows each (questions: 1,305 vs question_secrets: 1,000;
+ * question_versions: 1,331 vs question_version_secrets: 1,000): this
+ * function used to make exactly ONE unpaginated `supabase.rpc(rpcName)`
+ * call and trust whatever PostgREST returned as "everything" — but
+ * PostgREST applies its own default response row cap (commonly 1,000) to
+ * a `returns setof ...` RPC exactly as it does to a plain table route,
+ * and nothing here ever asked for a second page.
+ *
+ * Fix: PostgREST honors the `Range`/`Range-Unit` headers that
+ * supabase-js's `.range(from, to)` sets on a `SETOF`-returning RPC call
+ * the same way it does on `.from(table)` — this is standard PostgREST
+ * behavior requiring NO SQL change (the two RPCs' `returns setof ...
+ * select * from ...` bodies are untouched; see
+ * question_bank_disaster_recovery_rpc_incremental.sql, SECURITY DEFINER/
+ * admin-check/grants all unchanged). Reuses the exact same
+ * paginate-until-short-page loop fetchAllRows() uses (fetchAllPages(),
+ * paginate.js) and the SAME PAGE_BATCH_SIZE constant (500) — never a new
+ * hardcoded assumption about the server's actual cap. A later-page RPC
+ * error propagates straight out of fetchAllPages() (see its header): the
+ * rows already collected from earlier pages are discarded, never
+ * returned as if they were the complete set — this function throws, and
+ * fetchAllDatasets (datasetFetch.js) records the whole table as a
+ * failure exactly like any other required-table read failure.
  */
 async function readViaRpc(rpcName, onProgress, label) {
-  const { data, error } = await supabase.rpc(rpcName);
-  if (error) throw error;
-  onProgress?.(`Reading ${label}… (${data?.length ?? 0})`);
-  return data ?? [];
+  return fetchAllPages(
+    async (from, to) => {
+      // Diagnostic logging here is counts/page-bounds only — NEVER row
+      // contents — the data this RPC returns is secret application
+      // fields (correct_answer_data/markscheme/explanation) that must
+      // never be logged or exposed (spec: never log/expose secret row
+      // contents).
+      const { data, error } = await supabase.rpc(rpcName).range(from, to);
+      if (error) throw new Error(`Failed reading ${label} (rows ${from}-${to}): ${error.message}`);
+      return data;
+    },
+    { pageSize: PAGE_BATCH_SIZE, onProgress, label }
+  );
 }
 
 /** readTable callback for fetchAllDatasets — real Supabase reads, used by
@@ -206,6 +244,14 @@ export async function createDisasterBackup({ includeUserData = true, onProgress 
   // ---- 4. Verify relationships (lightweight structural cross-check) ----
   onProgress("Verifying relationships…");
   const relationshipWarnings = [];
+  // 2026-10 cardinality fix: explicit, structured 1:1 parent/child checks
+  // for the two Question Bank secret tables — see cardinalityCheck.js and
+  // this backup's `requiredForRestore`/`cardinalityChecks` manifest
+  // sections. Computed INSIDE the includeUserData branch below (secrets
+  // are only read when includeUserData is true) and left `[]` otherwise,
+  // same convention as every other Question Bank derived report in this
+  // function.
+  let cardinalityChecks = [];
   if (includeUserData) {
     const profileIds = new Set(users.profiles.map((p) => p.id));
     for (const row of progress.learning_progress) {
@@ -233,6 +279,43 @@ export async function createDisasterBackup({ includeUserData = true, onProgress 
       if (row.question_version_id && !versionIds.has(row.question_version_id)) {
         relationshipWarnings.push(`question_paper_items row ${row.id} references question_versions id ${row.question_version_id} not present in this export`);
       }
+    }
+
+    // ---- Question Bank secret-table cardinality (Phase 9, 2026-10) ----
+    // questions<->question_secrets and question_versions<->
+    // question_version_secrets are both STRICT 1:1 relationships per real
+    // application code (save_question_with_secrets()'s single-transaction
+    // upsert; mark_learn_check_answers()'s unconditional lookup — see this
+    // module's own header and docs/DISASTER_RECOVERY.md). A mismatch here
+    // is exactly the shape of bug the readViaRpc() pagination fix above
+    // closes (a truncated secret export with otherwise-correct parent
+    // rows) — it must never be mistaken for a healthy/complete backup, so
+    // every mismatch is both recorded structurally (manifest.cardinalityChecks,
+    // read by the Admin UI) AND folded into relationshipWarnings (which
+    // already drives verification.relationshipsVerified / the "mismatch
+    // forces manifest.verificationFailed" rule below) — never a second,
+    // silent reporting path the admin has to know to look for separately.
+    cardinalityChecks = [
+      checkOneToOneCardinality(questionBank.questions, questionBank.question_secrets, {
+        childKey: "question_id",
+        parentLabel: "questions",
+        childLabel: "question_secrets",
+      }),
+      checkOneToOneCardinality(questionBank.question_versions, questionBank.question_version_secrets, {
+        childKey: "question_version_id",
+        parentLabel: "question_versions",
+        childLabel: "question_version_secrets",
+      }),
+    ];
+    for (const c of cardinalityChecks) {
+      if (c.ok) continue;
+      relationshipWarnings.push(
+        `INTEGRITY FAILURE: ${c.parentLabel} (${c.parentCount}) vs ${c.childLabel} (${c.childCount}) — expected a strict 1:1 relationship. ` +
+          `${c.missingChildrenCount} ${c.parentLabel} row(s) have no matching ${c.childLabel} row, ` +
+          `${c.orphanChildrenCount} ${c.childLabel} row(s) reference a ${c.parentLabel} row not present in this export` +
+          (c.duplicateChildKeysCount ? `, ${c.duplicateChildKeysCount} ${c.childLabel} row(s) duplicate a ${c.parentLabel} id` : "") +
+          `. A truncated/incomplete secret export must never be reported as a complete Question Bank backup — do not restore from this package without investigating.`
+      );
     }
     // Resources: an uploaded-file row must resolve to a packaged media
     // entry; an external_url row must NEVER be flagged as a missing file
@@ -455,6 +538,7 @@ export async function createDisasterBackup({ includeUserData = true, onProgress 
     storageReport,
     questionBankReport,
     questionPaperReport,
+    cardinalityChecks,
     schemaRecoveryGaps,
     applicationSource,
     requiredForRestore: [
@@ -489,16 +573,25 @@ export async function createDisasterBackup({ includeUserData = true, onProgress 
   // ---- 8. Verify the package before reporting success (spec §18) ----
   onProgress("Verifying package…");
   const { verified, mismatches } = await verifyZippedMediaChecksums(zip, mediaChecksums, onProgress);
+  const cardinalityFailures = cardinalityChecks.filter((c) => !c.ok);
   const verification = {
     databaseRecordsVerified: true, // counted directly from what was just read
     relationshipsVerified: relationshipWarnings.length === 0,
     mediaVerified: mismatches.length === 0 && mediaFailures.length === 0,
     checksumsVerified: verified === mediaChecksums.length,
     simulationsVerified: simulations.missingImplementations === 0,
+    // 2026-10: explicit pass/fail separate from the generic
+    // relationshipsVerified flag above (which also folds in these same
+    // failures via relationshipWarnings) — surfaced on its own so the
+    // Admin UI can show "Secret-table cardinality verified" as its own
+    // named check rather than only as one line buried in a relationship-
+    // warnings list.
+    cardinalityVerified: cardinalityFailures.length === 0,
     mediaVerifiedCount: verified,
     mediaMismatches: mismatches,
     mediaFailures,
     relationshipWarnings,
+    cardinalityChecks,
     simulationWarnings:
       simulations.missingImplementations > 0
         ? simulations.items
@@ -507,12 +600,20 @@ export async function createDisasterBackup({ includeUserData = true, onProgress 
         : [],
   };
 
-  if (!verification.checksumsVerified || !verification.mediaVerified) {
+  if (!verification.checksumsVerified || !verification.mediaVerified || !verification.cardinalityVerified) {
     // Per spec §18: "If verification fails: DO NOT say backup completed
     // successfully." The zip is still returned (so the admin can inspect
     // what DID work) but the caller must surface this as a failed/partial
-    // verification, never a plain success.
+    // verification, never a plain success. 2026-10: a Question Bank
+    // secret-table cardinality mismatch (the exact shape of the real
+    // truncation bug this update fixes) is treated with the SAME
+    // severity as a checksum/media failure — a parent row silently
+    // missing its required secret row is a truncated/incomplete Question
+    // Bank backup, not a cosmetic warning.
     manifest.verificationFailed = true;
+  }
+  if (!verification.cardinalityVerified) {
+    manifest.cardinalityFailed = true;
   }
   if (!verification.simulationsVerified) {
     // Per spec §7: "If a Learn page references simulationId = xyz but
