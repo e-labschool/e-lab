@@ -23,10 +23,6 @@ import {
   DISASTER_VERSION,
   APPLICATION_NAME,
   STORAGE_BUCKETS,
-  USER_DATA_TABLES,
-  PROGRESS_DATA_TABLES,
-  ASSESSMENT_DATA_TABLES,
-  PLANNING_DATA_TABLES,
   EXCLUDED_TABLES,
   ALL_DISASTER_TABLES,
 } from "./constants.js";
@@ -35,11 +31,11 @@ import { packageMediaFiles, verifyZippedMediaChecksums } from "./mediaPackage.js
 import { sha256HexOfString } from "./checksums.js";
 import { auditSimulations } from "./simulationAudit.js";
 import { getApplicationVersionInfo } from "./appVersion.js";
-import { isMissingTableError } from "./tableAccess.js";
+import { fetchAllDatasets, assertNoDatasetFailures } from "./datasetFetch.js";
 
-// student_streaks/user_preferences use their user_id column as primary
-// key (no separate `id` column) — ordering must use the column that
-// actually exists, per table.
+// Tables whose primary key is NOT a bare `id` column, or that are a
+// singleton read rather than a full-table page scan — ordering/filtering
+// must use the shape that actually exists, per table.
 const ORDER_COLUMN_OVERRIDES = {
   user_preferences: "user_id",
   student_streaks: "user_id",
@@ -47,45 +43,26 @@ const ORDER_COLUMN_OVERRIDES = {
 };
 
 /**
- * Reads every table in `tables` (each `{ table, required }`, see
- * constants.js for the audited classification). A REQUIRED table whose
- * read fails for any reason aborts the whole backup with a clear error.
- * An OPTIONAL table whose read fails specifically because the table does
- * not exist is skipped — recorded in the returned `skipped` list, never
- * silently dropped — and the backup continues; any other error on an
- * optional table still aborts, identically to a required one.
+ * Reads ONE row of the platform_settings singleton (id = 1), returning it
+ * wrapped in an array so it fits the same `{ table: rows[] }` shape every
+ * other dataset uses in fetchAllDatasets — settings.platform_settings is
+ * unwrapped back to a single object (or null) right after the pass.
  */
-async function fetchTableGroup(tables, onProgress) {
-  const out = {};
-  const counts = {};
-  const skipped = [];
-  for (const { table, required = true } of tables) {
-    try {
-      const rows = await fetchAllRows(table, { orderColumn: ORDER_COLUMN_OVERRIDES[table] || "id" }, onProgress);
-      out[table] = rows;
-      counts[table] = rows.length;
-    } catch (err) {
-      if (!required && isMissingTableError(err)) {
-        out[table] = [];
-        counts[table] = 0;
-        skipped.push({
-          table,
-          reason: `Classified OPTIONAL — this table does not exist in this Supabase project's schema cache. Skipped intentionally; this backup carries zero rows for it rather than failing the whole export.`,
-        });
-        onProgress?.(`Skipping ${table} (table not present — optional) …`);
-        continue;
-      }
-      // Either a required table, or an optional table that failed for a
-      // reason OTHER than "does not exist" (RLS, network, etc.) — never
-      // silently swallowed, always aborts the backup.
-      throw new Error(
-        required
-          ? `Required table "${table}" could not be read — Complete Disaster Recovery aborted. ${err.message}`
-          : `Table "${table}" could not be read (not a "table missing" error, so this is not treated as optional) — Complete Disaster Recovery aborted. ${err.message}`
-      );
-    }
-  }
-  return { out, counts, skipped };
+async function readPlatformSettingsRow(onProgress) {
+  const { data, error } = await supabase.from("platform_settings").select("*").eq("id", 1).limit(1);
+  if (error) throw error;
+  onProgress?.(`Reading platform_settings… (${data?.length ?? 0})`);
+  return data ?? [];
+}
+
+/** readTable callback for fetchAllDatasets — real Supabase reads, used by
+ * createDisasterBackup. Kept as a thin adapter so the actual decision
+ * logic (datasetFetch.js) stays testable without a live connection. */
+function makeReadTable(onProgress) {
+  return async (table) => {
+    if (table === "platform_settings") return readPlatformSettingsRow(onProgress);
+    return fetchAllRows(table, { orderColumn: ORDER_COLUMN_OVERRIDES[table] || "id" }, onProgress);
+  };
 }
 
 /**
@@ -105,47 +82,49 @@ export async function createDisasterBackup({ includeUserData = true, onProgress 
   onProgress("Exporting educational content…");
   const contentBackup = await exportElabContent({ scope: { type: "full" }, onProgress });
 
-  // ---- 2. User application data ----
+  // ---- 2. User application data — ONE complete pass over every table in
+  // BACKUP_DATASETS (the single-source manifest, see constants.js). Every
+  // table is attempted regardless of whether an earlier one failed, so a
+  // single run reports the COMPLETE set of problems — never just the
+  // first required table that happens to be missing (see
+  // datasetFetch.js's header for why this replaced the old per-group,
+  // throw-on-first-failure implementation). ----
   let users = { profiles: [], user_access: [], user_preferences: [] };
   let progress = { learning_progress: [], concept_attempts: [], prediction_cycles: [], prediction_snapshots: [], student_streaks: [] };
   let assessments = { student_challenges: [], challenge_questions: [] };
   let planning = { class_plans: [], lesson_blocks: [] };
   let settings = { platform_settings: null };
+  let library = { resources: [] };
   let tableCounts = {};
   let tablesSkipped = [];
+  let datasetFailures = [];
 
   if (includeUserData) {
-    onProgress("Exporting user application data…");
-    const u = await fetchTableGroup(USER_DATA_TABLES, onProgress);
-    users = u.out;
+    onProgress("Exporting user application data, progress, assessments, planning and settings…");
+    const { out, counts, skipped, failures } = await fetchAllDatasets(ALL_DISASTER_TABLES, makeReadTable(onProgress), onProgress);
 
-    onProgress("Exporting learning progress…");
-    const p = await fetchTableGroup(PROGRESS_DATA_TABLES, onProgress);
-    progress = p.out;
+    users = { profiles: out.profiles ?? [], user_access: out.user_access ?? [], user_preferences: out.user_preferences ?? [] };
+    progress = {
+      learning_progress: out.learning_progress ?? [],
+      concept_attempts: out.concept_attempts ?? [],
+      prediction_cycles: out.prediction_cycles ?? [],
+      prediction_snapshots: out.prediction_snapshots ?? [],
+      student_streaks: out.student_streaks ?? [],
+    };
+    assessments = { student_challenges: out.student_challenges ?? [], challenge_questions: out.challenge_questions ?? [] };
+    planning = { class_plans: out.class_plans ?? [], lesson_blocks: out.lesson_blocks ?? [] };
+    settings = { platform_settings: out.platform_settings?.[0] ?? null };
+    library = { resources: out.resources ?? [] };
 
-    onProgress("Exporting assessments…");
-    const a = await fetchTableGroup(ASSESSMENT_DATA_TABLES, onProgress);
-    assessments = a.out;
+    tableCounts = { ...counts, platform_settings: settings.platform_settings ? 1 : 0 };
+    tablesSkipped = skipped;
+    datasetFailures = failures;
 
-    onProgress("Exporting class planning data…");
-    const pl = await fetchTableGroup(PLANNING_DATA_TABLES, onProgress);
-    planning = pl.out;
-
-    onProgress("Reading platform settings…");
-    // platform_settings is REQUIRED (category H, singleton config) — the
-    // Supabase error is now checked rather than silently discarded (the
-    // previous code destructured only `data`, so a query error here was
-    // invisible and the backup would quietly report zero settings as if
-    // that were a legitimate empty result — exactly the "silently ignore
-    // unexpected database errors" failure mode spec §2 forbids).
-    const { data: settingsRows, error: settingsError } = await supabase.from("platform_settings").select("*").eq("id", 1).limit(1);
-    if (settingsError) {
-      throw new Error(`Required table "platform_settings" could not be read — Complete Disaster Recovery aborted. ${settingsError.message}`);
-    }
-    settings = { platform_settings: settingsRows?.[0] || null };
-
-    tableCounts = { ...u.counts, ...p.counts, ...a.counts, ...pl.counts, platform_settings: settings.platform_settings ? 1 : 0 };
-    tablesSkipped = [...u.skipped, ...p.skipped, ...a.skipped, ...pl.skipped];
+    // Only abort AFTER every table in the manifest has been attempted —
+    // the aggregated error below names every one that failed, not just
+    // whichever happened to be read first (spec: "The exporter must get
+    // through the COMPLETE inventory").
+    assertNoDatasetFailures(datasetFailures);
   }
 
   // ---- 3. Media — actual files, deduplicated, from the content manifest ----
@@ -174,6 +153,7 @@ export async function createDisasterBackup({ includeUserData = true, onProgress 
     "data/assessments.json": assessments,
     "data/planning.json": planning,
     "data/settings.json": settings,
+    "data/library.json": library,
   };
   const dataChecksums = {};
   for (const [path, obj] of Object.entries(dataFiles)) {
@@ -214,6 +194,29 @@ export async function createDisasterBackup({ includeUserData = true, onProgress 
     ...getApplicationVersionInfo(),
   };
 
+  // ---- 6d. Schema audit diagnostic (dev/admin-only — the compact
+  // "Required datasets: X / Available: X / Missing required: 0" summary).
+  // If we reached this line with includeUserData true, assertNoDatasetFailures
+  // already passed, so EVERY required table was read successfully —
+  // requiredMissing is always 0 here by construction, never a guess. ----
+  const requiredDatasetDefs = ALL_DISASTER_TABLES.filter((t) => t.required);
+  const optionalDatasetDefs = ALL_DISASTER_TABLES.filter((t) => !t.required);
+  const schemaAudit = {
+    requiredDatasets: requiredDatasetDefs.length,
+    requiredAvailable: includeUserData ? requiredDatasetDefs.length : null,
+    requiredMissing: includeUserData ? 0 : null,
+    optionalDatasets: optionalDatasetDefs.length,
+    optionalAvailable: includeUserData ? optionalDatasetDefs.length - tablesSkipped.length : null,
+    optionalUnavailable: includeUserData ? tablesSkipped.length : null,
+    storageBuckets: STORAGE_BUCKETS.length,
+    storageBucketsRequired: STORAGE_BUCKETS.filter((b) => b.required).length,
+    simulationReferences: simulations.uniqueSimulations,
+    simulationImplementationsVerified: simulations.verifiedImplementations,
+    note: includeUserData
+      ? null
+      : "User/progress/assessment/planning/settings tables were not read (includeUserData=false) — this backup covers educational content + media only, so required/optional availability was not evaluated this run.",
+  };
+
   // ---- 7. Manifest ----
   onProgress("Creating disaster package…");
   const skippedTableNames = new Set(tablesSkipped.map((s) => s.table));
@@ -241,10 +244,16 @@ export async function createDisasterBackup({ includeUserData = true, onProgress 
     mediaTotalBytes: totalMediaBytes,
     mediaFailureCount: mediaFailures.length,
     simulations,
+    schemaAudit,
     applicationSource,
     requiredForRestore: [
       "The target Supabase project must already have every migration in supabase/migrations/*.sql and supabase/*.sql applied (schema first — see docs/DISASTER_RECOVERY.md).",
       "Storage buckets (" + STORAGE_BUCKETS.map((b) => b.bucket).join(", ") + ") must exist (created automatically by the relevant migration's `insert into storage.buckets`).",
+      "Only " +
+        STORAGE_BUCKETS.filter((b) => b.filesPackaged).map((b) => b.bucket).join(", ") +
+        " file BYTES are actually packaged under media/ by this backup — " +
+        STORAGE_BUCKETS.filter((b) => !b.filesPackaged).map((b) => b.bucket).join(" and ") +
+        " bucket files must still be recovered from Supabase Storage's own backup/replication (row metadata for resources IS captured, in data/library.json).",
       "For user data: an explicit old-user-id -> new-user-id identity map, built via the Supabase-native account recovery/relinking procedure documented in docs/DISASTER_RECOVERY.md — auth.users itself is NOT in this package.",
     ],
   };

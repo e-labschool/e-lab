@@ -42,7 +42,7 @@ to resolve via `SIMULATION_COMPONENTS`.
 |---|---|---|
 | **Git repository** (this repo) | Application code, the static curriculum tree, every `supabase/*.sql` / `supabase/migrations/*.sql` migration (the authoritative schema source), this documentation | Your own version control — not a backup file at all. If the repo is lost, nothing below can be applied. |
 | **Supabase Postgres database** | Every table row: Learn content, Question Bank, profiles, progress, assessments, settings | Content Backup (content tables only) + Complete Disaster Recovery (adds user/progress/assessment/planning/settings tables) |
-| **Supabase Storage** | `learn-media`, `resources`, `question-media` bucket objects | Content Backup: references (bucket+path) only. Complete Disaster Recovery: the **actual file bytes**. |
+| **Supabase Storage** | `learn-media`, `resources`, `question-media` bucket objects | Content Backup: references (bucket+path) only. Complete Disaster Recovery: **actual file bytes for `learn-media` only** (see `STORAGE_BUCKETS[].filesPackaged` in `constants.js`) — `resources`/`question-media` file bytes are NOT currently packaged (row metadata for `resources` is, via `data/library.json`; recovering the bytes themselves still relies on Supabase Storage's own backup/replication). This correction is part of the 2026-10 reconciliation below — the docs previously (inaccurately) implied all three buckets' bytes were packaged identically. |
 | **Supabase Auth** (`auth.users`) | Sign-in identities, password hashes, sessions | **Neither backup touches this.** See §4. |
 | **`.env` / environment variables** | `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` | Never backed up (not secrets, but not application data either — recreated manually, see §5). |
 
@@ -84,13 +84,15 @@ every table now carries (2026-09 fix — see the note below the table).
 | Category (spec) | Tables | Required? | In package? |
 |---|---|---|---|
 | A/B. Curriculum & educational content | `learn_pages`, `learn_blocks`, `learn_check_questions`, `learn_manual_questions`, `learn_manual_question_secrets` | Required | Yes — via `data/content.json` |
-| C. Media | `learn-media`, `resources`, `question-media` Storage buckets | Required | Yes — actual files referenced from Learn content, under `media/` |
+| C. Media | `learn-media` (Required, bytes packaged) / `resources`, `question-media` (bucket existence only, bytes not packaged) | Required (`learn-media`) / Optional | Yes — `learn-media` files referenced from Learn content, under `media/`; `resources`/`question-media` bytes are not |
 | D. User profile data | `profiles` | Required | Yes — `data/users.json` |
 | E. Access/subscription | `user_access` | Required | Yes — `data/users.json` |
-| F. Student learning progress | `learning_progress`, `concept_attempts`, `prediction_cycles`, `prediction_snapshots`, `student_streaks`, `class_plans`, `lesson_blocks` | Required | Yes — `data/progress.json`, `data/planning.json` |
+| F. Student learning progress | `learning_progress`, `concept_attempts`, `student_streaks`, `class_plans`, `lesson_blocks` | Required | Yes — `data/progress.json`, `data/planning.json` |
+| F. Student learning progress (Predicted Grade) | `prediction_cycles`, `prediction_snapshots` | **Optional** (2026-10 fix — see below) | Yes, if present — `data/progress.json`. Skipped (recorded in `manifest.tablesSkipped`) if this Supabase project's schema cache reports the table missing. |
 | G. Assessment data | `student_challenges`, `challenge_questions` | Required | Yes — `data/assessments.json` |
 | H. Application settings | `platform_settings` | Required | Yes — `data/settings.json` |
 | H. Application settings (per-user) | `user_preferences` | **Optional** | Yes, if present — `data/users.json`. Skipped (recorded in `manifest.tablesSkipped`, not silently) if this Supabase project's schema cache reports the table missing. |
+| I. Resource library | `resources` (row metadata — title/description/path/etc.) | Required | Yes — `data/library.json` (2026-10 addition — see below; file bytes in the `resources` Storage bucket are NOT packaged, see the Storage row above) |
 | I. Authentication data | `auth.users` (Supabase-managed) | — | **No** — see §4 |
 | J. Ephemeral UI state | `sessionStorage` drafts, open/closed UI panels, in-progress unsaved editor state, browser cache | — | **No**, by design (spec §34) — never was, never will be |
 | K. Secrets | Service-role key, JWT secret, DB password, API keys, sessions/tokens | — | **No**, never captured anywhere in this codebase (see `src/lib/supabaseClient.js`) |
@@ -117,11 +119,74 @@ only if) its specific read fails because the table itself does not
 exist, the exporter skips it, records the skip (table name + reason) in
 `manifest.tablesSkipped`, and continues — it never silently drops it,
 and any *other* kind of error on it (RLS, network, …) still aborts the
-backup exactly like a required table would. This same REQUIRED/OPTIONAL
-mechanism (`src/lib/backup/constants.js`'s `required` flag +
-`disasterExport.js`'s `isMissingTableError` check) now covers every
-table, so a future missing table fails the same intentional way instead
-of crashing on the next one.
+backup exactly like a required table would.
+
+**2026-10 schema reconciliation — this mechanism's own claim turned out
+false, and here is the actual fix.** The paragraph above predicted "a
+future missing table fails the same intentional way instead of crashing
+on the next one" — and the very next live run disproved it: `prediction_cycles`
+failed with the identical error shape (`Could not find the table
+'public.prediction_cycles' in the schema cache`), because it was still
+classified `required: true`. This was not a copy-paste oversight to patch
+in isolation; it was audited as a full, one-time reconciliation (not
+another single-table patch) covering every table, bucket and RPC the
+disaster-recovery code touches, per `src/lib/backup/constants.js`'s
+header comment (read it before changing any classification) and
+`scripts/test-disaster-recovery.mjs` §6b/§6c, which now enforce the audit
+as executable, re-checkable tests rather than a one-off manual judgement:
+
+- **One centralized manifest.** `BACKUP_DATASETS` in `constants.js` is now
+  the single hand-maintained table list; `USER_DATA_TABLES`,
+  `PROGRESS_DATA_TABLES`, `ASSESSMENT_DATA_TABLES`, `PLANNING_DATA_TABLES`,
+  `SETTINGS_TABLES`, `LIBRARY_DATA_TABLES` and `ALL_DISASTER_TABLES` are
+  all derived filters over it, never a second place that names a table.
+- **`prediction_cycles`/`prediction_snapshots` reclassified OPTIONAL** —
+  not because they lack a migration or app usage (they have both:
+  `migrations/prediction_cycles_incremental.sql`, and real reads/writes in
+  `src/lib/predictionEngine.js`/`src/lib/progressAnalytics.js`), but
+  because the live backup run is direct, first-party evidence that this
+  migration has not actually been applied to that project, regardless of
+  existing in this repo. The rule this encodes, applied uniformly: **a
+  migration file proves intent, never live existence** — the live
+  schema-cache error is the authoritative signal, and overrides even solid
+  code-level evidence.
+- **Structural fix, not just reclassification: the exporter no longer
+  aborts on the FIRST failing table.** `src/lib/backup/datasetFetch.js`'s
+  `fetchAllDatasets` now attempts every table in `BACKUP_DATASETS` in one
+  pass regardless of earlier failures, and only throws (one aggregated
+  error naming every failing table) once the complete inventory has been
+  attempted. This is the real fix for the "fix user_preferences → rerun →
+  prediction_cycles fails → fix → rerun → next table fails" loop: even if
+  the classification above is ever wrong again for some table, a single
+  run will surface every problem at once, not one per rerun.
+- **`resources` table — a genuine silent gap, found and closed.** A
+  grep-driven completeness check (every `.from("table")` name anywhere in
+  `src/` must be accounted for in content, disaster backup, or
+  `EXCLUDED_TABLES` — `scripts/test-disaster-recovery.mjs` §6b) found that
+  `resources` (teacher/student library metadata — real migration in
+  `supabase/resources-migration.sql`, real throwing usage in
+  `src/lib/resourceService.js`) had never been added to either backup
+  system. It is now backed up (`data/library.json`) and restored (new
+  `resources` block in `restore_elab_disaster_data`) — unlike
+  `user_preferences`/`prediction_cycles`, this was not a wrong assumption,
+  it was simply never covered. `question_papers`/`question_paper_items`
+  were also found by the same check and, by contrast, deliberately
+  EXCLUDED (see §4 above) — real teacher-authored data, but with no
+  `create table` migration anywhere in this repo (provisioned directly
+  against the live project, exactly like the Question Bank it composes
+  from), so this backup cannot safely assume its schema.
+- **Storage bucket honesty correction.** The `C. Media` row above now
+  distinguishes `learn-media` (file bytes genuinely packaged) from
+  `resources`/`question-media` (bucket existence recorded, bytes NOT
+  packaged) — the previous wording implied all three were handled
+  identically, which `mediaScan.js`'s actual implementation (it only ever
+  walks `learn-media` URLs embedded in exported Learn content) never did.
+
+This same REQUIRED/OPTIONAL mechanism (`src/lib/backup/constants.js`'s
+`required` flag + `datasetFetch.js`'s `isMissingTableError`-driven
+classification) now covers every table in one complete pass, so a future
+missing table is reported — alongside every other problem in the same
+run — instead of crashing one at a time across repeated reruns.
 
 **Deliberately still excluded**, same boundary the existing Content
 Backup already draws, now carried into the disaster manifest's

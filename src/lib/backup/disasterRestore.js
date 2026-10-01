@@ -81,14 +81,15 @@ export async function restoreDisasterBackup(validated, { includeUserData = true,
   let userDataResult = null;
   if (includeUserData) {
     onProgress("Restoring user application data, progress and assessments…");
-    const [users, progress, assessments, planning, settings] = await Promise.all([
+    const [users, progress, assessments, planning, settings, library] = await Promise.all([
       readJsonFromZip(zip, "data/users.json", {}),
       readJsonFromZip(zip, "data/progress.json", {}),
       readJsonFromZip(zip, "data/assessments.json", {}),
       readJsonFromZip(zip, "data/planning.json", {}),
       readJsonFromZip(zip, "data/settings.json", {}),
+      readJsonFromZip(zip, "data/library.json", {}), // may be absent in a package produced before the 2026-10 reconciliation added it
     ]);
-    const payload = { ...users, ...progress, ...assessments, ...planning, ...settings };
+    const payload = { ...users, ...progress, ...assessments, ...planning, ...settings, ...library };
     const { data, error } = await supabase.rpc("restore_elab_disaster_data", { p_payload: payload, p_id_map: identityMap });
     if (error) throw new Error(`User/progress/assessment restore failed: ${error.message}`);
     userDataResult = data;

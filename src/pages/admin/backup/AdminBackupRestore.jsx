@@ -393,7 +393,7 @@ function RestoreSection() {
 
 const DISASTER_INCLUDES = [
   "Learn content", "Questions", "Media files", "Content ordering", "Simulation references",
-  "User application data", "Learning progress", "Assessment data", "Required metadata",
+  "User application data", "Learning progress", "Assessment data", "Resource library metadata", "Required metadata",
 ];
 const DISASTER_EXCLUDES = ["Passwords", "Sessions", "API secrets", "Service credentials"];
 
@@ -495,6 +495,30 @@ function DisasterBackupSection() {
             <CheckRow item={{ pass: v.mediaVerified, label: "Media verified", detail: v.mediaFailures.length ? `${v.mediaFailures.length} file(s) could not be downloaded` : "" }} />
             <CheckRow item={{ pass: v.checksumsVerified, label: "Checksums verified", detail: v.mediaMismatches.length ? `${v.mediaMismatches.length} mismatch(es)` : "" }} />
             <CheckRow item={{ pass: v.simulationsVerified, label: "Simulation references verified", detail: v.simulationWarnings?.slice(0, 3).join("; ") }} />
+          </ul>
+
+          <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Disaster Recovery Schema Audit</p>
+          <ul className="mt-1 space-y-0.5 text-sm text-[var(--color-ink-soft)]">
+            <li>
+              Required datasets: {result.manifest.schemaAudit?.requiredDatasets ?? 0} · Available:{" "}
+              {result.manifest.schemaAudit?.requiredAvailable ?? "—"} · Missing required:{" "}
+              <span className={result.manifest.schemaAudit?.requiredMissing ? "font-medium text-[#A5362A]" : ""}>
+                {result.manifest.schemaAudit?.requiredMissing ?? "—"}
+              </span>
+            </li>
+            <li>
+              Optional datasets: {result.manifest.schemaAudit?.optionalDatasets ?? 0} · Available:{" "}
+              {result.manifest.schemaAudit?.optionalAvailable ?? "—"} · Unavailable:{" "}
+              {result.manifest.schemaAudit?.optionalUnavailable ?? "—"}
+            </li>
+            <li>
+              Storage buckets: {result.manifest.schemaAudit?.storageBuckets ?? 0} ({result.manifest.schemaAudit?.storageBucketsRequired ?? 0} required)
+            </li>
+            <li>
+              Simulation references: {result.manifest.schemaAudit?.simulationReferences ?? 0} · Implementations verified:{" "}
+              {result.manifest.schemaAudit?.simulationImplementationsVerified ?? 0}
+            </li>
+            {result.manifest.schemaAudit?.note && <li className="text-xs text-[var(--color-ink-faint)]">{result.manifest.schemaAudit.note}</li>}
           </ul>
 
           <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Simulations</p>

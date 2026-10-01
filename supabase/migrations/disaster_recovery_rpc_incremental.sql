@@ -74,6 +74,21 @@ declare
   -- also lacks it, this flag records that rather than aborting the
   -- whole restore transaction over one non-critical table.
   v_user_preferences_table_missing boolean := false;
+  -- 2026-10 schema reconciliation: prediction_cycles/prediction_snapshots
+  -- were RECLASSIFIED OPTIONAL in src/lib/backup/constants.js after the
+  -- live Complete Disaster Recovery export reported "Could not find the
+  -- table 'public.prediction_cycles' in the schema cache" — direct
+  -- evidence this migration's own `create table` statements
+  -- (prediction_cycles_incremental.sql) have not actually been applied to
+  -- every live project, exactly like user_preferences before it. Same
+  -- tolerant pattern applied here for consistency on the restore side.
+  v_prediction_cycles_table_missing boolean := false;
+  v_prediction_snapshots_table_missing boolean := false;
+  -- resources.created_by is a NULLABLE creator reference, not a strict
+  -- per-row owner — a row with no mappable creator is still restored
+  -- (never skipped), with attribution set to null rather than dropping
+  -- real library content over an identity-map gap.
+  v_new_creator_uid uuid;
 begin
   if not public.is_admin() then
     raise exception 'Not authorized';
@@ -182,49 +197,67 @@ begin
   end loop;
   v_counts := jsonb_set(v_counts, '{concept_attempts}', jsonb_build_object('restored', v_inserted, 'skippedNoIdentity', v_skipped));
 
-  -- ---------------- prediction_cycles (id remapped; referenced by prediction_snapshots) ----------------
+  -- ---------------- prediction_cycles (OPTIONAL — see declare block; id remapped; referenced by prediction_snapshots) ----------------
   v_inserted := 0; v_skipped := 0;
-  for v_row in select * from jsonb_array_elements(coalesce(p_payload->'prediction_cycles', '[]'::jsonb))
-  loop
-    v_new_uid := nullif(p_id_map->>(v_row->>'user_id'), '')::uuid;
-    v_old_cycle_id := v_row->>'id';
-    if v_new_uid is null or not exists (select 1 from public.profiles where id = v_new_uid) then
-      v_skipped := v_skipped + 1; continue;
-    end if;
-    insert into public.prediction_cycles (user_id, cycle_number, started_at, ended_at, is_active)
-    values (v_new_uid, (v_row->>'cycle_number')::int, coalesce(nullif(v_row->>'started_at','')::timestamptz, now()), nullif(v_row->>'ended_at','')::timestamptz, coalesce((v_row->>'is_active')::boolean, false))
-    on conflict (user_id, cycle_number) do update set started_at = excluded.started_at, ended_at = excluded.ended_at, is_active = excluded.is_active
-    returning id into v_new_cycle_id;
-    if v_old_cycle_id is not null then
-      v_cycle_id_map := jsonb_set(v_cycle_id_map, array[v_old_cycle_id], to_jsonb(v_new_cycle_id::text));
-    end if;
-    v_inserted := v_inserted + 1;
-  end loop;
-  v_counts := jsonb_set(v_counts, '{prediction_cycles}', jsonb_build_object('restored', v_inserted, 'skippedNoIdentity', v_skipped));
+  begin
+    for v_row in select * from jsonb_array_elements(coalesce(p_payload->'prediction_cycles', '[]'::jsonb))
+    loop
+      v_new_uid := nullif(p_id_map->>(v_row->>'user_id'), '')::uuid;
+      v_old_cycle_id := v_row->>'id';
+      if v_new_uid is null or not exists (select 1 from public.profiles where id = v_new_uid) then
+        v_skipped := v_skipped + 1; continue;
+      end if;
+      insert into public.prediction_cycles (user_id, cycle_number, started_at, ended_at, is_active)
+      values (v_new_uid, (v_row->>'cycle_number')::int, coalesce(nullif(v_row->>'started_at','')::timestamptz, now()), nullif(v_row->>'ended_at','')::timestamptz, coalesce((v_row->>'is_active')::boolean, false))
+      on conflict (user_id, cycle_number) do update set started_at = excluded.started_at, ended_at = excluded.ended_at, is_active = excluded.is_active
+      returning id into v_new_cycle_id;
+      if v_old_cycle_id is not null then
+        v_cycle_id_map := jsonb_set(v_cycle_id_map, array[v_old_cycle_id], to_jsonb(v_new_cycle_id::text));
+      end if;
+      v_inserted := v_inserted + 1;
+    end loop;
+  exception when undefined_table then
+    -- The target database genuinely doesn't have this table (same
+    -- "migration file exists in the repo, was never actually run against
+    -- this live project" situation user_preferences hit first). Recorded,
+    -- not raised — every other required table must still commit.
+    v_prediction_cycles_table_missing := true;
+  end;
+  v_counts := jsonb_set(
+    v_counts, '{prediction_cycles}',
+    jsonb_build_object('restored', v_inserted, 'skippedNoIdentity', v_skipped, 'tableMissing', v_prediction_cycles_table_missing)
+  );
 
-  -- ---------------- prediction_snapshots (append-only; FK to prediction_cycles) ----------------
+  -- ---------------- prediction_snapshots (OPTIONAL — see declare block; append-only; FK to prediction_cycles) ----------------
   v_inserted := 0; v_skipped := 0;
-  for v_row in select * from jsonb_array_elements(coalesce(p_payload->'prediction_snapshots', '[]'::jsonb))
-  loop
-    v_new_uid := nullif(p_id_map->>(v_row->>'user_id'), '')::uuid;
-    v_new_cycle_id := nullif(v_cycle_id_map->>(v_row->>'prediction_cycle_id'), '')::uuid;
-    if v_new_uid is null or v_new_cycle_id is null then
-      v_skipped := v_skipped + 1; continue;
-    end if;
-    insert into public.prediction_snapshots (
-      user_id, prediction_cycle_id, estimated_grade, estimated_grade_low, estimated_grade_high, estimated_percentage,
-      confidence, overall_performance, recent_performance, syllabus_coverage, difficulty_performance, consistency_score,
-      evidence_challenges, evidence_marks, calculated_at
-    ) values (
-      v_new_uid, v_new_cycle_id, (v_row->>'estimated_grade')::int, (v_row->>'estimated_grade_low')::int, (v_row->>'estimated_grade_high')::int,
-      (v_row->>'estimated_percentage')::numeric, coalesce(v_row->>'confidence', 'low'), (v_row->>'overall_performance')::numeric,
-      (v_row->>'recent_performance')::numeric, (v_row->>'syllabus_coverage')::numeric, (v_row->>'difficulty_performance')::numeric,
-      (v_row->>'consistency_score')::numeric, coalesce((v_row->>'evidence_challenges')::int, 0), (v_row->>'evidence_marks')::numeric,
-      coalesce(nullif(v_row->>'calculated_at','')::timestamptz, now())
-    );
-    v_inserted := v_inserted + 1;
-  end loop;
-  v_counts := jsonb_set(v_counts, '{prediction_snapshots}', jsonb_build_object('restored', v_inserted, 'skippedNoIdentity', v_skipped));
+  begin
+    for v_row in select * from jsonb_array_elements(coalesce(p_payload->'prediction_snapshots', '[]'::jsonb))
+    loop
+      v_new_uid := nullif(p_id_map->>(v_row->>'user_id'), '')::uuid;
+      v_new_cycle_id := nullif(v_cycle_id_map->>(v_row->>'prediction_cycle_id'), '')::uuid;
+      if v_new_uid is null or v_new_cycle_id is null then
+        v_skipped := v_skipped + 1; continue;
+      end if;
+      insert into public.prediction_snapshots (
+        user_id, prediction_cycle_id, estimated_grade, estimated_grade_low, estimated_grade_high, estimated_percentage,
+        confidence, overall_performance, recent_performance, syllabus_coverage, difficulty_performance, consistency_score,
+        evidence_challenges, evidence_marks, calculated_at
+      ) values (
+        v_new_uid, v_new_cycle_id, (v_row->>'estimated_grade')::int, (v_row->>'estimated_grade_low')::int, (v_row->>'estimated_grade_high')::int,
+        (v_row->>'estimated_percentage')::numeric, coalesce(v_row->>'confidence', 'low'), (v_row->>'overall_performance')::numeric,
+        (v_row->>'recent_performance')::numeric, (v_row->>'syllabus_coverage')::numeric, (v_row->>'difficulty_performance')::numeric,
+        (v_row->>'consistency_score')::numeric, coalesce((v_row->>'evidence_challenges')::int, 0), (v_row->>'evidence_marks')::numeric,
+        coalesce(nullif(v_row->>'calculated_at','')::timestamptz, now())
+      );
+      v_inserted := v_inserted + 1;
+    end loop;
+  exception when undefined_table then
+    v_prediction_snapshots_table_missing := true;
+  end;
+  v_counts := jsonb_set(
+    v_counts, '{prediction_snapshots}',
+    jsonb_build_object('restored', v_inserted, 'skippedNoIdentity', v_skipped, 'tableMissing', v_prediction_snapshots_table_missing)
+  );
 
   -- ---------------- student_streaks ----------------
   v_inserted := 0; v_skipped := 0;
@@ -325,6 +358,32 @@ begin
     v_inserted := v_inserted + 1;
   end loop;
   v_counts := jsonb_set(v_counts, '{lesson_blocks}', jsonb_build_object('restored', v_inserted, 'skippedNoIdentity', v_skipped));
+
+  -- ---------------- resources (2026-10 reconciliation addition — see
+  -- src/lib/backup/constants.js's BACKUP_DATASETS audit note: this table
+  -- was a genuine silent gap, present in neither backup nor restore
+  -- before now). created_by is nullable, so an unmappable creator does
+  -- NOT skip the row — only attribution is lost, the resource itself is
+  -- always restored. ----------------
+  v_inserted := 0; v_skipped := 0;
+  for v_row in select * from jsonb_array_elements(coalesce(p_payload->'resources', '[]'::jsonb))
+  loop
+    v_new_creator_uid := nullif(p_id_map->>(v_row->>'created_by'), '')::uuid;
+    insert into public.resources (
+      title, description, audience, category, curriculum, topic, subtopic, level,
+      resource_type, file_path, external_url, original_file_name, mime_type, file_size,
+      status, is_locked, access_tier, created_by
+    ) values (
+      coalesce(v_row->>'title', ''), v_row->>'description', coalesce(v_row->>'audience', 'both'),
+      coalesce(v_row->>'category', ''), coalesce(v_row->>'curriculum', 'dp-chemistry'), v_row->>'topic', v_row->>'subtopic',
+      v_row->>'level', coalesce(v_row->>'resource_type', ''), v_row->>'file_path', v_row->>'external_url',
+      v_row->>'original_file_name', v_row->>'mime_type', (v_row->>'file_size')::bigint,
+      coalesce(v_row->>'status', 'draft'), coalesce((v_row->>'is_locked')::boolean, false),
+      coalesce(v_row->>'access_tier', 'free'), v_new_creator_uid
+    );
+    v_inserted := v_inserted + 1;
+  end loop;
+  v_counts := jsonb_set(v_counts, '{resources}', jsonb_build_object('restored', v_inserted, 'skippedNoIdentity', v_skipped));
 
   -- ---------------- platform_settings (singleton; no user_id at all) ----------------
   v_inserted := 0;

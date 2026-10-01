@@ -314,7 +314,15 @@ whenever the exported shape changes.
 
 - The full Question Bank (`questions`/`question_versions`/secrets) is
   not backed up by this feature — only the pinned reference from each
-  Learn page (§5).
+  Learn page (§5). `question_papers`/`question_paper_items` (the teacher
+  QBuilder feature) are grouped with the same exclusion — see
+  `docs/DISASTER_RECOVERY.md` §4/§3.1 for the 2026-10 audit confirming
+  neither has a `create table` migration anywhere in this repo.
+- `resources` (teacher/student library metadata) is NOT part of this
+  Content Backup (§2 above is Learn content only) but IS covered by
+  **Complete Disaster Recovery** (`data/library.json`) — see
+  `docs/DISASTER_RECOVERY.md` §3.1. Its Storage bucket's file BYTES are
+  still not packaged by either feature (row metadata only).
 - Media binaries are not packaged into the backup file — only their
   paths (§6).
 - Restore atomicity is real (Postgres function-level), but concurrent

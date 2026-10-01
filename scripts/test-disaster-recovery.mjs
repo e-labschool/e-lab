@@ -380,6 +380,118 @@ await (async () => {
     const names = c.STORAGE_BUCKETS.map((b) => b.bucket);
     assert.deepEqual(names.sort(), ["learn-media", "question-media", "resources"].sort());
   });
+  test("every STORAGE_BUCKETS entry declares a boolean `required`", () => {
+    for (const b of c.STORAGE_BUCKETS) assert.equal(typeof b.required, "boolean", `${b.bucket} must declare required: true|false`);
+  });
+  test("ALL_DISASTER_TABLES IS BACKUP_DATASETS (one centralized manifest, not a parallel list)", () => {
+    assert.equal(c.ALL_DISASTER_TABLES, c.BACKUP_DATASETS);
+  });
+  test("USER_DATA_TABLES/PROGRESS_DATA_TABLES/ASSESSMENT_DATA_TABLES/PLANNING_DATA_TABLES/SETTINGS_TABLES are each a filtered VIEW of BACKUP_DATASETS, not a second hand-maintained list", () => {
+    const grouped = [
+      ...c.USER_DATA_TABLES,
+      ...c.PROGRESS_DATA_TABLES,
+      ...c.ASSESSMENT_DATA_TABLES,
+      ...c.PLANNING_DATA_TABLES,
+      ...c.SETTINGS_TABLES,
+      ...c.LIBRARY_DATA_TABLES,
+    ];
+    assert.equal(grouped.length, c.BACKUP_DATASETS.length);
+    // every object is the SAME reference as the one in BACKUP_DATASETS, not a copy
+    for (const t of grouped) assert.ok(c.BACKUP_DATASETS.includes(t), `${t.table} entry must be the same object as in BACKUP_DATASETS`);
+  });
+})();
+
+console.log("\n== 6b. Every table/bucket this app's OWN code actually touches is accounted for (grep-driven, not hand-typed) ==");
+await (async () => {
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+  const c = await import("../src/lib/backup/constants.js");
+
+  function walk(dir, out = []) {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name === "node_modules" || entry.name.startsWith(".")) continue;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full, out);
+      else if (/\.(jsx?|tsx?)$/.test(entry.name)) out.push(full);
+    }
+    return out;
+  }
+
+  const srcFiles = walk(path.join(root, "src"));
+  const fromTableNames = new Set();
+  const storageBucketNames = new Set();
+  const fromRe = /\.from\(["']([a-zA-Z_.]+)["']\)/g;
+  const storageRe = /storage\.from\(["']([a-zA-Z_-]+)["']\)/g;
+  for (const file of srcFiles) {
+    const text = fs.readFileSync(file, "utf8");
+    for (const m of text.matchAll(fromRe)) fromTableNames.add(m[1]);
+    for (const m of text.matchAll(storageRe)) storageBucketNames.add(m[1]);
+  }
+
+  // Every table name the app actually calls .from(...) on is either: a
+  // CONTENT table, a BACKUP_DATASETS table, an EXCLUDED_TABLES entry
+  // (named or grouped with a documented reason), or a known Postgres VIEW
+  // (user_access_overview/platform_settings_public — both covered by the
+  // same EXCLUDED_TABLES entry). Nothing referenced by real app code may
+  // be simply absent from this accounting with no explanation.
+  const accounted = new Set([
+    ...c.CONTENT_TABLES,
+    ...c.BACKUP_DATASETS.map((t) => t.table),
+    "questions", "question_versions", "question_version_secrets", "question_secrets", // Question Bank, excluded
+    "question_papers", "question_paper_items", // excluded, see constants.js EXCLUDED_TABLES
+    "user_access_overview", "platform_settings_public", // views over accounted-for base tables
+  ]);
+
+  test("every .from(\"table\") name found in src/ is accounted for (content, backed up, or excluded with a reason)", () => {
+    const unaccounted = [...fromTableNames].filter((t) => !accounted.has(t));
+    assert.deepEqual(unaccounted, [], `found table name(s) referenced by app code but not tracked anywhere: ${unaccounted.join(", ")}`);
+  });
+
+  test("every storage.from(\"bucket\") name found in src/ is listed in STORAGE_BUCKETS", () => {
+    const bucketNames = new Set(c.STORAGE_BUCKETS.map((b) => b.bucket));
+    const unaccounted = [...storageBucketNames].filter((b) => !bucketNames.has(b));
+    assert.deepEqual(unaccounted, [], `found bucket(s) referenced by app code but not in STORAGE_BUCKETS: ${unaccounted.join(", ")}`);
+  });
+})();
+
+console.log("\n== 6c. Every REQUIRED table has a genuine `create table` migration in this repo (not just app usage) ==");
+await (async () => {
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+  const c = await import("../src/lib/backup/constants.js");
+
+  const sqlDir = path.join(root, "supabase");
+  function sqlFiles(dir, out = []) {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) sqlFiles(full, out);
+      else if (entry.name.endsWith(".sql")) out.push(full);
+    }
+    return out;
+  }
+  const createTableRe = /create\s+table\s+if\s+not\s+exists\s+public\.(\w+)/gi;
+  const migratedTables = new Set();
+  for (const file of sqlFiles(sqlDir)) {
+    const text = fs.readFileSync(file, "utf8");
+    for (const m of text.matchAll(createTableRe)) migratedTables.add(m[1]);
+  }
+
+  test("every table marked required: true in BACKUP_DATASETS has a `create table if not exists public.<name>` migration somewhere under supabase/", () => {
+    const requiredWithoutMigration = c.BACKUP_DATASETS.filter((t) => t.required && !migratedTables.has(t.table)).map((t) => t.table);
+    assert.deepEqual(requiredWithoutMigration, [], `required table(s) with NO migration evidence — cannot be required per constants.js's own rule: ${requiredWithoutMigration.join(", ")}`);
+  });
+
+  test("CRITICAL ACCEPTANCE TEST: zero nonexistent-per-live-evidence tables remain required — prediction_cycles/prediction_snapshots are OPTIONAL", () => {
+    for (const name of ["prediction_cycles", "prediction_snapshots"]) {
+      const t = c.BACKUP_DATASETS.find((x) => x.table === name);
+      assert.ok(t, `${name} must still be tracked (not silently removed)`);
+      assert.equal(t.required, false, `${name} must be required:false — it is the table the live backup actually failed on`);
+    }
+  });
 })();
 
 console.log("\n== 7. Table classification + missing-table detection (2026-09 user_preferences fix) ==");
@@ -399,10 +511,18 @@ await (async () => {
     assert.equal(up.required, false);
   });
 
-  test("profiles, user_access, and every progress/assessment/planning/settings table are REQUIRED", () => {
+  test("prediction_cycles and prediction_snapshots are classified OPTIONAL (2026-10 fix for the live 'Could not find the table public.prediction_cycles' failure)", () => {
+    for (const name of ["prediction_cycles", "prediction_snapshots"]) {
+      const t = c.PROGRESS_DATA_TABLES.find((x) => x.table === name);
+      assert.ok(t, `${name} must still be tracked (not silently removed)`);
+      assert.equal(t.required, false);
+    }
+  });
+
+  test("profiles, user_access, and every OTHER progress/assessment/planning/settings table are REQUIRED", () => {
     const mustBeRequired = [
       ...c.USER_DATA_TABLES.filter((t) => t.table !== "user_preferences"),
-      ...c.PROGRESS_DATA_TABLES,
+      ...c.PROGRESS_DATA_TABLES.filter((t) => t.table !== "prediction_cycles" && t.table !== "prediction_snapshots"),
       ...c.ASSESSMENT_DATA_TABLES,
       ...c.PLANNING_DATA_TABLES,
       ...c.SETTINGS_TABLES,
@@ -565,6 +685,87 @@ await (async () => {
     assert.ok(info.identifier !== null && info.identifier !== undefined, "must report SOME real identifier, not silently omit it");
     assert.notEqual(info.identifierType, "git-commit", "no VITE_GIT_COMMIT is set in this environment, so this must not claim to be a git commit");
     assert.equal(info.identifierType, "package-version");
+  });
+})();
+
+console.log("\n== 10. fetchAllDatasets — the REAL complete-inventory pass (datasetFetch.js), against a mock Supabase-shaped reader ==");
+await (async () => {
+  // HONESTY NOTE: this exercises the ACTUAL exported production code
+  // (fetchAllDatasets + assertNoDatasetFailures from datasetFetch.js, and
+  // BACKUP_DATASETS from constants.js) — not a reimplementation of its
+  // decision rule. The `readTable` callback is a local mock standing in
+  // for a live Supabase project's schema cache (this sandbox has no live
+  // credentials), so this is PARTIALLY VERIFIED (code+mock level): it
+  // proves the exporter's actual logic gets through the complete
+  // inventory and classifies failures correctly against a KNOWN set of
+  // present/missing tables — it does not prove what a real live project's
+  // schema cache currently looks like.
+  const { fetchAllDatasets, assertNoDatasetFailures } = await import("../src/lib/backup/datasetFetch.js");
+  const { BACKUP_DATASETS } = await import("../src/lib/backup/constants.js");
+
+  function missingTableError(table) {
+    return Object.assign(new Error(`Could not find the table 'public.${table}' in the schema cache`), { code: "PGRST205" });
+  }
+
+  await testAsync("mock mirroring the ACTUAL reported live failure (prediction_cycles/prediction_snapshots/user_preferences absent, everything else present): gets through the COMPLETE inventory, zero aborts, three skips", async () => {
+    const missing = new Set(["prediction_cycles", "prediction_snapshots", "user_preferences"]);
+    const attempted = [];
+    const readTable = async (table) => {
+      attempted.push(table);
+      if (missing.has(table)) throw missingTableError(table);
+      return [{ id: "row-1", table }]; // one fake row per present table
+    };
+
+    const { out, counts, skipped, failures } = await fetchAllDatasets(BACKUP_DATASETS, readTable);
+
+    // every table in the manifest was attempted — never stopped early.
+    assert.deepEqual(attempted.sort(), BACKUP_DATASETS.map((t) => t.table).sort());
+    assert.deepEqual(failures, []); // nothing required actually failed
+    assert.deepEqual(skipped.map((s) => s.table).sort(), [...missing].sort());
+    assert.doesNotThrow(() => assertNoDatasetFailures(failures));
+    // every NON-missing table still produced real data, not silently dropped
+    for (const t of BACKUP_DATASETS) {
+      if (missing.has(t.table)) continue;
+      assert.equal(counts[t.table], 1, `${t.table} should have been read successfully`);
+      assert.equal(out[t.table][0].table, t.table);
+    }
+  });
+
+  await testAsync("mock with TWO simultaneously-missing REQUIRED tables: ONE pass reports BOTH (the exact whack-a-mole pattern this fix removes)", async () => {
+    const missingRequired = new Set(["profiles", "class_plans"]); // both required: true in BACKUP_DATASETS
+    const readTable = async (table) => {
+      if (missingRequired.has(table)) throw missingTableError(table);
+      return [];
+    };
+    const { failures, skipped } = await fetchAllDatasets(BACKUP_DATASETS, readTable);
+
+    // BOTH failing required tables are reported from the SAME run — not
+    // just the first one, which is the whole point of this fix: no more
+    // "fix one -> rerun -> discover the next one".
+    assert.deepEqual(failures.map((f) => f.table).sort(), [...missingRequired].sort());
+    for (const f of failures) assert.equal(f.required, true);
+    assert.deepEqual(skipped, []); // these are REQUIRED failures, never silently classified as optional skips
+    assert.throws(() => assertNoDatasetFailures(failures), /2 table\(s\) could not be read/);
+    // the thrown message names BOTH failing tables, not just one
+    try {
+      assertNoDatasetFailures(failures);
+    } catch (err) {
+      assert.ok(err.message.includes("profiles"), "aggregated error must name profiles");
+      assert.ok(err.message.includes("class_plans"), "aggregated error must name class_plans");
+    }
+  });
+
+  await testAsync("an OPTIONAL table failing for a non-missing-table reason (RLS/network) is a real failure, not silently classified as a skip", async () => {
+    const readTable = async (table) => {
+      if (table === "prediction_cycles") throw Object.assign(new Error("permission denied for table prediction_cycles"), { code: "42501" });
+      return [];
+    };
+    const { failures, skipped } = await fetchAllDatasets(BACKUP_DATASETS, readTable);
+    assert.deepEqual(skipped, []);
+    assert.equal(failures.length, 1);
+    assert.equal(failures[0].table, "prediction_cycles");
+    assert.equal(failures[0].required, false);
+    assert.throws(() => assertNoDatasetFailures(failures));
   });
 })();
 

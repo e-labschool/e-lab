@@ -55,6 +55,11 @@ const EDGES = [
   // Singleton settings has no FK dependency at all but is listed for
   // completeness of the graph.
   ["schema", "platform_settings"],
+
+  // resources.created_by is a NULLABLE FK to auth.users — a resource row
+  // restores fine with no mappable creator (attribution is simply null),
+  // so it only depends on the schema existing, not on profiles/auth_users.
+  ["schema", "resources"],
 ];
 
 /** Kahn's algorithm topological sort over the declared EDGES above. */
@@ -113,4 +118,5 @@ export const DISASTER_RESTORE_NODES = [
   "class_plans",
   "lesson_blocks",
   "platform_settings",
+  "resources",
 ];
