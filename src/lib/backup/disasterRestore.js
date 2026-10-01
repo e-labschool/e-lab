@@ -73,7 +73,16 @@ async function readJsonFromZip(zip, path, fallback) {
  */
 export async function restoreDisasterBackup(validated, { includeUserData = true, identityMap = {}, onProgress = () => {} } = {}) {
   if (!supabase) throw new Error("Not connected to Supabase.");
-  const { zip, contentBackup } = validated;
+  const { zip, contentBackup, manifest } = validated;
+  // Datasets the ORIGINATING backup itself recorded as not_deployed/
+  // optional (manifest.tablesSkipped, see disasterExport.js) — surfaced
+  // here, not re-derived, so the admin sees WHY a dataset restored zero
+  // rows instead of guessing whether something silently failed. The RPC
+  // tolerates the target database also lacking these tables (see
+  // disaster_recovery_rpc_incremental.sql's `tableMissing` flags); this is
+  // purely the "what did the source package already know was absent"
+  // report, surfaced regardless of what the target turns out to have.
+  const datasetsNotDeployed = manifest?.tablesSkipped || [];
 
   onProgress("Restoring educational content…");
   const contentResult = await restoreElabContent(contentBackup, "replace");
@@ -131,6 +140,7 @@ export async function restoreDisasterBackup(validated, { includeUserData = true,
     contentResult,
     userDataResult,
     mediaResults,
+    datasetsNotDeployed,
     fullySuccessful: mediaResults.failed.length === 0,
   };
 }

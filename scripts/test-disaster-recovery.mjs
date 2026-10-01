@@ -519,17 +519,53 @@ await (async () => {
     }
   });
 
-  test("profiles, user_access, and every OTHER progress/assessment/planning/settings table are REQUIRED", () => {
+  test("class_plans and lesson_blocks are classified not_deployed_if_missing (2026-10 reconciliation, part 2 — live 'Could not find the table public.class_plans' failure)", () => {
+    for (const name of ["class_plans", "lesson_blocks"]) {
+      const t = c.PLANNING_DATA_TABLES.find((x) => x.table === name);
+      assert.ok(t, `${name} must still be tracked (not silently removed)`);
+      assert.equal(t.required, false);
+      assert.equal(t.deploymentTier, c.DEPLOYMENT_TIER.NOT_DEPLOYED_IF_MISSING, `${name} must be not_deployed_if_missing, not optional — see constants.js`);
+    }
+  });
+
+  test("profiles, user_access, and every OTHER progress/assessment/settings table are REQUIRED (class_plans/lesson_blocks are the one deliberate exception, see above)", () => {
     const mustBeRequired = [
       ...c.USER_DATA_TABLES.filter((t) => t.table !== "user_preferences"),
       ...c.PROGRESS_DATA_TABLES.filter((t) => t.table !== "prediction_cycles" && t.table !== "prediction_snapshots"),
       ...c.ASSESSMENT_DATA_TABLES,
-      ...c.PLANNING_DATA_TABLES,
       ...c.SETTINGS_TABLES,
     ];
     for (const t of mustBeRequired) {
       assert.equal(t.required, true, `${t.table} should be required`);
     }
+  });
+
+  test("every `required: true` dataset is tiered required_live/feature_deployed, and every `required: false` dataset is tiered not_deployed_if_missing/optional — `deploymentTier` never contradicts `required`", () => {
+    for (const t of c.ALL_DISASTER_TABLES) {
+      if (t.required) {
+        assert.ok(
+          [c.DEPLOYMENT_TIER.REQUIRED_LIVE, c.DEPLOYMENT_TIER.FEATURE_DEPLOYED].includes(t.deploymentTier),
+          `${t.table} is required:true but tiered "${t.deploymentTier}"`
+        );
+      } else {
+        assert.ok(
+          [c.DEPLOYMENT_TIER.NOT_DEPLOYED_IF_MISSING, c.DEPLOYMENT_TIER.OPTIONAL].includes(t.deploymentTier),
+          `${t.table} is required:false but tiered "${t.deploymentTier}"`
+        );
+      }
+    }
+  });
+
+  test("describeDatasetAbsence() reads differently for not_deployed_if_missing vs optional, per spec", () => {
+    const classPlans = c.BACKUP_DATASETS.find((t) => t.table === "class_plans");
+    const userPrefs = c.BACKUP_DATASETS.find((t) => t.table === "user_preferences");
+    const tier3Text = c.describeDatasetAbsence(classPlans);
+    const tier4Text = c.describeDatasetAbsence(userPrefs);
+    assert.notEqual(tier3Text, tier4Text);
+    assert.match(tier3Text, /not present in this Supabase deployment|migration has not been applied here/i);
+    assert.match(tier3Text, /NOT DEPLOYED/);
+    assert.match(tier4Text, /OPTIONAL/);
+    assert.doesNotMatch(tier4Text, /NOT DEPLOYED/);
   });
 
   test("isMissingTableError recognizes the EXACT live failure message", () => {
@@ -732,7 +768,7 @@ await (async () => {
   });
 
   await testAsync("mock with TWO simultaneously-missing REQUIRED tables: ONE pass reports BOTH (the exact whack-a-mole pattern this fix removes)", async () => {
-    const missingRequired = new Set(["profiles", "class_plans"]); // both required: true in BACKUP_DATASETS
+    const missingRequired = new Set(["profiles", "learning_progress"]); // both required: true in BACKUP_DATASETS
     const readTable = async (table) => {
       if (missingRequired.has(table)) throw missingTableError(table);
       return [];
@@ -751,7 +787,7 @@ await (async () => {
       assertNoDatasetFailures(failures);
     } catch (err) {
       assert.ok(err.message.includes("profiles"), "aggregated error must name profiles");
-      assert.ok(err.message.includes("class_plans"), "aggregated error must name class_plans");
+      assert.ok(err.message.includes("learning_progress"), "aggregated error must name learning_progress");
     }
   });
 
@@ -766,6 +802,226 @@ await (async () => {
     assert.equal(failures[0].table, "prediction_cycles");
     assert.equal(failures[0].required, false);
     assert.throws(() => assertNoDatasetFailures(failures));
+  });
+})();
+
+console.log("\n== 11. 2026-10 reconciliation, PART 2 — deploymentTier / not_deployed_if_missing (class_plans/lesson_blocks live-schema fix) ==");
+await (async () => {
+  // HONESTY NOTE: same bar as §10 — this exercises the REAL exported
+  // production code (fetchAllDatasets, assertNoDatasetFailures,
+  // buildDatasetReport, describeDatasetAbsence, BACKUP_DATASETS) against
+  // a local mock `readTable`, since this sandbox has no live Supabase
+  // credentials. PARTIALLY VERIFIED (code+mock level): it proves the
+  // actual decision/reporting logic is correct given a KNOWN set of
+  // present/missing tables, not what a specific live project's schema
+  // cache currently looks like.
+  const { fetchAllDatasets, assertNoDatasetFailures } = await import("../src/lib/backup/datasetFetch.js");
+  const { buildDatasetReport } = await import("../src/lib/backup/datasetReport.js");
+  const { BACKUP_DATASETS, DEPLOYMENT_TIER } = await import("../src/lib/backup/constants.js");
+
+  function missingTableError(table) {
+    return Object.assign(new Error(`Could not find the table 'public.${table}' in the schema cache`), { code: "PGRST205" });
+  }
+
+  // ---- ACCEPTANCE TEST (spec): both Class Planner tables confirmed
+  // absent, every other table (every required_live/feature_deployed AND
+  // every other tier) succeeds -> backup must NOT abort, a valid disaster
+  // ZIP must still be producible, and both tables must be explicitly
+  // recorded as not_deployed with zero rows and no fabricated data. ----
+  let acceptanceFetch;
+  await testAsync("ACCEPTANCE: class_plans + lesson_blocks confirmed absent, every required_live/feature_deployed table present -> fetchAllDatasets does NOT abort", async () => {
+    const missing = new Set(["class_plans", "lesson_blocks"]);
+    const attempted = [];
+    const readTable = async (table) => {
+      attempted.push(table);
+      if (missing.has(table)) throw missingTableError(table);
+      return [{ id: `row-${table}-1` }, { id: `row-${table}-2` }];
+    };
+    const result = await fetchAllDatasets(BACKUP_DATASETS, readTable);
+    acceptanceFetch = result;
+    const { failures, skipped, attempted: _unused } = result; // eslint-disable-line no-unused-vars
+
+    // every table in the manifest was attempted, including the two
+    // missing ones — never stopped early.
+    assert.deepEqual(attempted.sort(), BACKUP_DATASETS.map((t) => t.table).sort());
+    assert.deepEqual(failures, [], "a confirmed missing-relation on a not_deployed_if_missing table must never be a failure");
+    assert.deepEqual(skipped.map((s) => s.table).sort(), ["class_plans", "lesson_blocks"]);
+    assert.doesNotThrow(() => assertNoDatasetFailures(failures), "the backup must not abort");
+  });
+
+  test("ACCEPTANCE: both skipped tables are tagged not_deployed_if_missing (never silently downgraded to generic optional)", () => {
+    for (const s of acceptanceFetch.skipped) {
+      assert.equal(s.deploymentTier, DEPLOYMENT_TIER.NOT_DEPLOYED_IF_MISSING, `${s.table} should be tagged not_deployed_if_missing`);
+      assert.match(s.reason, /NOT DEPLOYED/);
+      assert.match(s.reason, /not present in this Supabase deployment|migration has not been applied here/i);
+    }
+  });
+
+  test("ACCEPTANCE: no data was fabricated — both tables record exactly zero rows, never invented rows", () => {
+    assert.deepEqual(acceptanceFetch.out.class_plans, []);
+    assert.deepEqual(acceptanceFetch.out.lesson_blocks, []);
+    assert.equal(acceptanceFetch.counts.class_plans, 0);
+    assert.equal(acceptanceFetch.counts.lesson_blocks, 0);
+  });
+
+  test("ACCEPTANCE: every OTHER table in the manifest still exported its (fake) rows normally — one bad feature doesn't quietly zero out everything", () => {
+    for (const t of BACKUP_DATASETS) {
+      if (t.table === "class_plans" || t.table === "lesson_blocks") continue;
+      assert.equal(acceptanceFetch.counts[t.table], 2, `${t.table} should have exported 2 rows`);
+    }
+  });
+
+  test("ACCEPTANCE: buildDatasetReport records both tables as backupStatus/liveStatus 'not_deployed' with rowCount 0 and the specific warning text, for a complete dataset | source | live | backup | rows | warning report", () => {
+    const report = buildDatasetReport(BACKUP_DATASETS, acceptanceFetch);
+    assert.equal(report.length, BACKUP_DATASETS.length, "every known dataset must appear in the report, not just the two Class Planner tables");
+    for (const name of ["class_plans", "lesson_blocks"]) {
+      const row = report.find((r) => r.table === name);
+      assert.ok(row);
+      assert.equal(row.sourceStatus, "present_in_source");
+      assert.equal(row.liveStatus, "not_deployed");
+      assert.equal(row.backupStatus, "not_deployed");
+      assert.equal(row.rowCount, 0);
+      assert.ok(row.warning && /NOT DEPLOYED/.test(row.warning));
+    }
+    const profilesRow = report.find((r) => r.table === "profiles");
+    assert.equal(profilesRow.liveStatus, "deployed");
+    assert.equal(profilesRow.backupStatus, "exported");
+    assert.equal(profilesRow.rowCount, 2);
+    assert.equal(profilesRow.warning, null);
+  });
+
+  await testAsync("ACCEPTANCE: a valid disaster ZIP can still be assembled from this exact fetch result (mirrors disasterExport.js's data/planning.json + manifest assembly)", async () => {
+    const JSZipMod = (await import("jszip")).default;
+    const zip = new JSZipMod();
+    const planning = { class_plans: acceptanceFetch.out.class_plans, lesson_blocks: acceptanceFetch.out.lesson_blocks };
+    zip.file("data/planning.json", JSON.stringify(planning, null, 2));
+    const manifest = {
+      format: "elab-disaster-recovery",
+      disasterBackupVersion: 1,
+      tablesSkipped: acceptanceFetch.skipped,
+      datasetReport: buildDatasetReport(BACKUP_DATASETS, acceptanceFetch),
+    };
+    zip.file("manifest.json", JSON.stringify(manifest, null, 2));
+
+    const blob = await zip.generateAsync({ type: "nodebuffer" });
+    const reloaded = await JSZipMod.loadAsync(blob);
+    assert.ok(reloaded.file("manifest.json"));
+    assert.ok(reloaded.file("data/planning.json"));
+
+    const reloadedManifest = JSON.parse(await reloaded.file("manifest.json").async("string"));
+    const reloadedPlanning = JSON.parse(await reloaded.file("data/planning.json").async("string"));
+    assert.deepEqual(reloadedPlanning.class_plans, []);
+    assert.deepEqual(reloadedPlanning.lesson_blocks, []);
+    assert.deepEqual(
+      reloadedManifest.tablesSkipped.map((s) => s.table).sort(),
+      ["class_plans", "lesson_blocks"]
+    );
+    const cpRow = reloadedManifest.datasetReport.find((r) => r.table === "class_plans");
+    assert.equal(cpRow.backupStatus, "not_deployed");
+    assert.equal(cpRow.rowCount, 0);
+  });
+
+  // ---- The opposite direction: Class Planner IS deployed (present) in
+  // this environment -> exports/counts normally, like any other feature,
+  // never permanently "crippled" by its tier label. ----
+  await testAsync("class_plans/lesson_blocks ARE present on this project -> export normally with real row counts, no skip recorded", async () => {
+    const readTable = async (table) => [{ id: `row-${table}-1` }, { id: `row-${table}-2` }, { id: `row-${table}-3` }];
+    const { counts, skipped, failures, out } = await fetchAllDatasets(BACKUP_DATASETS, readTable);
+    assert.deepEqual(skipped, []);
+    assert.deepEqual(failures, []);
+    assert.equal(counts.class_plans, 3);
+    assert.equal(counts.lesson_blocks, 3);
+    assert.equal(out.class_plans.length, 3);
+    assert.doesNotThrow(() => assertNoDatasetFailures(failures));
+  });
+
+  // ---- Safety invariant: isMissingTableError is the ONLY thing that may
+  // ever downgrade a failure, and it NEVER downgrades a required_live/
+  // feature_deployed table even though the error shape is identical to
+  // the class_plans/lesson_blocks case above. ----
+  await testAsync("SAFETY: a required_live/feature_deployed table (learning_progress) reporting the SAME confirmed-missing-relation error still ABORTS, never downgraded to not_deployed", async () => {
+    const readTable = async (table) => {
+      if (table === "learning_progress") throw missingTableError("learning_progress");
+      return [];
+    };
+    const { failures, skipped } = await fetchAllDatasets(BACKUP_DATASETS, readTable);
+    assert.deepEqual(skipped, []);
+    assert.equal(failures.length, 1);
+    assert.equal(failures[0].table, "learning_progress");
+    assert.equal(failures[0].required, true);
+    assert.throws(() => assertNoDatasetFailures(failures), /learning_progress/);
+  });
+
+  await testAsync("SAFETY: a permission/RLS error on class_plans (NOT a confirmed-missing-relation) is a real failure, never reinterpreted as not_deployed", async () => {
+    const readTable = async (table) => {
+      if (table === "class_plans") throw Object.assign(new Error("permission denied for table class_plans"), { code: "42501" });
+      return [];
+    };
+    const { failures, skipped } = await fetchAllDatasets(BACKUP_DATASETS, readTable);
+    assert.deepEqual(skipped, []);
+    assert.equal(failures.length, 1);
+    assert.equal(failures[0].table, "class_plans");
+    assert.equal(failures[0].deploymentTier, DEPLOYMENT_TIER.NOT_DEPLOYED_IF_MISSING);
+    assert.throws(() => assertNoDatasetFailures(failures), /class_plans/);
+  });
+
+  await testAsync("SAFETY: a network error on lesson_blocks (NOT a confirmed-missing-relation) is a real failure, never reinterpreted as not_deployed", async () => {
+    const readTable = async (table) => {
+      if (table === "lesson_blocks") throw new Error("Failed to fetch");
+      return [];
+    };
+    const { failures, skipped } = await fetchAllDatasets(BACKUP_DATASETS, readTable);
+    assert.deepEqual(skipped, []);
+    assert.equal(failures.length, 1);
+    assert.equal(failures[0].table, "lesson_blocks");
+    assert.throws(() => assertNoDatasetFailures(failures), /lesson_blocks/);
+  });
+})();
+
+console.log("\n== 12. Restore-side tolerance for not_deployed datasets (static/code-level — see honesty note) ==");
+await (async () => {
+  // HONESTY NOTE: disasterRestore.js and disaster_recovery_rpc_incremental.sql
+  // cannot be executed in this sandbox — the former imports supabaseClient.js
+  // (which reads import.meta.env, unavailable under plain Node outside a
+  // Vite build: confirmed by attempting the import directly), and the
+  // latter only runs inside a live Postgres instance, which does not exist
+  // here. These checks are therefore STATIC/CODE-LEVEL ONLY (source-text
+  // assertions, the same honest category as §6b/§6c's grep-driven checks),
+  // never a claim that the RPC or the JS restore path were actually
+  // executed against a database.
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+
+  const rpcSql = fs.readFileSync(path.join(root, "supabase/migrations/disaster_recovery_rpc_incremental.sql"), "utf8");
+  const restoreJs = fs.readFileSync(path.join(root, "src/lib/backup/disasterRestore.js"), "utf8");
+
+  test("restore RPC wraps the class_plans restore loop in a tolerant `exception when undefined_table` block, like user_preferences/prediction_cycles", () => {
+    const classPlansSection = rpcSql.slice(rpcSql.indexOf("class_plans (OPTIONAL"), rpcSql.indexOf("lesson_blocks (OPTIONAL"));
+    assert.match(classPlansSection, /begin/);
+    assert.match(classPlansSection, /exception when undefined_table/);
+    assert.match(classPlansSection, /v_class_plans_table_missing\s*:=\s*true/);
+  });
+
+  test("restore RPC wraps the lesson_blocks restore loop in a tolerant `exception when undefined_table` block", () => {
+    const lessonBlocksSection = rpcSql.slice(rpcSql.indexOf("lesson_blocks (OPTIONAL"), rpcSql.indexOf("resources (2026-10"));
+    assert.match(lessonBlocksSection, /begin/);
+    assert.match(lessonBlocksSection, /exception when undefined_table/);
+    assert.match(lessonBlocksSection, /v_lesson_blocks_table_missing\s*:=\s*true/);
+  });
+
+  test("restore RPC declares v_class_plans_table_missing/v_lesson_blocks_table_missing and reports them in v_counts, matching the existing tableMissing pattern", () => {
+    assert.match(rpcSql, /v_class_plans_table_missing boolean := false/);
+    assert.match(rpcSql, /v_lesson_blocks_table_missing boolean := false/);
+    assert.match(rpcSql, /\{class_plans\}[\s\S]{0,200}'tableMissing', v_class_plans_table_missing/);
+    assert.match(rpcSql, /\{lesson_blocks\}[\s\S]{0,200}'tableMissing', v_lesson_blocks_table_missing/);
+  });
+
+  test("JS restore path (disasterRestore.js) surfaces the originating backup's not_deployed/optional datasets (manifest.tablesSkipped) in its own returned result, rather than only ever reading userDataResult counts", () => {
+    assert.match(restoreJs, /manifest\s*}\s*=\s*validated/, "must destructure `manifest` off `validated`");
+    assert.match(restoreJs, /datasetsNotDeployed/);
+    assert.match(restoreJs, /manifest\?\.tablesSkipped/);
   });
 })();
 

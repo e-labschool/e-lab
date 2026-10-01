@@ -90,7 +90,117 @@ export const SECRET_FETCH_CONCURRENCY = 8;
 //                      pass — see that file's header for why a single
 //                      run now surfaces every failing table at once
 //                      instead of one at a time across repeated reruns).
-// ============================================================
+//
+// ------------------------------------------------------------
+// 2026-10 RECONCILIATION, PART 2 — `deploymentTier`. The live backup
+// above (user_preferences, then prediction_cycles/prediction_snapshots)
+// reported genuinely-absent tables. The NEXT live run reported two MORE:
+// `class_plans` and `lesson_blocks` — real Class Planner tables (genuine
+// migration in supabase/class-planner-migration.sql, real throwing usage
+// in src/lib/classPlannerService.js) that were still `required: true`,
+// so their absence aborted the whole backup. Simply flipping them to
+// `required: false` would have been the THIRD single-table patch of the
+// exact same bug, and would also have collapsed a real distinction the
+// admin needs: "this table may legitimately not exist anywhere"
+// (user_preferences/prediction_cycles' actual situation) is NOT the same
+// claim as "this is a real, undeployed FEATURE whose schema exists in
+// source but was never applied to this specific project" (class_plans/
+// lesson_blocks' actual situation). `required` alone cannot say which —
+// `deploymentTier` adds that distinction without touching the proven
+// abort/skip mechanics `required` + isMissingTableError already drive.
+// See DEPLOYMENT_TIER and describeDatasetAbsence() below, and
+// scripts/test-disaster-recovery.mjs §11 for the acceptance test this
+// reconciliation added (simulating both tables confirmed-missing while
+// every required_live/feature_deployed table succeeds).
+//
+//   required_live          — core app data; load-bearing. ANY read
+//                             failure aborts, including a confirmed
+//                             missing-relation — a missing core table is
+//                             never "not deployed yet", it's broken.
+//   feature_deployed        — a real feature's table this project is
+//                             expected to have (no live evidence it's
+//                             ever absent). Same abort-on-any-failure
+//                             behavior as required_live; kept as a
+//                             distinct label purely so reports describe
+//                             it as a deployed feature, not core system
+//                             data.
+//   not_deployed_if_missing — a real feature (genuine migration + real
+//                             app usage) where a CONFIRMED missing-
+//                             relation error means "this feature's
+//                             schema was never applied to THIS Supabase
+//                             project", not an abort. Any OTHER failure
+//                             on it still aborts exactly like a required
+//                             table — only the exact "table does not
+//                             exist" signal (isMissingTableError) ever
+//                             downgrades it. `class_plans`/
+//                             `lesson_blocks` use this tier.
+//   optional                — a table that may legitimately not exist in
+//                             ANY environment (no dedicated migration of
+//                             its own and/or the app already tolerates
+//                             its absence) — a different CLAIM than
+//                             not_deployed_if_missing even though the
+//                             pass/fail mechanics are the same.
+//                             `user_preferences`/`prediction_cycles`/
+//                             `prediction_snapshots` use this tier.
+//   excluded                 — not a BACKUP_DATASETS row at all; see
+//                             EXCLUDED_TABLES. Included in the enum only
+//                             so report code has one tier to switch on.
+//
+// Be conservative, always: isMissingTableError() is the ONLY signal that
+// may ever downgrade a required_live/feature_deployed failure or treat a
+// not_deployed_if_missing/optional failure as absence-not-abort. A
+// permission/RLS error, network error, timeout, or any other unexpected
+// failure NEVER gets reinterpreted as "not deployed" — it surfaces as a
+// real, visible failure (abort for required_live/feature_deployed; a
+// loudly-flagged, backup-aborting failure for the other two tiers as
+// well — see datasetFetch.js, unchanged from the original fix).
+// ------------------------------------------------------------
+export const DEPLOYMENT_TIER = {
+  REQUIRED_LIVE: "required_live",
+  FEATURE_DEPLOYED: "feature_deployed",
+  NOT_DEPLOYED_IF_MISSING: "not_deployed_if_missing",
+  OPTIONAL: "optional",
+  EXCLUDED: "excluded",
+};
+
+/**
+ * Tier-specific wording for a table's ABSENCE — used everywhere a skip
+ * is reported (manifest.tablesSkipped reasons, manifest.datasetReport
+ * warnings, the Admin UI). Only ever called for a CONFIRMED missing-
+ * relation skip (never for an abort) — see datasetFetch.js. Keeping the
+ * wording centralized here (not duplicated in datasetFetch.js /
+ * datasetReport.js / the UI) is what makes tier 3 and tier 4 read
+ * differently everywhere at once, per spec, from one source of truth.
+ */
+export function describeDatasetAbsence(entry) {
+  switch (entry.deploymentTier) {
+    case DEPLOYMENT_TIER.NOT_DEPLOYED_IF_MISSING:
+      return (
+        `NOT DEPLOYED — the "${entry.table}" table has a genuine migration ` +
+        "and real application code that queries it in this repository, but " +
+        "this Supabase project's schema cache reports it does not exist: " +
+        "that migration has not been applied here. This backup records " +
+        `"${entry.table}" with zero rows (never fabricated) and continues; ` +
+        "its restore-dependency information is preserved so a future " +
+        "environment where this feature IS deployed can still back it up " +
+        "and restore it normally."
+      );
+    case DEPLOYMENT_TIER.OPTIONAL:
+      return (
+        `OPTIONAL — "${entry.table}" may legitimately not exist in any ` +
+        "environment (no dedicated migration of its own, and/or the " +
+        "application itself already tolerates its absence). Skipped " +
+        "intentionally; this backup carries zero rows for it rather than " +
+        "failing the whole export."
+      );
+    default:
+      // required_live / feature_deployed never reach this on a legitimate
+      // path (see datasetFetch.js — only a non-required table's CONFIRMED
+      // missing-relation error calls this at all). Kept as a safe
+      // fallback rather than throwing if that invariant is ever violated.
+      return `"${entry.table}" is not present in this export.`;
+  }
+}
 export const DISASTER_FORMAT = "elab-disaster-recovery";
 export const DISASTER_VERSION = 1;
 
@@ -192,9 +302,28 @@ export const STORAGE_BUCKETS = [
 //   challenge_questions      — supabase/solve-challenges-migration.sql;
 //                              src/lib/challengeService.js throws on error.
 //   class_plans              — supabase/class-planner-migration.sql;
-//                              src/lib/classPlannerService.js throws on error.
+//                              src/lib/classPlannerService.js throws on
+//                              error. RECLASSIFIED `not_deployed_if_missing`
+//                              (2026-10, part 2): a live Complete Disaster
+//                              Recovery run reported "Could not find the
+//                              table 'public.class_plans' in the schema
+//                              cache" — direct evidence this repo's own
+//                              migration has not been applied to that
+//                              project, the same class-planner-migration.sql
+//                              has not been run there, exactly the
+//                              "migration file proves intent, never live
+//                              existence" pattern prediction_cycles hit
+//                              first. NOT downgraded to `optional`: this is
+//                              a real, actively-developed feature expected
+//                              to be deployed eventually, not a table that
+//                              may legitimately never exist anywhere — see
+//                              DEPLOYMENT_TIER above for why that
+//                              distinction is kept instead of collapsed.
 //   lesson_blocks            — supabase/class-planner-migration.sql;
-//                              src/lib/classPlannerService.js throws on error.
+//                              src/lib/classPlannerService.js throws on
+//                              error. Same live-confirmed-missing evidence
+//                              and `not_deployed_if_missing` reclassification
+//                              as class_plans (its FK parent) — see above.
 //   platform_settings        — supabase/admin-settings-migration.sql;
 //                              src/lib/settingsService.js throws on error
 //                              (its own .maybeSingle() sibling,
@@ -210,23 +339,27 @@ export const STORAGE_BUCKETS = [
 // question_paper_items, derived views, auth.users, secrets).
 // ============================================================
 export const BACKUP_DATASETS = [
-  { table: "profiles", userIdColumn: "id", category: "D", group: "users", required: true },
-  { table: "user_access", userIdColumn: "user_id", category: "E", group: "users", required: true },
-  { table: "user_preferences", userIdColumn: "user_id", category: "H", group: "users", required: false },
+  { table: "profiles", userIdColumn: "id", category: "D", group: "users", required: true, deploymentTier: DEPLOYMENT_TIER.REQUIRED_LIVE },
+  { table: "user_access", userIdColumn: "user_id", category: "E", group: "users", required: true, deploymentTier: DEPLOYMENT_TIER.REQUIRED_LIVE },
+  { table: "user_preferences", userIdColumn: "user_id", category: "H", group: "users", required: false, deploymentTier: DEPLOYMENT_TIER.OPTIONAL },
 
-  { table: "learning_progress", userIdColumn: "user_id", category: "F", group: "progress", required: true },
-  { table: "concept_attempts", userIdColumn: "user_id", category: "F", group: "progress", required: true },
-  { table: "prediction_cycles", userIdColumn: "user_id", category: "F", group: "progress", required: false },
-  { table: "prediction_snapshots", userIdColumn: "user_id", category: "F", group: "progress", required: false },
-  { table: "student_streaks", userIdColumn: "user_id", category: "F", group: "progress", required: true },
+  { table: "learning_progress", userIdColumn: "user_id", category: "F", group: "progress", required: true, deploymentTier: DEPLOYMENT_TIER.FEATURE_DEPLOYED },
+  { table: "concept_attempts", userIdColumn: "user_id", category: "F", group: "progress", required: true, deploymentTier: DEPLOYMENT_TIER.FEATURE_DEPLOYED },
+  { table: "prediction_cycles", userIdColumn: "user_id", category: "F", group: "progress", required: false, deploymentTier: DEPLOYMENT_TIER.OPTIONAL },
+  { table: "prediction_snapshots", userIdColumn: "user_id", category: "F", group: "progress", required: false, deploymentTier: DEPLOYMENT_TIER.OPTIONAL },
+  { table: "student_streaks", userIdColumn: "user_id", category: "F", group: "progress", required: true, deploymentTier: DEPLOYMENT_TIER.FEATURE_DEPLOYED },
 
-  { table: "student_challenges", userIdColumn: "user_id", category: "G", group: "assessments", required: true },
-  { table: "challenge_questions", userIdColumn: "user_id", category: "G", group: "assessments", required: true },
+  { table: "student_challenges", userIdColumn: "user_id", category: "G", group: "assessments", required: true, deploymentTier: DEPLOYMENT_TIER.FEATURE_DEPLOYED },
+  { table: "challenge_questions", userIdColumn: "user_id", category: "G", group: "assessments", required: true, deploymentTier: DEPLOYMENT_TIER.FEATURE_DEPLOYED },
 
-  { table: "class_plans", userIdColumn: "user_id", category: "F", group: "planning", required: true },
-  { table: "lesson_blocks", userIdColumn: "user_id", category: "F", group: "planning", required: true }, // also FKs class_plan_id
+  // 2026-10 reconciliation, part 2: reclassified from `required: true` to
+  // `not_deployed_if_missing` — see DEPLOYMENT_TIER above and the audit
+  // note above BACKUP_DATASETS for the live evidence. NOT `optional`: see
+  // the same note for why that distinction is deliberate.
+  { table: "class_plans", userIdColumn: "user_id", category: "F", group: "planning", required: false, deploymentTier: DEPLOYMENT_TIER.NOT_DEPLOYED_IF_MISSING },
+  { table: "lesson_blocks", userIdColumn: "user_id", category: "F", group: "planning", required: false, deploymentTier: DEPLOYMENT_TIER.NOT_DEPLOYED_IF_MISSING }, // also FKs class_plan_id
 
-  { table: "platform_settings", userIdColumn: null, category: "H", group: "settings", required: true }, // singleton, id = 1, no user_id
+  { table: "platform_settings", userIdColumn: null, category: "H", group: "settings", required: true, deploymentTier: DEPLOYMENT_TIER.REQUIRED_LIVE }, // singleton, id = 1, no user_id
 
   // Discovered by the 2026-10 reconciliation's grep-driven completeness
   // check (scripts/test-disaster-recovery.mjs §6b: every table name a
@@ -243,7 +376,7 @@ export const BACKUP_DATASETS = [
   // handling note in the RPC migration for how a row with no mappable
   // creator is still restored (creator attribution set to null, row never
   // dropped).
-  { table: "resources", userIdColumn: "created_by", category: "I", group: "library", required: true },
+  { table: "resources", userIdColumn: "created_by", category: "I", group: "library", required: true, deploymentTier: DEPLOYMENT_TIER.FEATURE_DEPLOYED },
 ];
 
 function byGroup(group) {
@@ -263,11 +396,11 @@ export const LIBRARY_DATA_TABLES = byGroup("library");
 // the audited reason — surfaced verbatim in the manifest's
 // `tablesExcluded` so nothing "silently" disappears (spec §41.4).
 export const EXCLUDED_TABLES = [
-  { table: "auth.users", reason: "Supabase-managed authentication identities. Requires the service-role Admin API (server-side only, never in this React frontend). See docs/DISASTER_RECOVERY.md — NOT PORTABLE by this package; a documented relinking procedure is provided instead." },
-  { table: "questions / question_versions / question_version_secrets / question_secrets", reason: "The separate Question Bank system. Learn pages only store a reference (question_id + pinned question_version_id) to it, by the same deliberate scope boundary the existing Content Backup already documents — restoring it is a future extension, not this feature's job." },
-  { table: "question_papers / question_paper_items", reason: "Confirmed by code audit (grep -rn \"question_paper\" src/) to be a real, actively-used teacher feature (src/pages/teacher/qbuilder/) with NO create-table migration anywhere in supabase/*.sql or supabase/migrations/*.sql — it was provisioned directly against the live Supabase project outside version control, exactly like the Question Bank it composes from. Grouped with the Question Bank under the same documented scope boundary (docs/BACKUP_AND_DISASTER_RECOVERY.md §4/§5) rather than guessed at: this backup cannot safely assume its columns/RLS, and restoring a question paper without its referenced canonical questions would be incomplete anyway." },
-  { table: "user_access_overview / platform_settings_public", reason: "Both are Postgres VIEWs (create or replace view — see admin-access-migration.sql / admin-settings-migration.sql), not base tables: they have no rows of their own to back up. Their underlying base tables (user_access, platform_settings) ARE in BACKUP_DATASETS above; restoring those automatically makes the views correct again." },
-  { table: "Supabase Auth sessions/tokens/refresh tokens", reason: "Secrets — never captured anywhere in application code or this backup, by design (spec §12/§35)." },
+  { table: "auth.users", reason: "Supabase-managed authentication identities. Requires the service-role Admin API (server-side only, never in this React frontend). See docs/DISASTER_RECOVERY.md — NOT PORTABLE by this package; a documented relinking procedure is provided instead.", deploymentTier: DEPLOYMENT_TIER.EXCLUDED },
+  { table: "questions / question_versions / question_version_secrets / question_secrets", reason: "The separate Question Bank system. Learn pages only store a reference (question_id + pinned question_version_id) to it, by the same deliberate scope boundary the existing Content Backup already documents — restoring it is a future extension, not this feature's job.", deploymentTier: DEPLOYMENT_TIER.EXCLUDED },
+  { table: "question_papers / question_paper_items", reason: "Confirmed by code audit (grep -rn \"question_paper\" src/) to be a real, actively-used teacher feature (src/pages/teacher/qbuilder/) with NO create-table migration anywhere in supabase/*.sql or supabase/migrations/*.sql — it was provisioned directly against the live Supabase project outside version control, exactly like the Question Bank it composes from. Grouped with the Question Bank under the same documented scope boundary (docs/BACKUP_AND_DISASTER_RECOVERY.md §4/§5) rather than guessed at: this backup cannot safely assume its columns/RLS, and restoring a question paper without its referenced canonical questions would be incomplete anyway.", deploymentTier: DEPLOYMENT_TIER.EXCLUDED },
+  { table: "user_access_overview / platform_settings_public", reason: "Both are Postgres VIEWs (create or replace view — see admin-access-migration.sql / admin-settings-migration.sql), not base tables: they have no rows of their own to back up. Their underlying base tables (user_access, platform_settings) ARE in BACKUP_DATASETS above; restoring those automatically makes the views correct again.", deploymentTier: DEPLOYMENT_TIER.EXCLUDED },
+  { table: "Supabase Auth sessions/tokens/refresh tokens", reason: "Secrets — never captured anywhere in application code or this backup, by design (spec §12/§35).", deploymentTier: DEPLOYMENT_TIER.EXCLUDED },
 ];
 
 // All application-owned table groups the disaster backup covers, in one

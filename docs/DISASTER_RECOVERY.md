@@ -87,8 +87,9 @@ every table now carries (2026-09 fix — see the note below the table).
 | C. Media | `learn-media` (Required, bytes packaged) / `resources`, `question-media` (bucket existence only, bytes not packaged) | Required (`learn-media`) / Optional | Yes — `learn-media` files referenced from Learn content, under `media/`; `resources`/`question-media` bytes are not |
 | D. User profile data | `profiles` | Required | Yes — `data/users.json` |
 | E. Access/subscription | `user_access` | Required | Yes — `data/users.json` |
-| F. Student learning progress | `learning_progress`, `concept_attempts`, `student_streaks`, `class_plans`, `lesson_blocks` | Required | Yes — `data/progress.json`, `data/planning.json` |
+| F. Student learning progress | `learning_progress`, `concept_attempts`, `student_streaks` | Required | Yes — `data/progress.json` |
 | F. Student learning progress (Predicted Grade) | `prediction_cycles`, `prediction_snapshots` | **Optional** (2026-10 fix — see below) | Yes, if present — `data/progress.json`. Skipped (recorded in `manifest.tablesSkipped`) if this Supabase project's schema cache reports the table missing. |
+| F. Teacher Class Planner | `class_plans`, `lesson_blocks` | **Not deployed if missing** (2026-10 reconciliation, part 2 — see below) | Yes, if deployed — `data/planning.json`. Recorded as `not_deployed` with zero rows (`manifest.tablesSkipped`, `manifest.datasetReport`) if this Supabase project's schema cache reports the table missing — never an abort. |
 | G. Assessment data | `student_challenges`, `challenge_questions` | Required | Yes — `data/assessments.json` |
 | H. Application settings | `platform_settings` | Required | Yes — `data/settings.json` |
 | H. Application settings (per-user) | `user_preferences` | **Optional** | Yes, if present — `data/users.json`. Skipped (recorded in `manifest.tablesSkipped`, not silently) if this Supabase project's schema cache reports the table missing. |
@@ -187,6 +188,63 @@ This same REQUIRED/OPTIONAL mechanism (`src/lib/backup/constants.js`'s
 classification) now covers every table in one complete pass, so a future
 missing table is reported — alongside every other problem in the same
 run — instead of crashing one at a time across repeated reruns.
+
+**2026-10 reconciliation, part 2 — `class_plans`/`lesson_blocks` and the
+`deploymentTier` distinction.** The very next live run surfaced two MORE
+tables failing together: `class_plans` and `lesson_blocks` — real,
+actively-developed Class Planner tables (`supabase/class-planner-
+migration.sql`, real throwing usage in `src/lib/classPlannerService.js`),
+still `required: true`. Flipping them to `required: false` would have
+been a third copy of the identical single-table patch, and would also
+have quietly claimed something untrue: `user_preferences`/
+`prediction_cycles`/`prediction_snapshots` may legitimately not exist in
+**any** environment, but Class Planner is a real feature this project is
+expected to eventually deploy — it just hasn't been applied to **this**
+specific Supabase project yet. Those are different claims, so
+`src/lib/backup/constants.js` now carries a second, orthogonal field,
+`deploymentTier`, alongside `required`:
+
+- `required_live` — core app data (`profiles`, `user_access`,
+  `platform_settings`). ANY read failure aborts, confirmed-missing-
+  relation included — this is never "not deployed yet", it's broken.
+- `feature_deployed` — a real, expected-present feature table
+  (`learning_progress`, `concept_attempts`, `student_streaks`,
+  `student_challenges`, `challenge_questions`, `resources`). Same
+  abort-on-any-failure behavior as `required_live`; the label only
+  changes how the report describes it.
+- `not_deployed_if_missing` — **`class_plans`/`lesson_blocks`.** A
+  CONFIRMED missing-relation error (and *only* that exact signal —
+  `isMissingTableError()`, unchanged) is treated as "this feature's
+  schema was never applied here", not an abort. Any other failure
+  (permissions, network, …) on it still aborts, identically to a
+  required table.
+- `optional` — `user_preferences`/`prediction_cycles`/
+  `prediction_snapshots`. Mechanically identical to
+  `not_deployed_if_missing` (a confirmed-missing-relation skips, any
+  other error aborts) — the label is purely about which claim the
+  report makes: "may never exist anywhere" vs. "a specific undeployed
+  feature".
+- `excluded` — not a `BACKUP_DATASETS` row; see `EXCLUDED_TABLES`.
+
+`required` still drives 100% of the abort/skip mechanics (unchanged,
+proven safe already); `deploymentTier` only selects which wording
+`describeDatasetAbsence()` (`constants.js`) produces for a skip, and
+labels every row of the new `manifest.datasetReport` — the `dataset |
+source status | live status | backup status | row count | warning/error`
+table surfaced in the Admin UI for every known dataset, not just the two
+that prompted this. `class_plans`/`lesson_blocks` restore-dependency
+information (`dependencyOrder.js`) and RPC definitions are untouched —
+in a project where Class Planner IS deployed, they export/restore
+exactly as before (tier only changes what happens on an absence).
+`restore_elab_disaster_data` now also tolerates the TARGET database
+lacking these tables (`exception when undefined_table`, matching the
+`user_preferences`/`prediction_cycles` pattern), so a disaster package
+with them marked `not_deployed` restores cleanly regardless of what the
+target project has. See `scripts/test-disaster-recovery.mjs` §11/§12 for
+the acceptance test (both tables confirmed absent while every
+`required_live`/`feature_deployed` table succeeds → no abort, a valid
+ZIP is still produced, both recorded `not_deployed` with zero rows, no
+fabricated data) and the restore-tolerance checks.
 
 **Deliberately still excluded**, same boundary the existing Content
 Backup already draws, now carried into the disaster manifest's

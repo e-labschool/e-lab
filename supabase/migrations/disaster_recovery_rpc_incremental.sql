@@ -84,6 +84,18 @@ declare
   -- tolerant pattern applied here for consistency on the restore side.
   v_prediction_cycles_table_missing boolean := false;
   v_prediction_snapshots_table_missing boolean := false;
+  -- 2026-10 reconciliation, part 2: class_plans/lesson_blocks are
+  -- RECLASSIFIED `not_deployed_if_missing` in src/lib/backup/constants.js
+  -- (a live export confirmed this project's class-planner-migration.sql
+  -- has never been applied here). Same tolerant pattern as the OPTIONAL
+  -- tables above applies on restore: a TARGET database that also lacks
+  -- these tables must not abort this whole function (every other table's
+  -- restore has to commit regardless) — it is recorded instead. This is
+  -- the "does a disaster package where these are marked not_deployed
+  -- restore safely" guarantee the backup side's not_deployed/zero-row
+  -- recording depends on.
+  v_class_plans_table_missing boolean := false;
+  v_lesson_blocks_table_missing boolean := false;
   -- resources.created_by is a NULLABLE creator reference, not a strict
   -- per-row owner — a row with no mappable creator is still restored
   -- (never skipped), with attribution set to null rather than dropping
@@ -323,41 +335,62 @@ begin
   end loop;
   v_counts := jsonb_set(v_counts, '{challenge_questions}', jsonb_build_object('restored', v_inserted, 'skippedNoIdentity', v_skipped));
 
-  -- ---------------- class_plans (id remapped; referenced by lesson_blocks) ----------------
+  -- ---------------- class_plans (OPTIONAL/not_deployed_if_missing — see declare block; id remapped; referenced by lesson_blocks) ----------------
   v_inserted := 0; v_skipped := 0;
-  for v_row in select * from jsonb_array_elements(coalesce(p_payload->'class_plans', '[]'::jsonb))
-  loop
-    v_new_uid := nullif(p_id_map->>(v_row->>'user_id'), '')::uuid;
-    v_old_plan_id := v_row->>'id';
-    if v_new_uid is null or v_old_plan_id is null then
-      v_skipped := v_skipped + 1; continue;
-    end if;
-    insert into public.class_plans (user_id, title, class_group, topic_code, level, duration_minutes, planned_date, status)
-    values (v_new_uid, coalesce(v_row->>'title',''), v_row->>'class_group', v_row->>'topic_code', v_row->>'level', coalesce((v_row->>'duration_minutes')::int, 60), nullif(v_row->>'planned_date','')::date, coalesce(v_row->>'status','draft'))
-    returning id into v_new_plan_id;
-    v_plan_id_map := jsonb_set(v_plan_id_map, array[v_old_plan_id], to_jsonb(v_new_plan_id::text));
-    v_inserted := v_inserted + 1;
-  end loop;
-  v_counts := jsonb_set(v_counts, '{class_plans}', jsonb_build_object('restored', v_inserted, 'skippedNoIdentity', v_skipped));
+  begin
+    for v_row in select * from jsonb_array_elements(coalesce(p_payload->'class_plans', '[]'::jsonb))
+    loop
+      v_new_uid := nullif(p_id_map->>(v_row->>'user_id'), '')::uuid;
+      v_old_plan_id := v_row->>'id';
+      if v_new_uid is null or v_old_plan_id is null then
+        v_skipped := v_skipped + 1; continue;
+      end if;
+      insert into public.class_plans (user_id, title, class_group, topic_code, level, duration_minutes, planned_date, status)
+      values (v_new_uid, coalesce(v_row->>'title',''), v_row->>'class_group', v_row->>'topic_code', v_row->>'level', coalesce((v_row->>'duration_minutes')::int, 60), nullif(v_row->>'planned_date','')::date, coalesce(v_row->>'status','draft'))
+      returning id into v_new_plan_id;
+      v_plan_id_map := jsonb_set(v_plan_id_map, array[v_old_plan_id], to_jsonb(v_new_plan_id::text));
+      v_inserted := v_inserted + 1;
+    end loop;
+  exception when undefined_table then
+    -- The target database doesn't have this table either (Class Planner
+    -- not deployed there, same as the source project this package was
+    -- backed up from — see declare block). Recorded, not raised — every
+    -- other table's restore must still commit. The payload here is
+    -- normally already zero rows (the export recorded `not_deployed` with
+    -- zero rows for this exact reason), so this branch mainly guards a
+    -- package restored into a DIFFERENT project than it was made from.
+    v_class_plans_table_missing := true;
+  end;
+  v_counts := jsonb_set(
+    v_counts, '{class_plans}',
+    jsonb_build_object('restored', v_inserted, 'skippedNoIdentity', v_skipped, 'tableMissing', v_class_plans_table_missing)
+  );
 
-  -- ---------------- lesson_blocks (FK to class_plans) ----------------
+  -- ---------------- lesson_blocks (OPTIONAL/not_deployed_if_missing — see declare block; FK to class_plans) ----------------
   v_inserted := 0; v_skipped := 0;
-  for v_row in select * from jsonb_array_elements(coalesce(p_payload->'lesson_blocks', '[]'::jsonb))
-  loop
-    v_new_uid := nullif(p_id_map->>(v_row->>'user_id'), '')::uuid;
-    v_new_plan_id := nullif(v_plan_id_map->>(v_row->>'class_plan_id'), '')::uuid;
-    if v_new_uid is null or v_new_plan_id is null then
-      v_skipped := v_skipped + 1; continue;
-    end if;
-    insert into public.lesson_blocks (class_plan_id, user_id, position, block_type, title, content, duration_minutes, source_type, source_ref, teacher_notes, student_facing)
-    values (
-      v_new_plan_id, v_new_uid, coalesce((v_row->>'position')::int, 0), coalesce(v_row->>'block_type','Custom'),
-      coalesce(v_row->>'title',''), v_row->'content', (v_row->>'duration_minutes')::int,
-      coalesce(v_row->>'source_type','custom'), v_row->>'source_ref', v_row->>'teacher_notes', coalesce((v_row->>'student_facing')::boolean, true)
-    );
-    v_inserted := v_inserted + 1;
-  end loop;
-  v_counts := jsonb_set(v_counts, '{lesson_blocks}', jsonb_build_object('restored', v_inserted, 'skippedNoIdentity', v_skipped));
+  begin
+    for v_row in select * from jsonb_array_elements(coalesce(p_payload->'lesson_blocks', '[]'::jsonb))
+    loop
+      v_new_uid := nullif(p_id_map->>(v_row->>'user_id'), '')::uuid;
+      v_new_plan_id := nullif(v_plan_id_map->>(v_row->>'class_plan_id'), '')::uuid;
+      if v_new_uid is null or v_new_plan_id is null then
+        v_skipped := v_skipped + 1; continue;
+      end if;
+      insert into public.lesson_blocks (class_plan_id, user_id, position, block_type, title, content, duration_minutes, source_type, source_ref, teacher_notes, student_facing)
+      values (
+        v_new_plan_id, v_new_uid, coalesce((v_row->>'position')::int, 0), coalesce(v_row->>'block_type','Custom'),
+        coalesce(v_row->>'title',''), v_row->'content', (v_row->>'duration_minutes')::int,
+        coalesce(v_row->>'source_type','custom'), v_row->>'source_ref', v_row->>'teacher_notes', coalesce((v_row->>'student_facing')::boolean, true)
+      );
+      v_inserted := v_inserted + 1;
+    end loop;
+  exception when undefined_table then
+    v_lesson_blocks_table_missing := true;
+  end;
+  v_counts := jsonb_set(
+    v_counts, '{lesson_blocks}',
+    jsonb_build_object('restored', v_inserted, 'skippedNoIdentity', v_skipped, 'tableMissing', v_lesson_blocks_table_missing)
+  );
 
   -- ---------------- resources (2026-10 reconciliation addition — see
   -- src/lib/backup/constants.js's BACKUP_DATASETS audit note: this table

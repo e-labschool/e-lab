@@ -34,6 +34,70 @@ function StatPill({ label, value }) {
   );
 }
 
+const LIVE_STATUS_LABEL = {
+  deployed: "Deployed",
+  not_deployed: "Not deployed",
+  error: "Error",
+  not_evaluated: "Not evaluated",
+};
+const BACKUP_STATUS_LABEL = {
+  exported: "Exported",
+  not_deployed: "Not deployed (0 rows)",
+  failed: "Failed",
+  not_evaluated: "Not evaluated",
+};
+const TIER_LABEL = {
+  required_live: "Core (required)",
+  feature_deployed: "Feature (required)",
+  not_deployed_if_missing: "Feature (may not be deployed)",
+  optional: "Optional",
+};
+
+function DatasetReportTable({ rows }) {
+  if (!rows?.length) return null;
+  return (
+    <div className="mt-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">
+        Dataset reconciliation report
+      </p>
+      <div className="mt-1 max-h-72 overflow-auto rounded-md border border-[var(--color-line)]">
+        <table className="w-full text-left text-xs">
+          <thead className="sticky top-0 bg-[var(--color-paper-raised)] text-[var(--color-ink-faint)]">
+            <tr>
+              <th className="px-2 py-1.5 font-medium">Dataset</th>
+              <th className="px-2 py-1.5 font-medium">Classification</th>
+              <th className="px-2 py-1.5 font-medium">Live status</th>
+              <th className="px-2 py-1.5 font-medium">Backup status</th>
+              <th className="px-2 py-1.5 font-medium">Rows</th>
+              <th className="px-2 py-1.5 font-medium">Warning / error</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.table} className="border-t border-[var(--color-line)] align-top">
+                <td className="px-2 py-1.5 font-medium text-[var(--color-ink)]">{r.table}</td>
+                <td className="px-2 py-1.5 text-[var(--color-ink-soft)]">{TIER_LABEL[r.deploymentTier] || r.deploymentTier}</td>
+                <td className="px-2 py-1.5">
+                  <span className={r.liveStatus === "error" ? "font-medium text-[#A5362A]" : r.liveStatus === "not_deployed" ? "text-amber-700" : "text-[var(--color-ink-soft)]"}>
+                    {LIVE_STATUS_LABEL[r.liveStatus] || r.liveStatus}
+                  </span>
+                </td>
+                <td className="px-2 py-1.5">
+                  <span className={r.backupStatus === "failed" ? "font-medium text-[#A5362A]" : r.backupStatus === "not_deployed" ? "text-amber-700" : "text-[var(--color-ink-soft)]"}>
+                    {BACKUP_STATUS_LABEL[r.backupStatus] || r.backupStatus}
+                  </span>
+                </td>
+                <td className="px-2 py-1.5 text-[var(--color-ink-soft)]">{r.rowCount}</td>
+                <td className="px-2 py-1.5 text-[var(--color-ink-faint)]">{r.warning || "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function CheckRow({ item }) {
   return (
     <li className="flex items-start gap-2 py-1 text-sm">
@@ -507,6 +571,13 @@ function DisasterBackupSection() {
               </span>
             </li>
             <li>
+              Feature datasets not deployed here: {result.manifest.schemaAudit?.featureNotDeployedDatasets ?? 0} · Available:{" "}
+              {result.manifest.schemaAudit?.featureNotDeployedAvailable ?? "—"} · Absent:{" "}
+              <span className={result.manifest.schemaAudit?.featureNotDeployedAbsent ? "font-medium text-amber-700" : ""}>
+                {result.manifest.schemaAudit?.featureNotDeployedAbsent ?? "—"}
+              </span>
+            </li>
+            <li>
               Optional datasets: {result.manifest.schemaAudit?.optionalDatasets ?? 0} · Available:{" "}
               {result.manifest.schemaAudit?.optionalAvailable ?? "—"} · Unavailable:{" "}
               {result.manifest.schemaAudit?.optionalUnavailable ?? "—"}
@@ -551,21 +622,45 @@ function DisasterBackupSection() {
             {result.manifest.applicationSource?.identifierType === "package-version" ? " (package.json version — no git commit hash was available at build time)" : ""}
           </p>
 
-          {result.manifest.tablesSkipped?.length > 0 && (
+          {result.manifest.tablesSkipped?.some((s) => s.deploymentTier === "not_deployed_if_missing") && (
             <>
-              <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Optional tables skipped</p>
+              <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">
+                Feature datasets not deployed on this project
+              </p>
               <ul className="mt-1 space-y-0.5 text-sm text-[var(--color-ink-soft)]">
-                {result.manifest.tablesSkipped.map((s) => (
-                  <li key={s.table} className="flex items-start gap-1.5">
-                    <AlertTriangle size={13} className="mt-0.5 shrink-0 text-amber-600" />
-                    <span>
-                      <strong>{s.table}</strong> — {s.reason}
-                    </span>
-                  </li>
-                ))}
+                {result.manifest.tablesSkipped
+                  .filter((s) => s.deploymentTier === "not_deployed_if_missing")
+                  .map((s) => (
+                    <li key={s.table} className="flex items-start gap-1.5">
+                      <AlertTriangle size={13} className="mt-0.5 shrink-0 text-amber-600" />
+                      <span>
+                        <strong>{s.table}</strong> — {s.reason}
+                      </span>
+                    </li>
+                  ))}
               </ul>
             </>
           )}
+
+          {result.manifest.tablesSkipped?.some((s) => s.deploymentTier !== "not_deployed_if_missing") && (
+            <>
+              <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Optional tables skipped</p>
+              <ul className="mt-1 space-y-0.5 text-sm text-[var(--color-ink-soft)]">
+                {result.manifest.tablesSkipped
+                  .filter((s) => s.deploymentTier !== "not_deployed_if_missing")
+                  .map((s) => (
+                    <li key={s.table} className="flex items-start gap-1.5">
+                      <AlertTriangle size={13} className="mt-0.5 shrink-0 text-amber-600" />
+                      <span>
+                        <strong>{s.table}</strong> — {s.reason}
+                      </span>
+                    </li>
+                  ))}
+              </ul>
+            </>
+          )}
+
+          <DatasetReportTable rows={result.manifest.datasetReport} />
 
           {!v.mediaVerified || !v.checksumsVerified ? (
             <p className="mt-3 flex items-start gap-2 text-sm font-medium text-[#A5362A]">
@@ -781,6 +876,18 @@ function DisasterRestoreSection() {
               {result.mediaResults.failed.length ? ` — ${result.mediaResults.failed.length} FAILED (see below)` : ""}
             </li>
           </ul>
+          {result.datasetsNotDeployed?.length > 0 && (
+            <div className="mt-2 rounded-md border border-amber-600/40 bg-amber-600/5 p-2 text-xs text-[var(--color-ink-soft)]">
+              <p className="font-medium text-amber-700">Skipped — not deployed in the source backup (0 rows, nothing to restore):</p>
+              <ul className="mt-1 space-y-0.5">
+                {result.datasetsNotDeployed.map((s) => (
+                  <li key={s.table}>
+                    <strong>{s.table}</strong>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {result.mediaResults.failed.length > 0 && (
             <div className="mt-2 max-h-32 overflow-y-auto rounded-md border border-[#A5362A]/40 p-2 text-xs text-[#A5362A]">
               {result.mediaResults.failed.map((f) => (

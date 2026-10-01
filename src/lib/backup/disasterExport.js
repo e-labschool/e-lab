@@ -25,6 +25,7 @@ import {
   STORAGE_BUCKETS,
   EXCLUDED_TABLES,
   ALL_DISASTER_TABLES,
+  DEPLOYMENT_TIER,
 } from "./constants.js";
 import { exportElabContent, fetchAllRows } from "./exportContent.js";
 import { packageMediaFiles, verifyZippedMediaChecksums } from "./mediaPackage.js";
@@ -32,6 +33,7 @@ import { sha256HexOfString } from "./checksums.js";
 import { auditSimulations } from "./simulationAudit.js";
 import { getApplicationVersionInfo } from "./appVersion.js";
 import { fetchAllDatasets, assertNoDatasetFailures } from "./datasetFetch.js";
+import { buildDatasetReport } from "./datasetReport.js";
 
 // Tables whose primary key is NOT a bare `id` column, or that are a
 // singleton read rather than a full-table page scan — ordering/filtering
@@ -200,22 +202,49 @@ export async function createDisasterBackup({ includeUserData = true, onProgress 
   // already passed, so EVERY required table was read successfully —
   // requiredMissing is always 0 here by construction, never a guess. ----
   const requiredDatasetDefs = ALL_DISASTER_TABLES.filter((t) => t.required);
-  const optionalDatasetDefs = ALL_DISASTER_TABLES.filter((t) => !t.required);
+  // "Optional" here keeps its ORIGINAL, narrower meaning (tier 4 only —
+  // "may legitimately not exist anywhere"); tier 3 (not_deployed_if_missing
+  // — a real feature whose schema simply isn't applied to THIS project
+  // yet, e.g. class_plans/lesson_blocks) is tracked separately below so
+  // the two never read as the same claim in this summary either.
+  const optionalDatasetDefs = ALL_DISASTER_TABLES.filter((t) => t.deploymentTier === DEPLOYMENT_TIER.OPTIONAL);
+  const notDeployedFeatureDefs = ALL_DISASTER_TABLES.filter((t) => t.deploymentTier === DEPLOYMENT_TIER.NOT_DEPLOYED_IF_MISSING);
+  const optionalSkippedCount = tablesSkipped.filter((s) => s.deploymentTier === DEPLOYMENT_TIER.OPTIONAL).length;
+  const notDeployedSkippedCount = tablesSkipped.filter((s) => s.deploymentTier === DEPLOYMENT_TIER.NOT_DEPLOYED_IF_MISSING).length;
   const schemaAudit = {
     requiredDatasets: requiredDatasetDefs.length,
     requiredAvailable: includeUserData ? requiredDatasetDefs.length : null,
     requiredMissing: includeUserData ? 0 : null,
+    // Tier 3 — feature schema present in this repo's source but not (yet)
+    // applied to the connected Supabase project. Distinct from "optional"
+    // below: these ARE expected to eventually exist, they are simply not
+    // deployed here right now (spec: "generalize ... distinguish a
+    // confirmed missing relation ... from an optional dataset").
+    featureNotDeployedDatasets: notDeployedFeatureDefs.length,
+    featureNotDeployedAvailable: includeUserData ? notDeployedFeatureDefs.length - notDeployedSkippedCount : null,
+    featureNotDeployedAbsent: includeUserData ? notDeployedSkippedCount : null,
     optionalDatasets: optionalDatasetDefs.length,
-    optionalAvailable: includeUserData ? optionalDatasetDefs.length - tablesSkipped.length : null,
-    optionalUnavailable: includeUserData ? tablesSkipped.length : null,
+    optionalAvailable: includeUserData ? optionalDatasetDefs.length - optionalSkippedCount : null,
+    optionalUnavailable: includeUserData ? optionalSkippedCount : null,
     storageBuckets: STORAGE_BUCKETS.length,
     storageBucketsRequired: STORAGE_BUCKETS.filter((b) => b.required).length,
     simulationReferences: simulations.uniqueSimulations,
     simulationImplementationsVerified: simulations.verifiedImplementations,
     note: includeUserData
       ? null
-      : "User/progress/assessment/planning/settings tables were not read (includeUserData=false) — this backup covers educational content + media only, so required/optional availability was not evaluated this run.",
+      : "User/progress/assessment/planning/settings tables were not read (includeUserData=false) — this backup covers educational content + media only, so required/not-deployed/optional availability was not evaluated this run.",
   };
+
+  // ---- 6e. Per-dataset reconciliation report (spec: "dataset | source
+  // status | live status | backup status | row count | warning/error" —
+  // for EVERY known dataset, not just the Class Planner two that prompted
+  // this). Built from the SAME out/counts/skipped/failures this run just
+  // produced — never a second, hand-maintained accounting. ----
+  const datasetReport = buildDatasetReport(ALL_DISASTER_TABLES, {
+    counts: tableCounts,
+    skipped: tablesSkipped,
+    failures: datasetFailures,
+  });
 
   // ---- 7. Manifest ----
   onProgress("Creating disaster package…");
@@ -245,6 +274,7 @@ export async function createDisasterBackup({ includeUserData = true, onProgress 
     mediaFailureCount: mediaFailures.length,
     simulations,
     schemaAudit,
+    datasetReport,
     applicationSource,
     requiredForRestore: [
       "The target Supabase project must already have every migration in supabase/migrations/*.sql and supabase/*.sql applied (schema first — see docs/DISASTER_RECOVERY.md).",
