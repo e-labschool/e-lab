@@ -24,6 +24,57 @@ function escapeMathHtml(value) {
   return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+// ----------------------------------------------------------------------
+// Root cause of "IE_1(Al)&lt;IE_1(Mg)" showing up literally on screen
+// (and of authors reaching for manual \quad/&nbsp; hacks that happen to
+// dodge it): by the time a \( \)/\[ \]/⟦math:...⟧ region reaches this
+// module, its SOURCE TEXT may already have gone through one layer of
+// HTML-entity encoding, from one of two upstream, independently correct
+// steps that have nothing to do with maths and must not change:
+//   1. Rich Text (contentEditable) HTML -- when a teacher types a
+//      literal "<" inside a \[ \] block, the browser's own innerHTML
+//      serialiser (standard, unavoidable DOM behaviour) stores it as the
+//      TEXT "&lt;", not the character "<". That's correct for HTML
+//      storage -- it is NOT correct as LaTeX *source*.
+//   2. Every EquationFriendlyField-backed plain-text field (Key Idea,
+//      Definition, Worked Example, ...) -- renderScientificText()
+//      below correctly escapes the WHOLE string first (so stray "&"/
+//      "<"/">" in ordinary prose can never break the markup), then
+//      looks for \( \)/\[ \] on the escaped string. That also means any
+//      "<"/">" a teacher typed *inside* a math region is "&lt;"/"&gt;"
+//      by the time the math delimiters are matched.
+// Either way, renderCompactLatex() then receives the literal six
+// characters "&lt;" as its "<" and (correctly, on its own terms) escapes
+// the "&" again for display -- "&amp;lt;" in the final HTML, which the
+// browser shows as the literal text "&lt;".
+//
+// The fix is narrow and happens at exactly one, shared, trusted point:
+// decode ONLY the text already captured as a math region's source (see
+// replaceScientificMarkup below), never anything outside it. Ordinary
+// prose is never touched by this function, so normal rich-text
+// sanitization (DOMPurify in learnBlockRegistry.jsx's sanitizeHtml, and
+// escapeMathHtml's own escaping of prose) is completely unaffected --
+// this only ever un-does ONE accidental layer of entity-encoding on
+// text that is about to be re-parsed and re-escaped as LaTeX source
+// anyway, never dangerouslySetInnerHTML'd raw.
+const MATH_SOURCE_ENTITY_RE = /&(lt|gt|amp|quot|apos|#39|nbsp|#x?[0-9a-fA-F]+);/gi;
+const MATH_SOURCE_ENTITY_MAP = { lt: "<", gt: ">", amp: "&", quot: '"', apos: "'", "#39": "'", nbsp: " " };
+
+function decodeMathSourceEntities(value) {
+  return String(value ?? "").replace(MATH_SOURCE_ENTITY_RE, (match, name) => {
+    const lower = name.toLowerCase();
+    if (MATH_SOURCE_ENTITY_MAP[lower] != null) return MATH_SOURCE_ENTITY_MAP[lower];
+    if (lower[0] === "#") {
+      const isHex = lower[1] === "x";
+      const codePoint = Number.parseInt(lower.slice(isHex ? 2 : 1), isHex ? 16 : 10);
+      if (Number.isFinite(codePoint)) {
+        try { return String.fromCodePoint(codePoint); } catch { return match; }
+      }
+    }
+    return match;
+  });
+}
+
 function readBraceGroup(source, start) {
   if (source[start] !== "{") return null;
   let depth = 0;
@@ -45,6 +96,12 @@ const LATEX_COMMANDS = [
   ["\\times", "×"], ["\\cdot", "·"], ["\\div", "÷"], ["\\pm", "±"],
   ["\\approx", "≈"], ["\\propto", "∝"], ["\\neq", "≠"],
   ["\\leq", "≤"], ["\\le", "≤"], ["\\geq", "≥"], ["\\ge", "≥"],
+  // \lt / \gt -- LaTeX's own escaped forms for literal "<"/">" (needed
+  // because bare "<"/">" are sometimes special to LaTeX tooling).
+  // Mapped to the HTML entity directly (not the raw character) since
+  // LATEX_COMMANDS' replacement text is injected into `out` unescaped
+  // below -- a raw "<"/">" there would corrupt the surrounding HTML.
+  ["\\lt", "&lt;"], ["\\gt", "&gt;"],
   ["\\infty", "∞"], ["\\degree", "°"], ["\\circ", "°"],
   ["\\sum", "∑"], ["\\sqrt", "√"],
   // Greek -- uppercase before lowercase where names could otherwise
@@ -183,9 +240,17 @@ const SCI_MARKUP_RE = /⟦math:([\s\S]*?)⟧|\\\[([\s\S]*?)\\\]|\\\(([\s\S]*?)\\
 function replaceScientificMarkup(source) {
   return source.replace(SCI_MARKUP_RE, (match, markerLatex, displayLatex, inlineLatex) => {
     try {
-      if (markerLatex != null) return inlineWrap(renderCompactLatex(markerLatex));
-      if (displayLatex != null) return displayWrap(renderCompactLatex(displayLatex));
-      if (inlineLatex != null) return inlineWrap(renderCompactLatex(inlineLatex));
+      // decodeMathSourceEntities() is applied ONLY to the already-
+      // delimited math source captured by the regex above -- never to
+      // `source` as a whole -- see the comment on
+      // decodeMathSourceEntities() for exactly why this one decode is
+      // both necessary and safe. renderCompactLatex() re-escapes
+      // everything it emits via escapeMathHtml(), so a decoded "<"/">"/
+      // "&" here always comes back out as a single, correct HTML entity
+      // -- never as raw markup.
+      if (markerLatex != null) return inlineWrap(renderCompactLatex(decodeMathSourceEntities(markerLatex)));
+      if (displayLatex != null) return displayWrap(renderCompactLatex(decodeMathSourceEntities(displayLatex)));
+      if (inlineLatex != null) return inlineWrap(renderCompactLatex(decodeMathSourceEntities(inlineLatex)));
       return match;
     } catch {
       // A malformed expression must never blank the block or crash the

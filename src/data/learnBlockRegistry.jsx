@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import DOMPurify from "dompurify";
 import LearnMediaInput from "../components/admin/LearnMediaInput.jsx";
 import EquationFriendlyField, { pasteEquationFriendly, resolveMathAnnotationsInHtml } from "../components/admin/EquationFriendlyField.jsx";
@@ -239,6 +239,16 @@ const QUICK_COLOURS = [
   ["#12161c", "Dark"], ["#3654D6", "Indigo"], ["#2B7A6E", "Teal"],
   ["#B7791F", "Amber"], ["#B85C4A", "Coral"], ["#6D3FA3", "Violet"],
 ];
+// Highlight (background colour) was missing entirely from this toolbar --
+// issue 2 names it explicitly ("colour/highlight pickers" must preserve
+// selection) but there was no highlight control to even test. Uses the
+// exact same quick-swatches + native colour-input pattern as Text
+// Colour, through the same applyInlineStyle()/selection-preservation
+// path, rather than a one-off implementation.
+const QUICK_HIGHLIGHTS = [
+  ["#fef08a", "Yellow"], ["#bbf7d0", "Green"], ["#bfdbfe", "Blue"],
+  ["#fecaca", "Red"], ["#e9d5ff", "Purple"],
+];
 
 /** An icon toolbar button with a real, human-readable tooltip (native
  * title attribute) — never a raw label like "\u2022 List" or "x\u00b2".
@@ -309,6 +319,37 @@ export function RichTextEditor({ value, onChange }) {
       savedRangeRef.current = range.cloneRange();
     }
   }
+
+  // CENTRAL selection-preservation mechanism (issue 2). This is the one
+  // thing every toolbar control relies on -- mouse clicks, keyboard
+  // selection, and (critically) the multi-step colour/highlight picker
+  // interaction (open picker -> hover/click swatches -> pick a value) --
+  // instead of each control re-implementing its own save/restore timing.
+  //
+  // Previously, the ONLY place a selection got saved was each control's
+  // own onMouseDown (plus onMouseUp/onKeyUp on the editor itself). That
+  // is exactly the single-mousedown-save pattern that is fragile for a
+  // popover: a native <input type="color">'s OS-level picker dialog, or
+  // any custom popover rendered outside the toolbar button itself, can
+  // go through intermediate focus/blur cycles that a single mousedown
+  // handler never sees.
+  //
+  // document-level `selectionchange` fires for every selection change
+  // anywhere in the document (mouse, keyboard, drag, triple-click --
+  // every input method), so listening to it directly keeps
+  // savedRangeRef continuously in sync with "the last real selection the
+  // user made inside this editor", with ZERO per-control wiring. Once
+  // focus/selection leaves the editor (e.g. into a colour swatch, a
+  // native <select>, or a popover), `selectionchange` simply stops
+  // firing for a selection inside the editor, so savedRangeRef correctly
+  // keeps the last valid in-editor selection throughout that whole
+  // interaction -- exactly what every toolbar control (including a
+  // multi-step picker) needs restored right before it runs its format
+  // command.
+  useEffect(() => {
+    document.addEventListener("selectionchange", saveSelection);
+    return () => document.removeEventListener("selectionchange", saveSelection);
+  }, []);
 
   function restoreSelection() {
     if (!savedRangeRef.current || !editorRef.current) return;
@@ -424,6 +465,18 @@ export function RichTextEditor({ value, onChange }) {
           Custom
           <input type="color" defaultValue="#12161c" onMouseDown={saveSelection} onChange={(e) => applyInlineStyle("color", e.target.value)} className="h-6 w-7 cursor-pointer rounded border border-[var(--color-line)] bg-transparent p-0.5" />
         </label>
+
+        <span className="mx-0.5 h-5 w-px bg-[var(--color-line)]" />
+
+        <span className="px-1 text-[11px] text-[var(--color-ink-soft)]">Highlight</span>
+        {QUICK_HIGHLIGHTS.map(([colour, name]) => (
+          <button key={colour} type="button" title={`Highlight: ${name}`} aria-label={`Highlight ${name}`} onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={() => applyInlineStyle("backgroundColor", colour)} className="h-5 w-5 rounded-full border border-black/10" style={{ backgroundColor: colour }} />
+        ))}
+        <label className="flex items-center gap-1 px-1 text-[11px] text-[var(--color-ink-soft)]" title="Custom highlight colour">
+          Custom
+          <input type="color" defaultValue="#fef08a" onMouseDown={saveSelection} onChange={(e) => applyInlineStyle("backgroundColor", e.target.value)} className="h-6 w-7 cursor-pointer rounded border border-[var(--color-line)] bg-transparent p-0.5" />
+        </label>
+        <ToolbarButton label="Remove Highlight" icon={Eraser} saveSelection={saveSelection} onClick={() => applyInlineStyle("backgroundColor", "transparent")} />
 
         <span className="mx-0.5 h-5 w-px bg-[var(--color-line)]" />
 
