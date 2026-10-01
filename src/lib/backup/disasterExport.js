@@ -373,6 +373,21 @@ export async function createDisasterBackup({ includeUserData = true, onProgress 
     };
   });
 
+  // `skippedTableNames` is needed by sections 6g/6h below (and again by
+  // the manifest in section 7) — declared ONCE here, right after
+  // `tablesSkipped` is finalized (section 2), so every later section
+  // reads the same Set instead of each needing its own. Originally this
+  // was declared down in section 7 (where the manifest also uses it),
+  // which left 6g/6h referencing it before its declaration in the same
+  // function scope — a temporal-dead-zone `ReferenceError` ("Cannot
+  // access '<name>' before initialization", renamed to a short
+  // minifier-assigned identifier like "te" in the production bundle) on
+  // EVERY run with includeUserData=true, not just in production. See
+  // scripts/test-disaster-recovery.mjs's header note on why the existing
+  // suite never caught this: it exercises a synthetic mirror of the zip
+  // assembly, never the real exported `createDisasterBackup` end-to-end.
+  const skippedTableNames = new Set(tablesSkipped.map((s) => s.table));
+
   // ---- 6g. Question Bank / Question Paper reconciliation sections
   // (Phase 5: explicit sections distinct from the generic datasetReport
   // rows, naming tables detected/backed up, total records, and schema
@@ -411,7 +426,6 @@ export async function createDisasterBackup({ includeUserData = true, onProgress 
 
   // ---- 7. Manifest ----
   onProgress("Creating disaster package…");
-  const skippedTableNames = new Set(tablesSkipped.map((s) => s.table));
   const manifest = {
     format: DISASTER_FORMAT,
     disasterBackupVersion: DISASTER_VERSION,

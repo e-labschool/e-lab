@@ -17,11 +17,20 @@
 // report for the full honesty breakdown (spec §40).
 import assert from "node:assert/strict";
 import { webcrypto } from "node:crypto";
+import { register } from "node:module";
+import { pathToFileURL } from "node:url";
 import JSZip from "jszip";
 
 // Web Crypto is global in browsers; Node needs this for parity with
 // src/lib/backup/checksums.js, which calls the global `crypto.subtle`.
 if (!globalThis.crypto) globalThis.crypto = webcrypto;
+
+// Registered up front (before any dynamic import below) so section 14 can
+// `import()` the REAL src/lib/backup/disasterExport.js under plain Node —
+// see test-disaster-recovery-loader-hooks.mjs for why this is needed and
+// exactly what it mocks. Harmless to every other section: it only ever
+// intercepts the "supabaseClient.js" specifier, which none of them import.
+register("./test-disaster-recovery-loader-hooks.mjs", import.meta.url);
 
 let passed = 0;
 let failed = 0;
@@ -1318,6 +1327,56 @@ await (async () => {
     assert.equal(second.verified, 0);
     assert.equal(second.mismatches.length, 1);
     assert.equal(second.mismatches[0].reason, "checksum mismatch");
+  });
+})();
+
+console.log("\n== 14. REGRESSION: real createDisasterBackup() end-to-end, late-stage production TDZ crash (2026-10) ==");
+await (async () => {
+  // HONESTY NOTE: unlike every section above (which mirrors or statically
+  // greps disasterExport.js's logic because it cannot be imported under
+  // plain Node — see the loader hooks file's header), this section
+  // imports and RUNS the real, unmodified `createDisasterBackup()` from
+  // src/lib/backup/disasterExport.js, via the module hook registered at
+  // the top of this file, against a minimal mock Supabase client (every
+  // table/RPC call returns zero rows). This is exactly the class of bug
+  // that mirrored/synthetic tests structurally cannot catch: a
+  // temporal-dead-zone `ReferenceError` — `skippedTableNames` was read by
+  // the questionBankReport/questionPaperReport/schemaRecoveryGaps section
+  // before its own `const` declaration later in the same function body.
+  // It threw on EVERY invocation with includeUserData=true (not only in
+  // production — minification just renamed the identifier to something
+  // like "te" in the deployed bundle, which is why the crash message
+  // named an unfamiliar short identifier); this test proves the full
+  // pipeline now runs through manifest assembly and ZIP generation
+  // without that ReferenceError, using the REAL module graph (also
+  // catching a reintroduced circular-import-style init-order bug
+  // anywhere else in that same graph, not only this one line).
+  //
+  // What this does NOT prove: it doesn't exercise a live Supabase
+  // connection, real Storage downloads, or the production esbuild/Rollup
+  // minifier specifically — see section 13's and the loader hooks file's
+  // notes. Node's own module evaluation order is a different (though
+  // related) execution model than a minified bundle's; it catches this
+  // bug class because `const`/`let` temporal-dead-zone semantics are
+  // part of the JS spec itself, not a bundler-specific behavior.
+  const { createDisasterBackup } = await import("../src/lib/backup/disasterExport.js");
+
+  await testAsync("createDisasterBackup() completes through manifest + ZIP assembly without throwing (would ReferenceError: Cannot access 'skippedTableNames' before initialization if the bug returns)", async () => {
+    const result = await createDisasterBackup({ includeUserData: true, onProgress: () => {} });
+    assert.ok(result.manifest, "manifest must be produced");
+    assert.ok(result.zip, "zip must be produced");
+    assert.equal(result.manifest.questionBankReport.tablesBackedUp.length, 4, "questionBankReport (built using skippedTableNames) must be assembled correctly");
+    assert.ok(Array.isArray(result.manifest.schemaRecoveryGaps) && result.manifest.schemaRecoveryGaps.length > 0, "schemaRecoveryGaps (also built using skippedTableNames) must be assembled correctly");
+    // A real ZIP blob can be generated from the result — the actual final
+    // step the user's crash never reached in production.
+    const blob = await result.zip.generateAsync({ type: "uint8array" });
+    assert.ok(blob.byteLength > 0, "final ZIP bytes must be generated");
+  });
+
+  await testAsync("createDisasterBackup({ includeUserData: false }) also completes without throwing (the educational-content-only path exercises the same manifest-assembly code)", async () => {
+    const result = await createDisasterBackup({ includeUserData: false, onProgress: () => {} });
+    assert.ok(result.manifest);
+    assert.equal(result.manifest.includesUserData, false);
   });
 })();
 
