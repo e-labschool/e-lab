@@ -1,5 +1,6 @@
 import StimulusRenderer from "../../teacher/qbuilder/components/visuals/StimulusRenderer.jsx";
 import StimulusErrorBoundary from "../../../components/ui/StimulusErrorBoundary.jsx";
+import ZoomableImage from "../../../components/image-viewer/ZoomableImage.jsx";
 import { ScientificText } from "../../../lib/scientificContent.jsx";
 
 // Renders a question during an active challenge — no correctness
@@ -64,6 +65,11 @@ export default function QuestionRenderer({ question, questionNumber, answer, onA
               const parsed = typeof opt === "string" ? rawText.match(/^\s*([A-Z])(?:[.)]|\s*-)?\s*(.*)$/s) : null;
               const optionId = typeof opt === "string" ? (parsed?.[1] ?? fallbackId) : (opt?.id ?? fallbackId);
               const optionText = typeof opt === "string" ? (parsed?.[2] || rawText) : rawText;
+              // Optional per-option image (object options only). Clicking the
+              // image enlarges it; ZoomableImage stops the click so the
+              // surrounding <label> never selects/answers the option.
+              const optionImage = typeof opt === "object" && opt ? (opt.imageUrl || opt.image?.src || (typeof opt.image === "string" ? opt.image : "")) : "";
+              const optionImageAlt = typeof opt === "object" && opt ? (opt.imageAlt || opt.image?.alt || `Option ${optionId}`) : "";
               return (
                 <label
                   key={optionId}
@@ -73,7 +79,8 @@ export default function QuestionRenderer({ question, questionNumber, answer, onA
                 >
                   <input type="radio" name={`q-${question.id}`} checked={answer === optionId} onChange={() => onAnswer(optionId)} className="accent-[var(--color-indigo)]" />
                   <span className="font-medium text-[var(--color-ink-faint)]">{optionId}</span>
-                  <ScientificText text={optionText} className="text-[var(--color-ink)]" />
+                  {optionText && <ScientificText text={optionText} className="text-[var(--color-ink)]" />}
+                  {optionImage && <ZoomableImage src={optionImage} alt={optionImageAlt} title="Click to enlarge" className="max-h-40 w-auto max-w-full rounded-md border border-[var(--color-line)] bg-white object-contain" />}
                 </label>
               );
             })}

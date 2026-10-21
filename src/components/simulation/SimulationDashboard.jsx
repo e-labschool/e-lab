@@ -1,5 +1,5 @@
-import { Children, useLayoutEffect, useRef, useState } from "react";
-import { Lock, Maximize2, Minus, Plus, RotateCcw } from "lucide-react";
+import { Children, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { BarChart3, Info, Lock, Maximize2, Minus, Plus, RotateCcw, Settings } from "lucide-react";
 import { useSimulationPresentation } from "../interactive-shell/SimulationPresentation.js";
 import { useFullscreen } from "../interactive-shell/useFullscreen.js";
 import SimulationActions from "../interactive-shell/SimulationActions.jsx";
@@ -9,9 +9,9 @@ import "./SimulationDashboard.css";
 // SIMULATION DASHBOARD LAYOUT -- the shared compact landscape layout every
 // e-Lab simulation should use. See docs/SIMULATION_DASHBOARD_LAYOUT.md.
 //
-//   header   title + subtitle | mode tabs | Reset + frame actions
-//   main     Controls | Chamber (visualisation) | Graph
-//   bottom   Live values | Predict & Reveal | What is happening?
+//   header   Title | Mode selector | Show Graph | Reset | Settings (+ frame actions)
+//   main     Compact controls | Large experiment visual | Optional graph (animated column)
+//   bottom   Live-value strip + Predict button | one-line explanation (+ info)
 //
 // The layout is driven by the dashboard's OWN measured box (ResizeObserver),
 // never by window width, so it behaves identically inside the narrow Learn
@@ -37,11 +37,16 @@ function useBoxClass(ref) {
 
 /**
  * The dashboard shell.
- *  props: title, subtitle, tabs (node), onReset, headerExtra (node), controls, chamber, graph,
- *         live, predict, explain (nodes, normally <DashPanel>s), role/ariaLabel/testId for the root.
+ *  props: title, subtitle(+Long), tabs (mode selector node), onReset, graphShown / onGraphToggle
+ *         (header Show/Hide Graph button), settings (node shown in the header Settings popover;
+ *         settingsOpen / onSettingsOpenChange optional), controls, chamber, graph, live (LiveStrip),
+ *         predict (PredictPopover), explain (ExplainLine), role/ariaLabel/testId/id for the root.
  */
 export default function SimulationDashboard({
-  title, subtitle, subtitleLong, tabs, onReset, headerExtra, controls, chamber, graph, live, predict, explain,
+  title, subtitle, subtitleLong, tabs, onReset, headerExtra,
+  graphShown = false, graphWide = false, onGraphToggle, graphId = "sd-graph",
+  settings, settingsLabel = "Settings", onSettingsOpenChange,
+  controls, chamber, graph, live, predict, explain,
   role, ariaLabel, testId = "workspace", id,
 }) {
   const rootRef = useRef(null);
@@ -64,6 +69,7 @@ export default function SimulationDashboard({
       data-header={header}
       data-w={w}
       data-density={density}
+      data-graph={graphShown ? "shown" : "hidden"}
       style={{ "--sd-s": scale }}
       data-viewport={isViewport ? "true" : "false"}
       data-embedded={isViewport ? "false" : "true"}
@@ -72,7 +78,7 @@ export default function SimulationDashboard({
         <div className="sd-title-block">
           <h2 className="sd-title">{title}</h2>
           {subtitle && (
-            <p className="sd-subtitle" title={subtitleLong ?? subtitle}>
+            <p className="sd-subtitle" title={subtitleLong ?? subtitle} data-testid="sd-subtitle">
               <span className={subtitleLong ? "sd-only-one" : undefined}>{subtitle}</span>
               {subtitleLong && <span className="sd-only-two">{subtitleLong}</span>}
             </p>
@@ -81,10 +87,27 @@ export default function SimulationDashboard({
         {tabs && <div className="sd-header-tabs">{tabs}</div>}
         <div className="sd-header-actions">
           {headerExtra}
+          {onGraphToggle && (
+            <button
+              type="button" className="sd-btn sd-btn--toggle" onClick={onGraphToggle}
+              aria-pressed={graphShown} aria-controls={graphId} data-testid="graph-toggle"
+              title={graphShown ? "Hide the graph" : "Show the graph beside the experiment"}
+            >
+              <BarChart3 size={14} aria-hidden="true" /> {graphShown ? "Hide Graph" : "Show Graph"}
+            </button>
+          )}
           {onReset && (
             <button type="button" className="sd-btn" onClick={onReset} data-testid="reset" aria-label="Reset the simulation to the default conditions" title="Reset to the default conditions">
               <RotateCcw size={14} aria-hidden="true" /> Reset
             </button>
+          )}
+          {settings && (
+            <HeaderPopover
+              label={settingsLabel} icon={<Settings size={14} aria-hidden="true" />} testId="settings" panelTestId="settings-panel"
+              onOpenChange={onSettingsOpenChange} width={340}
+            >
+              {settings}
+            </HeaderPopover>
           )}
           <SimulationActions targetRef={target} simulationId={simulationId} iconOnly={w !== "xl"} />
         </div>
@@ -99,15 +122,19 @@ export default function SimulationDashboard({
         </div>
       )}
 
-      <div className="sd-main" data-testid="sd-main">
+      <div className="sd-main" data-testid="sd-main" data-graph={graphShown ? "shown" : "hidden"} data-graph-wide={graphWide ? "true" : "false"}>
         <div className="sd-col sd-col--controls" data-testid="col-controls">{controls}</div>
         <div className="sd-col sd-col--chamber" data-testid="col-chamber">{chamber}</div>
-        <div className="sd-col sd-col--graph" data-testid="col-graph">{graph}</div>
+        <div className="sd-col sd-col--graph" id={graphId} data-testid="col-graph" aria-hidden={graphShown ? undefined : "true"} inert={graphShown ? undefined : true}>
+          {graphShown && graph}
+        </div>
       </div>
 
       <div className="sd-bottom" data-testid="sd-bottom">
-        {live}
-        {predict}
+        <div className="sd-bottom-row">
+          {live}
+          {predict}
+        </div>
         {explain}
       </div>
     </div>
@@ -153,12 +180,13 @@ export function ControlLegend({ items }) {
 }
 
 /**
- * Compact slider row (~58-68 px): name+symbol, lock icon, optional extra control, coloured value badge,
- * slider, min/max. tone: "active" (you change it) | "edit" (initial-condition editing) | "locked".
+ * Compact slider row (~50 px): name+symbol, lock icon, optional extra control and coloured value badge
+ * on the first line; min label, slider, max label on the second. tone: "active" (you change it) |
+ * "edit" (initial-condition editing) | "locked".
  */
 export function SliderRow({
   id, label, symbol, value, min, max, step, onChange, tone = "active", color, badgeBg, badgeText,
-  minText, maxText, valueText, labelExtra, slideStart, slideEnd, minmaxMid, note, noteTone, lockTitle = "Kept constant", testId, rowTestId, describedBy,
+  minText, maxText, valueText, labelExtra, slideStart, slideEnd, note, noteTone, lockTitle = "Kept constant", testId, rowTestId, describedBy,
 }) {
   const disabled = tone === "locked";
   const clamped = Math.min(max, Math.max(min, value));
@@ -176,6 +204,7 @@ export function SliderRow({
       </div>
       <div className="sd-row-slider">
         {slideStart}
+        <span className="sd-end sd-end--min" aria-hidden="true">{minText}</span>
         <input
           id={id}
           type="range"
@@ -191,12 +220,8 @@ export function SliderRow({
           style={{ "--sd-color": color, "--sd-fill": `${fill}%` }}
           data-testid={testId ? `slider-${testId}` : undefined}
         />
+        <span className="sd-end sd-end--max" aria-hidden="true">{maxText}</span>
         {slideEnd}
-      </div>
-      <div className="sd-minmax">
-        <span aria-hidden="true">{minText}</span>
-        {minmaxMid}
-        <span aria-hidden="true">{maxText}</span>
       </div>
       {note && <p className={"sd-note " + (noteTone === "info" ? "sd-note--info" : "")} data-testid={testId ? `limit-${testId}` : undefined}>{note}</p>}
     </div>
@@ -227,9 +252,9 @@ export function ReadOnlyRow({ label, symbol, badgeText, badgeBg, color, hint, te
 }
 
 /** Small segmented switch (radiogroup), e.g. Moles | Molecules. */
-export function MiniSwitch({ options, value, onChange, ariaLabel, testId, large = false, titles = {} }) {
+export function MiniSwitch({ options, value, onChange, ariaLabel, testId, large = false, fill = false, titles = {} }) {
   return (
-    <div role="radiogroup" aria-label={ariaLabel} className={"sd-switch" + (large ? " sd-switch--lg" : "")} data-testid={testId}>
+    <div role="radiogroup" aria-label={ariaLabel} className={"sd-switch" + (large ? " sd-switch--lg" : "") + (fill ? " sd-switch--fill" : "")} data-testid={testId}>
       {options.map((o, i) => {
         const sel = o.id === value;
         return (
@@ -330,19 +355,118 @@ export function ChamberToolbar({ children }) {
   return <div className="sd-toolbar" role="toolbar" aria-label="Simulation options" data-n={Children.count(children)} data-testid="chamber-toolbar">{children}</div>;
 }
 
-/** Four small coloured live-value tiles. items: [{id,label,value,sub,bg,testId}] */
-export function LiveTiles({ items, ariaLabel = "Live values" }) {
+/** One-line strip of small coloured live values. items: [{id,label,value,bg,testId}] */
+export function LiveStrip({ items, ariaLabel = "Live values" }) {
   return (
-    <DashPanel title="Live values" ariaLabel={ariaLabel} bodyClassName="">
-      <dl className="sd-tiles">
-        {items.map((t) => (
-          <div key={t.id} className="sd-tile" style={{ background: t.bg }} data-testid={t.testId}>
-            <dt>{t.label}</dt>
-            <dd>{t.value}</dd>
-            {t.sub && <span className="sd-tile-sub" data-testid={t.subTestId}>{t.sub}</span>}
-          </div>
-        ))}
-      </dl>
-    </DashPanel>
+    <dl className="sd-strip" aria-label={ariaLabel} data-testid="live-strip">
+      {items.map((t) => (
+        <div key={t.id} className="sd-chip" style={{ background: t.bg }} data-testid={t.testId} title={t.title}>
+          <dt>{t.label}</dt>
+          <dd>{t.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/** Compact read-only row of the variables kept constant: "Temperature: 300 K [lock] | Amount: 1.00 mol [lock]". */
+export function ConstantsRow({ items, label = "Kept constant", testId = "constants-row" }) {
+  return (
+    <div className="sd-const" role="group" aria-label={label} data-testid={testId}>
+      {items.map((it) => (
+        <span key={it.id} className="sd-const-item" style={{ "--sd-color": it.color }} data-testid={`const-${it.id}`}>
+          <span className="sd-const-name">{it.label}:</span>
+          <b>{it.value}</b>
+          <Lock size={12} role="img" aria-label="kept constant" />
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/** The single short dynamic explanation (one line) with an optional information popover for the detail. */
+export function ExplainLine({ text, details, testId = "what-is-happening", detailsLabel = "More detail" }) {
+  return (
+    <div className="sd-explain" data-testid="explain-line">
+      <p className="sd-explain-text" aria-live="polite" aria-atomic="true" data-testid={testId} title={text}>{text}</p>
+      {details && (
+        <HeaderPopover label={detailsLabel} iconOnly icon={<Info size={15} aria-hidden="true" />} placement="up" width={360} testId="explain-info" panelTestId="explain-info-panel">
+          {details}
+        </HeaderPopover>
+      )}
+    </div>
+  );
+}
+
+/** Small optional Predict button with a floating panel (the dashboard height never changes). */
+export function PredictPopover({ question, answer, revealed, onToggle, onOpenChange }) {
+  return (
+    <HeaderPopover label="Predict" icon={<Info size={14} aria-hidden="true" />} placement="up" width={340} testId="predict-toggle" panelTestId="predict" onOpenChange={onOpenChange} small>
+      <div aria-live="polite">
+        <p className="sd-pop-q" data-testid="predict-question">{question}</p>
+        {revealed && <p className="sd-pop-a" data-testid="predict-answer"><strong>Answer: </strong>{answer}</p>}
+      </div>
+      <button type="button" className="sd-btn sd-btn--sm" onClick={onToggle} aria-expanded={revealed} data-testid="show-answer">
+        {revealed ? "Hide answer" : "Show answer"}
+      </button>
+    </HeaderPopover>
+  );
+}
+
+/** A titled group inside a popover. */
+export function PopoverSection({ title, children, testId }) {
+  return (
+    <section className="sd-pop-section" data-testid={testId}>
+      {title && <h4 className="sd-pop-title">{title}</h4>}
+      {children}
+    </section>
+  );
+}
+
+/** A labelled switch row inside Settings. */
+export function SettingToggle({ id, label, hint, checked, onChange, disabled = false, testId }) {
+  return (
+    <label className={"sd-setting" + (disabled ? " sd-setting--off" : "")} htmlFor={id}>
+      <input id={id} type="checkbox" role="switch" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} data-testid={testId} />
+      <span className="sd-setting-text"><span>{label}</span>{hint && <small>{hint}</small>}</span>
+    </label>
+  );
+}
+
+/**
+ * A header button that opens a small floating panel (Settings, Predict, info).
+ * Closes on Escape (focus returns to the button) and on a press outside. The panel is rendered
+ * INSIDE the dashboard so it also works in fullscreen. `children` may be a function receiving { close }.
+ */
+export function HeaderPopover({ label, icon, children, testId, panelTestId, onOpenChange, width = 320, placement = "down", iconOnly = false, small = false }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+  const btnRef = useRef(null);
+  const panelId = useId();
+  const set = useCallback((v) => { setOpen(v); onOpenChange?.(v); }, [onOpenChange]);
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDown = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) set(false); };
+    const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); set(false); btnRef.current?.focus(); } };
+    document.addEventListener("pointerdown", onDown, true);
+    document.addEventListener("keydown", onKey, true);
+    return () => { document.removeEventListener("pointerdown", onDown, true); document.removeEventListener("keydown", onKey, true); };
+  }, [open, set]);
+  const close = useCallback(() => set(false), [set]);
+  return (
+    <div className="sd-pop" ref={wrapRef} data-open={open ? "true" : "false"}>
+      <button
+        ref={btnRef} type="button" className={"sd-btn" + (small ? " sd-btn--sm" : "") + (iconOnly ? " sd-btn--icon" : "")}
+        aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? panelId : undefined}
+        aria-label={iconOnly ? label : undefined} title={label} onClick={() => set(!open)} data-testid={testId}
+      >
+        {icon}{!iconOnly && <span>{label}</span>}
+      </button>
+      {open && (
+        <div id={panelId} role="dialog" aria-label={label} className="sd-pop-panel" data-placement={placement} style={{ width }} data-testid={panelTestId}>
+          {typeof children === "function" ? children({ close }) : children}
+        </div>
+      )}
+    </div>
   );
 }

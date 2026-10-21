@@ -286,8 +286,7 @@ export default function GraphPanel({
           <span className="inline-flex items-center gap-1"><svg width="22" height="6" aria-hidden="true"><line x1="0" y1="3" x2="22" y2="3" stroke="#7B879F" strokeWidth="2" strokeDasharray="5 4" /></svg>{graph.extKind === "celsius" ? "extrapolation: not physically accessible" : "extrapolation to the origin"}</span>
         </div>
       )}
-      <p className="shrink-0 text-[length:var(--sd-fs-sm)] font-medium text-[#14226B]" data-testid="graph-readout">{readout}</p>
-      <p className="sd-text shrink-0" data-testid="graph-interpretation">{graph.interpretation}</p>
+      <p className="shrink-0 text-[length:var(--sd-fs-sm)] font-medium text-[#14226B]" data-testid="graph-readout" title={graph.interpretation}>{readout}</p>
     </DashPanel>
   );
 }

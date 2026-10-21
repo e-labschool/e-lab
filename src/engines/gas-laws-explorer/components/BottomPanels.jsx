@@ -1,40 +1,18 @@
-import { Cog, Eye, EyeOff, HelpCircle } from "lucide-react";
-import { predictContent } from "../model.js";
-import { DashPanel } from "../../../components/simulation/SimulationDashboard.jsx";
+import { PredictPopover } from "../../../components/simulation/SimulationDashboard.jsx";
+import { MODES, predictContent } from "../model.js";
 
-// Predict & Reveal: short question; the answer stays hidden until requested and
-// replaces the question in the same box so the bottom row never changes height.
+// Predict: a small optional button; the question and (on request) the answer float above the strip.
 export function PredictPanel({ state, revealed, onToggle }) {
   const c = predictContent(state);
-  return (
-    <DashPanel
-      title="Predict & Reveal" icon={<HelpCircle size={16} className="text-[#2F7BF5]" aria-hidden="true" />}
-      ariaLabel="Predict" tint testId="predict"
-      aside={
-        <button type="button" className="sd-btn sd-btn--sm" onClick={onToggle} aria-expanded={revealed} data-testid="show-answer">
-          {revealed ? <EyeOff size={13} aria-hidden="true" /> : <Eye size={13} aria-hidden="true" />}
-          {revealed ? "Hide answer" : "Show answer"}
-        </button>
-      }
-    >
-      <div aria-live="polite">
-        {revealed ? (
-          <p className="sd-text sd-text--lg" data-testid="predict-answer"><strong>Answer: </strong>{c.answer}</p>
-        ) : (
-          <p className="sd-text sd-text--lg" data-testid="predict-question">{c.question} Try adjusting the slider.</p>
-        )}
-      </div>
-    </DashPanel>
-  );
+  return <PredictPopover question={`${c.question} Try adjusting the slider.`} answer={c.answer} revealed={revealed} onToggle={onToggle} />;
 }
 
-export function WhatIsHappening({ text, accent }) {
+/** The optional detail behind the (i) icon next to the one-line explanation. */
+export function ExplanationDetails({ mode }) {
+  const m = MODES[mode];
   return (
-    <DashPanel
-      title="What is happening?" icon={<Cog size={16} style={{ color: accent.solid }} aria-hidden="true" />}
-      ariaLabel="What is happening?" style={{ background: accent.soft, borderColor: accent.border }} testId="happening-panel"
-    >
-      <p className="sd-text sd-text--lg" aria-live="polite" aria-atomic="true" data-testid="what-is-happening">{text}</p>
-    </DashPanel>
+    <p className="sd-pop-note" style={{ marginBottom: 0 }} data-testid="relationship-detail">
+      <strong>{m.title} ({m.short}) &ndash; {m.law}:</strong> <em>{m.relation}</em> {m.constantText}. {m.sentence}
+    </p>
   );
 }

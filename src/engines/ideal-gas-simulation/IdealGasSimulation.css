@@ -1,3 +1,48 @@
-/* Ideal Gas Simulation: layout and slider styling now come from the shared
-   Simulation Dashboard Layout (src/components/simulation/SimulationDashboard.css).
-   Nothing simulation-specific is needed here. */
+/* Ideal vs Real Gas: layout and slider styling come from the shared Simulation Dashboard Layout
+   (src/components/simulation/SimulationDashboard.css). Only the deviation indicator is specific to this simulation. */
+
+/* Deviation indicator over the chamber */
+.ig-dev {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-width: calc(100% - 64px);
+  padding: 4px 9px;
+  border: 1px solid;
+  border-radius: 10px;
+  font-size: var(--sd-fs);
+  line-height: 1.2;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(20, 34, 107, 0.15);
+  cursor: help;
+}
+.ig-dev-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.ig-dev-main b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ig-dev-z {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.ig-dev-sub {
+  font-size: var(--sd-fs-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ig-dev--ideal { border-color: #b9d2f8; background: #e8f1fe; color: #0f3f94; }
+.ig-dev--near { border-color: #8fd5a6; background: #e3f6e9; color: #0b5a2b; }
+.ig-dev--noticeable { border-color: #f1cf7a; background: #fff4d6; color: #7a4d00; }
+.ig-dev--strong { border-color: #f1a49f; background: #fde6e4; color: #8f1d17; }
+.ig-dev--limit { border-color: #f1cf7a; background: #fff4d6; color: #7a4d00; }

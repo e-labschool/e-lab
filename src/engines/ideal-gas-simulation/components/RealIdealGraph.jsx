@@ -1,21 +1,20 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import {
-  CAUTION_TEXT, LIMITS, Z_P_MAX, Z_P_MIN, Z_TOLERANCE_PCT,
-  generateZCurve, zAxisRange, zMarker,
-} from "../model.js";
+import { GAS, Z_P_MAX, Z_P_MIN, generateZCurve, vdwCriticalConstants, vdwSaturationPressure, zAxisRange, zMarker } from "../model.js";
 
-// "Real vs Ideal Gas Behaviour": compressibility factor Z = PV/(nRT) against
-// pressure. Plain SVG drawn from model.generateZCurve() / model.zMarker();
-// nothing is stored or hard-coded here. The pressure axis is logarithmic
-// (0.01-100 atm) so the whole 0.2-5 atm control window and the high-pressure
-// upturn are both visible. Ideal gas: solid blue line at Z = 1. Real gas:
-// dashed orange curve. Current state: filled dot with a ring.
+// "Real vs Ideal Gas Behaviour": compressibility factor Z = PV/(nRT) against pressure for the SAME gas
+// (CO2) at the CURRENT temperature. Plain SVG drawn from model.generateZCurve() / model.zMarker();
+// nothing is stored or hard-coded here. Log pressure axis (0.1-1000 atm).
+//   solid blue line  Ideal gas, Z = 1 (fixed)
+//   orange curve     Real gas (van der Waals CO2), recomputed whenever T changes
+//   dark dot         the live state (matches the live strip and the chamber)
+//   hollow orange    in Ideal mode: the real gas at the same pressure (or volume), for comparison
 const C_IDEAL = "#2F7BF5";
 const C_REAL = "#E8590C";
 const C_MARK = "#14226B";
 const M0 = { l: 44, r: 12, t: 8, b: 34 };
 const LOG_MIN = Math.log10(Z_P_MIN);
 const LOG_SPAN = Math.log10(Z_P_MAX) - LOG_MIN;
+const X_TICKS = [0.1, 1, 10, 100, 1000];
 
 function yTicks(lo, hi) {
   const span = hi - lo;
@@ -24,8 +23,6 @@ function yTicks(lo, hi) {
   for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toFixed(2));
   return out;
 }
-const X_TICKS = [0.01, 0.1, 1, 10, 100];
-const fmtP = (v) => (v >= 1 ? String(v) : String(v));
 
 function useSize(ref) {
   const [size, setSize] = useState({ w: 480, h: 200 });
@@ -44,23 +41,22 @@ function useSize(ref) {
   return size;
 }
 
-function LegendSwatch({ color, dash, children, dot, faint }) {
+function LegendSwatch({ color, dash, children, dot, hollow }) {
   return (
     <span className="inline-flex items-center gap-1 whitespace-nowrap">
-      <svg width="24" height="10" aria-hidden="true">
+      <svg width="22" height="10" aria-hidden="true">
         {dot ? (
-          <>
-            <circle cx="12" cy="5" r="4.6" fill="none" stroke={color} strokeWidth="1" opacity="0.6" />
-            <circle cx="12" cy="5" r="2.4" fill={color} />
-          </>
+          <circle cx="11" cy="5" r="3.6" fill={hollow ? "#fff" : color} stroke={hollow ? color : "#fff"} strokeWidth={hollow ? 1.8 : 1.2} />
         ) : (
-          <line x1="1" y1="5" x2="23" y2="5" stroke={color} strokeWidth="2.2" strokeDasharray={dash} strokeLinecap="round" opacity={faint ? 0.5 : 1} />
+          <line x1="1" y1="5" x2="21" y2="5" stroke={color} strokeWidth="2.2" strokeDasharray={dash} strokeLinecap="round" />
         )}
       </svg>
       {children}
     </span>
   );
 }
+
+const fmtP = (v) => (v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2));
 
 export default function RealIdealGraph({ state }) {
   const plotRef = useRef(null);
@@ -73,6 +69,8 @@ export default function RealIdealGraph({ state }) {
   const curve = useMemo(() => generateZCurve(n, T, state.mode), [n, T, state.mode]);
   const marker = useMemo(() => zMarker(state), [state]);
   const axis = useMemo(() => zAxisRange(curve, marker), [curve, marker]);
+  const { Tc } = vdwCriticalConstants();
+  const psat = vdwSaturationPressure(T);
 
   const k = Math.min(1.3, Math.max(1, w / 480)); // text scale on large plots
   const M = { l: M0.l * k, r: M0.r * k, t: M0.t * k, b: M0.b * k };
@@ -80,15 +78,16 @@ export default function RealIdealGraph({ state }) {
   const ph = Math.max(40, h - M.t - M.b);
   const sx = (P) => M.l + ((Math.log10(P) - LOG_MIN) / LOG_SPAN) * pw;
   const sy = (Z) => M.t + ph - ((Z - axis.yMin) / (axis.yMax - axis.yMin)) * ph;
+  const clampY = (Z) => sy(Math.min(axis.yMax, Math.max(axis.yMin, Z)));
   const path = (pts) => pts.map((p, i) => `${i ? "L" : "M"}${sx(p.P).toFixed(1)} ${sy(p.Z).toFixed(1)}`).join("");
   const yt = yTicks(axis.yMin, axis.yMax);
   const endPt = curve.end && curve.points.length ? curve.points[curve.points.length - 1] : null;
 
-  const zText = marker.status === "ok" ? marker.Z.toFixed(3) : null;
+  const zText = marker.status === "ok" || marker.status === "limit" ? marker.Z.toFixed(3) : null;
   const label =
-    `Real vs Ideal Gas Behaviour: compressibility factor Z against pressure in atmospheres at ${Math.round(T)} kelvin and ${n.toFixed(2)} moles. ` +
-    `Ideal gas reference line at Z equals 1. ${real ? "Real gas curve. " : "Faint real gas curve for comparison. "}` +
-    (zText ? `Current state: P ${marker.P.toFixed(2)} atm, Z ${zText}, ${marker.deviationPct.toFixed(1)} percent from 1. ${marker.text}` : "Current state: the simplified model is unreliable here.");
+    `Real vs Ideal Gas Behaviour: compressibility factor Z against pressure in atmospheres for ${GAS.name} at ${Math.round(T)} kelvin. ` +
+    `Ideal gas reference line at Z equals 1. Real gas curve. ` +
+    (marker.status === "limit" ? `Current state is outside the model: ${marker.text}` : `Current state: P ${fmtP(marker.P)} atm, Z ${zText}.` + (marker.real ? ` Real gas at the same conditions: Z ${marker.real.Z.toFixed(3)}.` : ""));
 
   const onMove = (e) => {
     const r = e.currentTarget.getBoundingClientRect();
@@ -109,32 +108,38 @@ export default function RealIdealGraph({ state }) {
   const [announce, setAnnounce] = useState("");
   useEffect(() => {
     const t = setTimeout(() => {
-      setAnnounce(zText ? `Z equals ${zText}, ${marker.deviationPct.toFixed(1)} percent from 1. ${marker.text}` : marker.text);
+      setAnnounce(zText ? `Z equals ${zText}.` : "");
     }, 600);
     return () => clearTimeout(t);
-  }, [zText, marker.deviationPct, marker.text]);
-
-  const note = marker.outside
-    ? "The current state is outside the plotted pressure range."
-    : marker.caution ? CAUTION_TEXT[marker.caution] : null;
+  }, [zText]);
 
   const mx = sx(marker.plotP);
-  const my = marker.status === "ok" ? sy(Math.min(axis.yMax, Math.max(axis.yMin, marker.Z))) : sy(1);
-  const ghostDash = "4 4";
+  const my = clampY(marker.Z);
+  const rm = marker.real;
+  const rx = rm ? sx(rm.plotP) : null;
+  const ry = rm ? clampY(rm.Z) : null;
+
+  const regime = T < Tc
+    ? `T < Tᶜ (${Tc.toFixed(0)} K): CO₂ condenses above ${psat ? psat.toFixed(psat >= 100 ? 0 : 1) : "P_sat"} atm`
+    : `T > Tᶜ (${Tc.toFixed(0)} K): supercritical, no condensation`;
+  const notes = [
+    curve.end ? `Curve ends at ${fmtP(curve.end.P)} atm: ${curve.end.text}` : null,
+    marker.status === "limit" ? marker.text : null,
+    marker.outside ? "The current state is outside the plotted pressure range." : null,
+    axis.clipped ? "The curve continues above the plotted Z range." : null,
+  ].filter(Boolean);
 
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-col gap-1">
+    <div className="flex h-full min-h-0 min-w-0 flex-col gap-1" data-testid="graph-root">
       <div className="flex shrink-0 flex-wrap items-baseline justify-between gap-x-3 gap-y-0">
-        <h4 className="text-[length:calc(var(--sd-fs)_+_1.5px)] font-bold text-[#14226B]" data-testid="graph-title">Real vs Ideal Gas Behaviour</h4>
+        <h4 className="text-[length:calc(var(--sd-fs)_+_1.5px)] font-bold text-[#14226B]" data-testid="graph-title">Z = PV/nRT vs pressure</h4>
         <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0 text-[length:var(--sd-fs-sm)] text-[#33415F]" data-testid="graph-legend">
-          <LegendSwatch color={C_IDEAL}>Ideal gas (Z = 1)</LegendSwatch>
-          <LegendSwatch color={C_REAL} dash="7 4" faint={!real}>{real ? "Real gas (van der Waals)" : "Real gas, for comparison"}</LegendSwatch>
-          <LegendSwatch color={C_MARK} dot>Current state</LegendSwatch>
+          <LegendSwatch color={C_IDEAL}>Ideal (Z = 1)</LegendSwatch>
+          <LegendSwatch color={C_REAL} dash="7 4">Real CO{"₂"}</LegendSwatch>
+          <LegendSwatch color={C_MARK} dot>Now</LegendSwatch>
+          {!real && rm && <LegendSwatch color={C_REAL} dot hollow>Real, same {state.control === "pressure" ? "P" : "V"}</LegendSwatch>}
         </div>
       </div>
-      <p className="shrink-0 text-[length:var(--sd-fs-sm)] text-[#4a5a82]" data-testid="graph-subtitle">
-        Curve at constant T = {Math.round(T)} K and n = {n.toFixed(2)} mol. Z = PV/(nRT).
-      </p>
 
       <div ref={plotRef} className="sd-graph-plot min-h-[120px]">
         <svg
@@ -150,9 +155,6 @@ export default function RealIdealGraph({ state }) {
           <defs>
             <clipPath id={clipId}><rect x={M.l} y={M.t} width={pw} height={ph} /></clipPath>
           </defs>
-          {/* control window shading (0.2-5.0 atm) */}
-          <rect x={sx(LIMITS.P.min)} y={M.t} width={sx(LIMITS.P.max) - sx(LIMITS.P.min)} height={ph} fill="#EAF2FE" opacity="0.8" data-testid="graph-control-band" />
-          <text x={(sx(LIMITS.P.min) + sx(LIMITS.P.max)) / 2} y={M.t + 10} textAnchor="middle" fontSize={10.5 * k} fill="#4a5a82">control range 0.2-5 atm</text>
           {yt.map((v) => (
             <g key={"y" + v}>
               <line x1={M.l} x2={M.l + pw} y1={sy(v)} y2={sy(v)} stroke="#E3EAF6" strokeWidth="1" />
@@ -162,7 +164,7 @@ export default function RealIdealGraph({ state }) {
           {X_TICKS.map((v) => (
             <g key={"x" + v}>
               <line x1={sx(v)} x2={sx(v)} y1={M.t} y2={M.t + ph} stroke="#EEF2F9" strokeWidth="1" />
-              <text x={sx(v)} y={M.t + ph + 14 * k} textAnchor="middle" fontSize={10.5 * k} fill="#33415F">{fmtP(v)}</text>
+              <text x={sx(v)} y={M.t + ph + 14 * k} textAnchor="middle" fontSize={10.5 * k} fill="#33415F">{v}</text>
             </g>
           ))}
           <line x1={M.l} x2={M.l + pw} y1={M.t + ph} y2={M.t + ph} stroke="#6B7A99" strokeWidth="1.2" />
@@ -171,72 +173,51 @@ export default function RealIdealGraph({ state }) {
           <text transform={`translate(${11 * k} ${M.t + ph / 2}) rotate(-90)`} textAnchor="middle" fontSize={11.5 * k} fontWeight="600" fill="#14226B">Compressibility factor, Z</text>
 
           <g clipPath={`url(#${clipId})`}>
-            <line x1={sx(Z_P_MIN)} x2={sx(Z_P_MAX)} y1={sy(1)} y2={sy(1)} stroke={C_IDEAL} strokeWidth="2.4" data-testid="graph-ideal" />
+            <line x1={sx(Z_P_MIN)} x2={sx(Z_P_MAX)} y1={sy(1)} y2={sy(1)} stroke={C_IDEAL} strokeWidth="2.6" data-testid="graph-ideal" />
             {curve.points.length > 1 && (
-              <path
-                d={path(curve.points)}
-                fill="none"
-                stroke={C_REAL}
-                strokeWidth="2.4"
-                strokeDasharray={real ? "7 4" : ghostDash}
-                opacity={real ? 1 : 0.45}
-                strokeLinejoin="round"
-                data-testid={real ? "graph-real" : "graph-real-ghost"}
-              />
+              <path d={path(curve.points)} fill="none" stroke={C_REAL} strokeWidth="2.6" strokeDasharray="7 4" strokeLinejoin="round" data-testid="graph-real" />
             )}
           </g>
           {endPt && (
-            <g data-testid="graph-curve-end" opacity={real ? 1 : 0.5}>
-              <line x1={sx(endPt.P)} x2={sx(endPt.P)} y1={sy(Math.min(axis.yMax, endPt.Z)) - 6} y2={sy(Math.min(axis.yMax, endPt.Z)) + 6} stroke={C_REAL} strokeWidth="2" />
+            <g data-testid="graph-curve-end">
+              <line x1={sx(endPt.P)} x2={sx(endPt.P)} y1={clampY(endPt.Z) - 7} y2={clampY(endPt.Z) + 7} stroke={C_REAL} strokeWidth="2.4" />
             </g>
           )}
 
           {hover && (
             <g pointerEvents="none">
               <line x1={sx(hover.P)} x2={sx(hover.P)} y1={M.t} y2={M.t + ph} stroke="#9AA7C2" strokeDasharray="3 3" />
-              <circle cx={sx(hover.P)} cy={sy(Math.min(axis.yMax, hover.Z))} r="3.2" fill="#fff" stroke={C_REAL} strokeWidth="1.6" />
+              <circle cx={sx(hover.P)} cy={clampY(hover.Z)} r="3.2" fill="#fff" stroke={C_REAL} strokeWidth="1.6" />
             </g>
           )}
 
-          {marker.status === "ok" && (
-            <g data-testid="graph-marker" data-p={marker.P} data-z={marker.Z} data-on-curve={marker.onCurve ? "1" : "0"} data-outside={marker.outside ? "1" : "0"}>
+          {rm && !real && (
+            <g data-testid="graph-real-marker" data-p={rm.P} data-z={rm.Z}>
+              <line x1={mx} y1={my} x2={rx} y2={ry} stroke={C_REAL} strokeWidth="1.4" strokeDasharray="3 3" opacity="0.8" />
+              <circle cx={rx} cy={ry} r="6" fill="#fff" stroke={C_REAL} strokeWidth="2.2" />
+            </g>
+          )}
+          {(marker.status === "ok" || marker.status === "limit") && (
+            <g data-testid="graph-marker" data-p={marker.P} data-z={marker.Z} data-on-curve={marker.onCurve ? "1" : "0"} data-outside={marker.outside ? "1" : "0"} data-status={marker.status}>
               <circle cx={mx} cy={my} r="9" fill="none" stroke={C_MARK} strokeWidth="1.5" opacity="0.5" />
-              <circle cx={mx} cy={my} r="5" fill={marker.onCurve ? C_MARK : "#fff"} stroke={marker.onCurve ? "#fff" : C_MARK} strokeWidth={marker.onCurve ? 1.5 : 2} />
+              <circle cx={mx} cy={my} r="5" fill={marker.status === "ok" ? C_MARK : "#fff"} stroke={marker.status === "ok" ? "#fff" : C_MARK} strokeWidth={marker.status === "ok" ? 1.5 : 2} />
+              <text x={Math.min(mx + 12, M.l + pw - 70)} y={Math.max(M.t + 12, my - 11)} fontSize={11.5 * k} fontWeight="700" fill={C_MARK} stroke="#fff" strokeWidth="3" paintOrder="stroke" data-testid="graph-z">Z = {zText}</text>
             </g>
           )}
         </svg>
         {hover && (
           <div className="pointer-events-none absolute right-2 top-1 rounded-md bg-white/90 px-2 py-0.5 text-[11px] tabular-nums text-[#14226B] shadow-sm" data-testid="graph-hover">
-            P = {hover.P >= 10 ? hover.P.toFixed(1) : hover.P.toFixed(2)} atm; Z = {hover.Z.toFixed(3)}
+            P = {fmtP(hover.P)} atm; Z = {hover.Z.toFixed(3)}
           </div>
         )}
       </div>
 
-      {(curve.end || note || axis.clipped) && (
-        <p className="shrink-0 text-[length:var(--sd-fs-sm)] font-medium leading-snug text-[#8a5300]" data-testid="graph-note">
-          {[
-            curve.end ? `Curve ends at ${curve.end.P >= 10 ? curve.end.P.toFixed(1) : curve.end.P.toFixed(2)} atm. ${curve.end.text}` : null,
-            note,
-            axis.clipped ? "The curve continues above the plotted Z range." : null,
-          ].filter(Boolean).join(" ")}
-        </p>
+      <p className="shrink-0 truncate text-[length:var(--sd-fs-sm)] text-[#4a5a82]" data-testid="graph-subtitle" title={`${GAS.name}, van der Waals a = ${GAS.a}, b = ${GAS.b}`}>
+        {GAS.name} at {Math.round(T)} K &middot; {regime}
+      </p>
+      {notes.length > 0 && (
+        <p className="shrink-0 text-[length:var(--sd-fs-sm)] font-medium leading-snug text-[#8a5300]" data-testid="graph-note">{notes.join(" ")}</p>
       )}
-      <div className="shrink-0 rounded-lg bg-[#EAF2FE] px-2.5 py-1 text-[length:var(--sd-fs)] leading-snug text-[#1E2A44]" data-testid="graph-explanation">
-        {marker.status === "ok" ? (
-          <>
-            <p className="font-semibold tabular-nums text-[#14226B]">
-              <span data-testid="graph-z">Z = {zText}</span>
-              {" "}
-              <span className="font-normal text-[#33415F]" title={`Within ${Z_TOLERANCE_PCT}% of Z = 1 counts as approximately ideal.`}>
-                (deviation from 1: <span data-testid="graph-dev">{marker.deviationPct.toFixed(1)}</span>%)
-              </span>
-            </p>
-            <p data-testid="graph-sentence">{marker.text}</p>
-          </>
-        ) : (
-          <p data-testid="graph-sentence">{marker.text}</p>
-        )}
-      </div>
       <p className="sr-only" aria-live="polite" data-testid="graph-live">{announce}</p>
     </div>
   );

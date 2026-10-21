@@ -255,3 +255,12 @@ body {
   white-space: nowrap;
   text-align: center;
 }
+
+/* Shared Image Lightbox (src/components/image-viewer). Attributes are added
+   only inside an ImageLightboxProvider (student surfaces); these rules never
+   change box size, so floated / wrapped images keep their layout. */
+[data-zoomable-image] { cursor: zoom-in; }
+[data-zoomable-image]:focus-visible {
+  outline: 2px solid var(--color-indigo, #3654D6);
+  outline-offset: 2px;
+}

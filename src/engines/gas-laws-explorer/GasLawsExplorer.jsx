@@ -1,35 +1,32 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChartColumn, MoveUpRight, TrendingDown, TrendingUp } from "lucide-react";
 import InteractiveFrame from "../../components/interactive-shell/InteractiveFrame.jsx";
-import SimulationDashboard, { DashboardTabs } from "../../components/simulation/SimulationDashboard.jsx";
+import SimulationDashboard, { DashboardTabs, ExplainLine } from "../../components/simulation/SimulationDashboard.jsx";
 import {
-  MODES, MODE_IDS, TEXT_ONE_LINER, defaultExplanation, defaultGraphId, defaultState, selectExplanation, setVariable, switchMode,
+  MODES, MODE_IDS, defaultExplanation, defaultGraphId, defaultState, selectExplanation, setVariable, switchMode,
 } from "./model.js";
 import { createSimulation } from "./physics.js";
 import { ACCENTS } from "./theme.js";
 import { useReducedMotion } from "./useReducedMotion.js";
 import "./GasLawsExplorer.css";
-import ControlPanel from "./components/ControlPanel.jsx";
+import ControlPanel, { GasLawsSettings } from "./components/ControlPanel.jsx";
 import { ChamberPanel, LiveValues } from "./components/ChamberPanel.jsx";
 import GraphPanel from "./components/GraphPanel.jsx";
-import { PredictPanel, WhatIsHappening } from "./components/BottomPanels.jsx";
+import { ExplanationDetails, PredictPanel } from "./components/BottomPanels.jsx";
 
 // Gas Laws Explorer (IB DP Chemistry S1.5.1-S1.5.3). React owns the controls;
 // model.js owns the physics of PV = nRT (one source of truth: mode, P, V, T, n);
-// physics.js animates the particles; render.js draws them.
+// physics.js animates the particles; render.js draws them. (The physics files are unchanged by the
+// simplified dashboard: only the arrangement of controls, graph and text changed.)
 //
 // INVESTIGATION PHASES (documented design decision)
-//   ready    initial / after Reset: the two locked variables are locked, only the
-//            independent variable moves. "Set initial conditions" is available.
-//   editing  entered with "Set initial conditions": every non-calculated variable
-//            is adjustable so the baseline can be chosen. "Start investigation"
-//            confirms it and returns to `ready`.
-//   running  begins on the FIRST change of the independent variable. The locked
-//            variables stay fixed; "New investigation" returns the gas to the
-//            baseline it started from and re-opens `editing`.
-// Reset (header) -> default baseline, `ready`. Switching tab keeps all four
-// values (they are consistent already, so nothing jumps) and starts a fresh
-// `ready` investigation from them. Changing graph type never touches the state.
+//   ready    initial / after Reset / after any change of the starting values: only the
+//            independent variable is a slider; the two controlled variables are a read-only row.
+//   running  begins on the FIRST change of the independent variable. "Back to starting values"
+//            (Settings) returns the gas to the baseline the investigation started from.
+// Initial conditions live in the header Settings popover: moving a slider there sets a NEW baseline
+// (clears the trail, returns to `ready`). Reset (header) -> default baseline, `ready`. Switching tab keeps
+// all four values (they are consistent already, so nothing jumps) and starts a fresh `ready`
+// investigation from them. Changing graph type never touches the state.
 const EXPLAIN_DEBOUNCE_MS = 250;
 const HISTORY_MAX = 120;
 
@@ -55,6 +52,7 @@ function Workspace() {
   const [unit, setUnit] = useState("mol");
   const [display, setDisplay] = useState({ trails: true, collisions: false });
   const [playing, setPlaying] = useState(true);
+  const [showGraph, setShowGraph] = useState(false);
   const [graphId, setGraphId] = useState(() => defaultGraphId("pv"));
   const [allView, setAllView] = useState(false);
   const [revealed, setRevealed] = useState(false);
@@ -68,7 +66,7 @@ function Workspace() {
   useEffect(() => { sim.setPaused(!playing); }, [sim, playing]);
   useEffect(() => { sim.setInstant(reducedMotion); }, [sim, reducedMotion]);
 
-  // "What is happening?": compare the last settled state with the current one
+  // One-line explanation: compare the last settled state with the current one
   // after a short debounce; a mode change shows the default message at once.
   useEffect(() => {
     if (settledRef.current == null) { settledRef.current = state; return undefined; }
@@ -90,16 +88,27 @@ function Workspace() {
 
   const pushHistory = useCallback((s) => setHistory((h) => [...h.slice(-(HISTORY_MAX - 1)), s]), []);
 
+  // The student moves the independent variable (the only slider on the main panel).
   const handleChange = useCallback((key, value) => {
-    const dep = MODES[state.mode].dependent;
-    if (key === dep) return;
-    if (phase !== "editing" && key !== MODES[state.mode].independent) return; // locked
+    if (key !== MODES[state.mode].independent) return;
     const r = setVariable(state, key, value);
     if (!r.changed) return;
     if (phase === "ready") { baselineRef.current = state; setPhase("running"); }
     setState(r.state);
-    if (phase !== "editing") pushHistory(r.state);
+    pushHistory(r.state);
   }, [state, phase, pushHistory]);
+
+  // Settings > Initial conditions: any non-calculated variable; becomes the new baseline.
+  const handleSetInitial = useCallback((key, value) => {
+    if (key === MODES[state.mode].dependent) return;
+    const r = setVariable(state, key, value);
+    if (!r.changed) return;
+    baselineRef.current = r.state;
+    setState(r.state);
+    setPhase("ready");
+    setHistory([]);
+    setRevealed(false);
+  }, [state]);
 
   const resetInvestigationUi = useCallback((mode) => {
     setPhase("ready");
@@ -134,12 +143,9 @@ function Workspace() {
     setExplain(defaultExplanation(state.mode));
   }, [state.mode, sim, resetInvestigationUi]);
 
-  const handleEditBaseline = useCallback(() => { setPhase("editing"); setHistory([]); }, []);
-  const handleStart = useCallback(() => { baselineRef.current = state; setPhase("ready"); }, [state]);
-  const handleNewInvestigation = useCallback(() => {
-    const base = baselineRef.current;
-    setState(base);
-    setPhase("editing");
+  const handleBackToStart = useCallback(() => {
+    setState(baselineRef.current);
+    setPhase("ready");
     setHistory([]);
     setRevealed(false);
   }, []);
@@ -147,10 +153,9 @@ function Workspace() {
 
   const tabs = MODE_IDS.map((id) => {
     const md = MODES[id];
-    const a = ACCENTS[id];
     return {
-      id, label: `${md.title} (${md.short})`, sub: md.law, icon: TAB_ICONS[id], testId: `tab-${id}`,
-      title: `${md.title} (${md.short}): ${md.law}`, solid: a.solid, soft: a.tabBg, border: a.border, text: a.text,
+      id, label: md.short.replaceAll(" ", ""), icon: undefined, testId: `tab-${id}`,
+      title: `${md.title} (${md.short.replaceAll(" ", "")}): ${md.law}`,
     };
   });
 
@@ -160,17 +165,21 @@ function Workspace() {
       role="tabpanel"
       ariaLabel={`${m.title} investigation`}
       title="Gas Laws Explorer"
-      subtitle="How P, V, T and n are related"
-      subtitleLong={`How P, V, T and n are related. ${TEXT_ONE_LINER}`}
+      subtitle={m.title}
+      subtitleLong={`${m.title} \u2013 ${m.law}`}
       onReset={handleReset}
-      tabs={<DashboardTabs tabs={tabs} value={state.mode} onChange={handleMode} ariaLabel="Gas law relationship" idPrefix="gl-tab" controls="gl-workspace" testId="mode-tabs" />}
-      controls={
-        <ControlPanel state={state} phase={phase} unit={unit} onUnit={setUnit} onChange={handleChange}
-          onEditBaseline={handleEditBaseline} onStart={handleStart} onNewInvestigation={handleNewInvestigation} accent={accent} />
+      graphShown={showGraph}
+      onGraphToggle={() => setShowGraph((g) => !g)}
+      graphId="gl-graph"
+      graphWide={showGraph && allView}
+      settings={
+        <GasLawsSettings state={state} phase={phase} unit={unit} onUnit={setUnit} display={display}
+          onDisplay={(d) => setDisplay((x) => ({ ...x, ...d }))} onSetInitial={handleSetInitial} onBackToStart={handleBackToStart} accent={accent} />
       }
+      tabs={<DashboardTabs segmented tabs={tabs} value={state.mode} onChange={handleMode} ariaLabel="Gas law relationship" idPrefix="gl-tab" controls="gl-workspace" testId="mode-tabs" />}
+      controls={<ControlPanel state={state} unit={unit} onChange={handleChange} accent={accent} />}
       chamber={
-        <ChamberPanel sim={sim} state={state} accent={accent} playing={playing} onTogglePlay={() => setPlaying((p) => !p)}
-          display={display} onDisplay={(d) => setDisplay((x) => ({ ...x, ...d }))} reducedMotion={reducedMotion} />
+        <ChamberPanel sim={sim} state={state} accent={accent} playing={playing} onTogglePlay={() => setPlaying((p) => !p)} reducedMotion={reducedMotion} />
       }
       graph={
         <GraphPanel state={state} accent={accent} graphId={graphId} onGraphId={setGraphId} allView={allView}
@@ -178,9 +187,7 @@ function Workspace() {
       }
       live={<LiveValues state={state} unit={unit} />}
       predict={<PredictPanel state={state} revealed={revealed} onToggle={() => setRevealed((r) => !r)} />}
-      explain={<WhatIsHappening text={explain.text} accent={accent} />}
+      explain={<ExplainLine text={explain.text} details={<ExplanationDetails mode={state.mode} />} />}
     />
   );
 }
-
-const TAB_ICONS = { pv: TrendingDown, vt: TrendingUp, pt: MoveUpRight, vn: ChartColumn };

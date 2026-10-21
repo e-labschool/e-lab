@@ -5,6 +5,7 @@
 // visual — this component never lets a broken <img> crash or silently
 // leave a blank hole.
 import { useState } from "react";
+import ZoomableImage from "../../../../../components/image-viewer/ZoomableImage.jsx";
 
 export default function ImageDiagram({ src, alt, caption, credit }) {
   const [failed, setFailed] = useState(false);
@@ -19,7 +20,8 @@ export default function ImageDiagram({ src, alt, caption, credit }) {
 
   return (
     <figure className="flex flex-col items-center gap-1.5">
-      <img
+      <ZoomableImage
+        caption={caption}
         src={src}
         alt={alt}
         onError={() => setFailed(true)}

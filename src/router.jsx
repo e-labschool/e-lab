@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import ELabLoader from "./components/ui/ELabLoader.jsx";
 import { createBrowserRouter } from "react-router-dom";
 import Shell from "./components/layout/Shell.jsx";
+import { ImageLightboxProvider } from "./components/image-viewer/ImageLightbox.jsx";
 import ProtectedRoute from "./components/auth/ProtectedRoute.jsx";
 import Home from "./pages/Home.jsx";
 import Explore from "./pages/Explore.jsx";
@@ -164,7 +165,7 @@ const router = createBrowserRouter([
     element: (
       <ProtectedRoute role="student">
         <Suspense fallback={<div className="flex min-h-screen items-center justify-center"><ELabLoader /></div>}>
-          <ChallengeSession />
+          <ImageLightboxProvider><ChallengeSession /></ImageLightboxProvider>
         </Suspense>
       </ProtectedRoute>
     ),

@@ -3,8 +3,8 @@
 
 /** Container width (px) at which the 3-column dashboard replaces the stacked layout. */
 export const WIDE_MIN_WIDTH = 800;
-/** Container width (px) at which header tabs sit on the same row as the title. */
-export const HEADER_ONE_ROW_MIN_WIDTH = 1450;
+/** Container width (px) at which the whole header (title | mode selector | actions) fits on ONE row. */
+export const HEADER_ONE_ROW_MIN_WIDTH = 820;
 
 export function classifyDashboard(width, height) {
   const layout = width >= WIDE_MIN_WIDTH ? "wide" : "stacked";

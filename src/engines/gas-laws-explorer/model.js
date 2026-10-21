@@ -306,24 +306,24 @@ export function allGraphsView(state) {
 // ---------------------------------------------------------------------------
 export const EXPLANATIONS = Object.freeze({
   pv: {
-    default: "Change the volume with the slider. Temperature and amount of gas stay fixed while pressure is calculated.",
-    up: "The volume has increased, giving the particles more space. They collide with the walls less frequently, so the pressure decreases.",
-    down: "The volume has decreased, giving the particles less space. They collide with the walls more frequently, increasing the pressure.",
+    default: "Change the volume: temperature and amount are constant, so pressure is calculated.",
+    up: "Volume increases \u2192 fewer wall collisions \u2192 pressure decreases.",
+    down: "Volume decreases \u2192 more wall collisions \u2192 pressure increases.",
   },
   vt: {
-    default: "Change the temperature. Pressure and amount stay fixed, so the piston moves to give the volume that keeps pressure constant.",
-    up: "The temperature has increased, so particles move faster. The piston rises until the pressure returns to its original value.",
-    down: "The temperature has decreased, so particles move more slowly. The piston falls until the pressure returns to its original value.",
+    default: "Change the temperature: pressure and amount are constant, so the piston sets the volume.",
+    up: "Temperature increases \u2192 faster particles \u2192 the piston rises \u2192 volume increases.",
+    down: "Temperature decreases \u2192 slower particles \u2192 the piston falls \u2192 volume decreases.",
   },
   pt: {
-    default: "Change the temperature. The piston is fixed, so the volume and amount stay constant while pressure is calculated.",
-    up: "The particles move faster inside the fixed-volume container. They hit the walls harder and more often, increasing the pressure.",
-    down: "The particles move more slowly inside the fixed-volume container. They hit the walls less hard and less often, decreasing the pressure.",
+    default: "Change the temperature: the piston is fixed, so pressure is calculated.",
+    up: "Temperature increases \u2192 faster particles hit the walls harder \u2192 pressure increases.",
+    down: "Temperature decreases \u2192 slower particles hit the walls less hard \u2192 pressure decreases.",
   },
   vn: {
-    default: "Add or remove gas. Pressure and temperature stay fixed, so the piston moves to change the volume.",
-    up: "More gas particles have been added. The piston rises, increasing the volume while maintaining constant pressure.",
-    down: "Gas particles have been removed. The piston falls, decreasing the volume while maintaining constant pressure.",
+    default: "Change the amount of gas: pressure and temperature are constant, so the piston sets the volume.",
+    up: "More gas \u2192 the piston rises \u2192 volume increases at constant pressure.",
+    down: "Less gas \u2192 the piston falls \u2192 volume decreases at constant pressure.",
   },
 });
 

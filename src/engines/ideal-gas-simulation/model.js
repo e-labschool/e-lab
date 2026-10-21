@@ -1,143 +1,128 @@
-// Ideal Gas Simulation -- pure model (no React, no DOM) so it can be tested
-// in Node (scripts/test-ideal-gas-model.mjs). Rendering lives elsewhere.
+// Ideal vs Real Gas -- pure model (no React, no DOM) so it can be tested in
+// Node (scripts/test-ideal-gas-model.mjs). Rendering lives elsewhere.
 //
 // ---------------------------------------------------------------------------
-// SCALING CONVENTION (S1.5.1-S1.5.3)
+// ONE GAS, ONE EXPERIMENT
 // ---------------------------------------------------------------------------
-// The "Number of particles" slider N (5-100) is a VISUAL SAMPLE of the gas,
-// not a literal molecule count. It is mapped linearly onto the amount of
-// substance:
+// The experiment is a single sample of carbon dioxide (CO2) in a piston. The
+// student switches between two MODELS of the same sample at unchanged T, n and
+// (depending on the control selector) unchanged P or V:
 //
-//     n = N * (N_REF_MOL / N_REF) ,   N_REF = 50
+//   Ideal gas   P V = n R T                          Z = 1 exactly
+//   Real gas    (P + a n^2 / V^2) (V - n b) = n R T  Z = P V / (n R T)
 //
-// where N_REF_MOL is calibrated so that the default state
-// (N = 50, T = 300 K, V = 25 L) gives exactly P_ideal = 1.00 atm with
-// R = 0.082057 L atm mol^-1 K^-1:
+// All quantities use ONE unit system: P in atm, V in L, n in mol, T in K,
+// R = 0.082057 L atm mol^-1 K^-1, a in L^2 atm mol^-2, b in L mol^-1.
 //
-//     n_ref = P V / (R T) = 1.00 * 25 / (0.082057 * 300) ~= 1.0156 mol
-//     => one drawn particle represents ~0.0203 mol.
+// VAN DER WAALS CONSTANTS (documented gas, NOT tuned)
+//   CO2:  a = 3.640 L^2 atm mol^-2,  b = 0.04267 L mol^-1
+//   (standard tabulated values). They imply
+//   Tc = 8a/(27 R b) = 308 K (experiment 304.1 K), Pc = a/(27 b^2) = 74.0 atm
+//   (experiment 72.8 atm), T_Boyle = a/(R b) = 1040 K, so the model is
+//   quantitatively reasonable for CO2 below ~100 atm and qualitative above.
 //
-// Pressure shown to the student is ALWAYS computed from the macroscopic
-// formulas below (ideal: PV = nRT; real: van der Waals), never by counting
-// collisions of the animated particles. The animation is a qualitative
-// picture; the readout is the model.
+// WHY THE OLD GRAPH SHOWED "NO MEANINGFUL DEVIATION" (root cause)
+//   The previous version used invented constants (a = 15, b = 0.40 in "internal
+//   units") and a control window of only 0.2-5 atm with ~1 mol. The equation of
+//   state and the Z(P) plot were computed correctly (Z = P_real / P_ideal held
+//   exactly and the curve was recomputed with T). The problem was the operating
+//   region: for 0.2-5 atm and T >= 250 K a gas is in the low-density limit where
+//   Z - 1 ~ B(T) P / (R T) is only a fraction of a percent to a few percent, so
+//   the live point always sat on the flat part of the curve on a pressure axis
+//   that spanned five decades (the 0.2-5 atm band was a sliver). In Ideal mode
+//   the point is pinned at Z = 1 and the real curve was a 45 % ghost. The
+//   strongly non-ideal states (100 K) fell in the unstable van der Waals loop and
+//   were reported as "unreliable". Nothing was wired to the wrong state; the
+//   parameters and ranges simply did not let the physics show.
+//   Fix: documented CO2 constants and ranges that include the regime where Z
+//   departs visibly from 1: P up to 500 atm, T from 250 K, log P axis 0.1-1000 atm.
 //
-// The drawn particle radius is a DISPLAY quantity. In ideal mode it does not
-// enter the pressure formula (point-particle assumption); in real mode the
-// larger collision radius is a visual cue for the excluded volume `b`, but
-// the pressure is still the vdW formula, not an emergent MD pressure.
+// SCALING CONVENTION. "Amount of gas" is n = N x 0.01 mol, with N (5-100) the
+// number of particles DRAWN. One drawn particle = 0.01 mol (a visual sample, not
+// a literal molecule count). Pressure/volume shown to the student are ALWAYS the
+// model's formulas, never counted from animated collisions. The particle
+// animation is ILLUSTRATIVE (a simple 2D hard-disc picture with a short-range
+// attraction in Real mode); it is not molecular dynamics of CO2 and does not
+// feed back into the equation of state.
 //
-// ---------------------------------------------------------------------------
-// VAN DER WAALS (illustrative, NOT a specific gas)
-// ---------------------------------------------------------------------------
-//     P = nRT / (V - n b) - a (n / V)^2
+// DEVIATION INDICATOR on |Z - 1| (documented thresholds, no P/T-range logic):
+//   Near ideal            |Z - 1| <  0.02
+//   Noticeable deviation  0.02 <= |Z - 1| < 0.10
+//   Strong deviation      |Z - 1| >= 0.10
+// Z < 1: attraction dominates; Z > 1: excluded volume dominates.
 //
-//   a = 15.0 L^2 atm mol^-2  (attraction)
-//   b = 0.40 L mol^-1        (excluded volume)
-//
-// These are deliberately larger than values for small real molecules
-// (a ~ 1-4, b ~ 0.03-0.05): roughly 4-15x on a and ~8-10x on b. Because the slider
-// sample only reaches n ~ 2 mol in V >= 5 L, realistic constants would give
-// deviations below ~3% almost everywhere and nothing to explore. With these values
-// (Boyle-like crossover where the two effects cancel is near a/(R b) ~ 460 K):
-//   - the default state deviates by ~0.8% (Low),
-//   - 100 K with a compressed sample is strongly attraction-dominated
-//     (pressure far below ideal, High, ~55% at the extreme),
-//   - 800 K with a compressed sample is excluded-volume dominated
-//     (pressure above ideal, ~10%, Moderate),
-//   - V - n b stays >= 4.19 L (>= 83% of V) over the whole slider grid and
-//     P stays positive and finite (defensive clamps are still applied).
-//
-// CRITICAL CONSTANTS (kept unchanged; checked for the Z(P) graph):
-//   Tc = 8a / (27 R b) = 135.4 K, Pc = a / (27 b^2) = 3.47 atm,
-//   T_Boyle = a / (R b) = 457 K, Vc = 3b = 1.2 L/mol.
-// With the 100-800 K slider this gives on the stable gas branch: Z < 1 from
-// attractions below T_Boyle (e.g. Z_min = 0.74 near 10 atm at 200 K, 0.945 near
-// 11 atm at 300 K), Z -> 1 as P -> 0, and Z > 1 from the excluded volume at high
-// P (rises through 1 at ~22 atm at 300 K; Z > 1 at every P above 457 K). Only
-// below Tc (100-135 K) does the isotherm have a loop; there the Z curve stops at
-// the Maxwell saturation pressure (see vdwSaturationPressure).
-//
-// DEVIATION INDICATOR  d = |P_real - P_ideal| / P_ideal * 100 (%)
-//   P_real and P_ideal are ALWAYS evaluated at the same T, V and n. (In
-//   Pressure-control mode V is the volume solved for the selected gas model,
-//   and P_ideal is evaluated at that same V -- not at the target pressure.)
-//   Single source of truth: DEVIATION_BOUNDS below, used by the UI and tests.
-//     Very close to ideal   d <  2
-//     Small deviation       2 <= d <  5
-//     Moderate deviation    5 <= d <= 15
-//     Large deviation       d >  15
-//   (the legacy 3-level deviationLevel() keeps the old 5 / 15 cut-offs, which
-//   are the "small" and "moderate" bounds.)
-//   Marker position (0..1 along the bar): continuous, monotone, piecewise
-//   linear. Each class owns an equal quarter of the bar; the last quarter
-//   spans 15..DEVIATION_SCALE_MAX (45 %) and saturates at the right end.
-//
-// PRESSURE CONTROL (Mode B). Given a target P the model solves for V:
+// PRESSURE CONTROL. Given a target P the model solves for V:
 //   ideal  V = nRT / P
-//   real   P_vdW(V) = P by bisection on the stable gas branch only, i.e.
-//          V >= V_lo = max(V_spinodal, n b / (1 - 0.2)), where dP/dV < 0 and the
-//          excluded volume leaves at least 20 % of V free. Below the critical
-//          temperature (Tc = 8a / 27Rb ~ 135 K) the vdW isotherm has a
-//          maximum P_max at V_spinodal; targets above it have no gas-branch
-//          solution. Solutions outside the 5-50 L piston range are clamped and
-//          reported (status), never presented as reachable.
-//          Mechanical stability only: no Maxwell construction, so a
-//          super-saturated (metastable) vapour below Tc can still be returned.
+//   real   the largest-volume root of the vdW cubic (the GAS branch), found by
+//          bisection above V_lo = max(V_gas_saturation, V_spinodal, n b / 0.8):
+//          dP/dV < 0 there, so the root is unique and stable. Below Tc the gas
+//          branch ends at the Maxwell saturation pressure P_sat(T) (the gas
+//          would condense); the liquid-like and unstable roots are never used.
+//          Targets >= P_sat give status "no-gas-solution"/reason "condensation":
+//          the volume is held at the saturation volume and the UI shows a
+//          model-limit message. Above Tc the isotherm is monotone and one root
+//          exists (dense supercritical gas).
 // ---------------------------------------------------------------------------
 
 export const R_GAS = 0.082057; // L atm mol^-1 K^-1
-export const VDW_A = 15.0; // L^2 atm mol^-2
-export const VDW_B = 0.4; // L mol^-1
+export const GAS = Object.freeze({
+  id: "co2",
+  name: "Carbon dioxide (CO₂)",
+  formula: "CO2",
+  a: 3.64, // L^2 atm mol^-2
+  b: 0.04267, // L mol^-1
+});
+export const VDW_A = GAS.a;
+export const VDW_B = GAS.b;
 
+// Ranges. P and V are the two controlled/dependent variables; both span
+// decades, so their sliders are logarithmic (see sliderScale in the UI).
 export const LIMITS = {
   N: { min: 5, max: 100, step: 1 },
-  T: { min: 100, max: 800, step: 5 },
-  V: { min: 5, max: 50, step: 1 },
-  P: { min: 0.2, max: 5.0, step: 0.05 },
+  T: { min: 250, max: 700, step: 5 },
+  V: { min: 0.01, max: 100, step: 0.01 },
+  P: { min: 1, max: 500, step: 0.1 },
 };
 
-// control: "volume" (Mode A, default) or "pressure" (Mode B).
+// control: "pressure" (default) or "volume".
 // P     target pressure (atm), kept inside LIMITS.P (slider value).
 // Phold exact target (atm) when the pressure we switched in with was outside
 //       the slider range (the state is held, never teleported); else null.
 // Vpin  volume (L) held when the current state cannot be reproduced by the
-//       solver (e.g. unstable vdW branch); else null. Cleared by any change.
+//       solver (e.g. beyond the gas branch); else null. Cleared by any change.
 export const DEFAULT_CONTROLS = Object.freeze({
-  mode: "ideal", N: 50, T: 300, V: 25, control: "volume", P: 1.0, Phold: null, Vpin: null,
+  mode: "ideal", N: 50, T: 300, V: 0.41, control: "pressure", P: 30, Phold: null, Vpin: null,
 });
 export const DEFAULT_DISPLAY = Object.freeze({ trails: true, collisions: false, forces: false });
 
 export const N_REF = 50;
-export const N_REF_MOL = (1.0 * 25) / (R_GAS * 300); // ~1.0156 mol for N_REF particles
-export const MOL_PER_PARTICLE = N_REF_MOL / N_REF;
+export const MOL_PER_PARTICLE = 0.01;
+export const N_REF_MOL = N_REF * MOL_PER_PARTICLE; // 0.5 mol
 
-export const DEVIATION_BOUNDS = Object.freeze({ veryClose: 2, small: 5, moderate: 15 });
-export const DEVIATION_SCALE_MAX = 45; // % at which the marker reaches the right end
-export const DEVIATION_LOW_MAX = DEVIATION_BOUNDS.small; // legacy 3-level cut-offs
-export const DEVIATION_MODERATE_MAX = DEVIATION_BOUNDS.moderate;
+// |Z - 1| thresholds (fractions) -- single source of truth for UI and tests.
+export const Z_BOUNDS = Object.freeze({ nearIdeal: 0.02, noticeable: 0.1 });
 export const DEVIATION_CLASSES = Object.freeze([
-  { id: "veryClose", label: "Very close to ideal" },
-  { id: "small", label: "Small deviation" },
-  { id: "moderate", label: "Moderate deviation" },
-  { id: "large", label: "Large deviation" },
+  { id: "near", label: "Near ideal" },
+  { id: "noticeable", label: "Noticeable deviation" },
+  { id: "strong", label: "Strong deviation" },
 ]);
 export const VDW_MIN_FREE_FRACTION = 0.2; // (V - nb)/V below this => model unreliable
-export const P_IDEAL_MIN = 1e-6; // atm; below this the % comparison is meaningless
+export const P_IDEAL_MIN = 1e-6; // atm
 
 const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
 
 export function clampControls(c) {
-  const V = clamp(Number(c.V), LIMITS.V.min, LIMITS.V.max);
-  const Pn = Number(c.P);
+  const fin = (x, d) => (Number.isFinite(Number(x)) && x !== null && x !== "" ? Number(x) : d);
+  const V = clamp(fin(c.V, DEFAULT_CONTROLS.V), LIMITS.V.min, LIMITS.V.max);
+  const Pn = fin(c.P, NaN);
   const Ph = c.Phold == null ? NaN : Number(c.Phold);
   const Vp = c.Vpin == null ? NaN : Number(c.Vpin);
   return {
     mode: c.mode === "real" ? "real" : "ideal",
-    N: Math.round(clamp(Number(c.N), LIMITS.N.min, LIMITS.N.max)),
-    T: clamp(Number(c.T), LIMITS.T.min, LIMITS.T.max),
+    N: Math.round(clamp(fin(c.N, DEFAULT_CONTROLS.N), LIMITS.N.min, LIMITS.N.max)),
+    T: clamp(fin(c.T, DEFAULT_CONTROLS.T), LIMITS.T.min, LIMITS.T.max),
     V,
-    control: c.control === "pressure" ? "pressure" : "volume",
+    control: c.control === "volume" ? "volume" : "pressure",
     P: Number.isFinite(Pn) ? clamp(Pn, LIMITS.P.min, LIMITS.P.max) : DEFAULT_CONTROLS.P,
     Phold: Number.isFinite(Ph) && Ph > 0 ? Ph : null,
     Vpin: Number.isFinite(Vp) ? clamp(Vp, LIMITS.V.min, LIMITS.V.max) : null,
@@ -164,37 +149,19 @@ export function deviationPercent(pIdeal, pReal) {
   return (Math.abs(pReal - pIdeal) / pIdeal) * 100;
 }
 
-export function deviationLevel(pct) {
-  if (pct < DEVIATION_LOW_MAX) return "Low";
-  if (pct <= DEVIATION_MODERATE_MAX) return "Moderate";
-  return "High";
+/** Three-class classification from dev = |Z - 1| (a fraction); see Z_BOUNDS. */
+export function classifyZDeviation(dev) {
+  const d = Number.isFinite(dev) ? Math.abs(dev) : 0;
+  const index = d < Z_BOUNDS.nearIdeal ? 0 : d < Z_BOUNDS.noticeable ? 1 : 2;
+  return { index, dev: d, ...DEVIATION_CLASSES[index] };
 }
-
-/** Four-class deviation classification (see header). */
-export function classifyDeviation(pct) {
-  const d = Number.isFinite(pct) ? pct : 0;
-  let index = 3;
-  if (d < DEVIATION_BOUNDS.veryClose) index = 0;
-  else if (d < DEVIATION_BOUNDS.small) index = 1;
-  else if (d <= DEVIATION_BOUNDS.moderate) index = 2;
-  return { index, ...DEVIATION_CLASSES[index] };
-}
-
-/** Marker position 0..1: continuous, monotone, piecewise linear; each class
- * owns a quarter of the bar and the last one saturates at DEVIATION_SCALE_MAX. */
-export function deviationMarkerPosition(pct) {
-  const d = Math.max(0, Number.isFinite(pct) ? pct : 0);
-  const { veryClose, small, moderate } = DEVIATION_BOUNDS;
-  const knots = [0, veryClose, small, moderate, DEVIATION_SCALE_MAX];
-  if (d >= DEVIATION_SCALE_MAX) return 1;
-  for (let i = 0; i < 4; i++) {
-    if (d <= knots[i + 1]) return (i + (d - knots[i]) / (knots[i + 1] - knots[i])) / 4;
-  }
-  return 1;
+/** Same, from a compressibility factor. */
+export function classifyZ(Z) {
+  return classifyZDeviation(Number.isFinite(Z) ? Z - 1 : 0);
 }
 
 // ---------------------------------------------------------------------------
-// vdW helpers, pressure -> volume solver, comparison with the ideal gas
+// vdW helpers, saturation, pressure -> volume solver, comparison with the ideal gas
 // ---------------------------------------------------------------------------
 /** Unclamped vdW pressure (NaN when V <= n b). */
 export function vdwPressureRaw(n, T, V) {
@@ -207,41 +174,143 @@ export function vdwDPdV(n, T, V) {
   return (-n * R_GAS * T) / ((V - n * VDW_B) ** 2) + (2 * VDW_A * n * n) / (V ** 3);
 }
 
-/** Largest V at which dP/dV = 0 (spinodal), or null when the isotherm is
- * monotone (T >= Tc). With x = V/n: R T x^3 = 2 a (x - b)^2. */
-export function vdwSpinodalVolume(n, T) {
-  const f = (x) => R_GAS * T * x ** 3 - 2 * VDW_A * (x - VDW_B) ** 2;
-  let t = 1e3; // t = x - b, scanned downwards (geometric) from large x
-  while (t > 1e-4) {
-    const t2 = t / 1.01;
-    if (f(VDW_B + t2) <= 0) {
-      let lo = t2, hi = t;
-      for (let i = 0; i < 200; i++) {
-        const m = (lo + hi) / 2;
-        if (f(VDW_B + m) <= 0) lo = m; else hi = m;
-      }
-      return n * (VDW_B + (lo + hi) / 2);
-    }
-    t = t2;
+const cacheKey = (T) => T.toFixed(4);
+const spinodalCache = new Map();
+const liquidSpinodalCache = new Map();
+const saturationCache = new Map();
+const memo = (cache, T, fn) => {
+  const k = cacheKey(T);
+  if (!cache.has(k)) {
+    if (cache.size > 4000) cache.clear();
+    cache.set(k, fn());
   }
-  return null;
+  return cache.get(k);
+};
+
+/** Largest molar volume x = V/n at which dP/dx = 0 (gas-side spinodal), or
+ * null when the isotherm is monotone (T >= Tc). R T x^3 = 2 a (x - b)^2. */
+function gasSpinodalMolarVolume(T) {
+  return memo(spinodalCache, T, () => {
+    const f = (x) => R_GAS * T * x ** 3 - 2 * VDW_A * (x - VDW_B) ** 2;
+    let t = 1e3; // t = x - b, scanned downwards (geometric) from large x
+    while (t > 1e-4) {
+      const t2 = t / 1.01;
+      if (f(VDW_B + t2) <= 0) {
+        let lo = t2, hi = t;
+        for (let i = 0; i < 200; i++) {
+          const m = (lo + hi) / 2;
+          if (f(VDW_B + m) <= 0) lo = m; else hi = m;
+        }
+        return VDW_B + (lo + hi) / 2;
+      }
+      t = t2;
+    }
+    return null;
+  });
 }
 
-/** Smallest volume of the reliable, stable gas branch. */
+/** Largest V at which dP/dV = 0 (spinodal) for n mol, or null at/above Tc. */
+export function vdwSpinodalVolume(n, T) {
+  const x = gasSpinodalMolarVolume(T);
+  return x == null ? null : n * x;
+}
+
+/** Smallest molar volume x > b where dP/dx = 0 (liquid-side spinodal), or null. */
+function liquidSpinodalMolarVolume(T) {
+  return memo(liquidSpinodalCache, T, () => {
+    const f = (x) => R_GAS * T * x ** 3 - 2 * VDW_A * (x - VDW_B) ** 2;
+    let t = 1e-6;
+    while (t < 1e3) {
+      const t2 = t * 1.01;
+      if (f(VDW_B + t2) <= 0) {
+        let lo = t, hi = t2;
+        for (let i = 0; i < 200; i++) { const m = (lo + hi) / 2; if (f(VDW_B + m) <= 0) hi = m; else lo = m; }
+        return VDW_B + (lo + hi) / 2;
+      }
+      t = t2;
+    }
+    return null;
+  });
+}
+
+/** Critical constants and Boyle temperature of the model's a and b. */
+export function vdwCriticalConstants() {
+  return {
+    Tc: (8 * VDW_A) / (27 * R_GAS * VDW_B), // K
+    Pc: VDW_A / (27 * VDW_B * VDW_B), // atm
+    Vc: 3 * VDW_B, // L/mol
+    TBoyle: VDW_A / (R_GAS * VDW_B), // K
+  };
+}
+
+/** Maxwell equal-area saturation state of the vdW fluid for T < Tc:
+ * { P (atm), xg, xl (saturated gas / liquid molar volumes, L/mol) }, else null. */
+export function vdwSaturation(T) {
+  const { Tc } = vdwCriticalConstants();
+  if (!(T > 0) || !(T < Tc)) return null;
+  return memo(saturationCache, T, () => {
+    const xg = gasSpinodalMolarVolume(T);
+    const xl = liquidSpinodalMolarVolume(T);
+    if (xg == null || xl == null || !(xg > xl)) return null;
+    const pAt = (x) => (R_GAS * T) / (x - VDW_B) - VDW_A / (x * x);
+    const pHi = pAt(xg), pLo = Math.max(pAt(xl), 1e-12);
+    if (!(pHi > pLo)) return null;
+    const gasRoot = (P) => {
+      let lo = xg, hi = 2 * xg;
+      while (pAt(hi) > P && hi < 1e15) hi *= 2;
+      for (let i = 0; i < 200; i++) { const m = (lo + hi) / 2; if (pAt(m) > P) lo = m; else hi = m; }
+      return (lo + hi) / 2;
+    };
+    const liqRoot = (P) => {
+      let lo = VDW_B * (1 + 1e-12), hi = xl;
+      for (let i = 0; i < 200; i++) { const m = (lo + hi) / 2; if (pAt(m) > P) lo = m; else hi = m; }
+      return (lo + hi) / 2;
+    };
+    // Equal-area residual: integral of (P_vdW - P) dx from liquid to gas root.
+    const area = (P) => {
+      const vg = gasRoot(P), vl = liqRoot(P);
+      return R_GAS * T * Math.log((vg - VDW_B) / (vl - VDW_B)) + VDW_A * (1 / vg - 1 / vl) - P * (vg - vl);
+    };
+    let lo = pLo, hi = pHi;
+    const sLo = Math.sign(area(lo));
+    let P;
+    if (sLo === 0) P = lo;
+    else if (Math.sign(area(hi)) === sLo) return null;
+    else {
+      for (let i = 0; i < 200; i++) {
+        const m = (lo + hi) / 2;
+        if (Math.sign(area(m)) === sLo) lo = m; else hi = m;
+      }
+      P = (lo + hi) / 2;
+    }
+    return { P, xg: gasRoot(P), xl: liqRoot(P) };
+  });
+}
+
+/** Saturation (coexistence) pressure of the vdW fluid in atm for T < Tc; null at or above Tc. */
+export function vdwSaturationPressure(T) {
+  return vdwSaturation(T)?.P ?? null;
+}
+
+/** Smallest volume of the reliable, stable GAS branch: not below the
+ * saturated-gas volume (below Tc), the spinodal, or 1/0.8 of the excluded volume. */
 export function vdwGasBranchMinVolume(n, T) {
-  const vs = vdwSpinodalVolume(n, T);
-  return Math.max(vs ?? 0, (n * VDW_B) / (1 - VDW_MIN_FREE_FRACTION));
+  const sat = vdwSaturation(T);
+  const xs = gasSpinodalMolarVolume(T);
+  const x = Math.max(sat?.xg ?? 0, xs ?? 0, VDW_B / (1 - VDW_MIN_FREE_FRACTION));
+  return n * x;
 }
 
 /** Solve for the volume at which the selected gas model has pressure P.
- * Returns { V, vRequired, status, reachable, pTarget, pAtV } where V is
+ * Returns { V, vRequired, status, reason, reachable, pTarget, pAtV } where V is
  * clamped to the V slider range and status is one of
- * "ok" | "below-range" | "above-range" | "no-gas-solution" | "invalid". */
+ * "ok" | "below-range" | "above-range" | "no-gas-solution" | "invalid".
+ * For "no-gas-solution", reason is "condensation" (P >= P_sat, T < Tc) or "excluded-volume". */
 export function solveVolumeForPressure(n, T, P, gas = "ideal") {
   const vMin = LIMITS.V.min, vMax = LIMITS.V.max;
   const pAt = (V) => (gas === "real" ? vdwPressureRaw(n, T, V) : idealPressure(n, T, V));
   if (!(n > 0) || !(T > 0) || !(P > 0) || !Number.isFinite(P)) {
-    return { V: clamp(vMin, vMin, vMax), vRequired: null, status: "invalid", reachable: false, pTarget: P, pAtV: NaN };
+    return { V: clamp(vMin, vMin, vMax), vRequired: null, status: "invalid", reason: "invalid-state", reachable: false, pTarget: P, pAtV: NaN };
   }
   let vReq;
   if (gas !== "real") {
@@ -250,7 +319,8 @@ export function solveVolumeForPressure(n, T, P, gas = "ideal") {
     const vLo = vdwGasBranchMinVolume(n, T);
     if (!(P < pAt(vLo))) {
       const V = clamp(vLo, vMin, vMax);
-      return { V, vRequired: null, status: "no-gas-solution", reachable: false, pTarget: P, pAtV: vdwPressureRaw(n, T, V) };
+      const reason = vdwSaturation(T) ? "condensation" : "excluded-volume";
+      return { V, vRequired: null, status: "no-gas-solution", reason, reachable: false, pTarget: P, pAtV: vdwPressureRaw(n, T, V) };
     }
     let lo = vLo, hi = Math.max(2 * vLo, 2 * vMax);
     while (pAt(hi) > P && hi < 1e12) hi *= 2; // bracket: P(lo) > P > P(hi)
@@ -262,91 +332,143 @@ export function solveVolumeForPressure(n, T, P, gas = "ideal") {
   }
   const V = clamp(vReq, vMin, vMax);
   const status = vReq < vMin ? "below-range" : vReq > vMax ? "above-range" : "ok";
-  return { V, vRequired: vReq, status, reachable: status === "ok", pTarget: P, pAtV: pAt(V) };
+  return { V, vRequired: vReq, status, reason: null, reachable: status === "ok", pTarget: P, pAtV: pAt(V) };
 }
 
 /** Real-vs-ideal comparison at the SAME n, T, V. Never throws; returns
  * status "unreliable" (with a reason) instead of a number outside the model's
- * validity region. */
+ * validity region. On success Z = P_real V / (n R T) = P_real / P_ideal. */
 export function compareWithIdeal(n, T, V) {
   const pIdeal = idealPressure(n, T, V);
   const pRealRaw = vdwPressureRaw(n, T, V);
-  const bad = (reason) => ({ status: "unreliable", reason, caution: null, pIdeal, pReal: pRealRaw, deviationPct: null, signedPct: null, cls: null, marker: null });
+  const bad = (reason) => ({ status: "unreliable", reason, pIdeal, pReal: pRealRaw, Z: null, deviationPct: null, signedPct: null, cls: null });
   if (!(n > 0) || !(T > 0) || !(V > 0) || !Number.isFinite(pIdeal)) return bad("invalid-state");
   if (pIdeal < P_IDEAL_MIN) return bad("ideal-pressure-near-zero");
   if (!(V - n * VDW_B > 0) || (V - n * VDW_B) / V < VDW_MIN_FREE_FRACTION) return bad("excluded-volume");
-  if (V < vdwGasBranchMinVolume(n, T)) return bad("unstable-region");
+  if (V < vdwGasBranchMinVolume(n, T)) return bad(vdwSaturation(T) ? "two-phase" : "unstable-region");
   if (!Number.isFinite(pRealRaw) || !(pRealRaw > 0)) return bad("non-positive-pressure");
-  const deviationPct = deviationPercent(pIdeal, pRealRaw);
-  // Below Tc, pressures above P_sat(T) are a supersaturated (metastable) vapour:
-  // the number is still the model's, but flagged so the UI can warn.
-  const psat = vdwSaturationPressure(T);
-  const caution = psat != null && pRealRaw > psat * (1 + 1e-9) ? "supersaturated" : null;
+  const Z = pRealRaw / pIdeal;
+  const cls = classifyZ(Z);
   return {
-    status: "ok", reason: null, caution, pIdeal, pReal: pRealRaw, deviationPct,
-    signedPct: ((pRealRaw - pIdeal) / pIdeal) * 100,
-    cls: classifyDeviation(deviationPct), marker: deviationMarkerPosition(deviationPct),
+    status: "ok", reason: null, pIdeal, pReal: pRealRaw, Z,
+    deviationPct: Math.abs(Z - 1) * 100,
+    signedPct: (Z - 1) * 100,
+    cls,
   };
 }
-
-export const CAUTION_TEXT = Object.freeze({
-  supersaturated: "Near condensation: only a rough guide here.",
-});
 
 export const UNRELIABLE_TEXT = Object.freeze({
   "invalid-state": "The simplified model is unreliable for this state.",
   "ideal-pressure-near-zero": "The pressure is too close to zero for a meaningful comparison.",
-  "excluded-volume": "The particles' own volume fills too much of the container, so the van der Waals model is unreliable here.",
-  "unstable-region": "At this low temperature and density the van der Waals model predicts an unstable, condensing state, so the comparison is unreliable.",
+  "excluded-volume": "Model limit: the molecules' own volume fills too much of the container, so the van der Waals equation is unreliable here.",
+  "unstable-region": "Model limit: the van der Waals model predicts an unstable state here, so the comparison is unreliable.",
+  "two-phase": "Model limit: at this temperature and volume CO₂ would condense (gas and liquid coexist), so the van der Waals gas model does not apply.",
+  condensation: "Model limit: above the saturation pressure at this temperature CO₂ condenses, so the van der Waals gas model does not apply.",
   "non-positive-pressure": "The model gives a non-physical pressure here, so the comparison is unreliable.",
 });
 
-const fmtAtm = (x) => (x >= 10 ? x.toFixed(1) : x.toFixed(2));
+const fmtAtm = (x) => (x >= 100 ? x.toFixed(0) : x >= 10 ? x.toFixed(1) : x.toFixed(2));
+const fmtL = (x) => (x >= 100 ? x.toFixed(0) : x >= 10 ? x.toFixed(1) : x >= 1 ? x.toFixed(2) : x.toFixed(3));
 
-/** Resolve the full physical state for a set of controls. In Volume mode V
- * is the slider value; in Pressure mode V is solved from the target P for the
- * selected gas model. Also provides everything the Live Values / comparison
- * panels need (legacy fields: pressure, pIdeal, pReal, deviationPct,
- * deviationLevel, n, mode, N, T, V). */
+/** Z at a given pressure for a gas: solves the stable gas-branch volume.
+ * Returns { valid, Z, V, P, reason }. Ideal gas: Z = 1, V = nRT/P. */
+export function compressibilityAtPressure(n, T, P, gas = "real") {
+  if (!(n > 0) || !(T > 0) || !(P > 0)) return { valid: false, Z: NaN, V: NaN, P, reason: "invalid-state" };
+  if (gas !== "real") return { valid: true, Z: 1, V: (n * R_GAS * T) / P, P, reason: null };
+  const lim = realGasMaxPressure(n, T);
+  if (P > lim.P * (1 + 1e-12)) return { valid: false, Z: NaN, V: NaN, P, reason: lim.reason };
+  const sol = solveVolumeForPressure(n, T, Math.min(P, lim.P), "real");
+  if (sol.vRequired == null) return { valid: false, Z: NaN, V: NaN, P, reason: sol.reason ?? "excluded-volume" };
+  const V = sol.vRequired;
+  return { valid: true, Z: (P * V) / (n * R_GAS * T), V, P, reason: null };
+}
+
+/** Highest pressure (atm) at which the real model still describes a stable
+ * gas at this n and T, with the reason that limits it. */
+export function realGasMaxPressure(n, T) {
+  const sat = vdwSaturation(T);
+  const vLo = vdwGasBranchMinVolume(n, T);
+  const pLo = vdwPressureRaw(n, T, vLo);
+  if (sat) return { P: Math.min(sat.P, pLo), reason: "condensation" };
+  return { P: pLo, reason: "excluded-volume" };
+}
+
+/** The REAL gas at the same controlled variable as the current state: same V
+ * (Volume control) or same P (Pressure control). This is what "switching to
+ * Real gas" would show, and what the deviation indicator reports in either mode.
+ * { status: "ok"|"limit", Z, P, V, cls, reason } */
+export function realGasReference(c, n, V, pTarget) {
+  if (c.control === "pressure") {
+    const r = compressibilityAtPressure(n, c.T, pTarget, "real");
+    if (!r.valid) return { status: "limit", reason: r.reason, Z: null, P: pTarget, V: null, cls: null };
+    if (r.V < LIMITS.V.min || r.V > LIMITS.V.max) return { status: "limit", reason: "out-of-range", Z: r.Z, P: pTarget, V: r.V, cls: classifyZ(r.Z) };
+    return { status: "ok", reason: null, Z: r.Z, P: pTarget, V: r.V, cls: classifyZ(r.Z) };
+  }
+  const cmp = compareWithIdeal(n, c.T, V);
+  if (cmp.status !== "ok") return { status: "limit", reason: cmp.reason, Z: null, P: null, V, cls: null };
+  return { status: "ok", reason: null, Z: cmp.Z, P: cmp.pReal, V, cls: cmp.cls };
+}
+
+/** Resolve the full physical state for a set of controls. In Volume control V
+ * is the slider value; in Pressure control V is solved from the target P for the
+ * selected gas model. Also provides everything the Live Values / indicator /
+ * graph need. */
 export function resolveState(controls) {
   const c = clampControls(controls);
   const n = amountOfSubstance(c.N);
+  const real = c.mode === "real";
   let V = c.V;
   let status = "ok";
   let note = null;
   let target = null;
   let vRequired = null;
+  let limitReason = null;
   if (c.control === "pressure") {
     if (c.Vpin != null) {
       V = c.Vpin;
       status = "held";
-      target = c.mode === "real" ? vdwPressure(n, c.T, V) : idealPressure(n, c.T, V);
+      target = real ? vdwPressure(n, c.T, V) : idealPressure(n, c.T, V);
       note = "This state cannot be reached by solving for pressure, so the volume is held. Move the pressure slider to continue.";
     } else {
       target = c.Phold ?? c.P;
       const sol = solveVolumeForPressure(n, c.T, target, c.mode);
       V = sol.V; status = sol.status; vRequired = sol.vRequired;
-      const pNow = c.mode === "real" ? vdwPressure(n, c.T, V) : idealPressure(n, c.T, V);
-      if (status === "below-range") note = `Target ${fmtAtm(target)} atm needs ${vRequired.toFixed(1)} L, below the ${LIMITS.V.min} L minimum. Volume limited to ${LIMITS.V.min} L, so P = ${fmtAtm(pNow)} atm (target unreachable).`;
-      else if (status === "above-range") note = `Target ${fmtAtm(target)} atm needs ${vRequired >= 1000 ? ">1000" : vRequired.toFixed(1)} L, above the ${LIMITS.V.max} L maximum. Volume limited to ${LIMITS.V.max} L, so P = ${fmtAtm(pNow)} atm (target unreachable).`;
-      else if (status === "no-gas-solution") note = `No stable gas state exists at ${fmtAtm(target)} atm for this model, n and T. Volume held at ${V.toFixed(1)} L; the model is unreliable here.`;
+      const pNow = real ? vdwPressure(n, c.T, V) : idealPressure(n, c.T, V);
+      if (status === "below-range") note = `Target ${fmtAtm(target)} atm needs ${fmtL(vRequired)} L, below the ${LIMITS.V.min} L minimum. Volume limited to ${LIMITS.V.min} L, so P = ${fmtAtm(pNow)} atm (target unreachable).`;
+      else if (status === "above-range") note = `Target ${fmtAtm(target)} atm needs ${vRequired >= 1000 ? ">1000" : fmtL(vRequired)} L, above the ${LIMITS.V.max} L maximum. Volume limited to ${LIMITS.V.max} L, so P = ${fmtAtm(pNow)} atm (target unreachable).`;
+      else if (status === "no-gas-solution") { limitReason = sol.reason; note = `${UNRELIABLE_TEXT[sol.reason === "condensation" ? "condensation" : "excluded-volume"]} Volume held at ${fmtL(V)} L.`; }
       else if (status === "invalid") note = "The target pressure is not valid for this state.";
       if (c.Phold != null && status === "ok") note = `Pressure ${fmtAtm(c.Phold)} atm is outside the slider range (${LIMITS.P.min}-${LIMITS.P.max} atm); the state is held at that pressure.`;
     }
   }
   const pIdeal = idealPressure(n, c.T, V);
-  const pReal = vdwPressure(n, c.T, V);
-  const pct = deviationPercent(pIdeal, pReal);
+  let pReal = vdwPressure(n, c.T, V);
+  const comparison = compareWithIdeal(n, c.T, V);
+  // Volume control, real gas, inside the two-phase region: a real gas holds the
+  // saturation pressure (flat Maxwell plateau), not the vdW loop value.
+  if (real && c.control === "volume" && comparison.status !== "ok") {
+    limitReason = comparison.reason;
+    const sat = vdwSaturation(c.T);
+    if (comparison.reason === "two-phase" && sat) pReal = sat.P;
+    note = UNRELIABLE_TEXT[comparison.reason] || UNRELIABLE_TEXT["invalid-state"];
+  }
+  const pressure = real ? pReal : pIdeal;
+  const Z = real ? (pressure * V) / (n * R_GAS * c.T) : 1;
+  const ref = realGasReference(c, n, V, target ?? pressure);
+  const limited = real && limitReason != null;
   return {
     ...c,
     n,
     V,
-    pressure: c.mode === "real" ? pReal : pIdeal,
+    pressure,
     pIdeal,
     pReal,
-    deviationPct: pct,
-    deviationLevel: deviationLevel(pct),
-    comparison: compareWithIdeal(n, c.T, V),
+    Z,
+    cls: real ? (limited ? null : classifyZ(Z)) : classifyZ(1),
+    deviationPct: Math.abs(Z - 1) * 100,
+    comparison,
+    ref,
+    limit: limited ? { reason: limitReason, text: UNRELIABLE_TEXT[limitReason] || UNRELIABLE_TEXT["invalid-state"] } : null,
     status,
     reachable: status === "ok" || status === "held",
     vRequired,
@@ -361,7 +483,8 @@ export function computeReadings(controls) {
 }
 
 /** Apply one user control change to a full control set (pure). Handles the
- * Volume <-> Pressure switch without jumping the state. */
+ * Volume <-> Pressure switch without jumping the state. Switching the gas
+ * model ("mode") never changes N, T, the selected control or its value. */
 export function applyControlChange(controls, patch) {
   const cur = clampControls(controls);
   const st = resolveState(cur);
@@ -402,38 +525,39 @@ export function applyControlChange(controls, patch) {
 // control sets and returns { id, text } for the most relevant observation, or
 // null when nothing relevant changed (so the UI keeps the current message).
 // (Reset is handled by the caller: it passes prevControls = null.)
-// Priority: control mode > gas type > unreachable/unreliable
-// state > real-gas deviation trend > the physical variable that changed
-// (P, T, V, N in that order), worded for the variable that is held constant.
+// Priority: control selector > gas model > unreachable/limit state > real-gas
+// deviation trend > the variable that changed (P, T, V, N in that order),
+// worded for the variable that is held constant.
 // ---------------------------------------------------------------------------
 export const EXPLANATIONS = Object.freeze({
-  initial: "Particles move randomly and collide with the walls and with each other. These wall collisions are what produce the gas pressure.",
-  initialReal: "Real gas particles have finite volume and experience intermolecular forces, so the pressure can differ from the ideal-gas value.",
-  realSelected: "Unlike ideal gas particles, real gas particles have finite volume and experience intermolecular forces.",
-  idealSelected: "Ideal gas particles are treated as points with no intermolecular forces, so the pressure follows PV = nRT exactly.",
-  controlPressure: "You now set the target pressure. The piston moves until the gas pressure matches it, so the volume is calculated.",
+  initial: "Ideal gas: point particles with no forces, so Z = 1 at every pressure. Switch to Real gas to compare CO₂ at the same conditions.",
+  initialReal: "Real CO₂: the molecules have size and attract each other, so Z = PV/nRT departs from 1.",
+  realSelected: "Real gas: finite-sized molecules that attract each other. Same T, n and controlled variable – only the model changed.",
+  idealSelected: "Ideal gas: point particles with no intermolecular forces, so PV = nRT and Z = 1 exactly.",
+  controlPressure: "You now set the pressure. The piston moves until the gas pressure matches it, so the volume is calculated.",
   controlVolume: "You now set the volume with the piston. The pressure is calculated from the gas model.",
-  tempUpV: "The particles are moving faster because their average kinetic energy has increased. At constant volume, this increases the pressure.",
-  tempDownV: "The particles are moving more slowly because their average kinetic energy has decreased. At constant volume, this decreases the pressure.",
-  tempUpP: "The particles are moving faster because their average kinetic energy has increased. To keep the pressure constant, the gas expands and the volume increases.",
-  tempDownP: "The particles are moving more slowly because their average kinetic energy has decreased. To keep the pressure constant, the gas contracts and the volume decreases.",
-  volDown: "The particles now have less space to move. They collide with the container walls more frequently, increasing the pressure.",
-  volUp: "The particles now have more space to move. They collide with the container walls less frequently, decreasing the pressure.",
-  nUpV: "More particles are present in the same space. This increases the number of collisions with the container walls, so the pressure increases.",
-  nDownV: "Fewer particles are present in the same space. This decreases the number of collisions with the container walls, so the pressure decreases.",
-  nUpP: "More particles are present. To keep the pressure constant, the gas needs more space, so the piston rises and the volume increases.",
-  nDownP: "Fewer particles are present. To keep the pressure constant, the gas needs less space, so the piston falls and the volume decreases.",
-  pressureUp: "The target pressure is higher, so the piston moves down. The gas is compressed until its pressure matches the target.",
-  pressureDown: "The target pressure is lower, so the piston moves up. The gas expands until its pressure matches the target.",
-  unreachableLow: "The piston has reached its lower limit. At this amount of gas and temperature the target pressure cannot be reached in the available volume.",
-  unreachableHigh: "The piston has reached its upper limit. At this amount of gas and temperature the target pressure cannot be reached in the available volume.",
-  noGasSolution: "At this temperature the model has no stable gas state at the target pressure, so the volume is held at the nearest valid value.",
-  unreliable: "In these conditions the simple van der Waals model is unreliable, so no comparison with the ideal gas is shown.",
-  approachIdeal: "At these conditions, the particles are relatively far apart and intermolecular attractions have less influence. The real gas behaves approximately like an ideal gas.",
-  deviationUp: "The effects of particle volume or intermolecular attractions are becoming more significant, so the real gas differs more from the ideal prediction.",
+  tempUpV: "Hotter: particles move faster and hit the walls harder and more often, so the pressure rises at constant volume.",
+  tempDownV: "Colder: particles move more slowly, so the pressure falls at constant volume.",
+  tempUpP: "Hotter: particles move faster, so the gas expands to keep the pressure constant.",
+  tempDownP: "Colder: particles move more slowly, so the gas contracts to keep the pressure constant.",
+  volDown: "Less space: more frequent wall collisions, so the pressure rises.",
+  volUp: "More space: fewer wall collisions, so the pressure falls.",
+  nUpV: "More gas in the same space: more wall collisions, so the pressure rises.",
+  nDownV: "Less gas in the same space: fewer wall collisions, so the pressure falls.",
+  nUpP: "More gas at the same pressure needs more space, so the piston rises.",
+  nDownP: "Less gas at the same pressure needs less space, so the piston falls.",
+  pressureUp: "Higher pressure: the piston moves down and compresses the gas.",
+  pressureDown: "Lower pressure: the piston moves up and the gas expands.",
+  unreachableLow: "The piston has reached its lower limit: this pressure cannot be reached with this amount of gas.",
+  unreachableHigh: "The piston has reached its upper limit: this pressure cannot be reached with this amount of gas.",
+  noGasSolutionCondensation: "Model limit: above the saturation pressure at this temperature CO₂ would condense, so the gas model stops here.",
+  noGasSolutionExcluded: "Model limit: the molecules' own volume fills the container, so the gas model stops here.",
+  unreliable: "Model limit: the van der Waals gas model is unreliable in these conditions, so no real-gas value is shown.",
+  approachIdeal: "Molecules are far apart, so attractions and molecular size matter less: the real gas is closer to ideal.",
+  deviationUp: "Molecules are closer together: attractions (Z < 1) or molecular size (Z > 1) matter more, so the real gas departs further from ideal.",
 });
 
-const DEVIATION_TREND_EPS = 0.2; // percentage points
+const DEVIATION_TREND_EPS = 0.2; // percentage points of |Z - 1| x 100
 
 export function selectExplanation(prevControls, nextControls) {
   const next = resolveState(nextControls);
@@ -458,13 +582,13 @@ export function selectExplanation(prevControls, nextControls) {
   if (next.control === "pressure") {
     if (next.status === "below-range") return out("unreachableLow");
     if (next.status === "above-range") return out("unreachableHigh");
-    if (next.status === "no-gas-solution") return out("noGasSolution");
+    if (next.status === "no-gas-solution") return out(next.limit?.reason === "condensation" || (next.mode !== "real" && next.ref.reason === "condensation") ? "noGasSolutionCondensation" : "noGasSolutionExcluded");
   }
   if (next.mode === "real") {
-    const a = prev.comparison, b = next.comparison;
-    if (b.status !== "ok") return out("unreliable");
-    if (a.status === "ok") {
-      const dd = b.deviationPct - a.deviationPct;
+    if (next.limit) return out("unreliable");
+    const a = prev.ref, b = next.ref;
+    if (a.status === "ok" && b.status === "ok") {
+      const dd = (Math.abs(b.Z - 1) - Math.abs(a.Z - 1)) * 100;
       if (dd <= -DEVIATION_TREND_EPS && b.cls.index <= 1) return out("approachIdeal");
       if (dd >= DEVIATION_TREND_EPS && b.cls.index >= 1) return out("deviationUp");
     }
@@ -480,115 +604,35 @@ export function selectExplanation(prevControls, nextControls) {
 // REAL vs IDEAL GAS BEHAVIOUR GRAPH: compressibility factor Z(P)
 // ---------------------------------------------------------------------------
 // Z = P V / (n R T).  Ideal gas: Z = 1 exactly.  Real gas (vdW): the curve is
-// Z(P) at the CURRENT T and CURRENT n, built point by point by solving the
-// stable gas-branch volume V(P) (solveVolumeForPressure) and Z = P V / (n R T).
-// n is held constant along every curve. (In van der Waals theory with
-// per-mole constants Z depends on P and T only, so changing n does not change
-// the curve itself, only where the live state sits on it.)
+// Z(P) at the CURRENT T (recomputed whenever T changes), built point by point by
+// solving the stable gas-branch volume V(P) (solveVolumeForPressure) and
+// Z = P V / (n R T). (With per-mole vdW constants Z depends on P and T only, so
+// n does not change the curve; it only changes where the live state sits and
+// the physical limits through the volume range.)
 //
 // Identity used by the UI and tests: at the same T, V, n,
-//     Z = P_real / P_ideal   =>   |Z - 1| x 100  ==  Deviation (%) of the
-// comparison panel. The "approximately ideal" tolerance IS the "very close to
-// ideal" bound, Z_TOLERANCE_PCT = DEVIATION_BOUNDS.veryClose (2 %).
+//     Z = P_real / P_ideal   =>   |Z - 1| equals the deviation used by the indicator.
 //
-// Plotted pressure range (independent of the 0.2-5.0 atm control range):
-// Z_P_MIN..Z_P_MAX = 0.01..100 atm on a LOG axis. 0.01 atm contains the lowest
-// pressure reachable with the sliders (n = 0.10 mol, 100 K, 50 L -> 0.016 atm),
-// 100 atm shows the excluded-volume upturn; the live marker is therefore always
-// inside the plot. The 0.2-5.0 atm control window is shaded.
+// Plotted pressure range: Z_P_MIN..Z_P_MAX = 0.1..1000 atm on a LOG axis: it
+// contains the whole 1-500 atm control range, the low-pressure limit Z -> 1 and
+// the excluded-volume upturn. The live marker is always inside the plot.
 //
 // Validity (never plotted otherwise):
-//   * gas branch only: V >= max(V_spinodal, n b / (1 - 0.2)) so dP/dV < 0 and
+//   * gas branch only: V >= max(V_sat_gas, V_spinodal, n b / 0.8) so dP/dV < 0 and
 //     at least 20 % of V is free (VDW_MIN_FREE_FRACTION).
-//   * below the critical temperature Tc the vdW isotherm has a loop; the
-//     curve stops at the SATURATION (Maxwell equal-area) pressure P_sat(T):
-//     beyond it the gas would be supersaturated (metastable) and the
-//     simplified model no longer describes a stable gas.
+//   * below Tc the curve stops at the Maxwell saturation pressure P_sat(T):
+//     beyond it the real gas condenses and the simplified gas model no longer applies.
 //   The curve is cut at the first pressure where either limit applies and the
 //   end point is reported (curve.end) so the UI can say why it stops.
-export const Z_P_MIN = 0.01; // atm
-export const Z_P_MAX = 100; // atm
+export const Z_P_MIN = 0.1; // atm
+export const Z_P_MAX = 1000; // atm
 export const Z_SAMPLES = 240;
-export const Z_TOLERANCE_PCT = DEVIATION_BOUNDS.veryClose; // |Z-1| x 100 below this: "approximately ideal"
-export const Z_Y_CAP = 2; // plotted Z never exceeds this (curve clipped, noted)
-
-/** Critical constants and Boyle temperature of the model's a and b. */
-export function vdwCriticalConstants() {
-  return {
-    Tc: (8 * VDW_A) / (27 * R_GAS * VDW_B), // K
-    Pc: VDW_A / (27 * VDW_B * VDW_B), // atm
-    Vc: 3 * VDW_B, // L/mol
-    TBoyle: VDW_A / (R_GAS * VDW_B), // K
-  };
-}
-
-/** Smallest molar volume x > b where dP/dx = 0 (liquid-side spinodal), or null. */
-function vdwLiquidSpinodalMolarVolume(T) {
-  const f = (x) => R_GAS * T * x ** 3 - 2 * VDW_A * (x - VDW_B) ** 2;
-  let t = 1e-6;
-  while (t < 1e3) {
-    const t2 = t * 1.01;
-    if (f(VDW_B + t2) <= 0) {
-      let lo = t, hi = t2;
-      for (let i = 0; i < 200; i++) { const m = (lo + hi) / 2; if (f(VDW_B + m) <= 0) hi = m; else lo = m; }
-      return VDW_B + (lo + hi) / 2;
-    }
-    t = t2;
-  }
-  return null;
-}
-
-/** Saturation (coexistence) pressure of the vdW fluid from the Maxwell
- * equal-area construction, in atm, for T < Tc; null at or above Tc. */
-export function vdwSaturationPressure(T) {
-  const { Tc } = vdwCriticalConstants();
-  if (!(T > 0) || !(T < Tc)) return null;
-  const xg = vdwSpinodalVolume(1, T);
-  const xl = vdwLiquidSpinodalMolarVolume(T);
-  if (xg == null || xl == null || !(xg > xl)) return null;
-  const pAt = (x) => (R_GAS * T) / (x - VDW_B) - VDW_A / (x * x);
-  const pHi = pAt(xg), pLo = Math.max(pAt(xl), 1e-12);
-  if (!(pHi > pLo)) return null;
-  const gasRoot = (P) => {
-    let lo = xg, hi = 2 * xg;
-    while (pAt(hi) > P && hi < 1e15) hi *= 2;
-    for (let i = 0; i < 200; i++) { const m = (lo + hi) / 2; if (pAt(m) > P) lo = m; else hi = m; }
-    return (lo + hi) / 2;
-  };
-  const liqRoot = (P) => {
-    let lo = VDW_B * (1 + 1e-12), hi = xl;
-    for (let i = 0; i < 200; i++) { const m = (lo + hi) / 2; if (pAt(m) > P) lo = m; else hi = m; }
-    return (lo + hi) / 2;
-  };
-  // Equal-area residual: integral of (P_vdW - P) dx from liquid to gas root.
-  const area = (P) => {
-    const vg = gasRoot(P), vl = liqRoot(P);
-    return R_GAS * T * Math.log((vg - VDW_B) / (vl - VDW_B)) + VDW_A * (1 / vg - 1 / vl) - P * (vg - vl);
-  };
-  let lo = pLo, hi = pHi;
-  const sLo = Math.sign(area(lo));
-  if (sLo === 0) return lo;
-  if (Math.sign(area(hi)) === sLo) return null;
-  for (let i = 0; i < 200; i++) {
-    const m = (lo + hi) / 2;
-    if (Math.sign(area(m)) === sLo) lo = m; else hi = m;
-  }
-  return (lo + hi) / 2;
-}
-
-/** Highest pressure (atm) at which the real model still describes a stable
- * gas at this n and T, with the reason that limits it. */
-export function realGasMaxPressure(n, T) {
-  const psat = vdwSaturationPressure(T);
-  const vLo = vdwGasBranchMinVolume(n, T);
-  const pExcl = vdwPressureRaw(n, T, vLo);
-  if (psat != null && psat <= pExcl) return { P: psat, reason: "condensation" };
-  return { P: pExcl, reason: psat != null ? "condensation" : "excluded-volume" };
-}
+export const Z_TOLERANCE_PCT = Z_BOUNDS.nearIdeal * 100; // |Z-1| x 100 below this: "approximately ideal"
+export const Z_Y_CAP = 2.4; // plotted Z never exceeds this (curve clipped, noted)
 
 export const Z_END_TEXT = Object.freeze({
-  condensation: "Near and below condensation the simplified model stops describing a stable gas, so the curve ends here.",
-  "excluded-volume": "At this pressure the particles' own volume fills too much of the container, so the simplified model stops here.",
+  condensation: "Above this pressure CO₂ condenses at this temperature, so the gas model ends (model limit).",
+  "excluded-volume": "At this pressure the molecules' own volume fills too much of the container, so the model ends here (model limit).",
 });
 
 /** Compressibility factor Z = P V / (n R T) of a state (n mol, T K, V L).
@@ -600,24 +644,11 @@ export function compressibilityFactor(n, T, V, gas = "real") {
   return (p * V) / (n * R_GAS * T);
 }
 
-/** Z at a given pressure for a gas: solves the stable gas-branch volume.
- * Returns { valid, Z, V, P, reason }. Ideal gas: Z = 1, V = nRT/P. */
-export function compressibilityAtPressure(n, T, P, gas = "real") {
-  if (!(n > 0) || !(T > 0) || !(P > 0)) return { valid: false, Z: NaN, V: NaN, P, reason: "invalid-state" };
-  if (gas !== "real") return { valid: true, Z: 1, V: (n * R_GAS * T) / P, P, reason: null };
-  const lim = realGasMaxPressure(n, T);
-  if (P > lim.P * (1 + 1e-12)) return { valid: false, Z: NaN, V: NaN, P, reason: lim.reason };
-  const sol = solveVolumeForPressure(n, T, Math.min(P, lim.P), "real");
-  if (sol.vRequired == null) return { valid: false, Z: NaN, V: NaN, P, reason: "excluded-volume" };
-  const V = sol.vRequired;
-  return { valid: true, Z: (P * V) / (n * R_GAS * T), V, P, reason: null };
-}
-
 /** The real-gas Z(P) curve at constant n and T, plus the ideal reference.
  * { n, T, gas, pMin, pMax, ideal: [{P, Z:1} x2], points: [{P, Z, V}],
  *   ghost, end: null | {P, reason, text}, zMin, zMax, tc, ... }
  * `points` is ALWAYS the real-gas model (for gas = "ideal" the UI draws it as a
- * faint dashed ghost for comparison). */
+ * lighter comparison curve). */
 export function generateZCurve(n, T, gas = "real", samples = Z_SAMPLES) {
   const pMin = Z_P_MIN, pMax = Z_P_MAX;
   const lim = realGasMaxPressure(n, T);
@@ -647,14 +678,15 @@ export function generateZCurve(n, T, gas = "real", samples = Z_SAMPLES) {
     ideal: [{ P: pMin, Z: 1 }, { P: pMax, Z: 1 }],
     points, ghost: gas !== "real", end, zMin, zMax,
     ...vdwCriticalConstants(),
+    supercritical: T >= vdwCriticalConstants().Tc,
   };
 }
 
-/** Explanation of the current Z (pure). Tolerance: |Z-1| x 100 < Z_TOLERANCE_PCT. */
+/** Explanation of the current Z (pure). Tolerance: |Z-1| < Z_BOUNDS.nearIdeal. */
 export const Z_EXPLANATIONS = Object.freeze({
-  ideal: "The real gas behaves approximately like an ideal gas.",
-  below: "Attractive interactions dominate the deviation.",
-  above: "Repulsive or excluded-volume effects dominate the deviation.",
+  ideal: "Z is close to 1: the real gas behaves almost like an ideal gas.",
+  below: "Z < 1: attractions between molecules dominate.",
+  above: "Z > 1: the molecules' own volume dominates.",
 });
 export function zExplanation(Z) {
   if (!Number.isFinite(Z)) return { id: "unreliable", text: UNRELIABLE_TEXT["invalid-state"], Z: null, deviationPct: null };
@@ -663,36 +695,46 @@ export function zExplanation(Z) {
   return { id, text: Z_EXPLANATIONS[id], Z, deviationPct };
 }
 
-/** Live-state marker for the graph, from a resolved state. Matches the Live
- * values exactly: P is the displayed pressure; Z = P V / (n R T). */
+/** Live-state markers for the graph, from a resolved state. The CURRENT state
+ * matches the Live values exactly (P is the displayed pressure; Z = P V / (n R T)).
+ * `real` is the real-gas point at the same controlled variable (the same
+ * P in Pressure control, the same V in Volume control): in Ideal mode it is the
+ * comparison point that would become the live state if the student switches. */
 export function zMarker(state) {
-  const { n, T, V } = state;
+  const { n, T } = state;
   const clampP = (P) => Math.min(Z_P_MAX, Math.max(Z_P_MIN, P));
+  const ref = state.ref;
+  const real = ref && ref.status === "ok" && ref.P > 0
+    ? { P: ref.P, plotP: clampP(ref.P), Z: ref.Z, V: ref.V, cls: ref.cls, ...zExplanation(ref.Z) }
+    : null;
   if (state.mode !== "real") {
     const P = state.pIdeal;
-    return { status: "ok", reason: null, P, plotP: clampP(P), Z: 1, outside: P < Z_P_MIN || P > Z_P_MAX, onCurve: true, caution: null, ...zExplanation(1) };
+    return { status: "ok", reason: null, P, plotP: clampP(P), Z: 1, outside: P < Z_P_MIN || P > Z_P_MAX, onCurve: true, real, ...zExplanation(1) };
   }
-  const c = state.comparison;
-  if (c.status !== "ok") {
-    return { status: "unreliable", reason: c.reason, P: state.pIdeal, plotP: clampP(state.pIdeal), Z: null, outside: false, onCurve: false, caution: null, ...zExplanation(NaN), text: UNRELIABLE_TEXT[c.reason] || UNRELIABLE_TEXT["invalid-state"] };
+  if (state.limit) {
+    const P = state.pressure;
+    const Z = (P * state.V) / (n * R_GAS * T);
+    return { status: "limit", reason: state.limit.reason, P, plotP: clampP(P), Z, outside: P < Z_P_MIN || P > Z_P_MAX, onCurve: false, real: null, text: state.limit.text, deviationPct: Math.abs(Z - 1) * 100 };
   }
-  const P = c.pReal;
-  const Z = (P * V) / (n * R_GAS * T);
+  const P = state.pressure;
+  const Z = state.Z;
   return {
     status: "ok", reason: null, P, plotP: clampP(P), Z,
     outside: P < Z_P_MIN || P > Z_P_MAX,
-    onCurve: c.caution == null, caution: c.caution, ...zExplanation(Z),
+    onCurve: true, real: null, ...zExplanation(Z),
   };
 }
 
-/** Y-axis range for the Z plot (rescales with the curve so a shallow dip at
- * 300 K stays visible); capped at Z_Y_CAP. */
+/** Y-axis range for the Z plot: contains the curve and the markers, rounded
+ * outward, and never narrower than 0.7-1.3 so a gentle curve is still visibly a curve. */
 export function zAxisRange(curve, marker) {
   let lo = 1, hi = 1;
   for (const p of curve.points) { lo = Math.min(lo, p.Z); hi = Math.max(hi, p.Z); }
-  if (marker && Number.isFinite(marker.Z)) { lo = Math.min(lo, marker.Z); hi = Math.max(hi, marker.Z); }
-  const yMin = Math.max(0, Math.min(0.9, Math.floor((lo - 0.03) * 10) / 10));
-  const rawMax = Math.max(1.1, Math.ceil((hi + 0.03) * 10) / 10);
+  const add = (m) => { if (m && Number.isFinite(m.Z)) { lo = Math.min(lo, m.Z); hi = Math.max(hi, m.Z); } };
+  add(marker); add(marker?.real);
+  lo = Math.min(lo, 0.7); hi = Math.max(hi, 1.3);
+  const yMin = Math.max(0, Math.floor((lo - 0.02) * 10) / 10);
+  const rawMax = Math.ceil((hi + 0.02) * 10) / 10;
   return { yMin, yMax: Math.min(Z_Y_CAP, rawMax), clipped: rawMax > Z_Y_CAP };
 }
 
@@ -700,9 +742,14 @@ export function zAxisRange(curve, marker) {
 // ---------------------------------------------------------------------------
 // Particle dynamics (2D, equal masses m = 1, chamber units)
 // ---------------------------------------------------------------------------
-export const CHAMBER = { width: 170, maxHeight: 190 }; // units; height = maxHeight * V / V_max
-export const R_IDEAL = 1.9; // display/collision radius, ideal (no effect on ideal pressure)
-export const R_REAL = 2.4; // collision radius in real mode (excluded-volume cue)
+// ILLUSTRATIVE particle picture (not molecular dynamics of CO2): a 2D hard-disc
+// gas. The cylinder is wide (landscape) and its height follows log(V) over the
+// 0.01-100 L range (see pistonHeight), so the piston visibly moves over the
+// four decades of volume the pressure range needs.
+export const CHAMBER = { width: 300, maxHeight: 190 }; // units
+export const MIN_HEIGHT_FRACTION = 0.14; // piston height at V = V_min
+export const R_IDEAL = 2.6; // drawn/collision radius, ideal (no effect on the ideal-gas model: point particles)
+export const R_REAL = 3.4; // drawn/collision radius in real mode (finite-size cue for the excluded volume b)
 export const T_REF = 300;
 // Rayleigh scale: each velocity component ~ N(0, sigma^2), sigma = SIGMA_REF * sqrt(T / T_REF)
 // so <v^2> = 2 sigma^2 and v_rms (and mean speed) scale with sqrt(T).
@@ -725,12 +772,15 @@ const MAX_EVENTS = 80;
 // reference thermal energy kT_ref = SIGMA_REF^2 (m = 1) so attraction matters
 // at 100 K (well depth ~1.2 kT) and is minor at 300 K (~0.4 kT) and above. Tuned
 // empirically (neighbour-count sweep over seeds). Not quantitative MD.
-const EPS_OVER_KT_REF = 0.4;
+const EPS_OVER_KT_REF = 0.65; // ~ (eps/k = 195 K for CO2-like molecules) / 300 K
 const EPS = EPS_OVER_KT_REF * SIGMA_REF * SIGMA_REF;
 const CUTOFF_FACTOR = 2.5;
 
+/** Piston height (chamber units) for a volume in litres: logarithmic in V. */
 export function pistonHeight(V) {
-  return (CHAMBER.maxHeight * V) / LIMITS.V.max;
+  const v = clamp(Number(V) || LIMITS.V.min, LIMITS.V.min, LIMITS.V.max);
+  const f = Math.log(v / LIMITS.V.min) / Math.log(LIMITS.V.max / LIMITS.V.min);
+  return CHAMBER.maxHeight * (MIN_HEIGHT_FRACTION + (1 - MIN_HEIGHT_FRACTION) * f);
 }
 
 export function sigmaForT(T) {
@@ -811,7 +861,7 @@ export function createSimulation({ seed = 12345 } = {}) {
     paused: false,
     instant: false, // reduced motion: piston/radius/fades snap
     time: 0,
-    pistonH: pistonHeight(DEFAULT_CONTROLS.V),
+    pistonH: pistonHeight(resolveState(DEFAULT_CONTROLS).V),
     pistonV: 0,
     radius: R_IDEAL,
     events: [],
@@ -1042,7 +1092,7 @@ export function createSimulation({ seed = 12345 } = {}) {
     sim.time = 0;
     sim._acc = 0;
     sim._countAcc = 0;
-    sim.pistonH = pistonHeight(DEFAULT_CONTROLS.V);
+    sim.pistonH = pistonHeight(sim.state.V);
     sim.pistonV = 0;
     sim.radius = R_IDEAL;
     syncCount(true);

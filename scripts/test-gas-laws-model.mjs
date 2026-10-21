@@ -332,10 +332,10 @@ test("default message first; direction-aware, mode-specific messages", () => {
   }
   const texts = new Set(M.MODE_IDS.flatMap((m) => [M.EXPLANATIONS[m].up, M.EXPLANATIONS[m].down, M.EXPLANATIONS[m].default]));
   assert.equal(texts.size, 12);
-  assert.match(M.EXPLANATIONS.pv.down, /less space.*more frequently.*increasing the pressure/);
-  assert.match(M.EXPLANATIONS.vt.up, /move faster.*piston rises/);
-  assert.match(M.EXPLANATIONS.pt.up, /fixed-volume/);
-  assert.match(M.EXPLANATIONS.vn.up, /More gas particles/);
+  assert.match(M.EXPLANATIONS.pv.down, /Volume decreases.*more wall collisions.*pressure increases/);
+  assert.match(M.EXPLANATIONS.vt.up, /faster particles.*piston rises/);
+  assert.match(M.EXPLANATIONS.pt.up, /piston is fixed|faster particles hit the walls harder/);
+  assert.match(M.EXPLANATIONS.vn.up, /More gas.*piston rises/);
   assert.equal(M.selectExplanation(M.defaultState("pv"), M.defaultState("vt")).id, "vt-default");
 });
 test("predict content: one question per relationship with numbers when reachable", () => {

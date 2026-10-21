@@ -8,6 +8,8 @@ import MoleculeViewer3D from "../3d/MoleculeViewer3D.jsx";
 import TableView from "./TableView.jsx";
 import ELabLoader from "../ui/ELabLoader.jsx";
 import { findPublishedLessonBySyllabusCode } from "../../lib/learnContentService.js";
+import ZoomableImage from "../image-viewer/ZoomableImage.jsx";
+import ZoomableHtml from "../image-viewer/ZoomableHtml.jsx";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext.jsx";
 
@@ -30,7 +32,7 @@ export default function LearnBlockRenderer({ block }) {
         <section className="after:block after:clear-both after:content-['']">
           {c.title && <h2 className="mb-2 text-xl font-semibold tracking-tight" style={{ color: c.titleColor || "#f08484" }}>{c.title}</h2>}
           {c.imageUrl && wrap !== "none" && <WrappedContentImage content={c} />}
-          <div className="prose-sm max-w-none text-justify text-[var(--color-ink-soft)] [&_h3]:text-left [&_h3]:text-lg [&_h3]:font-bold [&_h3]:text-[var(--color-ink)] [&_h4]:text-left [&_h4]:text-base [&_h4]:font-semibold [&_h4]:text-[var(--color-ink)] [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-[var(--color-indigo)] [&_a]:underline [&_sub]:text-[0.75em] [&_sup]:text-[0.75em] [&_sub]:relative [&_sup]:relative [&_sub]:[line-height:0] [&_sup]:[line-height:0]" dangerouslySetInnerHTML={{ __html: sanitizeHtml(renderMathMarkersInHtml(resolveMathAnnotationsInHtml(c.html))) }} />
+          <ZoomableHtml className="prose-sm max-w-none text-justify text-[var(--color-ink-soft)] [&_h3]:text-left [&_h3]:text-lg [&_h3]:font-bold [&_h3]:text-[var(--color-ink)] [&_h4]:text-left [&_h4]:text-base [&_h4]:font-semibold [&_h4]:text-[var(--color-ink)] [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-[var(--color-indigo)] [&_a]:underline [&_sub]:text-[0.75em] [&_sup]:text-[0.75em] [&_sub]:relative [&_sup]:relative [&_sub]:[line-height:0] [&_sup]:[line-height:0]" html={sanitizeHtml(renderMathMarkersInHtml(resolveMathAnnotationsInHtml(c.html)))} />
           {c.imageUrl && wrap === "none" && <WrappedContentImage content={c} />}
         </section>
       );
@@ -43,14 +45,14 @@ export default function LearnBlockRenderer({ block }) {
       if (wrap !== "none") {
         return (
           <figure className={`mb-3 w-full sm:mb-2 ${wrappedWidth} ${wrap === "left" ? "sm:float-left sm:mr-5" : "sm:float-right sm:ml-5"}`}>
-            <img src={c.url} alt={c.alt || ""} className="h-auto w-full rounded-md" />
+            <ZoomableImage src={c.url} alt={c.alt || ""} className="h-auto w-full rounded-md" />
             {c.caption && <figcaption className="mt-1.5 text-xs text-[var(--color-ink-faint)]">{c.caption}</figcaption>}
           </figure>
         );
       }
       return (
         <figure className={c.alignment === "left" ? "text-left" : c.alignment === "right" ? "text-right" : "text-center"}>
-          <img src={c.url} alt={c.alt || ""} className={`inline-block h-auto rounded-md ${normalWidth}`} />
+          <ZoomableImage src={c.url} alt={c.alt || ""} className={`inline-block h-auto rounded-md ${normalWidth}`} />
           {c.caption && <figcaption className="mt-1.5 text-xs text-[var(--color-ink-faint)]">{c.caption}</figcaption>}
         </figure>
       );
@@ -183,7 +185,7 @@ function WrappedContentImage({ content }) {
 
   return (
     <figure className={`my-2 w-full ${wrap === "none" ? "max-w-xl" : widthClass} ${floatClass}`}>
-      <img src={content.imageUrl} alt={content.imageAlt || ""} className="h-auto w-full rounded-md" />
+      <ZoomableImage src={content.imageUrl} alt={content.imageAlt || ""} className="h-auto w-full rounded-md" />
       {content.imageCaption && <figcaption className="mt-1 text-xs leading-snug text-[var(--color-ink-faint)]">{content.imageCaption}</figcaption>}
     </figure>
   );

@@ -1,7 +1,7 @@
-import { Settings2, Play } from "lucide-react";
-import { MODES, RANGES, TEXT_ONE_LINER, VARS, displayAmount, effectiveRange, formatScientific, formatValue } from "../model.js";
+import { Undo2 } from "lucide-react";
+import { MODES, RANGES, VARS, displayAmount, effectiveRange, formatScientific, formatValue } from "../model.js";
 import { VAR_CHIP } from "../theme.js";
-import { ControlLegend, DashPanel, MiniSwitch, ReadOnlyRow, SliderRow, StepButton } from "../../../components/simulation/SimulationDashboard.jsx";
+import { ConstantsRow, DashPanel, MiniSwitch, PopoverSection, ReadOnlyRow, SettingToggle, SliderRow, StepButton } from "../../../components/simulation/SimulationDashboard.jsx";
 
 const ORDER = ["n", "T", "V", "P"];
 const UNIT_OPTIONS = [
@@ -18,96 +18,86 @@ export function AmountChip({ n, unit, className = "" }) {
   return <span className={"whitespace-nowrap " + className} data-testid="amount-chip">{displayAmount(n, "mol").text}</span>;
 }
 
-function VarRow({ k, state, role, unit, onUnit, onChange, accent }) {
+const labelOf = (k) => (k === "n" ? "Amount" : VARS[k].name);
+
+function VarSlider({ k, state, unit, onChange, accent, tone = "active", idPrefix = "gl" }) {
   const v = VARS[k];
   const hard = RANGES[k];
   const range = effectiveRange(state, k);
   const value = state[k];
-  const id = `gl-${k}`;
   const depName = VARS[MODES[state.mode].dependent];
   const isAmount = k === "n";
-  const slider = role !== "calc";
-  const adjustable = role === "active" || role === "edit";
-  const atLimit = slider && adjustable && range.limited && (value <= range.min + 1e-9 || value >= range.max - 1e-9);
+  const atLimit = range.limited && (value <= range.min + 1e-9 || value >= range.max - 1e-9);
   const rangeText = (x) => (isAmount ? x.toFixed(2) : k === "V" ? Number(x.toFixed(1)).toString() : String(Math.round(x)));
-  const limitNote = slider && adjustable && range.limited
-    ? atLimit
-      ? `Limit reached: ${depName.name.toLowerCase()} must stay within ${RANGES[depName.key].min}–${RANGES[depName.key].max} ${depName.unit}.`
-      : `Range here: ${rangeText(range.min)}–${rangeText(range.max)} ${v.unit}.`
+  const limitNote = range.limited && atLimit
+    ? `Limit reached: ${depName.name.toLowerCase()} must stay within ${RANGES[depName.key].min}–${RANGES[depName.key].max} ${depName.unit}.`
     : null;
-  const tone = role === "locked" ? "locked" : role === "edit" ? "edit" : "active";
-  const label = isAmount ? "Amount of gas" : v.name;
   const badgeText = isAmount ? <AmountChip n={value} unit={unit} /> : `${formatValue(k, value)} ${v.unit}`;
   const valueText = isAmount ? displayAmount(value, unit).text : `${formatValue(k, value)} ${v.unit}`;
   const step = (dir) => onChange(k, Math.round((value + dir * RANGES.n.step) / RANGES.n.step) * RANGES.n.step);
-
-  if (role === "calc") {
-    return (
-      <ReadOnlyRow
-        label={label} symbol={k} hint="calculated" color={accent.slider} badgeBg={VAR_CHIP[k]} testId={k} rowTestId={`block-${k}`}
-        badgeText={badgeText} tooltip="Calculated from PV = nRT"
-      />
-    );
-  }
   return (
     <SliderRow
-      id={id} label={label} symbol={k} tone={tone} color={accent.slider} badgeBg={VAR_CHIP[k]} testId={k} rowTestId={`block-${k}`}
+      id={`${idPrefix}-${k}`} label={labelOf(k)} symbol={k} tone={tone} color={accent.slider} badgeBg={VAR_CHIP[k]} testId={k} rowTestId={`block-${k}`}
       value={value} min={hard.min} max={hard.max} step={hard.step}
       onChange={(x) => onChange(k, x)}
-      badgeText={badgeText} valueText={`${valueText}${role === "locked" ? ", constant" : ""}`}
+      badgeText={badgeText} valueText={valueText}
       minText={`${isAmount ? hard.min.toFixed(1) : hard.min} ${v.unit}`} maxText={`${isAmount ? hard.max.toFixed(1) : hard.max} ${v.unit}`}
-      lockTitle="Locked: kept constant"
-      minmaxMid={isAmount ? <MiniSwitch options={UNIT_OPTIONS} value={unit} onChange={onUnit} ariaLabel="Show amount of gas as" testId="unit-toggle" /> : null}
-      slideStart={isAmount && adjustable ? <StepButton dir={-1} onClick={() => step(-1)} label="Remove 0.05 mol of gas" testId="n-minus" /> : null}
-      slideEnd={isAmount && adjustable ? <StepButton dir={1} onClick={() => step(1)} label="Add 0.05 mol of gas" testId="n-plus" /> : null}
+      slideStart={isAmount ? <StepButton dir={-1} onClick={() => step(-1)} label="Remove 0.05 mol of gas" testId={`${idPrefix}-n-minus`} /> : null}
+      slideEnd={isAmount ? <StepButton dir={1} onClick={() => step(1)} label="Add 0.05 mol of gas" testId={`${idPrefix}-n-plus`} /> : null}
       note={limitNote}
     />
   );
 }
 
-export default function ControlPanel({ state, phase, unit, onUnit, onChange, onEditBaseline, onStart, onNewInvestigation, accent }) {
-  const m = MODES[state.mode];
-  const roleOf = (k) => (k === m.dependent ? "calc" : phase === "editing" ? "edit" : k === m.independent ? "active" : "locked");
-  const legend = phase === "editing"
-    ? [{ text: "Set the start values, then press Start", strong: true }]
-    : [{ lock: true, text: "= Kept constant", strong: true }, { color: accent.soft, text: "Adjust" }, { color: "#FFF7DE", text: "Calculated" }];
+function CalcRow({ k, state, unit, accent }) {
+  const v = VARS[k];
+  const value = state[k];
   return (
-    <DashPanel
-      title="Controls" ariaLabel="Control panel" grow testId="control-panel" data-phase={phase}
-      aside={
-        <>
-          {phase === "ready" && (
-            <button type="button" className="sd-btn sd-btn--sm" onClick={onEditBaseline} data-testid="set-initial" aria-label="Set initial conditions" title="Set initial conditions: choose the starting values before you begin investigating">
-              <Settings2 size={13} aria-hidden="true" /> Initial conditions
-            </button>
-          )}
-          {phase === "editing" && (
-            <button type="button" className="sd-btn sd-btn--sm" onClick={onStart} data-testid="start-investigation" style={{ background: accent.solid, borderColor: accent.solid, color: "#fff" }} title="Confirm the starting values and lock the constant variables">
-              <Play size={12} aria-hidden="true" /> Start investigation
-            </button>
-          )}
-          {phase === "running" && (
-            <button type="button" className="sd-btn sd-btn--sm" onClick={onNewInvestigation} data-testid="new-investigation" title="Return to the starting values and choose new initial conditions">
-              <Settings2 size={13} aria-hidden="true" /> New investigation
-            </button>
-          )}
-        </>
-      }
-      bodyClassName="sd-rows"
-    >
-      <ControlLegend items={legend} />
-      {ORDER.map((k) => (
-        <VarRow key={k} k={k} state={state} role={roleOf(k)} unit={unit} onUnit={onUnit} onChange={onChange} accent={accent} />
-      ))}
-      <div className="sd-row" style={{ "--sd-color": "#7b8fb8", background: "#f2f7ff", padding: "4px 8px" }} data-testid="relationship-card" aria-label="Current relationship">
-        <p className="flex flex-wrap items-baseline gap-x-2 leading-tight">
-          <span className="sd-small font-bold text-[#14226B]">Current relationship:</span>
-          <span className="text-[17px] font-bold italic text-[#14226B]" data-testid="relation">{m.relation}</span>
-          <span className="sd-small">({m.constantText})</span>
-        </p>
-        <p className="sd-small">{m.sentence}</p>
-      </div>
-      <p className="sd-small sd-only-one rounded-lg border border-[#F2E2B0] bg-[#FFF7DC] px-2 py-0.5 font-medium text-[#4A3B0A]" data-testid="one-liner">{TEXT_ONE_LINER}</p>
+    <ReadOnlyRow
+      label={labelOf(k)} symbol={k} hint="calculated" color={accent.slider} badgeBg={VAR_CHIP[k]} testId={k} rowTestId={`block-${k}`}
+      badgeText={k === "n" ? <AmountChip n={value} unit={unit} /> : `${formatValue(k, value)} ${v.unit}`} tooltip="Calculated from PV = nRT"
+    />
+  );
+}
+
+/** Main controls: ONLY the independent variable is a slider. The two controlled variables are one compact
+ * read-only row; the calculated variable is a read-only value. */
+export default function ControlPanel({ state, unit, onChange, accent }) {
+  const m = MODES[state.mode];
+  const constants = m.locked.map((k) => ({
+    id: k, label: labelOf(k), color: accent.slider,
+    value: k === "n" ? <AmountChip n={state[k]} unit={unit} /> : `${formatValue(k, state[k])} ${VARS[k].unit}`,
+  }));
+  return (
+    <DashPanel title="Controls" ariaLabel="Control panel" grow testId="control-panel" bodyClassName="sd-rows">
+      <VarSlider k={m.independent} state={state} unit={unit} onChange={onChange} accent={accent} />
+      <ConstantsRow items={constants} />
+      <CalcRow k={m.dependent} state={state} unit={unit} accent={accent} />
     </DashPanel>
+  );
+}
+
+/** Settings popover: initial conditions (starting values), display options, amount unit. */
+export function GasLawsSettings({ state, phase, unit, onUnit, display, onDisplay, onSetInitial, onBackToStart, accent }) {
+  const m = MODES[state.mode];
+  return (
+    <>
+      <PopoverSection title="Initial conditions" testId="settings-initial">
+        <p className="sd-pop-note">Choose the starting values. {labelOf(m.dependent)} is calculated.</p>
+        {ORDER.filter((k) => k !== m.dependent).map((k) => (
+          <VarSlider key={k} k={k} state={state} unit={unit} onChange={onSetInitial} accent={accent} tone="edit" idPrefix="gl-init" />
+        ))}
+        <button type="button" className="sd-btn sd-btn--sm" onClick={onBackToStart} disabled={phase !== "running"} data-testid="back-to-start" title="Return to the starting values of this investigation">
+          <Undo2 size={13} aria-hidden="true" /> Back to starting values
+        </button>
+      </PopoverSection>
+      <PopoverSection title="Particle picture" testId="settings-display">
+        <SettingToggle id="gl-set-trails" label="Particle trails" hint="Show the recent path of each particle." checked={display.trails} onChange={(trails) => onDisplay({ trails })} testId="toggle-trails" />
+        <SettingToggle id="gl-set-flashes" label="Collision flashes" hint="Highlight particle-particle and particle-wall collisions." checked={display.collisions} onChange={(collisions) => onDisplay({ collisions })} testId="toggle-collisions" />
+      </PopoverSection>
+      <PopoverSection title="Amount of gas">
+        <MiniSwitch large options={UNIT_OPTIONS} value={unit} onChange={onUnit} ariaLabel="Show amount of gas as" testId="unit-toggle" />
+      </PopoverSection>
+    </>
   );
 }
