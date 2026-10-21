@@ -45,3 +45,17 @@
   outline-offset: 3px;
   border-radius: 8px;
 }
+
+.ig-range:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.ig-range:disabled::-webkit-slider-thumb {
+  box-shadow: none;
+}
+.ig-range:disabled::-moz-range-thumb {
+  box-shadow: none;
+}
+.ig-range-dense {
+  height: 18px;
+}

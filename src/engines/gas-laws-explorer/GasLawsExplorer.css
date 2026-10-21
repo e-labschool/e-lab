@@ -1,0 +1,79 @@
+/* Gas Laws Explorer -- coloured range sliders (filled track + white thumb).
+   --gl-fill (percent) and --gl-color are set inline per slider. */
+.gl-range {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 22px;
+  background: transparent;
+  cursor: pointer;
+  --gl-color: #2f7bf5;
+  --gl-fill: 50%;
+}
+.gl-range::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--gl-color) var(--gl-fill), #d5dae3 var(--gl-fill));
+}
+.gl-range::-moz-range-track {
+  height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--gl-color) var(--gl-fill), #d5dae3 var(--gl-fill));
+}
+.gl-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  margin-top: -7px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid #cfd6e4;
+  box-shadow: 0 1px 4px rgba(30, 45, 90, 0.35);
+}
+.gl-range::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid #cfd6e4;
+  box-shadow: 0 1px 4px rgba(30, 45, 90, 0.35);
+}
+.gl-range:focus-visible {
+  outline: 2px solid #2f7bf5;
+  outline-offset: 3px;
+  border-radius: 8px;
+}
+/* Locked (constant) variables: greyed track, no fill colour, flat thumb. */
+.gl-range:disabled {
+  cursor: not-allowed;
+}
+.gl-range:disabled::-webkit-slider-runnable-track {
+  background: #d3d8e2;
+}
+.gl-range:disabled::-moz-range-track {
+  background: #d3d8e2;
+}
+.gl-range:disabled::-webkit-slider-thumb {
+  box-shadow: none;
+  background: #eef0f5;
+}
+.gl-range:disabled::-moz-range-thumb {
+  box-shadow: none;
+  background: #eef0f5;
+}
+.gl-range-dense {
+  height: 18px;
+}
+.gl-range-dense::-webkit-slider-thumb {
+  width: 18px;
+  height: 18px;
+  margin-top: -5px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .gl-explorer * {
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}

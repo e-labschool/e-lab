@@ -198,10 +198,12 @@ export function createRenderer() {
         const k = age / FLASH_LIFE;
         ctx.strokeStyle = e.kind === "wall" ? `rgba(234,160,20,${(0.75 * (1 - k)).toFixed(3)})` : `rgba(16,185,129,${(0.75 * (1 - k)).toFixed(3)})`;
         ctx.lineWidth = 1.5;
+        ctx.setLineDash([3, 2.5]);
         ctx.beginPath();
         ctx.arc(x0 + e.x * s, floorY - e.y * s, rPx * (1.1 + 1.6 * k), 0, Math.PI * 2);
         ctx.stroke();
       }
+      ctx.setLineDash([]);
     }
     ctx.restore();
 
