@@ -1,17 +1,16 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { FlaskConical, RotateCcw } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ChartColumn, MoveUpRight, TrendingDown, TrendingUp } from "lucide-react";
 import InteractiveFrame from "../../components/interactive-shell/InteractiveFrame.jsx";
-import { useSimulationPresentation } from "../../components/interactive-shell/SimulationPresentation.js";
+import SimulationDashboard, { DashboardTabs } from "../../components/simulation/SimulationDashboard.jsx";
 import {
-  MODES, TEXT_ONE_LINER, defaultExplanation, defaultGraphId, defaultState, selectExplanation, setVariable, switchMode,
+  MODES, MODE_IDS, TEXT_ONE_LINER, defaultExplanation, defaultGraphId, defaultState, selectExplanation, setVariable, switchMode,
 } from "./model.js";
 import { createSimulation } from "./physics.js";
 import { ACCENTS } from "./theme.js";
 import { useReducedMotion } from "./useReducedMotion.js";
 import "./GasLawsExplorer.css";
-import ModeTabs from "./components/ModeTabs.jsx";
 import ControlPanel from "./components/ControlPanel.jsx";
-import ChamberPanel from "./components/ChamberPanel.jsx";
+import { ChamberPanel, LiveValues } from "./components/ChamberPanel.jsx";
 import GraphPanel from "./components/GraphPanel.jsx";
 import { PredictPanel, WhatIsHappening } from "./components/BottomPanels.jsx";
 
@@ -32,7 +31,6 @@ import { PredictPanel, WhatIsHappening } from "./components/BottomPanels.jsx";
 // values (they are consistent already, so nothing jumps) and starts a fresh
 // `ready` investigation from them. Changing graph type never touches the state.
 const EXPLAIN_DEBOUNCE_MS = 250;
-const WIDE_MIN_WIDTH = 900;
 const HISTORY_MAX = 120;
 
 export default function GasLawsExplorer({ compact = false, standalone = false }) {
@@ -42,14 +40,14 @@ export default function GasLawsExplorer({ compact = false, standalone = false })
       subtitle="Investigate how pressure, volume, temperature and amount of gas are related."
       compact={compact}
       standalone={standalone}
+      dashboard
     >
-      <Workspace showTitle={compact} />
+      <Workspace />
     </InteractiveFrame>
   );
 }
 
-function Workspace({ showTitle }) {
-  const { isViewport } = useSimulationPresentation();
+function Workspace() {
   const reducedMotion = useReducedMotion();
   const [sim] = useState(() => createSimulation({ seed: (Math.random() * 2 ** 32) >>> 0 }));
   const [state, setState] = useState(() => defaultState("pv"));
@@ -62,20 +60,8 @@ function Workspace({ showTitle }) {
   const [revealed, setRevealed] = useState(false);
   const [history, setHistory] = useState([]);
   const [explain, setExplain] = useState(() => defaultExplanation("pv"));
-  const [wide, setWide] = useState(false);
-  const rootRef = useRef(null);
   const baselineRef = useRef(state);
   const settledRef = useRef(null);
-
-  useLayoutEffect(() => {
-    const el = rootRef.current;
-    if (!el) return undefined;
-    const measure = () => setWide(el.getBoundingClientRect().width >= WIDE_MIN_WIDTH);
-    measure();
-    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
-    ro?.observe(el);
-    return () => ro?.disconnect();
-  }, []);
 
   useEffect(() => { sim.setTarget(state); }, [sim, state]);
   useEffect(() => { sim.setDisplay(display); }, [sim, display]);
@@ -159,83 +145,42 @@ function Workspace({ showTitle }) {
   }, []);
   const handleResetGraph = useCallback(() => { setGraphId(defaultGraphId(state.mode)); setAllView(false); setHistory([]); }, [state.mode]);
 
-  const dense = isViewport && wide;
-  const shell = "gl-explorer rounded-2xl border border-[#DAE5F7] bg-[linear-gradient(180deg,#FFFFFF,#EEF5FF)] p-2.5 text-[#1E2A44] sm:p-3 [color-scheme:light]";
-  const panelCls = "rounded-2xl border border-[#E3EAF6] bg-white/90 shadow-[0_2px_10px_rgba(60,90,150,0.07)] ";
+  const tabs = MODE_IDS.map((id) => {
+    const md = MODES[id];
+    const a = ACCENTS[id];
+    return {
+      id, label: `${md.title} (${md.short})`, sub: md.law, icon: TAB_ICONS[id], testId: `tab-${id}`,
+      title: `${md.title} (${md.short}): ${md.law}`, solid: a.solid, soft: a.tabBg, border: a.border, text: a.text,
+    };
+  });
 
-  const resetBtn = (
-    <button type="button" onClick={handleReset} data-testid="reset"
-      aria-label="Reset the simulation to the default conditions"
-      className={"inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-[#D5DEEF] bg-white px-3 text-[13.5px] " + (dense ? "py-1 " : "py-1.5 ") + " font-semibold text-[#14226B] shadow-sm hover:bg-[#EEF4FF] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2F7BF5]"}>
-      <RotateCcw size={15} aria-hidden="true" /> Reset
-    </button>
-  );
-  const note = (
-    <p className={"rounded-xl border border-[#F2E2B0] bg-[#FFF7DC] px-3 text-[12.5px] " + (dense ? "py-1 " : "py-1.5 ") + " font-medium leading-tight text-[#4A3B0A]"} data-testid="one-liner">
-      {TEXT_ONE_LINER}
-    </p>
-  );
-  const header = showTitle && !isViewport ? (
-    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-      <div className="flex min-w-0 items-center gap-3">
-        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-white text-[#0F8A3F] shadow-sm"><FlaskConical size={26} aria-hidden="true" /></span>
-        <div className="min-w-0">
-          <h2 className="text-[22px] font-extrabold leading-tight text-[#14226B]">Gas Laws Explorer</h2>
-          <p className="text-[13px] text-[#33415F]">Investigate how pressure, volume, temperature and amount of gas are related.</p>
-        </div>
-      </div>
-      <div className="flex flex-wrap items-center gap-2">{note}{resetBtn}</div>
-    </div>
-  ) : (
-    <div className="flex items-center justify-between gap-3">{note}{resetBtn}</div>
-  );
-
-  const controlPanel = (
-    <ControlPanel state={state} phase={phase} unit={unit} onUnit={setUnit} onChange={handleChange}
-      onEditBaseline={handleEditBaseline} onStart={handleStart} onNewInvestigation={handleNewInvestigation} accent={accent} dense={dense} />
-  );
-  const chamber = (
-    <ChamberPanel sim={sim} state={state} unit={unit} accent={accent} playing={playing} onTogglePlay={() => setPlaying((p) => !p)}
-      display={display} onDisplay={(d) => setDisplay((x) => ({ ...x, ...d }))} reducedMotion={reducedMotion} dense={dense} />
-  );
-  const graph = (
-    <section aria-label="Interactive graph" className={panelCls + "h-full min-h-0 " + (dense ? "p-2.5" : "p-3.5")} id="gl-graph">
-      <GraphPanel state={state} accent={accent} graphId={graphId} onGraphId={setGraphId} allView={allView}
-        onToggleAll={() => setAllView((v) => !v)} onResetGraph={handleResetGraph} onOpenMode={handleOpenFromGrid} trail={history} dense={dense} />
-    </section>
-  );
-  const bottom = (
-    <div className={"grid gap-2.5 " + (wide ? "grid-cols-2" : "grid-cols-1 sm:grid-cols-2")}>
-      <PredictPanel state={state} revealed={revealed} onToggle={() => setRevealed((r) => !r)} dense={dense} />
-      <WhatIsHappening text={explain.text} accent={accent} dense={dense} />
-    </div>
-  );
-  const tabs = <ModeTabs mode={state.mode} onMode={handleMode} dense={dense} />;
-
-  if (dense) {
-    return (
-      <div ref={rootRef} className={shell + " flex h-full min-h-0 flex-col gap-1.5 overflow-hidden"} id="gl-workspace" role="tabpanel" aria-label={`${m.title} investigation`} data-testid="workspace" data-layout="dense">
-        {header}
-        {tabs}
-        <div className="grid min-h-0 flex-1 grid-cols-[312px_minmax(0,1fr)_minmax(340px,0.9fr)] grid-rows-[minmax(0,1fr)] gap-2.5">
-          <div className="min-h-0">{controlPanel}</div>
-          {chamber}
-          <div className="min-h-0">{graph}</div>
-        </div>
-        {bottom}
-      </div>
-    );
-  }
   return (
-    <div ref={rootRef} className={shell + " flex flex-col gap-3"} id="gl-workspace" role="tabpanel" aria-label={`${m.title} investigation`} data-testid="workspace" data-layout={wide ? "wide" : "stacked"}>
-      {header}
-      {tabs}
-      <div className={"grid gap-3 " + (wide ? "grid-cols-[312px_minmax(0,1fr)_minmax(320px,0.95fr)] items-stretch" : "grid-cols-1")}>
-        {controlPanel}
-        {chamber}
-        <div className={wide ? "min-h-[600px]" : "h-[500px]"}>{graph}</div>
-      </div>
-      {bottom}
-    </div>
+    <SimulationDashboard
+      id="gl-workspace"
+      role="tabpanel"
+      ariaLabel={`${m.title} investigation`}
+      title="Gas Laws Explorer"
+      subtitle="How P, V, T and n are related"
+      subtitleLong={`How P, V, T and n are related. ${TEXT_ONE_LINER}`}
+      onReset={handleReset}
+      tabs={<DashboardTabs tabs={tabs} value={state.mode} onChange={handleMode} ariaLabel="Gas law relationship" idPrefix="gl-tab" controls="gl-workspace" testId="mode-tabs" />}
+      controls={
+        <ControlPanel state={state} phase={phase} unit={unit} onUnit={setUnit} onChange={handleChange}
+          onEditBaseline={handleEditBaseline} onStart={handleStart} onNewInvestigation={handleNewInvestigation} accent={accent} />
+      }
+      chamber={
+        <ChamberPanel sim={sim} state={state} accent={accent} playing={playing} onTogglePlay={() => setPlaying((p) => !p)}
+          display={display} onDisplay={(d) => setDisplay((x) => ({ ...x, ...d }))} reducedMotion={reducedMotion} />
+      }
+      graph={
+        <GraphPanel state={state} accent={accent} graphId={graphId} onGraphId={setGraphId} allView={allView}
+          onToggleAll={() => setAllView((v) => !v)} onResetGraph={handleResetGraph} onOpenMode={handleOpenFromGrid} trail={history} />
+      }
+      live={<LiveValues state={state} unit={unit} />}
+      predict={<PredictPanel state={state} revealed={revealed} onToggle={() => setRevealed((r) => !r)} />}
+      explain={<WhatIsHappening text={explain.text} accent={accent} />}
+    />
   );
 }
+
+const TAB_ICONS = { pv: TrendingDown, vt: TrendingUp, pt: MoveUpRight, vn: ChartColumn };

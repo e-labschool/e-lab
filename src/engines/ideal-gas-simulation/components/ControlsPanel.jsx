@@ -1,204 +1,97 @@
-import { CircleHelp, Info, Lock } from "lucide-react";
+import { Info, Lock } from "lucide-react";
 import { LIMITS } from "../model.js";
+import { ControlLegend, DashPanel, MiniSwitch, ReadOnlyRow, SliderRow } from "../../../components/simulation/SimulationDashboard.jsx";
 
-const titleCls = "text-[16px] font-bold text-[#14226B]";
+import { GAS_DESCRIPTIONS } from "../gasDescriptions.js";
 
-const GAS_DESCRIPTIONS = {
-  ideal: "Particles have negligible volume, no intermolecular forces and elastic collisions.",
-  real: "Particles have finite size and experience intermolecular forces.",
+// Variable colours (shared with the Live values tiles).
+const C = {
+  N: { color: "#2F7BF5", bg: "#E1EDFD" },
+  T: { color: "#F5A50B", bg: "#FDEFD0" },
+  V: { color: "#34C256", bg: "#DFF5E4" },
+  P: { color: "#8B5CF6", bg: "#EBE4FC" },
 };
 
-function GasTypeToggle({ mode, onChange, dense }) {
-  const opts = [
-    { id: "ideal", label: "Ideal gas" },
-    { id: "real", label: "Real gas" },
-  ];
-  return (
-    <div role="radiogroup" aria-label="Gas type" className={(dense ? "mt-2 " : "mt-3 ") + "grid grid-cols-2 overflow-hidden rounded-xl bg-[#EDF3FD] p-0.5"}>
-      {opts.map((o) => {
-        const selected = mode === o.id;
-        return (
-          <button
-            key={o.id}
-            type="button"
-            role="radio"
-            aria-checked={selected}
-            onClick={() => onChange(o.id)}
-            onKeyDown={(e) => {
-              if (e.key === "ArrowRight" || e.key === "ArrowDown") { e.preventDefault(); onChange("real"); }
-              if (e.key === "ArrowLeft" || e.key === "ArrowUp") { e.preventDefault(); onChange("ideal"); }
-            }}
-            tabIndex={selected ? 0 : -1}
-            className={
-              "rounded-[10px] px-2 text-[14px] font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2F7BF5] " +
-              (dense ? "py-1.5 " : "py-2.5 ") +
-              (selected ? "bg-[#2F7BF5] text-white shadow-sm" : "text-[#14226B] hover:bg-white/70")
-            }
-          >
-            {o.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
+const CONTROL_OPTIONS = [
+  { id: "volume", label: "Volume", title: "You set the volume; pressure is calculated" },
+  { id: "pressure", label: "Pressure", title: "You set the target pressure; volume is calculated" },
+];
 
-function SliderField({ id, label, unit, value, min, max, step, onChange, valueText, color, chip, chipText, desc, descId, readOnly, dense, descTone, help }) {
-  const fill = ((Math.min(max, Math.max(min, value)) - min) / (max - min)) * 100;
-  const chipEl = (
-    <span className={"min-w-[56px] rounded-lg px-2 text-center text-[15px] font-semibold tabular-nums text-[#14226B] " + (dense ? "py-0.5 " : "py-1.5 ") + chip} aria-hidden="true">
-      {chipText ?? `${value}${unit ? ` ${unit}` : ""}`}
-    </span>
-  );
-  const rangeLabels = (
-    <div className="flex justify-between text-[11px] leading-none text-[#33415F]" aria-hidden="true">
-      <span>{min}{unit ? ` ${unit}` : ""}</span>
-      <span>{max}{unit ? ` ${unit}` : ""}</span>
-    </div>
-  );
-  const input = (
-    <input
-      id={id}
-      type="range"
-      className={"ig-range" + (dense ? " ig-range-dense" : "")}
-      min={min}
-      max={max}
-      step={step}
-      value={value}
-      disabled={readOnly}
-      aria-readonly={readOnly || undefined}
-      aria-describedby={descId}
-      onChange={(e) => onChange(Number(e.target.value))}
-      aria-valuetext={valueText}
-      style={{ "--ig-color": color, "--ig-fill": `${fill}%` }}
-    />
-  );
-  return (
-    <div className={dense ? "mt-1.5" : "mt-4"}>
-      {dense ? (
-        // Compact layout (viewport modes): label, range and value chip share one row.
-        <>
-          <div className="flex items-center justify-between gap-2">
-            <label htmlFor={id} className={titleCls + " whitespace-nowrap text-[14px] leading-tight"}>{label}</label>
-            {chipEl}
-          </div>
-          {input}
-          <div className="flex justify-between text-[10px] leading-none text-[#6B7A99]" aria-hidden="true">
-            <span>{min}{unit ? ` ${unit}` : ""}</span>
-            <span>{max}{unit ? ` ${unit}` : ""}</span>
-          </div>
-        </>
-      ) : (
-        <>
-          <label htmlFor={id} className={titleCls}>{label}</label>
-          <div className="mt-1 grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
-            <div>{input}{rangeLabels}</div>
-            {chipEl}
-          </div>
-        </>
-      )}
-      <p id={descId} className={"mt-0.5 leading-tight " + (dense ? "text-[10.5px] " : "text-[11px] ") + (descTone || "text-[#6B7A99]")}>
-        {desc}
-        {help && <CircleHelp size={11} className="ml-1 inline align-[-1px] text-[#8A97B2]" aria-hidden="true" />}
-      </p>
-    </div>
-  );
-}
-
-function ControlModeCard({ control, onChange, dense }) {
-  const opts = [
-    { id: "volume", label: "Volume" },
-    { id: "pressure", label: "Pressure" },
-  ];
-  const sub = control === "volume"
-    ? "Pressure is calculated automatically from n, T and V."
-    : "The piston moves to reach the target pressure; volume is calculated.";
-  return (
-    <div className={"rounded-xl border border-[#DAE5F7] bg-white/70 " + (dense ? "mt-2 px-2.5 py-1.5" : "mt-4 px-3 py-2.5")}>
-      <div className="flex items-center gap-2">
-        <Lock size={14} className="shrink-0 text-[#14226B]" aria-hidden="true" />
-        <span id="ig-control-label" className="shrink-0 text-[13px] font-bold text-[#14226B]">Control:</span>
-        <div role="radiogroup" aria-labelledby="ig-control-label" className="grid min-w-0 flex-1 grid-cols-2 overflow-hidden rounded-lg bg-[#EDF3FD] p-0.5">
-          {opts.map((o) => {
-            const selected = control === o.id;
-            return (
-              <button
-                key={o.id}
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                tabIndex={selected ? 0 : -1}
-                title={o.id === "volume" ? "You set the volume; pressure is calculated" : "You set the target pressure; volume is calculated"}
-                onClick={() => onChange(o.id)}
-                onKeyDown={(e) => {
-                  if (e.key === "ArrowRight" || e.key === "ArrowDown") { e.preventDefault(); onChange("pressure"); }
-                  if (e.key === "ArrowLeft" || e.key === "ArrowUp") { e.preventDefault(); onChange("volume"); }
-                }}
-                className={
-                  "rounded-md px-1.5 py-1 text-[13px] font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#2F7BF5] " +
-                  (selected ? "bg-[#2F7BF5] text-white shadow-sm" : "text-[#14226B] hover:bg-white/70")
-                }
-              >
-                {o.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-      <p className={"mt-0.5 leading-tight text-[#6B7A99] " + (dense ? "text-[10.5px]" : "text-[11px]")}>{sub}</p>
-    </div>
-  );
-}
-
-export default function ControlsPanel({ controls, state, onChange, dense = false }) {
+// Compact controls column: one legend line, two always-adjustable sliders (n, T),
+// the mutually exclusive Volume/Pressure control switch, and the controlled
+// variable as a slider with the other one shown as a read-only calculated row.
+export default function ControlsPanel({ controls, state, onChange }) {
   const pressureMode = controls.control === "pressure";
   const targetP = state.pTarget ?? state.pressure;
   const pValue = pressureMode ? controls.P : Math.min(LIMITS.P.max, Math.max(LIMITS.P.min, state.pressure));
-  const pChip = pressureMode ? `${targetP.toFixed(2)} atm` : `${state.pressure.toFixed(2)} atm`;
   const note = pressureMode ? state.note : null;
-  const panel = "rounded-2xl border border-[#E3EAF6] bg-white/90 shadow-[0_2px_10px_rgba(60,90,150,0.07)] " + (dense ? "p-2.5" : "p-4");
+
+  const volumeRow = pressureMode ? (
+    <ReadOnlyRow
+      key="V" label="Volume" symbol="V" hint="calculated" color={C.V.color} badgeBg={C.V.bg} testId="V" rowTestId="block-V"
+      badgeText={`${state.V.toFixed(1)} L`} tooltip="Volume is calculated: the piston moves until the gas pressure matches the target."
+    />
+  ) : (
+    <SliderRow
+      key="V" id="ig-volume" label="Volume" symbol="V" tone="active" color={C.V.color} badgeBg={C.V.bg} testId="V" rowTestId="block-V"
+      value={controls.V} {...LIMITS.V} onChange={(V) => onChange({ V })}
+      badgeText={`${controls.V} L`} minText={`${LIMITS.V.min} L`} maxText={`${LIMITS.V.max} L`}
+      valueText={`${controls.V.toFixed(1)} litres`}
+    />
+  );
+  const pressureRow = pressureMode ? (
+    <SliderRow
+      key="P" id="ig-pressure" label="Pressure" symbol="P" tone="active" color={C.P.color} badgeBg={C.P.bg} testId="P" rowTestId="block-P"
+      value={pValue} {...LIMITS.P} onChange={(P) => onChange({ P })}
+      badgeText={`${targetP.toFixed(2)} atm`} minText={`${LIMITS.P.min} atm`} maxText={`${LIMITS.P.max} atm`}
+      valueText={`${targetP.toFixed(2)} atmospheres, target`}
+    />
+  ) : (
+    <ReadOnlyRow
+      key="P" label="Pressure" symbol="P" hint="calculated" color={C.P.color} badgeBg={C.P.bg} testId="P" rowTestId="block-P"
+      badgeText={`${state.pressure.toFixed(2)} atm`} tooltip="Pressure is calculated from n, T and V by the selected gas model."
+    />
+  );
+
   return (
-    <section aria-label="Controls" className={panel}>
-      <h3 className={titleCls}>Gas type</h3>
-      <GasTypeToggle mode={controls.mode} onChange={(mode) => onChange({ mode })} dense={dense} />
+    <DashPanel
+      title="Controls" ariaLabel="Controls" grow testId="control-panel" bodyClassName="sd-rows"
+    >
+      <ControlLegend items={[
+        { color: "#fff", text: "You change", strong: false },
+        { color: "#FFF7DE", text: "Calculated" },
+      ]} />
+      <SliderRow
+        id="ig-particles" label="Number of particles" symbol="n" tone="active" color={C.N.color} badgeBg={C.N.bg} testId="N" rowTestId="block-N"
+        value={controls.N} {...LIMITS.N} onChange={(N) => onChange({ N })}
+        badgeText={`${controls.N}`} minText={`${LIMITS.N.min}`} maxText={`${LIMITS.N.max}`} valueText={`${controls.N} particles`}
+      />
+      <SliderRow
+        id="ig-temperature" label="Temperature" symbol="T" tone="active" color={C.T.color} badgeBg={C.T.bg} testId="T" rowTestId="block-T"
+        value={controls.T} {...LIMITS.T} onChange={(T) => onChange({ T })}
+        badgeText={`${controls.T} K`} minText={`${LIMITS.T.min} K`} maxText={`${LIMITS.T.max} K`} valueText={`${controls.T} kelvin`}
+      />
+      <div className="sd-row" style={{ "--sd-color": "#8a97b2", padding: "4px 8px" }} data-testid="control-mode">
+        <div className="sd-row-top">
+          <Lock size={13} className="shrink-0" aria-hidden="true" />
+          <span id="ig-control-label" className="sd-row-label">Control:</span>
+          <span className="sd-row-spacer" />
+          <MiniSwitch
+            large options={CONTROL_OPTIONS} value={controls.control} ariaLabel="Control" onChange={(control) => onChange({ control })}
+            testId="control-switch"
+          />
+        </div>
+      </div>
+      {volumeRow}
+      {pressureRow}
+      {note && <p className="sd-note" data-testid="pressure-note">{note}</p>}
       <p
-        className={"flex items-start gap-1.5 rounded-lg bg-[#EAF2FE] px-2 " + (dense ? "py-1 mt-1.5 text-[10.5px]" : "py-1.5 mt-2 text-[12px]") + " leading-snug text-[#14226B]"}
+        className="sd-small flex items-start gap-1.5 rounded-lg bg-[#EAF2FE] px-2 py-1 text-[#14226B]"
         data-testid="gas-description"
       >
         <Info size={14} className="mt-px shrink-0 text-[#2F7BF5]" aria-hidden="true" />
-        <span>
-          <strong>{controls.mode === "real" ? "Real gas" : "Ideal gas"}:</strong> {GAS_DESCRIPTIONS[controls.mode]}
-        </span>
+        <span><strong>{controls.mode === "real" ? "Real gas" : "Ideal gas"}:</strong> {GAS_DESCRIPTIONS[controls.mode]}</span>
       </p>
-      <SliderField
-        id="ig-particles" label="Number of particles (n)" value={controls.N} {...LIMITS.N} dense={dense}
-        onChange={(N) => onChange({ N })} valueText={`${controls.N} particles`} color="#2F7BF5" chip="bg-[#E1EDFD]"
-        desc="Changes the amount of gas inside the container." descId="ig-particles-desc"
-      />
-      <SliderField
-        id="ig-temperature" label="Temperature (T)" unit="K" value={controls.T} {...LIMITS.T} dense={dense}
-        onChange={(T) => onChange({ T })} valueText={`${controls.T} kelvin`} color="#F5A50B" chip="bg-[#FDEFD0]"
-        desc="Higher temperature increases average particle kinetic energy." descId="ig-temperature-desc"
-      />
-      <SliderField
-        id="ig-volume" label="Volume (V)" unit="L" value={pressureMode ? state.V : controls.V} {...LIMITS.V} dense={dense}
-        readOnly={pressureMode}
-        chipText={pressureMode ? `${state.V.toFixed(1)} L` : undefined}
-        onChange={(V) => onChange({ V })} valueText={`${(pressureMode ? state.V : controls.V).toFixed(1)} litres${pressureMode ? ", calculated" : ""}`}
-        color="#34C256" chip="bg-[#DFF5E4]"
-        desc={"Changes the space available to the gas by moving the piston." + (pressureMode ? " (calculated)" : "")} descId="ig-volume-desc"
-      />
-      <SliderField
-        id="ig-pressure" label="Pressure (P)" unit="atm" value={pValue} {...LIMITS.P} dense={dense}
-        readOnly={!pressureMode}
-        chipText={pChip}
-        onChange={(P) => onChange({ P })} valueText={`${(pressureMode ? targetP : state.pressure).toFixed(2)} atmospheres${pressureMode ? ", target" : ", calculated"}`}
-        color="#8B5CF6" chip="bg-[#EBE4FC]"
-        desc={note || "Sets the target pressure; the piston adjusts the volume." }
-        descTone={note ? "text-[#9A5B00]" : undefined}
-        descId="ig-pressure-desc" help
-      />
-      <ControlModeCard control={controls.control} onChange={(control) => onChange({ control })} dense={dense} />
-    </section>
+    </DashPanel>
   );
 }

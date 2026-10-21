@@ -13,7 +13,7 @@ import {
 const C_IDEAL = "#2F7BF5";
 const C_REAL = "#E8590C";
 const C_MARK = "#14226B";
-const M = { l: 44, r: 12, t: 8, b: 34 };
+const M0 = { l: 44, r: 12, t: 8, b: 34 };
 const LOG_MIN = Math.log10(Z_P_MIN);
 const LOG_SPAN = Math.log10(Z_P_MAX) - LOG_MIN;
 
@@ -62,7 +62,7 @@ function LegendSwatch({ color, dash, children, dot, faint }) {
   );
 }
 
-export default function RealIdealGraph({ state, fillHeight = false }) {
+export default function RealIdealGraph({ state }) {
   const plotRef = useRef(null);
   const clipId = useId();
   const { w, h } = useSize(plotRef);
@@ -74,6 +74,8 @@ export default function RealIdealGraph({ state, fillHeight = false }) {
   const marker = useMemo(() => zMarker(state), [state]);
   const axis = useMemo(() => zAxisRange(curve, marker), [curve, marker]);
 
+  const k = Math.min(1.3, Math.max(1, w / 480)); // text scale on large plots
+  const M = { l: M0.l * k, r: M0.r * k, t: M0.t * k, b: M0.b * k };
   const pw = Math.max(40, w - M.l - M.r);
   const ph = Math.max(40, h - M.t - M.b);
   const sx = (P) => M.l + ((Math.log10(P) - LOG_MIN) / LOG_SPAN) * pw;
@@ -121,27 +123,27 @@ export default function RealIdealGraph({ state, fillHeight = false }) {
   const ghostDash = "4 4";
 
   return (
-    <div className={"flex min-h-0 flex-col gap-1.5 " + (fillHeight ? "h-full" : "")}>
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5">
-        <h4 className="text-[14px] font-bold text-[#14226B]" data-testid="graph-title">Real vs Ideal Gas Behaviour</h4>
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-[#33415F]" data-testid="graph-legend">
+    <div className="flex h-full min-h-0 min-w-0 flex-col gap-1">
+      <div className="flex shrink-0 flex-wrap items-baseline justify-between gap-x-3 gap-y-0">
+        <h4 className="text-[length:calc(var(--sd-fs)_+_1.5px)] font-bold text-[#14226B]" data-testid="graph-title">Real vs Ideal Gas Behaviour</h4>
+        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0 text-[length:var(--sd-fs-sm)] text-[#33415F]" data-testid="graph-legend">
           <LegendSwatch color={C_IDEAL}>Ideal gas (Z = 1)</LegendSwatch>
           <LegendSwatch color={C_REAL} dash="7 4" faint={!real}>{real ? "Real gas (van der Waals)" : "Real gas, for comparison"}</LegendSwatch>
           <LegendSwatch color={C_MARK} dot>Current state</LegendSwatch>
         </div>
       </div>
-      <p className="text-[11px] text-[#6B7A99]" data-testid="graph-subtitle">
+      <p className="shrink-0 text-[length:var(--sd-fs-sm)] text-[#4a5a82]" data-testid="graph-subtitle">
         Curve at constant T = {Math.round(T)} K and n = {n.toFixed(2)} mol. Z = PV/(nRT).
       </p>
 
-      <div ref={plotRef} className={"relative min-h-[130px] min-w-0 " + (fillHeight ? "flex-1" : "h-[230px]")}>
+      <div ref={plotRef} className="sd-graph-plot min-h-[120px]">
         <svg
           width={w}
           height={h}
           role="img"
           aria-label={label}
           data-testid="graph-svg"
-          className="absolute inset-0 block touch-pan-y select-none"
+          className="touch-pan-y select-none"
           onPointerMove={onMove}
           onPointerLeave={() => setHoverP(null)}
         >
@@ -150,23 +152,23 @@ export default function RealIdealGraph({ state, fillHeight = false }) {
           </defs>
           {/* control window shading (0.2-5.0 atm) */}
           <rect x={sx(LIMITS.P.min)} y={M.t} width={sx(LIMITS.P.max) - sx(LIMITS.P.min)} height={ph} fill="#EAF2FE" opacity="0.8" data-testid="graph-control-band" />
-          <text x={(sx(LIMITS.P.min) + sx(LIMITS.P.max)) / 2} y={M.t + 10} textAnchor="middle" fontSize="9.5" fill="#6B7A99">control range 0.2-5 atm</text>
+          <text x={(sx(LIMITS.P.min) + sx(LIMITS.P.max)) / 2} y={M.t + 10} textAnchor="middle" fontSize={10.5 * k} fill="#4a5a82">control range 0.2-5 atm</text>
           {yt.map((v) => (
             <g key={"y" + v}>
               <line x1={M.l} x2={M.l + pw} y1={sy(v)} y2={sy(v)} stroke="#E3EAF6" strokeWidth="1" />
-              <text x={M.l - 6} y={sy(v) + 3.5} textAnchor="end" fontSize="10.5" fill="#33415F">{v.toFixed(v * 10 === Math.round(v * 10) ? 1 : 2)}</text>
+              <text x={M.l - 6} y={sy(v) + 3.5} textAnchor="end" fontSize={10.5 * k} fill="#33415F">{v.toFixed(v * 10 === Math.round(v * 10) ? 1 : 2)}</text>
             </g>
           ))}
           {X_TICKS.map((v) => (
             <g key={"x" + v}>
               <line x1={sx(v)} x2={sx(v)} y1={M.t} y2={M.t + ph} stroke="#EEF2F9" strokeWidth="1" />
-              <text x={sx(v)} y={M.t + ph + 14} textAnchor="middle" fontSize="10.5" fill="#33415F">{fmtP(v)}</text>
+              <text x={sx(v)} y={M.t + ph + 14 * k} textAnchor="middle" fontSize={10.5 * k} fill="#33415F">{fmtP(v)}</text>
             </g>
           ))}
           <line x1={M.l} x2={M.l + pw} y1={M.t + ph} y2={M.t + ph} stroke="#6B7A99" strokeWidth="1.2" />
           <line x1={M.l} x2={M.l} y1={M.t} y2={M.t + ph} stroke="#6B7A99" strokeWidth="1.2" />
-          <text x={M.l + pw / 2} y={h - 4} textAnchor="middle" fontSize="11.5" fontWeight="600" fill="#14226B">Pressure, P (atm, log scale)</text>
-          <text transform={`translate(11 ${M.t + ph / 2}) rotate(-90)`} textAnchor="middle" fontSize="11.5" fontWeight="600" fill="#14226B">Compressibility factor, Z</text>
+          <text x={M.l + pw / 2} y={h - 4} textAnchor="middle" fontSize={11.5 * k} fontWeight="600" fill="#14226B">Pressure, P (atm, log scale)</text>
+          <text transform={`translate(${11 * k} ${M.t + ph / 2}) rotate(-90)`} textAnchor="middle" fontSize={11.5 * k} fontWeight="600" fill="#14226B">Compressibility factor, Z</text>
 
           <g clipPath={`url(#${clipId})`}>
             <line x1={sx(Z_P_MIN)} x2={sx(Z_P_MAX)} y1={sy(1)} y2={sy(1)} stroke={C_IDEAL} strokeWidth="2.4" data-testid="graph-ideal" />
@@ -211,7 +213,7 @@ export default function RealIdealGraph({ state, fillHeight = false }) {
       </div>
 
       {(curve.end || note || axis.clipped) && (
-        <p className="text-[11px] font-medium leading-snug text-[#9A5B00]" data-testid="graph-note">
+        <p className="shrink-0 text-[length:var(--sd-fs-sm)] font-medium leading-snug text-[#8a5300]" data-testid="graph-note">
           {[
             curve.end ? `Curve ends at ${curve.end.P >= 10 ? curve.end.P.toFixed(1) : curve.end.P.toFixed(2)} atm. ${curve.end.text}` : null,
             note,
@@ -219,7 +221,7 @@ export default function RealIdealGraph({ state, fillHeight = false }) {
           ].filter(Boolean).join(" ")}
         </p>
       )}
-      <div className="rounded-lg bg-[#EAF2FE] px-3 py-1.5 text-[12.5px] leading-snug text-[#1E2A44]" data-testid="graph-explanation">
+      <div className="shrink-0 rounded-lg bg-[#EAF2FE] px-2.5 py-1 text-[length:var(--sd-fs)] leading-snug text-[#1E2A44]" data-testid="graph-explanation">
         {marker.status === "ok" ? (
           <>
             <p className="font-semibold tabular-nums text-[#14226B]">

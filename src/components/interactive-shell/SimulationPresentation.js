@@ -19,6 +19,11 @@ const SimulationPresentationContext = createContext({
   isViewport: false,
   isFullscreen: false,
   isStandalone: false,
+  // Only populated for frames opened with `dashboard` (see InteractiveFrame):
+  // lets the shared Simulation Dashboard Layout render the frame's own
+  // "Open in New Tab" / "Full Screen" actions inside its compact header.
+  frameRef: null,
+  simulationId: null,
 });
 
 export const SimulationPresentationProvider = SimulationPresentationContext.Provider;

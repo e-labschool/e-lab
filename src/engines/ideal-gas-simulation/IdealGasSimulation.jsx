@@ -1,22 +1,33 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Pause, Play, Sparkles, Spline, Waypoints } from "lucide-react";
 import InteractiveFrame from "../../components/interactive-shell/InteractiveFrame.jsx";
-import { useSimulationPresentation } from "../../components/interactive-shell/SimulationPresentation.js";
-import { ChevronDown, ChevronUp, LineChart } from "lucide-react";
+import SimulationDashboard, { ChamberToolbar, DashPanel, DashboardTabs, ToolButton } from "../../components/simulation/SimulationDashboard.jsx";
 import { DEFAULT_CONTROLS, DEFAULT_DISPLAY, applyControlChange, createSimulation, resolveState, selectExplanation } from "./model.js";
 import { useReducedMotion } from "./useReducedMotion.js";
 import "./IdealGasSimulation.css";
 import ControlsPanel from "./components/ControlsPanel.jsx";
+import { GAS_DESCRIPTIONS } from "./gasDescriptions.js";
 import GasCanvas from "./components/GasCanvas.jsx";
 import RealIdealGraph from "./components/RealIdealGraph.jsx";
-import ReadingsPanel from "./components/ReadingsPanel.jsx";
+import ComparisonPanel from "./components/ComparisonPanel.jsx";
+import { LiveValues, PredictPanel } from "./components/LiveAndPredict.jsx";
 import WhatIsHappening from "./components/WhatIsHappening.jsx";
 
 // Ideal Gas Simulation (IB DP Chemistry S1.5.1-S1.5.3). React owns the
 // controls; the pure model (model.js) owns the physics and the scaling
 // convention; render.js draws it. The pressure readout comes from the model's
 // formulas (PV = nRT / van der Waals), not from counting animated collisions.
+//
+// LAYOUT: rendered with the shared Simulation Dashboard Layout
+// (components/simulation/SimulationDashboard.jsx): Controls | Chamber | Z-vs-P
+// graph, with Live values | Predict & Reveal | What Is Happening? underneath.
+// This file only arranges the existing parts; no physics lives here.
 const EXPLAIN_DEBOUNCE_MS = 250; // message reflects the latest settled change
-const WIDE_MIN_WIDTH = 820; // container width at which the 3-column layout is used
+
+const GAS_TABS = [
+  { id: "ideal", label: "Ideal gas", title: GAS_DESCRIPTIONS.ideal },
+  { id: "real", label: "Real gas", title: GAS_DESCRIPTIONS.real },
+];
 
 export default function IdealGasSimulation({ compact = false, standalone = false }) {
   return (
@@ -25,6 +36,7 @@ export default function IdealGasSimulation({ compact = false, standalone = false
       subtitle="Pressure, temperature, volume and amount of gas - ideal and real"
       compact={compact}
       standalone={standalone}
+      dashboard
     >
       <IdealGasWorkspace />
     </InteractiveFrame>
@@ -32,30 +44,12 @@ export default function IdealGasSimulation({ compact = false, standalone = false
 }
 
 function IdealGasWorkspace() {
-  const { isViewport } = useSimulationPresentation();
   const reducedMotion = useReducedMotion();
   const [sim] = useState(() => createSimulation({ seed: (Math.random() * 2 ** 32) >>> 0 }));
   const [controls, setControls] = useState({ ...DEFAULT_CONTROLS });
   const [display, setDisplay] = useState({ ...DEFAULT_DISPLAY });
   const [playing, setPlaying] = useState(true);
-  const rootRef = useRef(null);
-  const graphPanelRef = useRef(null);
-  // Graph UI state lives HERE (not in the graph) so collapsing it never touches
-  // the simulation. Main Reset collapses the graph (original default state).
-  const [graphOpen, setGraphOpen] = useState(false);
-  const [wide, setWide] = useState(false);
-
-  // Layout follows the container's own width (works in a narrow Learn column
-  // as well as full screen), measured before first paint.
-  useLayoutEffect(() => {
-    const el = rootRef.current;
-    if (!el) return undefined;
-    const measure = () => setWide(el.getBoundingClientRect().width >= WIDE_MIN_WIDTH);
-    measure();
-    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
-    ro?.observe(el);
-    return () => ro?.disconnect();
-  }, []);
+  const [revealed, setRevealed] = useState(false);
 
   useEffect(() => { sim.setControls(controls); }, [sim, controls]);
   useEffect(() => { sim.setDisplay(display); }, [sim, display]);
@@ -87,106 +81,67 @@ function IdealGasWorkspace() {
     setExplain(selectExplanation(null, DEFAULT_CONTROLS));
     setDisplay({ ...DEFAULT_DISPLAY });
     setPlaying(true);
-    setGraphOpen(false);
+    setRevealed(false);
   }, [sim]);
 
-  const canvasLabel = `Gas cylinder with ${controls.N} particles, ${controls.T} kelvin, ${readings.V.toFixed(1)} litres, ${controls.mode === "real" ? "real" : "ideal"} gas`;
+  const real = readings.mode === "real";
+  const canvasLabel = `Gas cylinder with ${controls.N} particles, ${controls.T} kelvin, ${readings.V.toFixed(1)} litres, ${real ? "real" : "ideal"} gas`;
 
-  useEffect(() => {
-    if (!graphOpen) return;
-    const id = requestAnimationFrame(() => {
-      graphPanelRef.current?.scrollIntoView?.({ block: "nearest", behavior: reducedMotion ? "auto" : "smooth" });
-    });
-    return () => cancelAnimationFrame(id);
-  }, [graphOpen, reducedMotion]);
-
-  const dense = isViewport && wide;
-  const canvasPanel = (
-    <div className={"flex min-h-0 min-w-0 flex-col " + (dense ? "h-full gap-2" : "gap-3")}>
-      <section
-        aria-label="Gas chamber"
-        className={
-          "relative min-h-0 min-w-0 overflow-hidden rounded-2xl bg-[radial-gradient(ellipse_at_50%_25%,#FFFFFF_0%,#F1F7FF_65%,#E8F0FB_100%)] " +
-          (dense ? "flex-1" : wide ? "h-[500px]" : "h-[380px] sm:h-[440px]")
-        }
-      >
-        <GasCanvas sim={sim} reducedMotion={reducedMotion} label={canvasLabel} />
-      </section>
-      <WhatIsHappening text={explain.text} dense={dense} />
-    </div>
-  );
-
-  const controlsPanel = <ControlsPanel controls={controls} state={readings} onChange={handleControls} dense={dense} />;
-  const readingsPanel = (
-    <ReadingsPanel
-      readings={readings}
-      display={display}
-      onDisplayChange={handleDisplay}
-      playing={playing}
-      onTogglePlay={() => setPlaying((p) => !p)}
-      onReset={handleReset}
-      dense={dense}
-    />
-  );
-
-  const shell = "rounded-2xl border border-[#DAE5F7] bg-[linear-gradient(180deg,#FFFFFF,#EEF5FF)] p-2.5 text-[#1E2A44] sm:p-3 [color-scheme:light]";
-  const panelCls = "rounded-2xl border border-[#E3EAF6] bg-white/90 shadow-[0_2px_10px_rgba(60,90,150,0.07)]";
-
-  const toggleBar = (
-    <div className="flex shrink-0 justify-center">
-      <button
-        type="button"
-        onClick={() => setGraphOpen((o) => !o)}
-        aria-expanded={graphOpen}
-        aria-controls="ig-real-ideal-graph"
-        data-testid="graph-toggle"
-        className="inline-flex items-center gap-2 rounded-xl border border-[#D5DEEF] bg-white px-4 py-1.5 text-[13.5px] font-semibold text-[#14226B] shadow-sm hover:bg-[#EEF4FF] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2F7BF5]"
-      >
-        <LineChart size={15} aria-hidden="true" />
-        {graphOpen ? "Hide Graph" : "Show Graph"}
-        {graphOpen ? <ChevronUp size={14} aria-hidden="true" /> : <ChevronDown size={14} aria-hidden="true" />}
-      </button>
-    </div>
-  );
-  const graphPanel = (
-    <section
-      id="ig-real-ideal-graph"
-      ref={graphPanelRef}
-      aria-label="Real vs Ideal Gas Behaviour"
-      hidden={!graphOpen}
-      className={graphOpen ? panelCls + " shrink-0 p-2.5 " + (dense ? "h-[clamp(300px,36vh,360px)]" : "") : undefined}
-    >
-      {graphOpen && (
-        <RealIdealGraph state={readings} fillHeight={dense} />
-      )}
-    </section>
-  );
-
-  if (dense) {
-    // Viewport modes: dashboard fills the frame. With the graph hidden nothing
-    // scrolls. With it open the dashboard keeps a readable minimum height and
-    // the frame's shell scrolls INSIDE itself when the viewport is too short.
-    return (
-      <div ref={rootRef} className={shell + " relative flex h-full min-h-0 flex-col gap-2 " + (graphOpen ? "overflow-y-auto" : "overflow-hidden")}>
-        <div className={"grid min-h-0 flex-1 grid-cols-[288px_minmax(0,1fr)_270px] grid-rows-[minmax(0,1fr)] gap-2.5 " + (graphOpen ? "min-h-[570px]" : "")}>
-          <div className="min-h-0">{controlsPanel}</div>
-          {canvasPanel}
-          <div className="min-h-0">{readingsPanel}</div>
+  const chamber = (
+    <>
+      <DashPanel ariaLabel="Gas chamber" grow noBody className="!p-1.5">
+        <div className="sd-chamber" data-testid="chamber">
+          <GasCanvas sim={sim} reducedMotion={reducedMotion} label={canvasLabel} />
         </div>
-        {toggleBar}
-        {graphPanel}
-      </div>
-    );
-  }
+        <ChamberToolbar>
+          <ToolButton
+            primary testId="play-pause" onClick={() => setPlaying((p) => !p)}
+            icon={playing ? <Pause size={14} aria-hidden="true" /> : <Play size={14} aria-hidden="true" />}
+            label={playing ? "Pause" : "Play"} title={playing ? "Pause simulation" : "Play simulation"}
+          />
+          <ToolButton
+            testId="toggle-trails" pressed={display.trails} onClick={() => handleDisplay({ trails: !display.trails })}
+            icon={<Spline size={14} aria-hidden="true" />} label="Trails" title="Show particle trails: the paths of moving particles"
+          />
+          <ToolButton
+            testId="toggle-collisions" pressed={display.collisions} onClick={() => handleDisplay({ collisions: !display.collisions })}
+            icon={<Sparkles size={14} aria-hidden="true" />} label="Flashes" title="Show collision flashes: highlights particle-particle and particle-wall collisions"
+          />
+          <ToolButton
+            testId="toggle-forces" pressed={display.forces && real} disabled={!real}
+            onClick={() => handleDisplay({ forces: !display.forces })}
+            icon={<Waypoints size={14} aria-hidden="true" />} label="Forces"
+            title={real ? "Show intermolecular forces: attractions between nearby particles" : "Intermolecular forces: available in Real gas mode"}
+          />
+        </ChamberToolbar>
+      </DashPanel>
+      <ComparisonPanel comparison={readings.comparison} real={real} />
+    </>
+  );
+
   return (
-    <div ref={rootRef} className={shell + " flex flex-col gap-3"}>
-      <div className={"grid gap-3 " + (wide ? "grid-cols-[236px_minmax(0,1fr)_248px] items-start" : "grid-cols-1")}>
-        {controlsPanel}
-        {canvasPanel}
-        {readingsPanel}
-      </div>
-      {toggleBar}
-      {graphPanel}
-    </div>
+    <SimulationDashboard
+      title="Ideal Gas Simulation"
+      subtitle="Ideal and real gases: P, V, T and n"
+      role="region"
+      ariaLabel="Ideal gas simulation"
+      onReset={handleReset}
+      tabs={
+        <DashboardTabs
+          segmented role="radio" ariaLabel="Gas type" idPrefix="ig-gas" tabs={GAS_TABS} value={controls.mode}
+          onChange={(mode) => handleControls({ mode })}
+        />
+      }
+      controls={<ControlsPanel controls={controls} state={readings} onChange={handleControls} />}
+      chamber={chamber}
+      graph={
+        <DashPanel ariaLabel="Real vs Ideal Gas Behaviour" grow noBody testId="graph-panel" id="ig-real-ideal-graph">
+          <RealIdealGraph state={readings} />
+        </DashPanel>
+      }
+      live={<LiveValues readings={readings} />}
+      predict={<PredictPanel controls={controls} revealed={revealed} onToggle={() => setRevealed((r) => !r)} />}
+      explain={<WhatIsHappening text={explain.text} />}
+    />
   );
 }

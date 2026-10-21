@@ -29,7 +29,8 @@ const actionButtonCls =
  * text) so it never competes with an engine's own primary action button.
  * Labels collapse to icon-only + a native tooltip below the `sm`
  * breakpoint; aria-labels are always present regardless. */
-export default function SimulationActions({ targetRef, simulationId }) {
+export default function SimulationActions({ targetRef, simulationId, iconOnly = false }) {
+  const labelCls = iconOnly ? "hidden" : "hidden sm:inline";
   const { isFullscreen, isSupported, toggle } = useFullscreen(targetRef);
 
   return (
@@ -43,7 +44,7 @@ export default function SimulationActions({ targetRef, simulationId }) {
           className={actionButtonCls}
         >
           <ExternalLink size={13} aria-hidden="true" />
-          <span className="hidden sm:inline">Open in New Tab</span>
+          <span className={labelCls}>Open in New Tab</span>
         </button>
       )}
       {isSupported && (
@@ -55,7 +56,7 @@ export default function SimulationActions({ targetRef, simulationId }) {
           className={actionButtonCls}
         >
           {isFullscreen ? <Minimize size={13} aria-hidden="true" /> : <Maximize size={13} aria-hidden="true" />}
-          <span className="hidden sm:inline">{isFullscreen ? "Exit Full Screen" : "Full Screen"}</span>
+          <span className={labelCls}>{isFullscreen ? "Exit Full Screen" : "Full Screen"}</span>
         </button>
       )}
     </div>

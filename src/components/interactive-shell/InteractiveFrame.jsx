@@ -39,13 +39,31 @@ import CopyrightNotice from "../layout/CopyrightNotice.jsx";
 // read `useSimulationPresentation()` and lay itself out to genuinely fit
 // (Ionization Energy Explorer is the reference implementation) never
 // triggers that fallback at normal desktop/laptop sizes.
-export default function InteractiveFrame({ title, subtitle, children, compact = false, standalone = false }) {
+export default function InteractiveFrame({ title, subtitle, children, compact = false, standalone = false, dashboard = false }) {
   const frameRef = useRef(null);
   const { isFullscreen } = useFullscreen(frameRef);
   const simulationId = getSimulationIdForTitle(title);
   const isViewport = isFullscreen || standalone;
   const showFullHeader = !compact || isViewport;
   const mode = isFullscreen ? "fullscreen" : standalone ? "standalone" : "embedded";
+
+  if (dashboard) {
+    // DASHBOARD FRAME: the engine renders <SimulationDashboard>, which owns its
+    // own compact header (title, tabs, Reset, and this frame's actions), so the
+    // frame adds no header and no padding. It only supplies the fullscreen /
+    // standalone viewport box. See components/simulation/SimulationDashboard.jsx
+    // and docs/SIMULATION_DASHBOARD_LAYOUT.md.
+    return (
+      <SimulationPresentationProvider
+        value={{ mode, isEmbedded: !isViewport, isViewport, isFullscreen, isStandalone: mode === "standalone", frameRef, simulationId }}
+      >
+        <div ref={frameRef} className={"sd-frame " + (isViewport ? "sd-frame--viewport" : "sd-frame--embedded")} data-sim-title={title}>
+          <div className="sd-frame-body">{children}</div>
+          <div className="sd-frame-foot"><CopyrightNotice variant="simulation" /></div>
+        </div>
+      </SimulationPresentationProvider>
+    );
+  }
 
   return (
     <SimulationPresentationProvider

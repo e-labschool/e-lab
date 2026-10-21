@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { CircleHelp, LayoutGrid, RotateCcw } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, CircleHelp, LayoutGrid, Maximize2, RotateCcw } from "lucide-react";
 import { MODES, allGraphsView, buildGraph, formatPoint, graphOptions, graphPoint } from "../model.js";
 import { ACCENTS as ACC } from "../theme.js";
+import { DashPanel } from "../../../components/simulation/SimulationDashboard.jsx";
 
 const NAVY = "#14226B";
 const fmtTick = (v) => String(Number(v.toPrecision(4)));
@@ -38,7 +39,8 @@ function useSize(ref, fallback) {
 export function GraphSvg({ graph, accent, mini = false, hoverIdx = null, onHover, trail = [], label }) {
   const wrapRef = useRef(null);
   const { w, h } = useSize(wrapRef, mini ? { w: 150, h: 110 } : { w: 340, h: 240 });
-  const m = mini ? { l: 30, r: 8, t: 6, b: 24 } : { l: 50, r: 14, t: 12, b: 42 };
+  const k = mini ? 1 : Math.min(1.3, Math.max(1, w / 480)); // text scale on large plots
+  const m = mini ? { l: 32, r: 13, t: 6, b: 26 } : { l: 50 * k, r: 16, t: 12, b: 42 * k };
   const pw = Math.max(20, w - m.l - m.r);
   const ph = Math.max(20, h - m.t - m.b);
   const [x0, x1] = graph.xRange;
@@ -46,7 +48,7 @@ export function GraphSvg({ graph, accent, mini = false, hoverIdx = null, onHover
   const sx = (x) => m.l + ((x - x0) / (x1 - x0)) * pw;
   const sy = (y) => m.t + ph - ((y - y0) / (y1 - y0)) * ph;
   const path = (pts) => pts.map((p, i) => `${i ? "L" : "M"}${sx(p.x).toFixed(2)},${sy(p.y).toFixed(2)}`).join(" ");
-  const fs = mini ? 8.5 : 11;
+  const fs = mini ? 9.5 : 11 * k;
   const dots = graph.accessible.filter((_, i) => i % (graph.kind === "curve" ? 12 : 8) === 0);
   const hp = hoverIdx != null ? graph.accessible[hoverIdx] : null;
   const mk = graph.marker;
@@ -77,10 +79,10 @@ export function GraphSvg({ graph, accent, mini = false, hoverIdx = null, onHover
   };
 
   return (
-    <div ref={wrapRef} className="relative h-full min-h-0 w-full min-w-0">
+    <div ref={wrapRef} className="sd-graph-plot h-full w-full">
       <svg
         width={w} height={h} viewBox={`0 0 ${w} ${h}`} role="img" aria-label={label}
-        className="absolute inset-0 block touch-none select-none" data-testid={mini ? undefined : "graph-svg"}
+        className="touch-none select-none" data-testid={mini ? undefined : "graph-svg"}
         onPointerMove={onMove} onPointerLeave={() => onHover && onHover(null)}
       >
         {graph.yTicks.map((t) => (
@@ -103,8 +105,8 @@ export function GraphSvg({ graph, accent, mini = false, hoverIdx = null, onHover
             {!mini && <text x={sx(-273.15) + 4} y={m.t + ph - 6} fontSize="10" fill="#B45309">−273.15 °C</text>}
           </g>
         )}
-        <text x={m.l + pw / 2} y={h - (mini ? 3 : 6)} fontSize={mini ? 8.5 : 12} textAnchor="middle" fill={NAVY} fontWeight="500">{mini ? graph.xTitle.replace(/^[A-Za-z]+, /, "") : graph.xTitle}</text>
-        <text transform={`translate(${mini ? 8 : 13},${m.t + ph / 2}) rotate(-90)`} fontSize={mini ? 8.5 : 12} textAnchor="middle" fill={NAVY} fontWeight="500">{mini ? graph.yTitle.replace(/^[A-Za-z]+, /, "") : graph.yTitle}</text>
+        <text x={m.l + pw / 2} y={h - (mini ? 3 : 6)} fontSize={mini ? 9.5 : 12 * k} textAnchor="middle" fill={NAVY} fontWeight="500">{mini ? graph.xTitle.replace(/^[A-Za-z]+, /, "") : graph.xTitle}</text>
+        <text transform={`translate(${mini ? 8 : 13 * k},${m.t + ph / 2}) rotate(-90)`} fontSize={mini ? 9.5 : 12 * k} textAnchor="middle" fill={NAVY} fontWeight="500">{mini ? graph.yTitle.replace(/^[A-Za-z]+, /, "") : graph.yTitle}</text>
 
         {trail.map((p, i) => <circle key={i} cx={sx(p.x)} cy={sy(p.y)} r={mini ? 1.5 : 2.2} fill={accent.solid} opacity="0.28" />)}
         {graph.extension && (
@@ -137,10 +139,15 @@ export function GraphSvg({ graph, accent, mini = false, hoverIdx = null, onHover
   );
 }
 
+const GRAPH_TITLES = { pv: "Pressure vs Volume", vt: "Volume vs Temperature", pt: "Pressure vs Temperature", vn: "Volume vs Amount" };
+
+const iconBtn = "sd-btn sd-btn--sm";
+
 export default function GraphPanel({
-  state, accent, graphId, onGraphId, allView, onToggleAll, onResetGraph, onOpenMode, trail, dense,
+  state, accent, graphId, onGraphId, allView, onToggleAll, onResetGraph, onOpenMode, trail,
 }) {
   const [hoverIdx, setHoverIdx] = useState(null);
+  const [enlarged, setEnlarged] = useState(null); // mode id of the enlarged All-Graphs panel
   const graph = buildGraph(state, graphId);
   const opts = graphOptions(state.mode);
   const trailPts = trail.map((t) => graphPoint(t, graphId));
@@ -155,70 +162,91 @@ export default function GraphPanel({
     else if (e.key === "Escape") setHoverIdx(null);
   };
 
-  const head = (
-    <div className="flex items-center justify-between gap-2">
-      <h3 className={"font-bold leading-tight text-[#14226B] " + (dense ? "text-[15px]" : "text-[17px]")}>
-        {allView ? "All Graphs View" : `Graph: ${GRAPH_TITLES[state.mode]}`}
-      </h3>
-      <span title="Curves are computed from PV = nRT using this investigation’s constant variables. The yellow marker is the current state of the gas." className="cursor-help text-[#8A97B2]">
-        <CircleHelp size={18} aria-label="About this graph" />
-      </span>
-    </div>
-  );
-
   const buttons = (
-    <div className="flex shrink-0 flex-wrap items-center gap-2">
-      <button type="button" onClick={() => { setHoverIdx(null); onResetGraph(); }} data-testid="reset-graph"
-        title="Restore the default graph view (does not change the gas)"
-        className="inline-flex items-center gap-1.5 rounded-lg border border-[#D5DEEF] bg-white px-2.5 py-1 text-[12.5px] font-semibold text-[#14226B] hover:bg-[#EEF4FF] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2F7BF5]">
-        <RotateCcw size={13} aria-hidden="true" /> Reset Graph
+    <span className="inline-flex shrink-0 items-center gap-1">
+      <button type="button" onClick={() => { setHoverIdx(null); setEnlarged(null); onResetGraph(); }} data-testid="reset-graph"
+        title="Reset graph: restore the default graph view (does not change the gas)" aria-label="Reset graph" className={iconBtn}>
+        <RotateCcw size={13} aria-hidden="true" /><span className="sd-wide-label">Reset graph</span>
       </button>
-      <button type="button" onClick={onToggleAll} aria-pressed={allView} data-testid="all-graphs-toggle"
-        className={"inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[12.5px] font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2F7BF5] " + (allView ? "border-transparent text-white" : "border-[#D5DEEF] bg-white text-[#14226B] hover:bg-[#EEF4FF]")}
-        style={allView ? { background: accent.solid } : undefined}>
-        <LayoutGrid size={13} aria-hidden="true" /> All Graphs View
+      <button type="button" onClick={() => { setEnlarged(null); onToggleAll(); }} aria-pressed={allView} aria-label="All graphs" data-testid="all-graphs-toggle"
+        title="All Graphs View: compare the four relationships side by side" className={iconBtn}
+        style={allView ? { background: accent.solid, borderColor: accent.solid, color: "#fff" } : undefined}>
+        <LayoutGrid size={13} aria-hidden="true" /><span className="sd-wide-label">All graphs</span>
       </button>
-    </div>
+    </span>
   );
+  const help = (
+    <span title="Curves are computed from PV = nRT using this investigation’s constant variables. The yellow marker is the current state of the gas." className="sd-help">
+      <CircleHelp size={16} aria-label="About this graph" role="img" />
+    </span>
+  );
+  const heading = (text) => <h3 className="sd-panel-title" title={text}>{text}</h3>;
+
+  if (allView && enlarged) {
+    const p = allGraphsView(state).find((x) => x.mode === enlarged);
+    const a = ACC[p.mode];
+    return (
+      <DashPanel grow noBody ariaLabel="Interactive graph" id="gl-graph" testId="all-graphs-enlarged">
+        <div className="sd-panel-head">
+          {heading(`${p.graph.yName} vs ${p.graph.xName} (${MODES[p.mode].short})`)}
+          <span className="inline-flex items-center gap-1">{buttons}{help}</span>
+        </div>
+        <p className="sd-small shrink-0">
+          <span className="font-semibold">{p.active ? "Current investigation" : "Reference conditions"}:</span> {p.conditions.replaceAll(" (constant)", "")} · <span className="italic">{p.graph.formula}</span>
+        </p>
+        <div className="sd-graph-plot">
+          <GraphSvg graph={p.graph} accent={a} label={`${p.graph.yName} versus ${p.graph.xName} at ${p.conditions}`} />
+        </div>
+        <p className="sd-text shrink-0">{p.graph.interpretation}</p>
+        <div className="flex shrink-0 gap-1.5">
+          <button type="button" className="sd-btn sd-btn--sm" onClick={() => setEnlarged(null)} data-testid="all-back"><ArrowLeft size={13} aria-hidden="true" /> Back to all graphs</button>
+          <button type="button" className="sd-btn sd-btn--sm" onClick={() => { setEnlarged(null); onOpenMode(p.mode); }} data-testid="all-open">Open this investigation</button>
+        </div>
+      </DashPanel>
+    );
+  }
 
   if (allView) {
     const panels = allGraphsView(state);
     return (
-      <div className="flex h-full min-h-0 flex-col gap-1.5" data-testid="all-graphs">
-        {head}
+      <DashPanel grow noBody ariaLabel="Interactive graph" id="gl-graph" testId="all-graphs">
+        <div className="sd-panel-head">{heading("All Graphs View")}<span className="inline-flex items-center gap-1">{buttons}{help}</span></div>
         <div className="grid min-h-0 flex-1 grid-cols-2 grid-rows-2 gap-1.5">
           {panels.map((p) => {
             const a = ACC[p.mode];
             return (
-              <button key={p.mode} type="button" onClick={() => onOpenMode(p.mode)} data-testid={`all-panel-${p.mode}`}
-                aria-label={`Open the ${MODES[p.mode].title} (${MODES[p.mode].short}) investigation. ${p.conditionsLabel}: ${p.conditions}`}
-                aria-current={p.active ? "true" : undefined}
-                className="flex min-h-[120px] min-w-0 flex-col rounded-xl border bg-white p-1 text-left transition-shadow hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#2F7BF5]"
+              <div key={p.mode} data-testid={`all-panel-${p.mode}`} aria-current={p.active ? "true" : undefined}
+                className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border bg-white p-1"
                 style={{ borderColor: p.active ? a.solid : "#E3EAF6", borderWidth: p.active ? 2 : 1 }}>
-                <span className="flex items-baseline justify-between gap-1 px-1">
-                  <span className="text-[11.5px] font-bold" style={{ color: a.text }}>{p.graph.yName} vs {p.graph.xName}  <span className="font-medium text-[#6B7A99]">({MODES[p.mode].short})</span></span>
+                <span className="flex items-center justify-between gap-1 px-1">
+                  <span className="min-w-0 truncate text-[11.5px] font-bold" style={{ color: a.text }}>{p.graph.yName} vs {p.graph.xName} <span className="font-medium text-[#4a5a82]">({MODES[p.mode].short})</span></span>
+                  <span className="inline-flex shrink-0 gap-1">
+                    <button type="button" onClick={() => setEnlarged(p.mode)} data-testid={`all-enlarge-${p.mode}`} title="Enlarge this graph" aria-label={`Enlarge the ${p.graph.yName} versus ${p.graph.xName} graph`}
+                      className="grid h-6 w-6 place-items-center rounded-md border border-[#cbd6ec] bg-white text-[#14226B] hover:bg-[#eef4ff]"><Maximize2 size={12} aria-hidden="true" /></button>
+                    <button type="button" onClick={() => onOpenMode(p.mode)} data-testid={`all-open-${p.mode}`}
+                      title={`Open the ${MODES[p.mode].title} (${MODES[p.mode].short}) investigation with your current values`}
+                      aria-label={`Open the ${MODES[p.mode].title} (${MODES[p.mode].short}) investigation. ${p.conditionsLabel}: ${p.conditions}`}
+                      className="grid h-6 w-6 place-items-center rounded-md border border-[#cbd6ec] bg-white text-[#14226B] hover:bg-[#eef4ff]"><ArrowUpRight size={13} aria-hidden="true" /></button>
+                  </span>
                 </span>
-                <span className="px-1 text-[9.5px] leading-tight text-[#5B6785]">
-                  <span className="font-semibold">{p.active ? "Current investigation" : "Reference conditions"}:</span> {p.conditions.replaceAll(" (constant)", "")}
+                <span className="px-1 text-[10.5px] leading-tight text-[#4a5a82]" title={p.conditions}>
+                  <span className="font-semibold">{p.active ? "Current" : "Reference"}:</span> {p.conditions.replaceAll(" (constant)", "")}
                 </span>
                 <span className="min-h-0 flex-1">
                   <GraphSvg graph={p.graph} accent={a} mini label={`${p.graph.yName} versus ${p.graph.xName} at ${p.conditions}`} />
                 </span>
-              </button>
+              </div>
             );
           })}
         </div>
-        <p className="shrink-0 text-[11px] leading-tight text-[#5B6785]">
-          Each panel has its own conditions, so these are not one experiment. Select a panel to open that investigation with your current values.
-        </p>
-        {buttons}
-      </div>
+        <p className="sd-small shrink-0">Each panel has its own conditions, so these are not one experiment. Enlarge reads one graph; the arrow opens that investigation.</p>
+      </DashPanel>
     );
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-1.5">
-      {head}
+    <DashPanel grow noBody ariaLabel="Interactive graph" id="gl-graph" testId="graph-panel">
+      <div className="sd-panel-head">{heading(GRAPH_TITLES[state.mode])}{buttons}</div>
       <div role="radiogroup" aria-label="Graph type" className="grid shrink-0 overflow-hidden rounded-lg border border-[#DAE3F3] bg-[#F4F7FC]" style={{ gridTemplateColumns: `repeat(${opts.length}, minmax(0,1fr))` }}>
         {opts.map((o, i) => {
           const sel = o.id === graphId;
@@ -233,35 +261,33 @@ export default function GraphPanel({
                 onGraphId(nx.id);
                 requestAnimationFrame(() => document.querySelector(`[data-testid="graph-opt-${nx.id}"]`)?.focus());
               }}
-              className={"px-1 text-[12.5px] font-semibold transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#2F7BF5] " + (dense ? "py-1.5 " : "py-2 ") + (sel ? "text-white" : "text-[#14226B] hover:bg-white")}
+              className={"min-h-[28px] truncate px-1 text-[length:var(--sd-fs)] font-semibold transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#2F7BF5] " + (sel ? "text-white" : "text-[#14226B] hover:bg-white")}
               style={sel ? { background: accent.solid } : undefined}>
               {o.label}
             </button>
           );
         })}
       </div>
-      <p className="shrink-0 rounded-lg bg-[#F4F7FC] px-2 py-1 text-[11.5px] leading-tight text-[#33415F]" data-testid="graph-constants">
-        {graph.constants} · <span className="italic">{graph.formula}</span>
+      <p className="sd-small flex shrink-0 items-start justify-between gap-1 rounded-lg bg-[#F4F7FC] px-2 py-0.5 text-[#33415F]" data-testid="graph-constants">
+        <span>{graph.constants} · <span className="italic">{graph.formula}</span></span>
+        {help}
       </p>
       <div
         tabIndex={0} role="group" onKeyDown={onKey} onBlur={() => setHoverIdx(null)}
         aria-label="Graph. Use the left and right arrow keys to move a readout along the curve."
-        className="relative min-h-[150px] flex-1 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#2F7BF5]"
+        className="relative flex min-h-[110px] flex-1 flex-col rounded-lg focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#2F7BF5]"
       >
         <GraphSvg graph={graph} accent={accent} hoverIdx={hoverIdx} onHover={setHoverIdx} trail={trailPts}
           label={`${graph.yTitle} against ${graph.xTitle}. ${graph.interpretation} Current state ${formatPoint(graph, graph.marker.x, graph.marker.y)}.`} />
       </div>
       {graph.extension && (
-        <div className="flex shrink-0 flex-wrap items-center gap-x-3 text-[10.5px] text-[#5B6785]" data-testid="graph-legend">
+        <div className="flex shrink-0 flex-wrap items-center gap-x-3 text-[length:var(--sd-fs-sm)] text-[#4a5a82]" data-testid="graph-legend">
           <span className="inline-flex items-center gap-1"><svg width="22" height="6" aria-hidden="true"><line x1="0" y1="3" x2="22" y2="3" stroke={accent.solid} strokeWidth="2.5" /></svg>accessible range</span>
           <span className="inline-flex items-center gap-1"><svg width="22" height="6" aria-hidden="true"><line x1="0" y1="3" x2="22" y2="3" stroke="#7B879F" strokeWidth="2" strokeDasharray="5 4" /></svg>{graph.extKind === "celsius" ? "extrapolation: not physically accessible" : "extrapolation to the origin"}</span>
         </div>
       )}
-      <p className="shrink-0 text-[11.5px] font-medium text-[#14226B]" data-testid="graph-readout">{readout}</p>
-      <p className="shrink-0 text-[12px] leading-snug text-[#33415F]" data-testid="graph-interpretation">{graph.interpretation}</p>
-      {buttons}
-    </div>
+      <p className="shrink-0 text-[length:var(--sd-fs-sm)] font-medium text-[#14226B]" data-testid="graph-readout">{readout}</p>
+      <p className="sd-text shrink-0" data-testid="graph-interpretation">{graph.interpretation}</p>
+    </DashPanel>
   );
 }
-
-const GRAPH_TITLES = { pv: "Pressure vs Volume (P – V)", vt: "Volume vs Temperature (V – T)", pt: "Pressure vs Temperature (P – T)", vn: "Volume vs Amount of Gas (V – n)" };
