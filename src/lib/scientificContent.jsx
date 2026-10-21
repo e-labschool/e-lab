@@ -219,47 +219,121 @@ function inlineWrap(innerHtml) {
   return `<span class="inline-math align-middle whitespace-nowrap font-serif text-[1.03em]">${innerHtml}</span>`;
 }
 
-// A real block-level "display equation" would need a <div>, but this
-// content is injected via dangerouslySetInnerHTML into contexts that are
-// sometimes themselves inline (a <span>, a <p>) -- a literal <div> there
-// is invalid nesting that browsers silently "fix" by breaking the DOM
-// apart unpredictably. Using a <span> with CSS display:block instead gets
-// the same centred, own-line visual result while staying valid inside
-// ANY ancestor element.
+// Display (standalone) equation wrapper. A real <div> would be invalid
+// nesting inside the inline contexts this HTML is injected into (a <p>, a
+// <span>), so this is a <span> styled display:block via the
+// .sci-math-display class (src/styles/index.css): centred, vertical
+// spacing, and its OWN horizontal scroll container so a long equation
+// scrolls inside the wrapper instead of overflowing the page. The inner
+// inline-block keeps text-align:center from clipping the left edge when
+// the equation is wider than the wrapper (no transform:scale involved).
 function displayWrap(innerHtml) {
-  return `<span class="my-2 block overflow-x-auto text-center font-serif text-[1.05em] leading-relaxed">${innerHtml}</span>`;
+  return `<span class="sci-math-display"><span class="sci-math-display-inner">${innerHtml}</span></span>`;
 }
 
 // Combined tokenizer: identifies all three supported forms in one pass,
 // left-to-right, non-overlapping -- so normal text and math segments are
-// split safely and nothing is ever double-processed. Order in the
-// alternation does not affect correctness here (the three forms use
-// disjoint delimiters), only which capture group is populated.
+// split safely and nothing is ever double-processed.
 const SCI_MARKUP_RE = /⟦math:([\s\S]*?)⟧|\\\[([\s\S]*?)\\\]|\\\(([\s\S]*?)\\\)/g;
 
-function replaceScientificMarkup(source) {
-  return source.replace(SCI_MARKUP_RE, (match, markerLatex, displayLatex, inlineLatex) => {
-    try {
-      // decodeMathSourceEntities() is applied ONLY to the already-
-      // delimited math source captured by the regex above -- never to
-      // `source` as a whole -- see the comment on
-      // decodeMathSourceEntities() for exactly why this one decode is
-      // both necessary and safe. renderCompactLatex() re-escapes
-      // everything it emits via escapeMathHtml(), so a decoded "<"/">"/
-      // "&" here always comes back out as a single, correct HTML entity
-      // -- never as raw markup.
-      if (markerLatex != null) return inlineWrap(renderCompactLatex(decodeMathSourceEntities(markerLatex)));
-      if (displayLatex != null) return displayWrap(renderCompactLatex(decodeMathSourceEntities(displayLatex)));
-      if (inlineLatex != null) return inlineWrap(renderCompactLatex(decodeMathSourceEntities(inlineLatex)));
-      return match;
-    } catch {
-      // A malformed expression must never blank the block or crash the
-      // page -- fall back to the original, unrendered source text so the
-      // student still sees SOMETHING sensible, and the admin can see
-      // exactly what needs fixing.
-      return match;
+// ----------------------------------------------------------------------
+// Standalone-vs-inline detection (centralised: every Learn block, the
+// admin preview and the student page all funnel through here).
+//
+// A "line" is the run of content between line boundaries:
+//   - plain-text mode (renderScientificText): newline characters.
+//   - HTML mode (renderScientificMarkup): <br>, and the open/close tags of
+//     block elements (p, div, li, headings, blockquote, lists, tables...).
+//     contentEditable produces `<p>m</p>`, `<div>m</div>` or `a<br>m<br>b`.
+// A line is STANDALONE (display math, centred) when it contains at least
+// one ⟦math:...⟧ marker and nothing else except whitespace, &nbsp;, and
+// empty inline tags (span/b/i/...). Several markers separated only by
+// whitespace share one centred line. Any other text -- including
+// punctuation such as "⟦math:x⟧." -- or any \( \) / \[ \] form on the
+// line keeps every marker on it INLINE, exactly as before.
+// \[ \] is always display, as it always was.
+const HTML_LINE_BREAK_RE = /<br\s*\/?>|<\/?(?:p|div|li|ul|ol|h[1-6]|blockquote|pre|table|thead|tbody|tfoot|tr|td|th|section|article|figure|figcaption|hr)\b[^>]*>/gi;
+const BLANK_FILLER_RE = /<[^>]*>|&nbsp;|&#160;|&#xa0;|[\s\u00a0\u200b]/gi;
+
+function renderMathToken(kind, latex) {
+  const rendered = renderCompactLatex(decodeMathSourceEntities(latex));
+  return kind === "display" ? displayWrap(rendered) : inlineWrap(rendered);
+}
+
+function replaceScientificMarkup(source, mode = "html") {
+  // 1. Tokenise into text / math tokens (math never split by line breaks).
+  const tokens = [];
+  let last = 0;
+  SCI_MARKUP_RE.lastIndex = 0;
+  let m;
+  while ((m = SCI_MARKUP_RE.exec(source)) !== null) {
+    if (m.index > last) tokens.push({ t: "text", v: source.slice(last, m.index) });
+    const kind = m[1] != null ? "marker" : m[2] != null ? "display" : "inline";
+    tokens.push({ t: "math", kind, raw: m[0], latex: m[1] ?? m[2] ?? m[3] ?? "" });
+    last = m.index + m[0].length;
+  }
+  if (last < source.length) tokens.push({ t: "text", v: source.slice(last) });
+
+  // 2. Split text tokens at line boundaries.
+  const parts = [];
+  for (const tok of tokens) {
+    if (tok.t !== "text") { parts.push(tok); continue; }
+    const re = mode === "text" ? /\n/g : new RegExp(HTML_LINE_BREAK_RE.source, "gi");
+    let at = 0;
+    let b;
+    while ((b = re.exec(tok.v)) !== null) {
+      if (b.index > at) parts.push({ t: "text", v: tok.v.slice(at, b.index) });
+      const isSoft = mode === "text" || /^<br/i.test(b[0]);
+      parts.push({ t: "break", v: b[0], soft: isSoft });
+      at = b.index + b[0].length;
+    }
+    if (at < tok.v.length) parts.push({ t: "text", v: tok.v.slice(at) });
+  }
+
+  // 3. Group into lines and classify.
+  const lines = [{ parts: [], standalone: false }];
+  for (const p of parts) {
+    if (p.t === "break") { lines.push({ parts: [], standalone: false, breakBefore: p }); continue; }
+    lines[lines.length - 1].parts.push(p);
+  }
+  for (const line of lines) {
+    const maths = line.parts.filter((p) => p.t === "math");
+    line.standalone = maths.length > 0
+      && maths.every((p) => p.kind === "marker")
+      && line.parts.every((p) => p.t === "math" || p.v.replace(BLANK_FILLER_RE, "") === "");
+  }
+
+  // 4. Render.
+  let out = "";
+  lines.forEach((line, idx) => {
+    if (line.breakBefore) {
+      const prev = lines[idx - 1];
+      // A soft break (<br> / "\n") touching a display block would add a
+      // spurious blank line on top of the block's own spacing; drop it.
+      const dropped = line.breakBefore.soft && (line.standalone || prev.standalone);
+      if (!dropped) out += mode === "text" ? "<br />" : line.breakBefore.v;
+    }
+    if (line.standalone) {
+      const rendered = [];
+      let ok = true;
+      for (const p of line.parts) {
+        if (p.t === "math") {
+          try { rendered.push(renderCompactLatex(decodeMathSourceEntities(p.latex))); } catch { ok = false; }
+        }
+      }
+      if (ok) {
+        // keep any empty wrapper tags the author's editor left around it
+        const wrappers = line.parts.filter((p) => p.t === "text").map((p) => p.v.replace(/&nbsp;|&#160;|&#xa0;|[\s\u00a0\u200b]/gi, "")).join("");
+        out += wrappers + displayWrap(rendered.join(" "));
+        return;
+      }
+    }
+    for (const p of line.parts) {
+      if (p.t === "text") { out += p.v; continue; }
+      try { out += renderMathToken(p.kind === "display" ? "display" : "inline", p.latex); } catch { out += p.raw; }
     }
   });
+  return out;
 }
 
 /** For HTML-context content (the Rich Text block's stored HTML): replaces
@@ -289,8 +363,9 @@ export const renderMathMarkersInHtml = renderScientificMarkup;
  * touches. Preserves line breaks as <br />. */
 export function renderScientificText(text) {
   const escaped = escapeMathHtml(text ?? "");
-  const withMath = replaceScientificMarkup(escaped);
-  return withMath.replace(/\n/g, "<br />");
+  // mode "text": newlines are line boundaries AND become <br /> (done
+  // inside, so a <br /> never sits next to a display block).
+  return replaceScientificMarkup(escaped, "text");
 }
 
 export function ScientificText({ text, className = "" }) {

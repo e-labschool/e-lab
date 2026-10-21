@@ -202,6 +202,99 @@ console.log("\n== Spacing (issue 3) ==");
     assert.ok(containsScientificMarkup("⟦math:x⟧"));
     assert.ok(!containsScientificMarkup("plain text, no markup"));
   });
+  // ---- Standalone (display) vs inline equation detection ----
+  const D = "sci-math-display";
+  const chem = "⟦math:2H_2(g)+O_2(g)\\rightarrow2H_2O(g)⟧";
+  const count = (h) => (h.match(/class="sci-math-display"/g) || []).length;
+  test("plain text: marker alone on a line -> display wrapper, no <br> glued to it", () => {
+    const h = renderScientificText(`Intro\n${chem}\nAfter`);
+    assert.equal(count(h), 1);
+    assert.ok(h.includes("→") && h.includes("<sub>2</sub>"));
+    assert.equal(h, h.replace("<br /><span", "<span"));
+    assert.ok(!h.includes("<br /><span class=\"sci-math-display\"") && !/<\/span><\/span><br \/>/.test(h));
+  });
+  test("plain text: inline marker in a sentence stays inline and paragraph intact", () => {
+    const h = renderScientificText("The relationship is ⟦math:V\\propto n⟧, provided temperature and pressure remain constant.");
+    assert.equal(count(h), 0);
+    assert.ok(h.startsWith("The relationship is <span class=\"inline-math"));
+    assert.ok(h.endsWith(", provided temperature and pressure remain constant."));
+  });
+  test("marker + trailing punctuation on the same line is inline", () => {
+    assert.equal(count(renderScientificText("⟦math:x⟧.")), 0);
+    assert.equal(count(renderScientificText("⟦math:x⟧,")), 0);
+    assert.equal(count(renderMathMarkersInHtml("<p>⟦math:x⟧.</p>")), 0);
+  });
+  test("two markers separated by text are inline; separated by whitespace share one display", () => {
+    assert.equal(count(renderScientificText("⟦math:a⟧ and ⟦math:b⟧")), 0);
+    assert.equal(count(renderScientificText("⟦math:a⟧   ⟦math:b⟧")), 1);
+  });
+  test("a marker next to \\( \\) on the same line stays inline", () => {
+    assert.equal(count(renderScientificText("⟦math:a⟧ \\(b\\)")), 0);
+  });
+  test("plain text: leading/trailing whitespace around a lone marker still standalone", () => {
+    assert.equal(count(renderScientificText("  ⟦math:x⟧  \t")), 1);
+  });
+  test("plain text: literal '&nbsp;' typed next to a marker is real text -> inline", () => {
+    assert.equal(count(renderScientificText("&nbsp;⟦math:x⟧")), 0);
+  });
+  test("plain text: multiline mix", () => {
+    const h = renderScientificText(`Line one\n⟦math:a=b⟧\nline ⟦math:c⟧ inline\n\n⟦math:d⟧`);
+    assert.equal(count(h), 2);
+    assert.equal((h.match(/inline-math/g) || []).length, 1);
+    assert.ok(h.includes("Line one"));
+  });
+  test("HTML: marker alone in <p>, <div>, with <br> neighbours, with &nbsp; and empty wrappers", () => {
+    assert.equal(count(renderMathMarkersInHtml("<p>⟦math:x⟧</p>")), 1);
+    assert.equal(count(renderMathMarkersInHtml("<div>⟦math:x⟧</div>")), 1);
+    assert.equal(count(renderMathMarkersInHtml("text<br>⟦math:x⟧<br>more")), 1);
+    assert.equal(count(renderMathMarkersInHtml("<p>&nbsp;⟦math:x⟧&nbsp;</p>")), 1);
+    assert.equal(count(renderMathMarkersInHtml("<p><span><b>⟦math:x⟧</b></span><br></p>")), 1);
+    assert.equal(count(renderMathMarkersInHtml("⟦math:x⟧")), 1);
+    const h = renderMathMarkersInHtml("text<br>⟦math:x⟧<br>more");
+    assert.ok(h.startsWith("text<br>") === false || !h.includes("<br><span class=\"sci-math-display\""), "no <br> glued before display");
+    assert.ok(h.includes("more") && h.startsWith("text"));
+  });
+  test("HTML: inline marker inside a paragraph keeps the paragraph whole", () => {
+    const h = renderMathMarkersInHtml("<p>The relationship is ⟦math:V\\propto n⟧, provided T is constant.</p>");
+    assert.equal(count(h), 0);
+    assert.ok(h.startsWith("<p>The relationship is ") && h.endsWith(", provided T is constant.</p>"));
+    assert.equal(count(renderMathMarkersInHtml("<p>See ⟦math:x⟧</p><p>⟦math:y⟧</p>")), 1);
+  });
+  test("HTML: formatting wrapping text AND a marker is inline", () => {
+    assert.equal(count(renderMathMarkersInHtml("<p><b>Note:</b> ⟦math:x⟧</p>")), 0);
+  });
+  test("existing \\[ \\] still renders as display (same wrapper); \\( \\) inline", () => {
+    assert.equal(count(renderScientificText("a \\[ x \\] b")), 1);
+    assert.equal(count(renderMathMarkersInHtml("<p>\\[x\\]</p>")), 1);
+    assert.equal(count(renderScientificText("\\(x\\)")), 0);
+  });
+  test("entity fix still works inside standalone display math (HTML + text)", () => {
+    const a = renderMathMarkersInHtml("<p>⟦math:IE_1(Al)&lt;IE_1(Mg)⟧</p>");
+    const b = renderScientificText("⟦math:IE_1(Al)<IE_1(Mg)⟧");
+    for (const h of [a, b]) {
+      assert.equal(count(h), 1);
+      assert.ok(h.includes("&lt;") && !h.includes("&amp;lt;"));
+    }
+  });
+  test("\\boxed, \\frac, \\text and chemistry colon spacing survive in display math", () => {
+    const h = renderScientificText("⟦math:\\boxed{\\frac{a}{b}}\\text{ mol}⟧\n⟦math:Mg:1s^2⟧");
+    assert.equal(count(h), 2);
+    assert.ok(h.includes("border-b") && h.includes("not-italic") && h.includes("rounded"));
+    assert.ok(!h.includes("Mg:1"));
+  });
+  test("XSS stays inert in standalone math and around it", () => {
+    for (const h of [
+      renderScientificText("⟦math:<img src=x onerror=alert(1)>⟧"),
+      renderScientificText("⟦math:&lt;script&gt;alert(1)&lt;/script&gt;⟧"),
+      renderMathMarkersInHtml("<p>⟦math:<img src=x onerror=alert(1)>⟧</p>"),
+    ]) {
+      assert.ok(!/<img|<script/i.test(h), h);
+    }
+    assert.ok(!/<script/i.test(renderScientificText("<script>alert(1)</script>\n⟦math:x⟧")));
+  });
+  test("unterminated marker is left as literal text, no crash", () => {
+    assert.equal(renderScientificText("⟦math:x"), "⟦math:x");
+  });
 }
 
 console.log(`\n${passed} passed, ${failed} failed\n`);

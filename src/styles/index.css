@@ -232,3 +232,26 @@ body {
 .elab-display-surface.elab-lines-relaxed :where(p, li, blockquote) { line-height: 1.85; }
 .elab-display-surface.elab-contrast-high { --color-ink-soft: var(--color-ink); --color-ink-faint: var(--color-ink-soft); }
 .elab-display-surface.elab-contrast-high :where(input, textarea, select, button) { outline-color: currentColor; }
+
+/* Standalone (display) equations -- emitted by src/lib/scientificContent.jsx
+   for a ⟦math:...⟧ marker alone on its line/block, and for \[ ... \].
+   Centred, spaced, and its own horizontal scroll container so long
+   equations never overflow the page. Inline equations are unaffected. */
+.sci-math-display {
+  display: block;
+  max-width: 100%;
+  margin: 0.75em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  text-align: center;
+  text-align-last: center;
+  font-family: var(--font-serif, ui-serif, Georgia, serif);
+  font-size: 1.05em;
+  line-height: 1.6;
+  -webkit-overflow-scrolling: touch;
+}
+.sci-math-display-inner {
+  display: inline-block;
+  white-space: nowrap;
+  text-align: center;
+}
