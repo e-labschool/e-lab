@@ -11,7 +11,8 @@
     "test:disaster-recovery": "node scripts/test-disaster-recovery.mjs",
     "test:scientific-rendering": "node scripts/test-scientific-rendering.mjs",
     "test:rich-text-selection": "node scripts/test-rich-text-selection.mjs",
-    "test": "npm run test:disaster-recovery && npm run test:scientific-rendering && npm run test:rich-text-selection"
+    "test": "npm run test:disaster-recovery && npm run test:scientific-rendering && npm run test:rich-text-selection && npm run test:ideal-gas",
+    "test:ideal-gas": "node scripts/test-ideal-gas-model.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

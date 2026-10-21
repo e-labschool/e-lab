@@ -25,6 +25,7 @@ export const SIMULATION_REGISTRY = {
   "orbital-explorer": { label: "Orbital Explorer" },
   "atomic-spectra-lab": { label: "Atomic Spectra Lab" },
   "ionization-energy-explorer": { label: "Ionization Energy Explorer" },
+  "ideal-gas-simulation": { label: "Ideal Gas Simulation" },
 };
 
 // label -> id, built once. This is what lets InteractiveFrame resolve a

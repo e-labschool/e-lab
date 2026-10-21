@@ -27,4 +27,5 @@ export const SIMULATION_COMPONENTS = {
   "orbital-explorer": lazy(() => import("../engines/orbital-explorer/OrbitalExplorerSimulation.jsx")),
   "atomic-spectra-lab": lazy(() => import("../engines/atomic-spectra/AtomicSpectraSimulation.jsx")),
   "ionization-energy-explorer": lazy(() => import("../engines/ionization-energy-explorer/IonizationEnergyExplorer.jsx")),
+  "ideal-gas-simulation": lazy(() => import("../engines/ideal-gas-simulation/IdealGasSimulation.jsx")),
 };
