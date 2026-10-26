@@ -6,7 +6,7 @@
 import { CHAMBER, RANGES } from "./model.js";
 
 const WALL_H = CHAMBER.maxHeight + 15;
-const BASE_H = 12;
+export const BASE_H = 12;
 const ROD_H = 44;
 const PISTON_T = 11;
 const TRAIL_LEN = 12;

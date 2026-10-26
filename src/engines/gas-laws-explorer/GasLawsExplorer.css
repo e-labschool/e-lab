@@ -1,2 +1,230 @@
 /* Gas Laws Explorer: layout and slider styling come from the shared Simulation
-   Dashboard Layout (src/components/simulation/SimulationDashboard.css). */
+   Dashboard Layout (src/components/simulation/SimulationDashboard.css). Everything
+   below is scoped to this simulation (gl-* classes, or the mode-tabs selector) so the
+   other dashboards are unaffected. */
+
+/* ---- Mode tabs: two lines (symbol over law name), one compact row ---------- */
+.sd-tabs[data-testid="mode-tabs"] .sd-tab {
+  flex-direction: column;
+  gap: 0;
+  min-height: 36px;
+  padding: 2px 11px;
+}
+.sd-tabs[data-testid="mode-tabs"] .sd-tab-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.sd-tabs[data-testid="mode-tabs"] .sd-tab-main {
+  font-size: calc(var(--sd-fs) + 0.8px);
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: 0.01em;
+}
+.sd-tabs[data-testid="mode-tabs"] .sd-tab-sub {
+  font-size: calc(var(--sd-fs-sm) - 1.4px);
+  font-weight: 600;
+  line-height: 1.15;
+  opacity: 0.9;
+}
+/* Two-row header (narrow box): tabs span the row and share it equally; 2 x 2 if even that is too tight */
+.sd-root[data-header="two"] .sd-header-tabs:has(> .sd-tabs[data-testid="mode-tabs"]) {
+  container-type: inline-size;
+}
+.sd-root[data-header="two"] .sd-tabs[data-testid="mode-tabs"] {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(4, auto) !important;
+}
+.sd-root[data-header="two"] .sd-tabs[data-testid="mode-tabs"] .sd-tab {
+  padding-left: 4px;
+  padding-right: 4px;
+}
+.sd-root[data-header="two"] .sd-tabs[data-testid="mode-tabs"] .sd-tab-sub {
+  font-size: 8.8px;
+}
+@container (max-width: 290px) {
+  .sd-tabs[data-testid="mode-tabs"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 2px;
+  }
+}
+
+/* ---- Heading (header subtitle): full "Law \2014 Quantities" when there is room, law name otherwise ---- */
+.gl-h-short { display: none; }
+.sd-root[data-header="one"][data-w="md"] .gl-h-full { display: none; }
+.sd-root[data-header="one"][data-w="md"] .gl-h-short { display: inline; }
+.sd-root[data-header="one"]:not([data-w="md"]) .sd-header:has(.sd-tabs[data-testid="mode-tabs"]) {
+  grid-template-columns: minmax(150px, 400px) minmax(0, 1fr) auto;
+}
+.sd-header:has(.sd-tabs[data-testid="mode-tabs"]) .sd-subtitle {
+  font-weight: 600;
+  color: #33415f;
+}
+
+/* ---- Bottom strip: live values + compact dynamic "what is happening" note ---- */
+.gl-live {
+  display: flex;
+  align-items: center;
+  flex: 1 1 0;
+  min-width: 0;
+  gap: 10px;
+}
+.gl-live .sd-strip {
+  flex: 0 0 auto;
+}
+.gl-note {
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--sd-fs-sm);
+  line-height: 1.3;
+  color: var(--sd-muted);
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sd-root[data-layout="stacked"] .gl-live {
+  flex-wrap: wrap;
+  flex: 1 1 100%;
+}
+.sd-root[data-layout="stacked"] .gl-live .sd-strip {
+  flex: 1 1 100%;
+}
+/* narrow stack: the dynamic note moves into the (i) detail so the bottom area keeps its height */
+.sd-root[data-layout="stacked"] .gl-note {
+  display: none;
+}
+
+/* ---- Instrument deck: plinth under the cylinder base carrying two digital instruments ---- */
+.gl-deck {
+  position: absolute;
+  z-index: 1;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px 4px;
+  border-radius: 0 0 50% 50% / 0 0 9px 9px;
+  background: linear-gradient(90deg, #6b7585 0%, #d9dee6 18%, #9aa3b1 45%, #cbd1da 80%, #5f6979 100%);
+  box-shadow: 0 5px 8px -3px rgba(40, 55, 90, 0.4), inset 0 -2px 3px rgba(40, 50, 70, 0.28);
+  pointer-events: none;
+  container-type: inline-size;
+}
+.gl-l-short { display: none; }
+@container (max-width: 330px) {
+  .gl-l-full { display: none; }
+  .gl-l-short { display: inline; }
+}
+.gl-gauge {
+  --g-ink: #8fc4ff;
+  --g-bg: #0d1827;
+  --g-glow: rgba(110, 175, 255, 0.45);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  height: 39px;
+  padding: 3px 8px 2px;
+  border: 1px solid #0a1019;
+  border-radius: 7px;
+  background: linear-gradient(180deg, #0a121d 0%, var(--g-bg) 100%);
+  box-shadow: 0 0 0 2px #4a5568, 0 0 0 3px rgba(235, 240, 248, 0.55), inset 0 2px 5px rgba(0, 0, 0, 0.75), 0 2px 3px rgba(20, 30, 50, 0.35);
+}
+.gl-gauge--t {
+  --g-ink: #ffc46b;
+  --g-bg: #1d1407;
+  --g-glow: rgba(255, 184, 80, 0.4);
+}
+.gl-gauge-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 1px;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  line-height: 1.1;
+  color: var(--g-ink);
+  opacity: 0.78;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.gl-gauge-label i {
+  flex: 0 0 auto;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--g-ink);
+  box-shadow: 0 0 4px 1px var(--g-glow);
+}
+.gl-gauge-read {
+  display: block;
+  text-align: right;
+  line-height: 1.05;
+  color: var(--g-ink);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 6px var(--g-glow);
+}
+.gl-gauge-read b {
+  font-family: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.gl-gauge-read small {
+  font-size: 10px;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+/* ---- Medium box (Learn column with sidebar, ~820-1100 px): squeeze title column and tab padding so
+   the four two-line tabs keep one row beside the header buttons without overlapping ---- */
+.sd-root[data-header="one"][data-w="md"] .sd-header:has(.sd-tabs[data-testid="mode-tabs"]) {
+  grid-template-columns: minmax(112px, 132px) minmax(0, 1fr) auto;
+}
+.sd-root[data-header="one"][data-w="md"] .sd-tabs[data-testid="mode-tabs"] .sd-tab {
+  padding-left: 4px;
+  padding-right: 4px;
+}
+.sd-root[data-header="one"][data-w="md"] .sd-tabs[data-testid="mode-tabs"] .sd-tab-main {
+  font-size: calc(var(--sd-fs) + 0.2px);
+}
+.sd-root[data-header="one"][data-w="md"] .sd-tabs[data-testid="mode-tabs"] .sd-tab-sub {
+  font-size: 8px;
+  letter-spacing: -0.01em;
+}
+
+/* Just above the 820 px one-row threshold the four tabs cannot share a row with the buttons: use the
+   two-row header (tabs on their own row) until the box is wide enough. */
+.sd-root:has(.sd-tabs[data-testid="mode-tabs"]) {
+  container: gldash / inline-size;
+}
+@container gldash (max-width: 849px) {
+  .sd-root[data-header="one"] .sd-header:has(.sd-tabs[data-testid="mode-tabs"]) {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "title actions" "tabs tabs";
+  }
+  .sd-root[data-header="one"] .sd-header-tabs:has(> .sd-tabs[data-testid="mode-tabs"]) {
+    justify-self: stretch;
+  }
+  .sd-root[data-header="one"] .sd-tabs[data-testid="mode-tabs"] {
+    display: grid;
+    width: 100%;
+    grid-template-columns: repeat(4, auto) !important;
+  }
+  .sd-root[data-header="one"] .sd-tabs[data-testid="mode-tabs"] .sd-tab-sub { font-size: 8.8px; }
+  .sd-root[data-header="one"][data-w="md"] .gl-h-full { display: inline; }
+  .sd-root[data-header="one"][data-w="md"] .gl-h-short { display: none; }
+}
+
+/* Small deck (graph open in a medium box): slightly smaller digits so "1.23 atm" always fits */
+@container (max-width: 240px) {
+  .gl-deck { gap: 5px; padding-left: 8px; padding-right: 8px; }
+  .gl-gauge { padding-left: 6px; padding-right: 6px; }
+  .gl-gauge-read b { font-size: 14.5px; letter-spacing: 0; }
+  .gl-gauge-read small { font-size: 9px; }
+}

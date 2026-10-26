@@ -61,6 +61,23 @@ test("slider rows: label+value on one line, min / slider / max on the next (comp
 });
 test("no window-width logic in the dashboard source", () => { assert.doesNotMatch(jsx, /innerWidth/); });
 
+
+console.log("== gas laws explorer additions (source contract) ==");
+const glCss = readFileSync(new URL("../src/engines/gas-laws-explorer/GasLawsExplorer.css", import.meta.url), "utf8");
+const glChamber = readFileSync(new URL("../src/engines/gas-laws-explorer/components/ChamberPanel.jsx", import.meta.url), "utf8");
+test("gas-laws styles are scoped (gl-* classes or the mode-tabs selector); the shared stylesheet has no gas-laws rules", () => {
+  const sel = glCss.replace(/\/\*[\s\S]*?\*\//g, "").split("{").slice(0, -1).map((b) => b.split("}").pop().trim()).filter((x) => x && !x.startsWith("@") && !/^\d+%|^from|^to/.test(x));
+  for (const group of sel) for (const one of group.split(",")) assert.match(one.trim(), /\.gl-|mode-tabs/, one.trim());
+  assert.doesNotMatch(css, /\.gl-|mode-tabs|instrument-deck/);
+});
+test("instrument deck is DOM (not an image/canvas drawing) and reads the same formatted state values as the live strip", () => {
+  assert.match(glChamber, /export function InstrumentDeck/);
+  assert.match(glChamber, /formatValue\(k, state\[k\]\)/);
+  assert.match(glChamber, /<Gauge k="P"/); assert.match(glChamber, /<Gauge k="T"/);
+  assert.doesNotMatch(glChamber, /<img|<svg|drawImage/);
+  assert.match(glCss, /\.gl-deck \{[^}]*position: absolute/);
+});
+
 console.log("== ideal gas predict & reveal ==");
 const real = (c) => ({ ...c, mode: "real" });
 test("volume control: halving V doubles the ideal pressure and quotes model numbers", () => {

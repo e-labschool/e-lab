@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowUpDown, Lock, Pause, Play } from "lucide-react";
 import { VARS, formatValue } from "../model.js";
 import { createRenderer } from "../render.js";
+import { DECK_RESERVE, computeDeckLayout } from "../deckLayout.js";
 import { VAR_CHIP } from "../theme.js";
 import { AmountChip } from "./ControlPanel.jsx";
 import { DashPanel, LiveStrip } from "../../../components/simulation/SimulationDashboard.jsx";
@@ -17,7 +18,7 @@ const CALLOUT = {
 // in `sim` (physics.js) and the drawing in render.js. Loop + ResizeObserver are
 // torn down on unmount. The canvas is absolutely positioned inside its box, so
 // it can never push its parent larger.
-function Chamber({ sim, reducedMotion, label }) {
+function Chamber({ sim, reducedMotion, label, bottomInset = 0 }) {
   const wrapRef = useRef(null);
   const canvasRef = useRef(null);
   useEffect(() => {
@@ -56,8 +57,58 @@ function Chamber({ sim, reducedMotion, label }) {
     return () => { cancelAnimationFrame(raf); ro?.disconnect(); };
   }, [sim, reducedMotion]);
   return (
-    <div ref={wrapRef} className="absolute inset-0">
+    <div ref={wrapRef} className="absolute inset-0" style={bottomInset ? { bottom: bottomInset } : undefined}>
       <canvas ref={canvasRef} role="img" aria-label={label} className="block" data-testid="gas-canvas" />
+    </div>
+  );
+}
+
+
+// ---------------------------------------------------------------------------
+// Instrument deck: two digital instruments mounted on a plinth directly under the
+// cylinder's base. They show the SAME resolved state values (and formatValue
+// precision / units) as the Controls panel and the live strip -- nothing is
+// calculated here. The deck is positioned from computeLayout() (the renderer's own
+// geometry) so it always sits exactly under the drawn base; it is DOM, not canvas.
+// ---------------------------------------------------------------------------
+function useDeckGeometry(boxRef) {
+  const [geo, setGeo] = useState(null);
+  useLayoutEffect(() => {
+    const el = boxRef.current;
+    if (!el) return undefined;
+    const measure = () => {
+      const n = computeDeckLayout(el.clientWidth, el.clientHeight);
+      setGeo((g) => (g && g.left === n.left && g.top === n.top && g.width === n.width && g.reserve === n.reserve ? g : n));
+    };
+    measure();
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+    ro?.observe(el);
+    return () => ro?.disconnect();
+  }, [boxRef]);
+  return geo;
+}
+
+function Gauge({ k, tone, text, short, state }) {
+  const v = VARS[k];
+  return (
+    <div className={`gl-gauge gl-gauge--${tone}`} role="group" aria-label={`${text} instrument`} data-testid={`gauge-${k}`}>
+      <span className="gl-gauge-label"><i aria-hidden="true" />{short ? <><span className="gl-l-full">{text}</span><span className="gl-l-short">{short}</span></> : text}</span>
+      <span className="gl-gauge-read" data-testid={`gauge-${k}-value`}>
+        <b>{formatValue(k, state[k])}</b>{" "}<small>{v.unit}</small>
+      </span>
+    </div>
+  );
+}
+
+export function InstrumentDeck({ state, geo }) {
+  if (!geo) return null;
+  return (
+    <div
+      className="gl-deck" data-testid="instrument-deck" role="group" aria-label="Instruments"
+      style={{ left: geo.left, top: geo.top, width: geo.width, height: geo.height }}
+    >
+      <Gauge k="P" tone="p" text="PRESSURE" short="PRESS." state={state} />
+      <Gauge k="T" tone="t" text="TEMPERATURE" short="TEMP" state={state} />
     </div>
   );
 }
@@ -65,11 +116,14 @@ function Chamber({ sim, reducedMotion, label }) {
 /** Chamber column: the animated cylinder (the main focus) with a short piston caption and play/pause. */
 export function ChamberPanel({ sim, state, accent, playing, onTogglePlay, reducedMotion }) {
   const callout = CALLOUT[state.mode];
+  const boxRef = useRef(null);
+  const geo = useDeckGeometry(boxRef);
   const label = `Gas cylinder with ${Math.round(sim.particles.length)} particles at ${state.T.toFixed(0)} kelvin, ${state.V.toFixed(1)} litres, ${state.P.toFixed(2)} atmospheres, ${state.n.toFixed(2)} moles`;
   return (
     <DashPanel ariaLabel="Gas chamber" grow noBody className="!p-1.5">
-      <div className="sd-chamber" data-testid="chamber">
-        <Chamber sim={sim} reducedMotion={reducedMotion} label={label} />
+      <div className="sd-chamber" data-testid="chamber" ref={boxRef}>
+        <Chamber sim={sim} reducedMotion={reducedMotion} label={label} bottomInset={geo ? geo.reserve : DECK_RESERVE} />
+        <InstrumentDeck state={state} geo={geo} />
         <div className="sd-chamber-badge" style={{ background: accent.soft, borderColor: accent.border, color: accent.text }} data-testid="piston-callout">
           {callout.icon === "lock" ? <Lock size={13} className="shrink-0" aria-hidden="true" /> : <ArrowUpDown size={13} className="shrink-0" aria-hidden="true" />}
           {callout.text}
@@ -89,7 +143,7 @@ export function ChamberPanel({ sim, state, accent, playing, onTogglePlay, reduce
 }
 
 /** One-line strip of the four variables; the amount also follows the chosen unit. */
-export function LiveValues({ state, unit }) {
+export function LiveValues({ state, unit, note }) {
   const [announce, setAnnounce] = useState("");
   useEffect(() => {
     const t = setTimeout(() => {
@@ -106,9 +160,10 @@ export function LiveValues({ state, unit }) {
     title: VARS[k].name,
   });
   return (
-    <>
+    <div className="gl-live">
       <LiveStrip items={["P", "V", "T", "n"].map(item)} />
+      {note && <p className="gl-note" title={note} aria-live="polite" aria-atomic="true" data-testid="what-is-happening">{note}</p>}
       <p className="sd-sr" role="status" aria-live="polite">{announce}</p>
-    </>
+    </div>
   );
 }

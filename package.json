@@ -11,9 +11,10 @@
     "test:disaster-recovery": "node scripts/test-disaster-recovery.mjs",
     "test:scientific-rendering": "node scripts/test-scientific-rendering.mjs",
     "test:rich-text-selection": "node scripts/test-rich-text-selection.mjs",
-    "test": "npm run test:disaster-recovery && npm run test:scientific-rendering && npm run test:rich-text-selection && npm run test:ideal-gas && npm run test:gas-laws && npm run test:dashboard-layout && npm run test:image-viewer",
+    "test": "npm run test:disaster-recovery && npm run test:scientific-rendering && npm run test:rich-text-selection && npm run test:ideal-gas && npm run test:gas-laws && npm run test:gas-laws-ui && npm run test:dashboard-layout && npm run test:image-viewer",
     "test:ideal-gas": "node scripts/test-ideal-gas-model.mjs",
     "test:gas-laws": "node scripts/test-gas-laws-model.mjs",
+    "test:gas-laws-ui": "node scripts/test-gas-laws-ui.mjs",
     "test:dashboard-layout": "node scripts/test-dashboard-layout.mjs",
     "test:image-viewer": "node scripts/test-image-viewer.mjs",
     "verify:simulations": "node scripts/verify-simulation-dashboards.mjs"

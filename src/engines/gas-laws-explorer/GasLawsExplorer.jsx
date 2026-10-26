@@ -6,6 +6,7 @@ import {
 } from "./model.js";
 import { createSimulation } from "./physics.js";
 import { ACCENTS } from "./theme.js";
+import { LAW_INFO, lawHeading } from "./lawInfo.js";
 import { useReducedMotion } from "./useReducedMotion.js";
 import "./GasLawsExplorer.css";
 import ControlPanel, { GasLawsSettings } from "./components/ControlPanel.jsx";
@@ -154,8 +155,8 @@ function Workspace() {
   const tabs = MODE_IDS.map((id) => {
     const md = MODES[id];
     return {
-      id, label: md.short.replaceAll(" ", ""), icon: undefined, testId: `tab-${id}`,
-      title: `${md.title} (${md.short.replaceAll(" ", "")}): ${md.law}`,
+      id, label: md.short.replaceAll(" ", ""), sub: LAW_INFO[id].law, icon: undefined, testId: `tab-${id}`,
+      title: `${lawHeading(id)} (${md.short.replaceAll(" ", "")})`,
     };
   });
 
@@ -165,8 +166,8 @@ function Workspace() {
       role="tabpanel"
       ariaLabel={`${m.title} investigation`}
       title="Gas Laws Explorer"
-      subtitle={m.title}
-      subtitleLong={`${m.title} \u2013 ${m.law}`}
+      subtitle={<><span className="gl-h-full">{lawHeading(state.mode)}</span><span className="gl-h-short">{LAW_INFO[state.mode].law}</span></>}
+      subtitleLong={lawHeading(state.mode)}
       onReset={handleReset}
       graphShown={showGraph}
       onGraphToggle={() => setShowGraph((g) => !g)}
@@ -185,9 +186,9 @@ function Workspace() {
         <GraphPanel state={state} accent={accent} graphId={graphId} onGraphId={setGraphId} allView={allView}
           onToggleAll={() => setAllView((v) => !v)} onResetGraph={handleResetGraph} onOpenMode={handleOpenFromGrid} trail={history} />
       }
-      live={<LiveValues state={state} unit={unit} />}
+      live={<LiveValues state={state} unit={unit} note={explain.text} />}
       predict={<PredictPanel state={state} revealed={revealed} onToggle={() => setRevealed((r) => !r)} />}
-      explain={<ExplainLine text={explain.text} details={<ExplanationDetails mode={state.mode} />} />}
+      explain={<ExplainLine text={LAW_INFO[state.mode].sentence} testId="law-statement" details={<ExplanationDetails mode={state.mode} note={explain.text} />} />}
     />
   );
 }
