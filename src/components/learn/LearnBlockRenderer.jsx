@@ -93,7 +93,7 @@ export default function LearnBlockRenderer({ block }) {
       if (!Sim) return <PlaceholderBlock label="Simulation not yet configured" />;
       return (
         <Suspense fallback={<div className="flex justify-center py-8"><ELabLoader /></div>}>
-          <Sim compact />
+          <Sim compact config={c.simulationConfig} />
         </Suspense>
       );
     }

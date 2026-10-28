@@ -29,4 +29,5 @@ export const SIMULATION_COMPONENTS = {
   "ionization-energy-explorer": lazy(() => import("../engines/ionization-energy-explorer/IonizationEnergyExplorer.jsx")),
   "ideal-gas-simulation": lazy(() => import("../engines/ideal-gas-simulation/IdealGasSimulation.jsx")),
   "gas-laws-explorer": lazy(() => import("../engines/gas-laws-explorer/GasLawsExplorer.jsx")),
+  "bonding-visualizer": lazy(() => import("../engines/bonding-visualizer/BondingVisualizer.jsx")),
 };
