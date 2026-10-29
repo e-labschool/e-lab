@@ -14,7 +14,9 @@ import * as ME from "../src/engines/bonding-visualizer/model/metallic.js";
 import * as CF from "../src/engines/bonding-visualizer/model/config.js";
 import { ionicScene } from "../src/engines/bonding-visualizer/scene/ionicScene.js";
 import { covalentScene, layoutMolecule, atomsAreClose } from "../src/engines/bonding-visualizer/scene/covalentScene.js";
-import { metallicScene, assignSites } from "../src/engines/bonding-visualizer/scene/metallicScene.js";
+import * as MS from "../src/engines/bonding-visualizer/scene/metallicScene.js";
+import { isCrowded, DOT_RHO } from "../src/engines/bonding-visualizer/scene/covalentScene.js";
+import { moleculeStructure, minGap } from "../src/engines/bonding-visualizer/scene/moleculeStructure.js";
 
 let passed = 0; let failed = 0;
 function test(name, fn) {
@@ -275,36 +277,164 @@ test("every enabled compound's charge ratio equals its structure ratio, and no u
 });
 
 console.log("Metallic");
-test("[check 12] BCC sodium: 8 nearest neighbours; FCC 12; HCP 12 (computed from generated coordinates)", () => {
+const METALS = ["Na", "Li", "K", "Mg", "Ca", "Al"];
+const COUNTS = [1, 2, 6, 9, 20, 27, 70, 125, 126, 200];
+test("capacity is 200 atoms; +1/+5/+20/+50 steps clamp at the cap", () => {
+  assert.equal(ME.MAX_METAL_ATOMS, 200); assert.deepEqual(ME.ADD_STEPS, [1, 5, 20, 50]);
+  assert.deepEqual(ME.addCount(0, 50), { added: 50, total: 50, clamped: false });
+  let n = 0; for (const k of [50, 50, 50, 20, 20]) n = ME.addCount(n, k).total; assert.equal(n, 190);
+  assert.deepEqual(ME.addCount(190, 20), { added: 10, total: 200, clamped: true });
+  assert.deepEqual(ME.addCount(200, 1), { added: 0, total: 200, clamped: true });
+  assert.equal(ME.addCount(199, 5).total, 200);
+});
+test("counters follow the simplified model: ions = atoms, electrons = atoms x valence (Na 1, Mg 2, Al 3)", () => {
+  assert.deepEqual(ME.metalCounts("Na", 200), { atoms: 200, ions: 200, electrons: 200 });
+  assert.deepEqual(ME.metalCounts("Mg", 37), { atoms: 37, ions: 37, electrons: 74 });
+  assert.deepEqual(ME.metalCounts("Al", 200), { atoms: 200, ions: 200, electrons: 600 });
+  assert.equal(MS.MAX_ELECTRONS, 600); // the buffers hold the largest possible sea
+});
+test("[check 12] lattices are real: BCC 8, FCC 12, HCP 12 nearest neighbours, computed from generated coordinates", () => {
   assert.equal(ME.METAL_STRUCTURE.Na, "bcc");
-  const bcc = ME.centralCoordination("bcc", 2); assert.equal(bcc.count, 8); assert.ok(Math.abs(bcc.distance - 1) < 1e-9);
-  assert.equal(ME.centralCoordination("fcc", 2).count, 12); assert.equal(ME.centralCoordination("hcp", 2).count, 12);
-  const sites = ME.generateMetalLattice("bcc", 2); assert.equal(sites.length, 35);
-  const a = 2 / Math.sqrt(3); // cubic edge for d = 1
-  const xs = new Set(sites.map((s) => Math.round((s.x - sites[0].x) / (a / 2)))); assert.ok(xs.size === 5);
-  for (const s of ["bcc", "fcc", "hcp"]) { const st = ME.generateMetalLattice(s, 2); const interior = st.map((_, i) => i).filter((i) => ME.nearestNeighbourCount(st, i).count === ME.EXPECTED_NEIGHBOURS[s]); assert.ok(interior.length >= 1, s); }
+  for (const st of ["bcc", "fcc", "hcp"]) {
+    const sites = ME.latticeBlock(st, 200); assert.equal(sites.length, 200, st);
+    assert.equal(ME.maxCoordination(sites), ME.EXPECTED_NEIGHBOURS[st], st);
+    let interior = 0;
+    sites.forEach((_, i) => { const c = ME.nearestNeighbourCount(sites, i); assert.ok(Math.abs(c.distance - 1) < 1e-9, `${st} nn distance`); if (c.count === ME.EXPECTED_NEIGHBOURS[st]) interior += 1; });
+    assert.ok(interior >= 20, `${st}: ${interior} fully surrounded ions`);
+  }
+});
+test("Na BCC: every interior atom has exactly 8 nearest neighbours and none has more; 9 atoms = one body-centred cell", () => {
+  const sites = ME.latticeBlock("bcc", 200);
+  const counts = sites.map((_, i) => ME.nearestNeighbourCount(sites, i).count);
+  assert.ok(Math.max(...counts) === 8); assert.ok(counts.filter((c) => c === 8).length >= 40);
+  const cell = ME.latticeBlock("bcc", 9); const a = 2 / Math.sqrt(3);
+  assert.equal(cell.filter((p) => Math.abs(Math.abs(p.x) - a / 2) < 1e-9 && Math.abs(Math.abs(p.y) - a / 2) < 1e-9 && Math.abs(Math.abs(p.z) - a / 2) < 1e-9).length, 8);
+  assert.equal(cell.filter((p) => Math.hypot(p.x, p.y, p.z) < 1e-9).length, 1);
+});
+test("never invents atoms: n atoms give exactly n distinct lattice sites for every metal and count", () => {
+  for (const m of METALS) for (const n of COUNTS) {
+    const L = MS.latticeLayout(ME.METAL_STRUCTURE[m], n); assert.equal(L.sites.length, n, `${m} ${n}`);
+    assert.equal(new Set(L.sites.map((p) => [p.x, p.y, p.z].map((v) => v.toFixed(5)).join())).size, n, `${m} ${n} distinct`);
+  }
+});
+test("all lattice cores lie inside the cube (with their radius) for every metal at several counts; nothing overlaps", () => {
+  for (const m of METALS) for (const n of COUNTS) {
+    const L = MS.latticeLayout(ME.METAL_STRUCTURE[m], n);
+    assert.equal(L.H, MS.cubeHalf(n));
+    for (const p of L.sites) for (const c of [p.x, p.y, p.z]) assert.ok(Math.abs(c) + L.coreRadius <= L.H + 1e-9, `${m} ${n}: ${c} vs ${L.H}`);
+    if (n >= 2) { let min = Infinity; for (let i = 0; i < n; i += 1) for (let j = i + 1; j < n; j += 1) min = Math.min(min, Math.hypot(L.sites[i].x - L.sites[j].x, L.sites[i].y - L.sites[j].y, L.sites[i].z - L.sites[j].z)); assert.ok(min > 2 * L.coreRadius, `${m} ${n}: cores overlap`); }
+  }
+});
+test("cube size grows with the count and is never smaller than the placement needs; 200 atoms fit", () => {
+  let prev = 0; for (let n = 1; n <= 200; n += 1) { const h = MS.cubeHalf(n); assert.ok(h >= prev && h >= 2.4); prev = h; }
+  assert.ok(MS.cubeHalf(200) < 6.5);
+});
+test("'arrange atoms' placement scales to 200: inside the cube, no overlapping atoms, +N appends without moving old atoms", () => {
+  let pos = [];
+  for (const k of [1, 5, 20, 50, 50, 50, 24]) {
+    const fresh = MS.placeNewAtoms(pos, k, pos.length); assert.equal(fresh.length, k);
+    const before = pos.slice(); pos = [...pos, ...fresh];
+    assert.deepEqual(pos.slice(0, before.length), before);
+    const H = MS.cubeHalf(pos.length);
+    for (const p of pos) for (const c of p) assert.ok(Math.abs(c) + MS.R_ATOM <= H + 1e-9);
+  }
+  assert.equal(pos.length, 200);
+  let min = Infinity; for (let i = 0; i < 200; i += 1) for (let j = i + 1; j < 200; j += 1) min = Math.min(min, Math.hypot(pos[i][0] - pos[j][0], pos[i][1] - pos[j][1], pos[i][2] - pos[j][2]));
+  assert.ok(min > 2 * MS.R_ATOM, `closest pair ${min}`);
 });
 test("valence electrons come from the outer shell: Na 1, Mg 2, Al 3; metals map to real structures", () => {
-  assert.deepEqual(["Na", "Li", "K", "Mg", "Ca", "Al"].map(ME.valenceElectrons), [1, 1, 1, 2, 2, 3]);
-  assert.deepEqual(["Na", "Li", "K", "Mg", "Ca", "Al"].map((s) => ME.METAL_STRUCTURE[s]), ["bcc", "bcc", "bcc", "hcp", "fcc", "fcc"]);
+  assert.deepEqual(METALS.map(ME.valenceElectrons), [1, 1, 1, 2, 2, 3]);
+  assert.deepEqual(METALS.map((s) => ME.METAL_STRUCTURE[s]), ["bcc", "bcc", "bcc", "hcp", "fcc", "fcc"]);
   assert.equal(ME.analyzeMetals([]).status, "empty"); assert.equal(ME.analyzeMetals(["Na"]).status, "few"); assert.equal(ME.analyzeMetals(["Na", "Na"]).status, "valid");
   assert.equal(ME.analyzeMetals(["Na", "Mg"]).status, "unsupported");
 });
-test("[check 12] metallic scene: positive cores and delocalised electrons throughout a 3D structure, cores fixed", () => {
-  const sites = ME.generateMetalLattice("bcc", 2); const at = [[0, 0, 0], [1.4, 0, 0], [0, 1.4, 0.3]]; const assign = assignSites(at, sites);
-  assert.equal(new Set(assign).size, 3);
-  const s0 = metallicScene({ atoms: at, sites, assign, stage: "place", v: 1 });
-  assert.ok(s0.cores.every((c) => c.mix === 0));
-  const rel = metallicScene({ atoms: at, sites, assign, stage: "released", p: 1, time: 3, v: 1 });
-  assert.ok(rel.cores.every((c) => c.mix === 1)); assert.equal(rel.electrons.length, 3);
-  const lat1 = metallicScene({ atoms: at, sites, assign, stage: "lattice", p: 1, time: 1, v: 1 });
-  const lat2 = metallicScene({ atoms: at, sites, assign, stage: "lattice", p: 1, time: 7, v: 1 });
-  assert.equal(lat1.cores.length, 35); assert.equal(lat1.electrons.length, 35);
-  assert.deepEqual(lat1.cores.map((c) => c.pos), lat2.cores.map((c) => c.pos)); // cores fixed
-  assert.notDeepEqual(lat1.electrons.map((e) => e.pos), lat2.electrons.map((e) => e.pos)); // electrons move
-  for (const ax of [0, 1, 2]) assert.ok(new Set(lat1.electrons.map((e) => e.pos[ax].toFixed(3))).size > 20); // spread over all three axes
-  const al = metallicScene({ atoms: at, sites: ME.generateMetalLattice("fcc", 2), assign: assignSites(at, ME.generateMetalLattice("fcc", 2)), stage: "lattice", p: 1, v: ME.valenceElectrons("Al") });
-  assert.equal(al.electrons.length, 63 * 3);
+test("[check 12] metallic engine: positive cores and delocalised electrons throughout the cube, cores fixed in the lattice", () => {
+  for (const [metal, n] of [["Na", 40], ["Al", 200], ["Mg", 7]]) {
+    const st = ME.METAL_STRUCTURE[metal]; const v = ME.valenceElectrons(metal);
+    const L = MS.latticeLayout(st, n);
+    const atoms3 = MS.placeNewAtoms([], n, 0); const assign = MS.assignSites(atoms3, L.sites);
+    assert.equal(new Set(assign).size, n);
+    const atomPos = new Float32Array(n * 3); atoms3.forEach((p, i) => atomPos.set(p, i * 3));
+    const sitePos = new Float32Array(n * 3); assign.forEach((j, i) => { sitePos[i * 3] = L.sites[j].x; sitePos[i * 3 + 1] = L.sites[j].y; sitePos[i * 3 + 2] = L.sites[j].z; });
+    const eng = MS.createEngine();
+    const base = { atomPos, sitePos, n, v, H: L.H, u: L.u };
+    MS.stepEngine(eng, { ...base, stage: "place", p: 0, time: 1 });
+    assert.equal(eng.mix, 0); assert.equal(eng.nElec, n * v);
+    MS.stepEngine(eng, { ...base, stage: "released", p: 1, time: 3 }); assert.equal(eng.mix, 1); assert.equal(eng.nElec, n * v);
+    const lim = L.H - MS.R_ELECTRON;
+    const snaps = [1, 7, 20].map((t) => { MS.stepEngine(eng, { ...base, stage: "lattice", p: 1, time: t }); return { cores: Array.from(eng.corePos.slice(0, n * 3)), e: Array.from(eng.elecPos.slice(0, n * v * 3)) }; });
+    assert.deepEqual(snaps[0].cores, snaps[1].cores); assert.notDeepEqual(snaps[0].e, snaps[1].e);
+    for (const sn of snaps) for (const c of sn.e) assert.ok(Math.abs(c) <= lim + 1e-5, `${metal} ${n}: electron outside cube`);
+    if (n >= 40) for (const ax of [0, 1, 2]) assert.ok(new Set(snaps[0].e.filter((_, k) => k % 3 === ax).map((x) => x.toFixed(2))).size > 20);
+    // every stage keeps electrons inside the cube (orbiting atoms, releasing, forming)
+    for (const [stage, p] of [["place", 0], ["releasing", 0.4], ["forming", 0.3], ["forming", 0.9]]) {
+      for (const t of [0.5, 4.2]) { MS.stepEngine(eng, { ...base, stage, p, time: t }); for (let k = 0; k < eng.nElec * 3; k += 1) assert.ok(Math.abs(eng.elecPos[k]) <= lim + 1e-5, `${stage} ${p}`); for (let k = 0; k < n * 3; k += 1) assert.ok(Math.abs(eng.corePos[k]) <= L.H, "core inside"); }
+    }
+  }
+});
+test("engine allocates nothing per step (buffers are reused)", () => {
+  const eng = MS.createEngine(); const n = 200; const atomPos = new Float32Array(n * 3); const a0 = eng.corePos; const e0 = eng.elecPos;
+  for (let t = 0; t < 5; t += 1) MS.stepEngine(eng, { atomPos, sitePos: null, n, v: 3, stage: "released", p: 1, time: t, H: 5.5, u: 1 });
+  assert.equal(eng.corePos, a0); assert.equal(eng.elecPos, e0);
+});
+
+console.log("Covalent final structures");
+test("crowding is detected from geometry (full outer shells of non-bonded atoms overlap): exactly PCl5 and SF6", () => {
+  assert.deepEqual(CO.MOLECULES.filter(isCrowded).map((m) => m.id), ["PCl5", "SF6"]);
+  assert.ok(DOT_RHO > 0);
+});
+test("crowded molecules use the valence-dot drawing: no shell rings, every electron kept, colours by atom of origin", () => {
+  for (const id of ["PCl5", "SF6"]) {
+    const m = CO.getMolecule(id); const at = atoms(...m.atoms);
+    const full = at.reduce((n, a) => n + EL.getBondingElement(a.symbol).Z, 0);
+    for (const p of [0, 0.15, 0.5, 0.85, 1]) {
+      const sc = covalentScene({ atoms: at, molecule: m, stage: p === 1 ? "bonded" : "bonding", p, world });
+      assert.equal(sc.crowded, true);
+      assert.equal(sc.atoms.reduce((n, a) => n + a.electrons.length, 0), full, `${id} p=${p}: electrons are never deleted`);
+      for (const a of sc.atoms) for (const e of a.electrons) if (!e.core) assert.equal(e.color, sc.atoms.find((x) => x.id === a.id).electrons.find((q) => !q.core).color);
+    }
+    const end = covalentScene({ atoms: at, molecule: m, stage: "bonded", p: 1, world });
+    assert.ok(end.atoms.every((a) => a.rings.every((r) => r.opacity < 0.01)), `${id}: no Bohr shell rings drawn in the final electron picture`);
+    assert.equal(end.lenses.length, 0);
+    // shared / lone electrons: 6 (SF6) or 5 (PCl5) shared pairs = 2 electrons each, one from each atom
+    const shared = end.atoms.flatMap((a) => a.electrons.filter((e) => e.state === "shared"));
+    assert.equal(shared.length, 2 * CO.totalSharedPairs(m)); assert.equal(end.atoms.flatMap((a) => a.electrons.filter((e) => e.state === "lone")).length, 2 * CO.totalLonePairs(m));
+    // electron dots never sit on top of each other and valence rings of different atoms do not overlap
+    const dots = end.atoms.flatMap((a) => a.electrons);
+    let min = Infinity; for (let i = 0; i < dots.length; i += 1) for (let j = i + 1; j < dots.length; j += 1) min = Math.min(min, Math.hypot(dots[i].x - dots[j].x, dots[i].y - dots[j].y));
+    assert.ok(min > 2 * 3.2, `${id}: closest electron dots ${min.toFixed(1)}`);
+    for (let i = 0; i < end.atoms.length; i += 1) for (let j = i + 1; j < end.atoms.length; j += 1) assert.ok(Math.hypot(end.atoms[i].x - end.atoms[j].x, end.atoms[i].y - end.atoms[j].y) > end.atoms[i].outerR + end.atoms[j].outerR - 1e-6, `${id}: valence discs overlap`);
+  }
+  // uncrowded molecules keep the normal shell drawing and lens overlap
+  const h2o = CO.getMolecule("H2O"); const sc = covalentScene({ atoms: atoms(...h2o.atoms), molecule: h2o, stage: "bonded", p: 1, world });
+  assert.equal(sc.crowded, false); assert.ok(sc.lenses.length === 2 && sc.atoms.every((a) => a.rings[0].opacity === 1));
+});
+test("SF6 final structure: 1 S at the centre, 6 F in an octahedron at equal distance, 6 single bonds, Lewis counts correct", () => {
+  const m = CO.getMolecule("SF6"); const st = moleculeStructure(m);
+  assert.equal(st.atoms.length, 7); assert.equal(st.atoms.filter((a) => a.symbol === "S").length, 1); assert.equal(st.atoms.filter((a) => a.symbol === "F").length, 6);
+  const S = st.atoms[0]; assert.deepEqual(S.pos.map((c) => Math.abs(c) < 1e-9), [true, true, true]);
+  assert.equal(st.bonds.length, 6); assert.ok(st.bonds.every((b) => b.i === 0 && b.order === 1));
+  const F = st.atoms.slice(1); const d = Math.hypot(...F[0].pos);
+  for (const f of F) assert.ok(Math.abs(Math.hypot(...f.pos) - d) < 1e-9);
+  const axes = F.map((f) => f.pos.map((c) => Math.round(c / d))); // +-x, +-y, +-z
+  assert.deepEqual(new Set(axes.map((a) => a.join())), new Set(["1,0,0", "-1,0,0", "0,1,0", "0,-1,0", "0,0,1", "0,0,-1"]));
+  for (let i = 0; i < 6; i += 1) for (let j = i + 1; j < 6; j += 1) { const dot = F[i].pos.reduce((s, c, k) => s + c * F[j].pos[k], 0) / (d * d); assert.ok(Math.abs(dot) < 1e-9 || Math.abs(dot + 1) < 1e-9, "octahedral: 90 or 180 degrees only"); }
+  assert.equal(CO.sharedPairsOn(m, 0), 6); assert.equal(CO.electronsAround(m, 0), 12); assert.equal(m.lonePairs.slice(1).every((x) => x === 3), true); assert.equal(CO.electronsAround(m, 1), 8);
+});
+test("every molecule's final structure matches the molecule table (atoms, bond orders, valence/lone pairs) and nothing overlaps", () => {
+  for (const m of CO.MOLECULES) {
+    assert.deepEqual(CO.validateMolecule(m), [], m.id);
+    const st = moleculeStructure(m);
+    assert.deepEqual(st.atoms.map((a) => a.symbol), m.atoms, m.id);
+    assert.deepEqual(st.bonds.map((b) => [b.i, b.j, b.order]), m.bonds, m.id);
+    st.atoms.forEach((a, i) => { assert.equal(2 * m.lonePairs[i] + st.bonds.reduce((n, b) => n + (b.i === i || b.j === i ? b.order : 0), 0), EL.getBondingElement(a.symbol).valence, `${m.id} atom ${i}`); });
+    assert.ok(minGap(st) > 0.1, `${m.id}: spheres overlap (gap ${minGap(st).toFixed(3)})`);
+    for (const a of st.atoms) a.pos.forEach((c) => assert.ok(Number.isFinite(c)));
+    const c = [0, 1, 2].map((ax) => (Math.min(...st.atoms.map((a) => a.pos[ax])) + Math.max(...st.atoms.map((a) => a.pos[ax]))) / 2); c.forEach((v) => assert.ok(Math.abs(v) < 1e-9, `${m.id} centred`));
+  }
+  const orders = (id) => moleculeStructure(CO.getMolecule(id)).bonds.map((b) => b.order);
+  assert.deepEqual(orders("O2"), [2]); assert.deepEqual(orders("N2"), [3]); assert.deepEqual(orders("CH4"), [1, 1, 1, 1]);
+  assert.equal(moleculeStructure(CO.getMolecule("PCl5")).bonds.length, 5); assert.equal(moleculeStructure(CO.getMolecule("BF3")).atoms.length, 4);
 });
 
 console.log("Lesson configuration");

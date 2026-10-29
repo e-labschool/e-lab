@@ -17,7 +17,7 @@ const matches = (e, q) => {
  * - drag (mouse, pen)            -> onAdd(symbol, {clientX, clientY}) when released over `dropRef`
  * `disabledReason` (string) disables adding and shows why.
  */
-export default function ElementLibrary({ title = "Elements", groups, onAdd, dropRef, disabledReason, hint, mode }) {
+export default function ElementLibrary({ title = "Elements", groups, onAdd, dropRef, disabledReason, hint, mode, footer }) {
   const [query, setQuery] = useState("");
   const [ghost, setGhost] = useState(null);
   const press = useRef(null);
@@ -87,6 +87,7 @@ export default function ElementLibrary({ title = "Elements", groups, onAdd, drop
         ))}
         {total === 0 && <p className="bv-empty" data-testid="library-empty">{outside}</p>}
       </div>
+      {footer}
       {disabledReason && <p className="bv-lock" data-testid="library-lock">{disabledReason}</p>}
       {ghost && createPortal(<div className="bv-ghost" style={{ left: ghost.x, top: ghost.y, background: ghost.color }} aria-hidden="true">{ghost.symbol}</div>, ghost.host)}
     </DashPanel>

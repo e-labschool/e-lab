@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Merge, Pause, Play, Repeat, RotateCcw, Trash2, Shrink } from "lucide-react";
 import { MiniSwitch } from "../../../components/simulation/SimulationDashboard.jsx";
 import ElementLibrary from "./ElementLibrary.jsx";
@@ -13,6 +13,25 @@ import {
 import { atomsAreClose, covalentScene, covalentSize, gatherTargets } from "../scene/covalentScene.js";
 import { ringRadius } from "../scene/atomGeometry.js";
 import { getBondingElement } from "../model/elements.js";
+
+// The final sphere-and-bond structure (three.js) is loaded only when a molecule has been bonded.
+const MoleculeView = lazy(() => import("./MoleculeView.jsx"));
+const HOLD = 1.3; // seconds the finished electron-sharing picture stays before the structure fades in
+const FADE = 0.9;
+const SUBS = "₀₁₂₃₄₅₆₇₈₉";
+/** Splits "SF₆" into [{t:"SF"},{t:"6",sub:true}] so subscripts can be drawn as real subscripts. */
+function subParts(str) {
+  const out = [];
+  for (const ch of str) {
+    const k = SUBS.indexOf(ch);
+    const sub = k >= 0;
+    const t = sub ? String(k) : ch;
+    if (out.length && !!out[out.length - 1].sub === sub) out[out.length - 1].t += t; else out.push({ t, sub });
+  }
+  return out;
+}
+const HtmlSubs = ({ text }) => subParts(text).map((q, i) => (q.sub ? <sub key={i}>{q.t}</sub> : <span key={i}>{q.t}</span>));
+const SvgSubs = ({ text, size }) => subParts(text).map((q, i) => (q.sub ? <tspan key={i} dy={size * 0.22} fontSize={size * 0.68}>{q.t}</tspan> : <tspan key={i} dy={i && subParts(text)[i - 1].sub ? -size * 0.22 : undefined}>{q.t}</tspan>));
 
 const MAX_ATOMS = 8;
 const DUR_BOND = 4.2;
@@ -45,6 +64,7 @@ export default function CovalentMode({ tabs, onReset }) {
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [playing, setPlaying] = useState(true);
   const [time, setTime] = useState(0);
+  const [bondedT, setBondedT] = useState(0);
   const [selected, setSelected] = useState(null);
   const [groupState, setGroupState] = useState("normal");
   const [orderState, setOrderState] = useState(1);
@@ -73,7 +93,9 @@ export default function CovalentMode({ tabs, onReset }) {
       setAtoms((l) => l.map((a) => { const f = tw.from[a.id]; const to = tw.to[a.id]; return f && to ? { ...a, x: f.x + (to.x - f.x) * e, y: f.y + (to.y - f.y) * e } : a; }));
       if (tw.t >= 1) tween.current = null;
     }
+    if (stage !== "bonded") setBondedT((t) => (t === 0 ? t : 0));
     if (!playing) return;
+    setBondedT((t) => (stage === "bonded" ? t + dt : t));
     if (!reduced) setTime((t) => t + dt);
     setAnim((a) => {
       if (a.stage !== "bonding") return a;
@@ -82,6 +104,8 @@ export default function CovalentMode({ tabs, onReset }) {
     });
   });
 
+  const settle = stage === "bonded" && molecule ? Math.min(1, Math.max(0, (bondedT - (reduced ? 0.2 : HOLD)) / (reduced ? 0.2 : FADE))) : 0;
+  const smooth = settle * settle * (3 - 2 * settle);
   const scene = useMemo(() => covalentScene({ atoms, molecule, stage, p: anim.p, time, world, offset }), [atoms, molecule, stage, anim.p, time, world, offset]);
 
   const touch = () => { pristine.current = false; };
@@ -134,7 +158,7 @@ export default function CovalentMode({ tabs, onReset }) {
 
   const moveAtom = useCallback((id, x, y) => { touch(); setAtoms((l) => l.map((a) => (a.id === id ? { ...a, x, y } : a))); }, []);
   const groupMove = useCallback((dx, dy) => setOffset((o) => ({ x: o.x + dx, y: o.y + dy })), []);
-  const bind = useAtomDrag({ toWorld, world, enabled: inSetup, onMove: moveAtom, onSelect: setSelected, onGroupMove: groupMove, groupEnabled: stage === "bonded" });
+  const bind = useAtomDrag({ toWorld, world, enabled: inSetup, onMove: moveAtom, onSelect: setSelected, onGroupMove: groupMove, groupEnabled: stage === "bonded" && settle === 0 });
 
   const onKeyDown = (e) => {
     if (!selected || !inSetup) return;
@@ -199,8 +223,8 @@ export default function CovalentMode({ tabs, onReset }) {
   const library = <ElementLibrary groups={GROUPS} onAdd={addAtom} dropRef={boxRef} disabledReason={lockReason} mode="covalent" hint="Start with two H, or load an example above the canvas." />;
 
   const canvas = (
-    <div className="bv-canvas" ref={boxRef} tabIndex={0} onKeyDown={onKeyDown} data-testid="canvas" data-stage={stage} data-formula={molecule?.id ?? ""} data-atoms={atoms.length} data-close={close ? "1" : "0"} aria-label="Covalent bonding canvas. Arrow keys move the selected atom.">
-      <svg ref={svgRef} className="bv-svg" viewBox={`0 0 ${world.W} ${world.H}`} preserveAspectRatio="xMidYMid meet" onPointerDown={(e) => { if (e.target === e.currentTarget) setSelected(null); }} role="img" aria-label={atoms.length ? `${atoms.length} atoms` : "Empty canvas"}>
+    <div className="bv-canvas" ref={boxRef} tabIndex={0} onKeyDown={onKeyDown} data-testid="canvas" data-stage={stage} data-formula={molecule?.id ?? ""} data-atoms={atoms.length} data-close={close ? "1" : "0"} data-crowded={scene.crowded ? "1" : "0"} data-view={settle >= 1 ? "structure" : "lewis"} aria-label="Covalent bonding canvas. Arrow keys move the selected atom.">
+      <svg ref={svgRef} className="bv-svg" style={settle > 0 ? { opacity: 1 - smooth } : undefined} viewBox={`0 0 ${world.W} ${world.H}`} preserveAspectRatio="xMidYMid meet" onPointerDown={(e) => { if (e.target === e.currentTarget) setSelected(null); }} role="img" aria-label={atoms.length ? `${atoms.length} atoms` : "Empty canvas"}>
         <defs>
           {scene.lenses.map((l, i) => (
             <g key={`d${i}`}>
@@ -209,26 +233,34 @@ export default function CovalentMode({ tabs, onReset }) {
             </g>
           ))}
         </defs>
-        {scene.atoms.map((a) => {
+        {settle < 1 && scene.atoms.map((a) => {
           const src = atoms.find((x) => x.id === a.id);
           const el = a.electrons.find((e) => !e.core);
           return <AtomBody key={a.id} a={a} cloud={done ? el?.color : null} testId={`atom-${a.symbol}`} selected={selected === a.id && inSetup} dragProps={bind(a.id, () => ({ x: src.x, y: src.y }))} />;
         })}
-        {scene.lenses.map((l, i) => (
+        {settle < 1 && scene.lenses.map((l, i) => (
           <circle key={`l${i}`} cx={l.bx} cy={l.by} r={l.br} fill={`url(#bv-grad-${i})`} fillOpacity={0.38 * l.opacity} clipPath={`url(#bv-clip-${i})`} data-testid="overlap" pointerEvents="none" />
         ))}
-        <Electrons atoms={scene.atoms} />
-        {stage === "bonded" && molecule && (
+        {settle < 1 && <Electrons atoms={scene.atoms} />}
+        {stage === "bonded" && molecule && settle < 1 && (
           <g pointerEvents="none" data-testid="molecule-label">
-            <text x={scene.centroid.x} y={Math.min(world.H - 30, scene.bottom + 38)} textAnchor="middle" fontSize="26" fontWeight="800" fill="#14226b">{molecule.formula}</text>
-            <text x={scene.centroid.x} y={Math.min(world.H - 8, scene.bottom + 62)} textAnchor="middle" fontSize="19" fontWeight="700" fill="#33415f" letterSpacing="1">{molecule.structural}</text>
+            <text x={scene.centroid.x} y={Math.min(world.H - 30, scene.bottom + 38)} textAnchor="middle" fontSize="26" fontWeight="800" fill="#14226b"><SvgSubs text={molecule.formula} size={26} /></text>
+            <text x={scene.centroid.x} y={Math.min(world.H - 8, scene.bottom + 62)} textAnchor="middle" fontSize="19" fontWeight="700" fill="#33415f" letterSpacing="1"><SvgSubs text={molecule.structural} size={19} /></text>
           </g>
         )}
       </svg>
+      {settle > 0 && molecule && (
+        <div className="bv-structure" data-on={settle >= 1 ? "1" : "0"} style={{ opacity: smooth }} data-testid="structure-layer">
+          <Suspense fallback={null}><MoleculeView molecule={molecule} playing={playing} reduced={reduced} /></Suspense>
+          <div className="bv-mol-label" data-testid="molecule-label"><b><HtmlSubs text={molecule.formula} /></b><span><HtmlSubs text={molecule.structural} /></span></div>
+        </div>
+      )}
       {atoms.length === 0 && <p className="bv-placeholder">Click or drag an atom from the library</p>}
       {centralText && <span className="bv-pill" data-testid="central-count">{centralText}</span>}
-      {stage === "bonding" && <span className="bv-badge bv-badge--green" data-testid="stage-badge">Sharing electrons</span>}
-      {stage === "bonded" && <p className="bv-note" data-testid="lewis-note">Each shared pair has one electron from each atom (colours kept). Lewis diagram: electrons only, not molecular shape.</p>}
+      {stage === "bonding" && <span className="bv-badge bv-badge--green" data-testid="stage-badge">{scene.crowded ? "Sharing electrons (valence dots only)" : "Sharing electrons"}</span>}
+      {stage === "bonded" && (settle < 1
+        ? <p className="bv-note" data-testid="lewis-note">Each shared pair has one electron from each atom (colours kept). Lewis diagram: electrons only, not molecular shape.</p>
+        : <p className="bv-note" data-testid="structure-note">Final structure: spheres are atoms, bonds are shared pairs (2 or 3 lines for double or triple). Drag to rotate.</p>)}
       {selected && inSetup && (
         <button type="button" className="bv-corner-btn" onClick={removeSelected} data-testid="tool-remove" aria-label="Remove selected atom" title="Remove selected atom"><Trash2 size={15} aria-hidden="true" /></button>
       )}

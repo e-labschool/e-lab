@@ -160,7 +160,7 @@ await test("[check 9] H2 bond: shared pair keeps both colours, overlap shown, H�
   await until(() => stage() === "bonded", 6000, "bonded");
   const shared = $$('[data-testid="electrons"] circle[data-state="shared"]'); assert.equal(shared.length, 2);
   assert.notEqual(shared[0].getAttribute("fill"), shared[1].getAttribute("fill"));
-  assert.ok($('[data-testid="overlap"]')); assert.match(txt('[data-testid="molecule-label"]'), /H₂\s*H–H/);
+  assert.ok($('[data-testid="overlap"]')); assert.match(txt('[data-testid="molecule-label"]'), /H2\s*H–H/);
   assert.equal(txt('[data-testid="live-shared"] dd'), "1"); assert.equal(txt('[data-testid="live-lone"] dd'), "0"); assert.equal(txt('[data-testid="live-charge"] dd'), "0");
   assert.match(txt('[data-testid="bv-explain"]'), /one from each H/);
   await click('[data-testid="tool-replay"]'); assert.equal(stage(), "bonding"); await until(() => stage() === "bonded", 6000, "bonded again");
@@ -209,6 +209,75 @@ await test("metallic mode opens its own 3D workspace and controls (WebGL fallbac
   assert.equal($('[data-testid="canvas"]').getAttribute("data-atoms"), "2");
   await click('[data-testid="tool-release"]'); await tick(200);
   assert.ok(["releasing", "released"].includes(stage()), stage());
+});
+
+await test("[spec 1] metallic add buttons: +1, +5, +20, +50 add that many atoms, counters follow, the 200 cap clamps and disables", async () => {
+  await click('[data-testid="tool-reset"]'); await tick(100);
+  await until(() => $('[data-testid="add-50"]'), 8000, "add buttons");
+  assert.deepEqual($$('.bv-addbtn').map((b) => b.textContent.trim()), ["+1", "+5", "+20", "+50"]);
+  const n = () => Number($('[data-testid="canvas"]').getAttribute("data-atoms"));
+  assert.equal(n(), 0); assert.match(txt('[data-testid="atom-count"]'), /^0 \/ 200$/);
+  await click('[data-testid="add-1"]'); assert.equal(n(), 1);
+  await click('[data-testid="add-5"]'); assert.equal(n(), 6);
+  await click('[data-testid="add-20"]'); assert.equal(n(), 26);
+  await click('[data-testid="add-50"]'); assert.equal(n(), 76);
+  assert.match(txt('[data-testid="atom-count"]'), /^76 \/ 200$/); assert.equal(txt('[data-testid="live-cores"] dd'), "76");
+  for (const k of [50, 50]) await click(`[data-testid="add-${k}"]`);
+  assert.equal(n(), 176); await click('[data-testid="add-50"]'); assert.equal(n(), 200);
+  assert.match(txt('[data-testid="bv-explain"]'), /Added 24 of 50: the limit is 200/);
+  assert.ok($$('.bv-addbtn').every((b) => b.disabled), "all four buttons disabled at the limit"); assert.ok($('[data-testid="atom-limit"]'));
+  await click('[data-testid="el-Na"]'); assert.equal(n(), 200); assert.match(txt('[data-testid="bv-explain"]'), /Limit reached/);
+  await click('[data-testid="tool-release"]'); await until(() => ["releasing", "released"].includes(stage()), 3000, "releasing");
+  assert.ok($$('.bv-addbtn').every((b) => b.disabled), "no adding after release");
+  // (the release/lattice animations are driven by the WebGL frame loop, which jsdom does not have; counters after release are
+  // covered by metalCounts in test-bonding-model.mjs and by the headless Chromium run)
+  await click('[data-testid="tool-reset"]'); await tick(100); assert.equal(n(), 0);
+});
+await test("[spec 1] the selected metal is used by the add buttons; one metal at a time (alloys refused)", async () => {
+  await click('[data-testid="el-Mg"]'); await click('[data-testid="add-20"]'); await click('[data-testid="add-5"]'); await click('[data-testid="add-5"]');
+  assert.equal($('[data-testid="canvas"]').getAttribute("data-atoms"), "31"); assert.match($('[data-testid="add-atoms"]').getAttribute("aria-label"), /Mg/);
+  await click('[data-testid="el-Al"]'); assert.match(txt('[data-testid="bv-explain"]'), /one metal at a time/); assert.equal($('[data-testid="canvas"]').getAttribute("data-atoms"), "31");
+  await click('[data-testid="tool-release"]'); await until(() => ["releasing", "released"].includes(stage()), 3000, "releasing");
+  assert.equal(txt('[data-testid="live-metal"] dd'), "Mg 2,8,2");
+  await click('[data-testid="tool-reset"]'); await tick(100);
+});
+await test("[spec 3] covalent: after bonding the Lewis picture hands over to a clean sphere-and-bond structure (SF6: 1 S + 6 F, 6 single bonds)", async () => {
+  await click('[data-testid="tab-covalent"]'); await tick(80);
+  await click($$('[role="radio"]').find((r) => r.textContent.includes("Expanded Octet")));
+  await click('[data-testid="example-SF6"]'); await click('[data-testid="tool-bring"]'); await tick(700);
+  await click('[data-testid="tool-form-bond"]'); assert.equal($('[data-testid="canvas"]').getAttribute("data-crowded"), "1");
+  await until(() => $$('[data-testid^="atom-"]').length === 7, 1000, "7 atoms");
+  assert.ok($$('[data-testid^="atom-"]').every((a) => a.getAttribute("data-rings") === "0" || stage() === "bonding"));
+  await until(() => stage() === "bonded", 6000, "bonded");
+  assert.equal($$('[data-testid="electrons"] circle[data-state="shared"]').length, 12); assert.equal($$('[data-testid="electrons"] circle[data-state="lone"]').length, 36);
+  assert.ok($$('[data-testid^="atom-"]').every((a) => a.getAttribute("data-rings") === "0"), "no shell rings in the dot view");
+  await until(() => $('[data-testid="canvas"]').getAttribute("data-view") === "structure", 6000, "structure view");
+  await until(() => $('[data-testid="structure"]'), 6000, "structure mounted");
+  const st = $('[data-testid="structure"]');
+  assert.equal(st.getAttribute("data-atoms"), "7"); assert.equal(st.getAttribute("data-bonds"), "6");
+  assert.equal($$('[data-testid="struct-atom"]').filter((a) => a.dataset.symbol === "S").length, 1); assert.equal($$('[data-testid="struct-atom"]').filter((a) => a.dataset.symbol === "F").length, 6);
+  assert.equal($$('[data-testid="struct-bond"]').length, 6); assert.ok($$('[data-testid="struct-bond"]').every((b) => b.dataset.order === "1"));
+  assert.equal($$('[data-testid^="atom-"]').length, 0, "overlapping shell diagrams are gone"); assert.equal($$('[data-testid="electrons"] circle').length, 0);
+  assert.match(txt('[data-testid="molecule-label"]'), /^SF6S\(–F\)6$/);
+  assert.equal(txt('[data-testid="live-shared"] dd'), "6"); assert.equal(txt('[data-testid="live-lone"] dd'), "18"); assert.equal(txt('[data-testid="live-central"] dd'), "12"); assert.match(txt('[data-testid="central-count"]'), /S has 12 electrons/);
+  await click('[data-testid="tool-replay"]'); assert.equal(stage(), "bonding"); assert.equal($('[data-testid="structure"]'), null, "replay returns to the electron-sharing picture");
+  await until(() => stage() === "bonded", 6000, "bonded again");
+  await click('[data-testid="tool-reset"]'); await tick(80); assert.equal(stage(), "setup"); assert.equal($('[data-testid="canvas"]').getAttribute("data-formula"), "H2");
+});
+await test("[spec 3] every supported molecule ends in a sphere-and-bond structure with the right atoms and bond orders", async () => {
+  const want = { H2: [2, [1]], Cl2: [2, [1]], HCl: [2, [1]], O2: [2, [2]], N2: [2, [3]], H2O: [3, [1, 1]], NH3: [4, [1, 1, 1]], CH4: [5, [1, 1, 1, 1]], BF3: [4, [1, 1, 1]], BeCl2: [3, [1, 1]], PCl5: [6, [1, 1, 1, 1, 1]], SF6: [7, [1, 1, 1, 1, 1, 1]] };
+  const groups = { H2: "Normal", Cl2: "Normal", HCl: "Normal", O2: "Double", N2: "Triple", H2O: "Normal", NH3: "Normal", CH4: "Normal", BF3: "Incomplete", BeCl2: "Incomplete", PCl5: "Expanded", SF6: "Expanded" };
+  for (const [id, [nAtoms, orders]] of Object.entries(want)) {
+    await click('[data-testid="tool-reset"]'); await tick(60); await click('[data-testid="tab-covalent"]').catch(() => {}); await tick(30);
+    await click($$('[role="radio"]').find((r) => r.textContent.includes(groups[id])));
+    await click(`[data-testid="example-${id}"]`); await click('[data-testid="tool-bring"]'); await tick(700);
+    await click('[data-testid="tool-form-bond"]'); await until(() => stage() === "bonded", 8000, `${id} bonded`);
+    await until(() => $('[data-testid="canvas"]').getAttribute("data-view") === "structure" && $('[data-testid="structure"]'), 8000, `${id} structure`);
+    const st = $('[data-testid="structure"]');
+    assert.equal(Number(st.getAttribute("data-atoms")), nAtoms, id); assert.deepEqual($$('[data-testid="struct-bond"]').map((b) => Number(b.dataset.order)).sort(), orders.flatMap((o) => Array(o).fill(o)).sort(), `${id}: one line per shared pair`);
+    assert.equal(st.getAttribute("data-bonds"), String(orders.length), id);
+    assert.equal($$('[data-testid^="atom-"]').length, 0, `${id}: no leftover shell diagrams`);
+  }
 });
 
 console.log("Lesson configuration");

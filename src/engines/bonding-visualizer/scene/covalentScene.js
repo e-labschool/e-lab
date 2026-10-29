@@ -26,6 +26,30 @@ export function ligandAngles(m) {
 
 const outerRing = (symbol) => ringRadius(getBondingElement(symbol).shells.length);
 
+// Simplified valence-only (electron-dot) drawing used when full shells would crowd: every atom keeps ALL its electrons,
+// but the shell rings are replaced by a compact "kernel" ring (inner-shell electrons) and a valence dot ring.
+export const DOT_L = 108; // centre-to-centre distance of bonded atoms (unscaled)
+export const DOT_RHO = 40; // radius of the valence dot ring (lone pairs sit here)
+export const DOT_KERNEL = 25; // radius of the kernel ring (inner-shell electrons)
+
+/**
+ * Geometric crowding test: with the normal lens overlap between bonded atoms, do the FULL outer shells of two atoms that
+ * are not bonded to each other overlap? (SF6 and PCl5 do; nothing is looked up by name.)
+ */
+export function isCrowded(m) {
+  if (m.central === null) return false;
+  const rc = outerRing(m.atoms[0]);
+  const angles = ligandAngles(m).map((d) => d * DEG);
+  const pts = m.atoms.slice(1).map((s, i) => {
+    const L = rc + outerRing(s) - LENS_W;
+    return { r: outerRing(s), x: L * Math.cos(angles[i]), y: L * Math.sin(angles[i]) };
+  });
+  for (let i = 0; i < pts.length; i += 1) for (let j = i + 1; j < pts.length; j += 1) {
+    if (Math.hypot(pts[i].x - pts[j].x, pts[i].y - pts[j].y) < pts[i].r + pts[j].r) return true;
+  }
+  return false;
+}
+
 /**
  * Final geometry of a molecule in unscaled units around (0,0):
  * { pos[], rho[] (valence-ring radius), L, bonds:[{i,j,angle,order,mid}], lonePairAngles[i][] (radians) }.
@@ -36,7 +60,17 @@ export function layoutMolecule(m) {
   let L = 0;
   const pos = m.atoms.map(() => ({ x: 0, y: 0 }));
   const bonds = [];
-  if (m.central === null) {
+  const dots = isCrowded(m);
+  if (dots) {
+    const angles = ligandAngles(m).map((d) => d * DEG);
+    L = DOT_L;
+    for (let i = 1; i < m.atoms.length; i += 1) {
+      rho[i] = DOT_RHO;
+      pos[i] = { x: L * Math.cos(angles[i - 1]), y: L * Math.sin(angles[i - 1]) };
+      bonds.push({ i: 0, j: i, angle: angles[i - 1], order: m.bonds[i - 1][2] });
+    }
+    rho[0] = DOT_RHO;
+  } else if (m.central === null) {
     L = R[0] + R[1] - LENS_W;
     pos[0] = { x: -L / 2, y: 0 }; pos[1] = { x: L / 2, y: 0 };
     bonds.push({ i: 0, j: 1, angle: 0, order: m.bonds[0][2] });
@@ -102,7 +136,7 @@ export function layoutMolecule(m) {
       pairs.push({ bond: b, ang, x: cx + nx * off, y: cy + ny * off });
     }
   }
-  return { pos, rho, R, L, bonds, lonePairAngles, pairs };
+  return { pos, rho, R, L, bonds, lonePairAngles, pairs, dots };
 }
 
 /** Which canvas atom plays which molecule atom: nearest-first matching inside each element. Returns canvasAtomIndex per molecule index. */
@@ -154,12 +188,13 @@ export function atomsAreClose(atoms, S) {
 export function gatherTargets(m, atoms, world) {
   const lay = layoutMolecule(m);
   const S = covalentSize(world, m);
+  const g = lay.dots ? 0.85 : 1.35; // crowded molecules start slightly looser than their dot layout
   const cx = Math.min(world.W - 160 * S, Math.max(160 * S, atoms.reduce((s, a) => s + a.x, 0) / atoms.length));
   const cy = Math.min(world.H - 140 * S, Math.max(140 * S, atoms.reduce((s, a) => s + a.y, 0) / atoms.length));
-  const map = assignAtoms(m, atoms, lay.pos.map((p) => ({ x: p.x * 1.35 * S, y: p.y * 1.35 * S })));
+  const map = assignAtoms(m, atoms, lay.pos.map((p) => ({ x: p.x * g * S, y: p.y * g * S })));
   return atoms.map((a, k) => {
     const i = map.indexOf(k);
-    return { id: a.id, x: cx + lay.pos[i].x * 1.35 * S, y: cy + lay.pos[i].y * 1.35 * S };
+    return { id: a.id, x: cx + lay.pos[i].x * g * S, y: cy + lay.pos[i].y * g * S };
   });
 }
 
@@ -172,6 +207,7 @@ export function covalentScene({ atoms, molecule, stage, p = 0, time = 0, world, 
   const prog = stage === "setup" ? 0 : stage === "bonded" ? 1 : p;
   const started = stage !== "setup" && !!molecule;
   const lay = started ? layoutMolecule(molecule) : null;
+  const dots = !!lay?.dots;
 
   const base = atoms.map((a) => {
     const el = getBondingElement(a.symbol);
@@ -199,21 +235,29 @@ export function covalentScene({ atoms, molecule, stage, p = 0, time = 0, world, 
     if (started && d.role >= 0) {
       const f = finalCentres[d.role];
       d.x = lerp(d.x, f.x, move); d.y = lerp(d.y, f.y, move);
-      const sc = (lay.rho[d.role] / lay.R[d.role]);
+      const sc = dots ? 1 : (lay.rho[d.role] / lay.R[d.role]);
       d.scale = lerp(S, S * sc, move);
     }
     d.x += offset.x; d.y += offset.y;
   }
+  const dotBlend = dots ? easeInOut(prog / 0.3) : 0; // shells fade out while the electrons settle on the compact dot rings
 
   // electrons
   const shared = started ? lay.pairs : [];
   for (const d of base) {
     const colour = electronColor(d.colorIdx);
     const evs = electronsOfShells(d.shells);
-    let vi = 0;
+    let vi = 0; let ci = 0;
+    const nCore = evs.filter((q) => q.core).length;
     for (const e of evs) {
       const ang = slotAngle(e.k, e.slot, e.S, time);
-      const here = polar(d.x, d.y, ringRadius(e.k) * d.scale, ang);
+      let here = polar(d.x, d.y, ringRadius(e.k) * d.scale, ang);
+      if (dots && dotBlend > 0) {
+        const dp = e.core
+          ? polar(d.x, d.y, DOT_KERNEL * d.scale, -Math.PI / 2 + (2 * Math.PI * (ci++)) / nCore + time * 0.25)
+          : polar(d.x, d.y, DOT_RHO * d.scale, slotAngle(1, e.slot, e.S, time));
+        here = { x: lerp(here.x, dp.x, dotBlend), y: lerp(here.y, dp.y, dotBlend) };
+      }
       let x = here.x; let y = here.y; let state = e.core ? "core" : "free";
       if (started && !e.core && d.role >= 0) {
         const role = d.role;
@@ -244,13 +288,13 @@ export function covalentScene({ atoms, molecule, stage, p = 0, time = 0, world, 
       }
       d.electrons.push({ id: `${d.id}:${e.k}:${e.i}`, x, y, color: e.core ? CORE_ELECTRON_COLOR : colour, core: e.core, state });
     }
-    d.rings = d.shells.map((_, i) => ({ k: i + 1, r: ringRadius(i + 1) * d.scale, opacity: 1 }));
-    d.outerR = ringRadius(d.shells.length) * d.scale;
+    d.rings = d.shells.map((_, i) => ({ k: i + 1, r: ringRadius(i + 1) * d.scale, opacity: 1 - dotBlend }));
+    d.outerR = lerp(ringRadius(d.shells.length), DOT_RHO, dotBlend) * d.scale;
   }
 
   // overlap regions (clip lens) and labels
   const lenses = [];
-  if (started) {
+  if (started && !dots) {
     for (const b of lay.bonds) {
       const A = base[map[b.i]]; const B = base[map[b.j]];
       lenses.push({ a: A.id, b: B.id, ax: A.x, ay: A.y, ar: A.outerR, bx: B.x, by: B.y, br: B.outerR, ca: electronColor(A.colorIdx), cb: electronColor(B.colorIdx), opacity: clamp01((prog - 0.25) / 0.45) });
@@ -263,5 +307,5 @@ export function covalentScene({ atoms, molecule, stage, p = 0, time = 0, world, 
   const centroid = base.length ? { x: base.reduce((s, a) => s + a.x, 0) / base.length, y: base.reduce((s, a) => s + a.y, 0) / base.length } : { x: 0, y: 0 };
   const top = base.length ? Math.min(...base.map((a) => a.y - a.outerR)) : 0;
   const bottom = base.length ? Math.max(...base.map((a) => a.y + a.outerR)) : 0;
-  return { atoms: base, lenses, S, started, prog, info, centroid, top, bottom, labelOpacity: clamp01((prog - 0.85) / 0.15) };
+  return { atoms: base, lenses, S, started, prog, info, crowded: dots, dotBlend, centroid, top, bottom, labelOpacity: clamp01((prog - 0.85) / 0.15) };
 }

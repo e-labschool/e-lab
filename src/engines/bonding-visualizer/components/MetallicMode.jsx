@@ -1,18 +1,17 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Layers, Pause, Play, Repeat, RotateCcw, Trash2, Unlock, Crosshair } from "lucide-react";
 import ElementLibrary from "./ElementLibrary.jsx";
 import MetallicStage from "./MetallicStage.jsx";
 import ModeShell, { Tool, Toolbar } from "./ModeShell.jsx";
 import { chargeText, getBondingElement } from "../model/elements.js";
 import { METALLIC_METALS } from "../model/elements.js";
-import { MAX_METAL_ATOMS, METAL_STRUCTURE, STRUCTURE_LABEL, analyzeMetals, centralCoordination, generateMetalLattice, valenceElectrons } from "../model/metallic.js";
-import { assignSites } from "../scene/metallicScene.js";
+import { ADD_STEPS, MAX_METAL_ATOMS, METAL_STRUCTURE, STRUCTURE_LABEL, EXPECTED_NEIGHBOURS, addCount, analyzeMetals, maxCoordination, metalCounts, valenceElectrons } from "../model/metallic.js";
+import { assignSites, clampToCube, cubeHalf, latticeLayout, placeNewAtoms } from "../scene/metallicScene.js";
 import { useReducedMotion } from "./hooks.js";
 
 const GROUPS = [{ id: "metals", title: "Metals", symbols: METALLIC_METALS }];
 export const KEY_IDEA = "Metallic bonding is the electrostatic attraction between positive metal ions and delocalized electrons.";
 
-const spawn3d = (i) => [((i % 3) - 1) * 1.7, ((Math.floor(i / 3) % 2) ? -0.9 : 0.9), ((i % 2) ? 0.5 : -0.5) + Math.floor(i / 6) * 0.4];
 
 export default function MetallicMode({ tabs, onReset }) {
   const reduced = useReducedMotion();
@@ -21,72 +20,107 @@ export default function MetallicMode({ tabs, onReset }) {
   const [run, setRun] = useState(0);
   const [playing, setPlaying] = useState(true);
   const [selected, setSelected] = useState(null);
-  const [assign, setAssign] = useState([]);
+  const [lat, setLat] = useState(null); // { sites, u, H, coreRadius, assign } once the lattice is requested
+  const [metal, setMetal] = useState("Na");
   const [viewKey, setViewKey] = useState(0);
   const [note, setNote] = useState("");
   const counter = useRef(0);
   const apiRef = useRef(null);
   const boxRef = useRef(null);
 
+  const atomsRef = useRef(atoms);
+  useEffect(() => { atomsRef.current = atoms; });
   const symbols = useMemo(() => atoms.map((a) => a.symbol), [atoms]);
   const analysis = useMemo(() => analyzeMetals(symbols), [symbols]);
-  const symbol = atoms[0]?.symbol ?? "Na";
+  const symbol = atoms[0]?.symbol ?? metal;
   const structure = METAL_STRUCTURE[symbol];
   const v = valenceElectrons(symbol);
-  const sites = useMemo(() => generateMetalLattice(structure, 2), [structure]);
-  const coordination = useMemo(() => centralCoordination(structure, 2), [structure]);
   const inPlace = stage === "place";
+  const atomPos = useMemo(() => { const a = new Float32Array(atoms.length * 3); atoms.forEach((x, i) => a.set(x.pos, i * 3)); return a; }, [atoms]);
+  const sitePos = useMemo(() => {
+    if (!lat) return null;
+    const a = new Float32Array(atoms.length * 3);
+    lat.assign.forEach((j, i) => { const s = lat.sites[j]; a[i * 3] = s.x; a[i * 3 + 1] = s.y; a[i * 3 + 2] = s.z; });
+    return a;
+  }, [lat, atoms.length]);
+  const coordination = useMemo(() => (lat ? maxCoordination(lat.sites.map((s) => ({ x: s.x / lat.u, y: s.y / lat.u, z: s.z / lat.u }))) : 0), [lat]);
+  const selectedIndex = selected ? atoms.findIndex((a) => a.id === selected) : -1;
 
-  const addAtom = useCallback((sym, client) => {
+  /** Adds `k` atoms of `sym` (clamped at the capacity). `client` = screen drop position (only for a single dragged atom). */
+  const addAtoms = useCallback((sym, k, client) => {
     if (stage !== "place") return;
     if (atoms.length && atoms[0].symbol !== sym) { setNote(`Use one metal at a time (alloys are not modelled). Reset to switch from ${atoms[0].symbol}.`); return; }
-    if (atoms.length >= MAX_METAL_ATOMS) { setNote(`Maximum ${MAX_METAL_ATOMS} atoms before the lattice is built.`); return; }
-    let pos = client ? apiRef.current?.project(client.clientX, client.clientY) : null;
-    if (pos) pos = pos.map((c) => Math.max(-4.5, Math.min(4.5, c)));
-    const id = `m${++counter.current}`;
-    setAtoms((l) => [...l, { id, symbol: sym, pos: pos ?? spawn3d(l.length) }]);
-    setNote("");
+    const { added, clamped } = addCount(atoms.length, k);
+    if (added === 0) { setNote(`Limit reached: ${MAX_METAL_ATOMS} atoms. Release the electrons or Reset.`); return; }
+    const H = cubeHalf(atoms.length + added);
+    let fresh;
+    const drop = added === 1 && client ? apiRef.current?.project(client.clientX, client.clientY) : null;
+    if (drop) fresh = [clampToCube(drop, H)];
+    else fresh = placeNewAtoms(atoms.map((a) => a.pos), added, counter.current);
+    const items = fresh.map((pos) => ({ id: `m${++counter.current}`, symbol: sym, pos }));
+    setAtoms((l) => [...l, ...items]);
+    setMetal(sym);
+    setNote(clamped ? `Added ${added} of ${k}: the limit is ${MAX_METAL_ATOMS} atoms.` : "");
   }, [stage, atoms]);
+  const addAtom = useCallback((sym, client) => addAtoms(sym, 1, client), [addAtoms]);
 
   const removeSelected = () => { if (!selected || !inPlace) return; setAtoms((l) => l.filter((a) => a.id !== selected)); setSelected(null); };
-  const moveAtom = useCallback((id, pos) => setAtoms((l) => l.map((a) => (a.id === id ? { ...a, pos } : a))), []);
+  const moveAtom = useCallback((index, pos) => setAtoms((l) => l.map((a, i) => (i === index ? { ...a, pos } : a))), []);
+  const selectIndex = useCallback((index) => setSelected(atomsRef.current[index]?.id ?? null), []);
 
-  const release = () => { if (analysis.status !== "valid" || !inPlace) return; setSelected(null); setPlaying(true); setRun((r) => r + 1); setStage("releasing"); };
+  const release = () => { if (analysis.status !== "valid" || !inPlace) return; setSelected(null); setNote(""); setPlaying(true); setRun((r) => r + 1); setStage("releasing"); };
+  const buildLattice = () => { const L = latticeLayout(structure, atoms.length); return { ...L, assign: assignSites(atoms.map((a) => a.pos), L.sites) }; };
   const formLattice = () => {
     if (stage !== "released") return;
-    setAssign(assignSites(atoms.map((a) => a.pos), sites));
+    setLat(buildLattice());
     setPlaying(true); setRun((r) => r + 1); setStage("forming");
   };
   const onDone = useCallback((s) => { setStage((cur) => (cur === s ? (s === "releasing" ? "released" : "lattice") : cur)); }, []);
   const replay = () => {
     if (stage === "place") return;
     setPlaying(true); setRun((r) => r + 1);
-    if (stage === "forming" || stage === "lattice") { setAssign(assignSites(atoms.map((a) => a.pos), sites)); setStage("forming"); } else setStage("releasing");
+    if (stage === "forming" || stage === "lattice") { setStage("forming"); } else setStage("releasing");
   };
 
   const released = stage === "released" || stage === "forming" || stage === "lattice";
-  const cores = stage === "forming" || stage === "lattice" ? sites.length : atoms.length;
+  const counts = metalCounts(symbol, atoms.length);
+  const cores = counts.ions;
   const live = [
     { id: "metal", label: "Metal", value: atoms.length ? `${symbol} ${getBondingElement(symbol).shells.join(",")}` : "–", bg: "#fdf0e1", testId: "live-metal" },
-    { id: "cores", label: released ? `${chargeText(symbol, 1)} cores` : "Atoms", value: String(cores), bg: "#fde8e6", testId: "live-cores" },
-    { id: "electrons", label: "Delocalized e⁻", value: released ? String(cores * v) : "0", bg: "#e3f4ff", testId: "live-electrons" },
-    { id: "lattice", label: "Lattice", value: stage === "lattice" ? `${structure.toUpperCase()} · ${coordination.count} neighbours` : "–", bg: "#eaf1ff", testId: "live-lattice" },
+    { id: "cores", label: released ? `${chargeText(symbol, v)} cores` : "Atoms", value: String(cores), bg: "#fde8e6", testId: "live-cores" },
+    { id: "electrons", label: "Delocalized e⁻", value: released ? String(counts.electrons) : "0", bg: "#e3f4ff", testId: "live-electrons" },
+    { id: "lattice", label: "Lattice", value: stage === "lattice" ? `${structure.toUpperCase()} · ${coordination} neighbours` : "–", bg: "#eaf1ff", testId: "live-lattice" },
   ];
 
   const explain = note
     || (stage === "place" ? analysis.message
       : stage === "releasing" ? `Each ${symbol} atom releases ${v} valence electron${v > 1 ? "s" : ""}.`
-        : stage === "released" ? `${chargeText(symbol, v === 1 ? 1 : 1)} cores in a sea of delocalized electrons. Build the lattice next.`
+        : stage === "released" ? `${atoms.length} ${chargeText(symbol, v)} cores in a sea of ${counts.electrons} delocalized electrons. Build the lattice next.`
           : stage === "forming" ? `Cores move into a regular ${STRUCTURE_LABEL[structure]} arrangement.`
-            : `${STRUCTURE_LABEL[structure]}: each ion has ${coordination.count} nearest neighbours. Cores stay fixed; electrons move.`);
+            : coordination >= EXPECTED_NEIGHBOURS[structure]
+              ? `${STRUCTURE_LABEL[structure]}: each interior ion has ${coordination} nearest neighbours. Cores stay fixed; electrons move.`
+              : `${STRUCTURE_LABEL[structure]}: a small block (a bulk crystal gives each ion ${EXPECTED_NEIGHBOURS[structure]} nearest neighbours). Cores stay fixed; electrons move.`);
 
-  const library = <ElementLibrary groups={GROUPS} onAdd={addAtom} dropRef={boxRef} disabledReason={!inPlace ? "Reset to add more atoms." : null} mode="metallic" hint="Add several atoms (start with Na), then arrange them." />;
+  const atLimit = atoms.length >= MAX_METAL_ATOMS;
+  const addPanel = (
+    <div className="bv-addatoms" data-testid="add-atoms" role="group" aria-label={`Add ${symbol} atoms`}>
+      <div className="bv-addatoms-head"><span>Add <b>{symbol}</b> atoms</span><span className="bv-addatoms-count" data-testid="atom-count">{atoms.length} / {MAX_METAL_ATOMS}</span></div>
+      <div className="bv-addatoms-row">
+        {ADD_STEPS.map((k) => (
+          <button key={k} type="button" className="bv-addbtn" data-testid={`add-${k}`} disabled={!inPlace || atLimit} onClick={() => addAtoms(symbol, k)}
+            title={atLimit ? `Limit reached (${MAX_METAL_ATOMS} atoms)` : !inPlace ? "Reset to add more atoms." : `Add ${k} ${symbol} atom${k > 1 ? "s" : ""}`}>+{k}</button>
+        ))}
+      </div>
+      {atLimit && <p className="bv-addatoms-limit" data-testid="atom-limit">Limit reached: {MAX_METAL_ATOMS} atoms.</p>}
+    </div>
+  );
+  const library = <ElementLibrary groups={GROUPS} onAdd={addAtom} dropRef={boxRef} disabledReason={!inPlace ? "Reset to add more atoms." : null} mode="metallic" hint="Pick a metal (start with Na), add atoms with +1 to +50, then release the electrons." footer={addPanel} />;
 
   const canvas = (
-    <div className="bv-canvas" ref={boxRef} data-testid="canvas" data-stage={stage} data-atoms={atoms.length} data-cores={cores} aria-label="Metallic bonding 3D workspace. Drag to rotate, scroll to zoom.">
+    <div className="bv-canvas" ref={boxRef} data-testid="canvas" data-stage={stage} data-atoms={atoms.length} data-cores={cores} data-electrons={released ? counts.electrons : 0} aria-label="Metallic bonding 3D workspace. Drag to rotate, scroll to zoom.">
       <MetallicStage
-        metal={{ symbol, valence: v }} structure={structure} atoms={atoms} sites={sites} assign={assign} stage={stage} runKey={run} playing={playing} selected={selected}
-        onMove={moveAtom} onSelect={setSelected} onDone={onDone} apiRef={apiRef} viewKey={viewKey} reduced={reduced}
+        metal={{ symbol, valence: v }} atomPos={atomPos} sitePos={sitePos} n={atoms.length} lat={lat} stage={stage} runKey={run} playing={playing} selectedIndex={selectedIndex}
+        onMove={moveAtom} onSelect={selectIndex} onDone={onDone} apiRef={apiRef} viewKey={viewKey} reduced={reduced}
       />
       {atoms.length === 0 && <p className="bv-placeholder">Click or drag a metal from the library</p>}
       {released && (
