@@ -28,6 +28,7 @@ export const SIMULATION_REGISTRY = {
   "ideal-gas-simulation": { label: "Ideal Gas Simulation" },
   "gas-laws-explorer": { label: "Gas Laws Explorer" },
   "bonding-visualizer": { label: "Bonding Visualizer" },
+  "hybridisation-explorer": { label: "Hybridisation Explorer (3D)" },
 };
 
 // label -> id, built once. This is what lets InteractiveFrame resolve a

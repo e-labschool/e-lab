@@ -313,6 +313,16 @@ const resources = [
     conceptIds: ["vsepr-theory","molecular-geometry"],
     component: () => import("../engines/vsepr-explorer-3d/VSEPRExplorer3D.jsx"),
   },
+  {
+    id: "hybridisation-explorer",
+    title: "Hybridisation Explorer (3D)",
+    resourceType: "simulation",
+    categories: ["simulate","visualize","explore","teach"],
+    status: "live", // live | in-development | planned
+    description: "Examine an element's orbital box diagram, mix selected orbitals into sp, sp2 and sp3 hybrids (plus traditional sp3d / sp3d2 models), overlap orbitals by hand to form sigma and pi bonds, and step through the orbital model of common molecules.",
+    conceptIds: ["hybridization"],
+    component: () => import("../engines/hybridisation-explorer/HybridisationExplorer.jsx"),
+  },
 ];
 
 export const resourcesById = Object.fromEntries(resources.map((r) => [r.id, r]));
