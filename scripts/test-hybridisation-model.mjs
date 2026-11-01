@@ -15,6 +15,11 @@ const OV = await import(`${root}model/overlap.js`);
 const W = await import(`${root}model/workspace.js`);
 const MD = await import(`${root}model/moleculeData.js`);
 const ML = await import(`${root}model/moleculeLayout.js`);
+const SF = await import(`${root}model/surface.js`);
+const OVV = await import(`${root}model/overlapVolume.js`);
+const VM = await import(`${root}scene/viewModel.js`);
+const OF = await import(`${root}scene/orbitalField.js`);
+const SV = await import(`${root}scene/stepView.js`);
 const { renderCompactLatex } = await import("../src/lib/scientificContent.jsx");
 
 let passed = 0; let failed = 0;
@@ -118,7 +123,71 @@ test("electron distribution is Hund-style, conserving electrons", () => {
 });
 
 console.log("Shapes");
-test("lobe shape constants are the documented ones", () => { assert.equal(O.GAMMA, 1.5); assert.ok(O.P_LATERAL > 0.3 && O.P_LATERAL < 0.6); });
+test("surface exponents are the documented ones (s sphere K=1, p/d 2.3, hybrid 2.0)", () => { assert.deepEqual(O.SURFACE_K, { s: 1, p: 2.3, hybrid: 2.0, d: 2.3 }); assert.ok(O.DRAW_WIDTH.hybrid < 1); });
+const hybOf = (sym, ids, promo) => mk(sym, ids, "excited", promo).hybrids;
+const bigSmall = (h) => { const t = H.termsToKinds(h.terms); const sf = SF.makeSurface(t, "hybrid", 1); const d = h.direction; return { sf, big: sf.at(d[0], d[1], d[2]), small: sf.at(-d[0], -d[1], -d[2]), t }; };
+const HYB_CASES = [["sp", "Be", ["2s", "2px"], "2s1-2p1", 2, 0.2679], ["sp2", "B", ["2s", "2px", "2py"], "2s1-2p2", 3, 0.42020], ["sp3", "C", ["2s", "2px", "2py", "2pz"], "2s1-2p3", 4, 0.5]];
+test("sp / sp2 / sp3 surfaces: one big lobe along the hybrid axis, one small lobe opposite, with the ratio of the real coefficients", () => {
+  for (const [name, sym, ids, promo, n, fr] of HYB_CASES) {
+    const hs = hybOf(sym, ids, promo); assert.equal(hs.length, n, name);
+    for (const h of hs) {
+      const { sf, big, small } = bigSmall(h); assert.ok(big > 0 && small < 0, `${name}: opposite phase`);
+      const f = (d) => sf.f(d[0], d[1], d[2]); const fr0 = Math.abs(f(h.direction.map((x) => -x))) / f(h.direction); near(fr0, fr, 2e-3);
+      near(Math.abs(small) / big, fr0 ** O.SURFACE_K.hybrid, 2e-3); near(big, 1, 1e-3); // the big lobe peaks at R along the hybrid axis
+      const pk = SF.lobePeaks(sf); near(deg(pk.pos.dir, h.direction), 0, 0.5); near(deg(pk.neg.dir, h.direction), 180, 0.5);
+    }
+  }
+});
+test("p surface is pinched at the nucleus: r = 0 at 90 degrees off axis, two equal opposite-phase lobes", () => {
+  const sf = SF.makeSurface([["pz", 1]], "p", 1); near(sf.at(1, 0, 0), 0, 1e-9); near(sf.at(0, 1, 0), 0, 1e-9); near(sf.at(Math.SQRT1_2, 0, Math.SQRT1_2), sf.at(Math.SQRT1_2, 0, Math.SQRT1_2), 0);
+  near(sf.at(0, 0, 1), 1, 1e-9); near(sf.at(0, 0, -1), -1, 1e-9); assert.ok(Math.abs(sf.at(Math.sin(1.4), 0, Math.cos(1.4))) < 0.12, "narrow close to the equator");
+});
+test("lobe count per orbital type: s 1, p 2, hybrids 2 (big + small), dxy 4, dz2 3", () => {
+  assert.equal(SF.lobeCount([["s", 1]]), 1); for (const k of ["px", "py", "pz"]) assert.equal(SF.lobeCount([[k, 1]]), 2);
+  for (const [, sym, ids, promo] of HYB_CASES) for (const h of hybOf(sym, ids, promo)) assert.equal(SF.lobeCount(H.termsToKinds(h.terms)), 2);
+  assert.equal(SF.lobeCount([["dxy", 1]]), 4); assert.equal(SF.lobeCount([["dz2", 1]]), 3);
+});
+test("mixing conserves the number of orbitals and ends at the exact ideal angles", () => {
+  for (const [name, sym, ids, promo, n, ] of HYB_CASES) {
+    const r = mk(sym, ids, "excited", promo); assert.equal(r.hybrids.length, ids.length, name); assert.equal(r.consumed.length, ids.length);
+    const ideal = { sp: 180, sp2: 120, sp3: 109.4712206 }[name]; const d = r.hybrids.map((h) => h.direction);
+    for (let i = 0; i < n; i += 1) for (let j = i + 1; j < n; j += 1) near(deg(d[i], d[j]), ideal, 1e-4);
+  }
+  const un = (sym, ids, promo) => mk(sym, ids, "excited", promo).hybrids.length;
+  assert.equal(un("Be", ["2s", "2px"], "2s1-2p1"), 2);
+});
+test("colour mapping: s red/orange, px blue, py green, pz purple, d own colour, every hybrid of a set a distinct palette", () => {
+  assert.deepEqual(["s", "px", "py", "pz", "dxy", "dz2"].map(VM.paletteOf), ["s", "px", "py", "pz", "d", "d"]);
+  assert.deepEqual(O.COLOUR_NAMES, { s: "red/orange", px: "blue", py: "green", pz: "purple", d: "teal/gold" });
+  assert.equal(new Set([0, 1, 2, 3].map(VM.hybridPalette)).size, 4);
+  const css = fs.readFileSync(new URL(`${root}HybridisationExplorer.css`, import.meta.url), "utf8");
+  for (const n of ["s", "px", "py", "pz", "d", "h0", "h1", "h2", "h3"]) assert.ok(css.includes(`-${n}-pos`) && css.includes(`-${n}-neg`), `css colours for ${n}`);
+});
+test("morph endpoints: the blended field equals the source at t=0 and the hybrid at t=1 (same code path as the static meshes)", () => {
+  const h0 = hybOf("C", ["2s", "2px", "2py", "2pz"], "2s1-2p3")[0]; const tgt = H.termsToKinds(h0.terms);
+  const src = [["px", 1]]; const V = OF.GRID.V; const a = new Float32Array(V); const tmp = new Float32Array(V);
+  const Rs = 1.3; const Rt = 1.05; const Ks = O.SURFACE_K.p; const Kt = O.SURFACE_K.hybrid;
+  const p0 = SF.blendedSurfaceParams({ terms: src, R: Rs, k: Ks, cls: "p" }, { terms: tgt, R: Rt, k: Kt, cls: "hybrid" }, 0);
+  OF.fillField(p0.terms, p0.R, p0.k, a, tmp); assert.deepEqual([...a], [...OF.signedField(src, Rs, Ks)]);
+  const p1 = SF.blendedSurfaceParams({ terms: src, R: Rs, k: Ks, cls: "p" }, { terms: tgt, R: Rt, k: Kt, cls: "hybrid" }, 1);
+  OF.fillField(p1.terms, p1.R, p1.k, a, tmp); assert.deepEqual([...a], [...OF.signedField(tgt, Rt, Kt)]);
+  assert.equal(SF.morphParameter(0), 0); assert.equal(SF.morphParameter(1), 1); assert.equal(SF.morphParameter(0.1), 0);
+  let prev = -1; for (let i = 0; i <= 20; i += 1) { const m = SF.morphParameter(i / 20); assert.ok(m >= prev); prev = m; }
+});
+test("morph passes through a genuine intermediate shape (not a cross-fade of two meshes)", () => {
+  const h0 = hybOf("C", ["2s", "2px", "2py", "2pz"], "2s1-2p3")[0]; const mid = SF.blendTerms([["s", 1]], H.termsToKinds(h0.terms), 0.5);
+  const sf = SF.makeSurface(mid, "hybrid", 1, 2); const pk = SF.lobePeaks(sf); assert.ok(pk.pos.r > 0.99); assert.ok(pk.neg ? pk.neg.r < pk.pos.r : true);
+});
+test("overlap measure: monotonic with distance, zero when misaligned, signed negative for out-of-phase", () => {
+  const C = W.createAtom("c", "C", [0, 0, 0]); const pz = OV.atomOrbitalInstances(C).find((o) => o.kind === "pz");
+  const hAt = (x, y, z, quat) => OV.atomOrbitalInstances({ ...W.createAtom("h", "H", [x, y, z]), ...(quat ? { quat } : {}) })[0];
+  const ds = [0.7, 0.9, 1.1, 1.3, 1.5, 1.8, 2.2]; const ms = ds.map((d) => OVV.overlapBetween(pz, hAt(0, 0, d)).measure);
+  for (let i = 1; i < ms.length; i += 1) assert.ok(ms[i] <= ms[i - 1] + 1e-9, `non-increasing ${ms.join()}`); assert.ok(ms[0] > 0.1); assert.equal(ms.at(-1), 0);
+  near(OVV.overlapBetween(pz, hAt(1.0, 0, 0)).measure, 0, 0.02); // sideways approach to a p orbital: in-phase = out-of-phase
+  const s2 = [0.6, 0.8, 1.0, 1.2, 1.4].map((d) => OVV.overlapBetween(hAt(0, 0, 0), hAt(d, 0, 0)).measure); for (let i = 1; i < s2.length; i += 1) assert.ok(s2[i] <= s2[i - 1] + 1e-9);
+  const strengths = ds.map((d, i) => OVV.highlightStrength(ms[i])); for (let i = 1; i < strengths.length; i += 1) assert.ok(strengths[i] <= strengths[i - 1] + 1e-9);
+  assert.equal(OVV.highlightStrength(0), 0); assert.equal(OVV.highlightStrength(1), 1);
+});
 test("p angular function is odd (opposite phase lobes), s is even", () => {
   assert.ok(O.angular("pz", 0, 0, 1) > 0 && O.angular("pz", 0, 0, -1) < 0); near(O.angular("s", 1, 0, 0), O.angular("s", 0, 1, 0), 1e-12);
 });
@@ -158,10 +227,18 @@ test("specified totals: ethene 5σ+1π, ethyne 3σ+2π, ethane 7σ+0π, benzene 
   assert.deepEqual(t("C2H4"), [5, 1]); assert.deepEqual(t("C2H2"), [3, 2]); assert.deepEqual(t("C2H6"), [7, 0]); assert.equal(t("C6H6")[0], 12);
   assert.ok(ML.compileMolecule("C6H6").delocalised);
 });
-test("ethene has six steps; counts rise monotonically to the final totals; every step has one sentence", () => {
-  const c = ML.compileMolecule("C2H4"); assert.equal(c.steps.length, 6);
+test("ethene has five steps (sp2 + 2pz separated, sigma pair, pi, H + 4 C-H sigma, complete); counts rise monotonically to the final totals", () => {
+  const c = ML.compileMolecule("C2H4"); assert.equal(c.steps.length, 5);
+  assert.deepEqual(c.steps.map((s) => [s.sigma, s.pi]), [[0, 0], [1, 0], [1, 1], [5, 1], [5, 1]]);
   let ps = 0; let pp = 0; for (const s of c.steps) { assert.ok(s.sigma >= ps && s.pi >= pp); ps = s.sigma; pp = s.pi; assert.ok(s.text.length > 10); }
-  assert.deepEqual([c.steps[5].sigma, c.steps[5].pi], [5, 1]);
+  assert.deepEqual([c.steps[4].sigma, c.steps[4].pi], [5, 1]);
+});
+test("ethyne has six steps (sp + 2py/2pz, sigma, pi-y, pi-z, H + 2 C-H sigma, complete) ending 3 sigma + 2 pi; no molecule has compile problems", () => {
+  const c = ML.compileMolecule("C2H2"); assert.equal(c.steps.length, 6); assert.deepEqual(c.steps.map((s) => [s.sigma, s.pi]), [[0, 0], [1, 0], [1, 1], [1, 2], [3, 2], [3, 2]]);
+  for (const id of MD.MOLECULE_IDS) assert.deepEqual(ML.compileMolecule(id).problems ?? [], [], id);
+});
+test("step views: every step of every molecule asks only for geometries the warm-up list contains", () => {
+  for (const id of MD.MOLECULE_IDS) { const c = ML.compileMolecule(id); const all = new Set(SV.geometryRequests(c).map((r) => `${r.R.toFixed(3)}|${r.palette}|${r.terms.map(([k, v]) => `${k}:${v.toFixed(5)}`).join('+')}`)); for (let i = 0; i < c.steps.length; i += 1) for (const a of SV.stepView(c, i, 0).atoms) for (const o of a.orbitals) assert.ok(all.has(`${o.R.toFixed(3)}|${o.palette}|${o.terms.map(([k, v]) => `${k}:${v.toFixed(5)}`).join('+')}`), `${id} step ${i}`); }
 });
 test("hybridisation of key atoms matches chemistry (ethene sp2, ethyne sp, ethane sp3)", () => {
   const rec = (id) => ML.compileMolecule(id).atoms.C1.hybrid.recipeId;

@@ -1,5 +1,6 @@
 import { ExternalLink, Maximize, Minimize } from "lucide-react";
 import { useFullscreen } from "./useFullscreen.js";
+import "./simulation-controls.css";
 
 function openSimulationInNewTab(simulationId) {
   if (!simulationId) return;
@@ -10,8 +11,9 @@ function openSimulationInNewTab(simulationId) {
   window.open(`/simulation/${simulationId}`, "_blank", "noopener,noreferrer");
 }
 
-const actionButtonCls =
-  "inline-flex h-8 items-center gap-1.5 rounded-md border border-[var(--color-line)] bg-transparent px-2.5 text-xs font-medium text-[var(--color-ink-soft)] transition-colors hover:border-[var(--color-ink)] hover:text-[var(--color-ink)]";
+// Shared control style (src/components/interactive-shell/simulation-controls.css): a solid fill, a >= 3:1
+// boundary, visible hover / active / disabled / focus-visible states, on light AND dark surfaces.
+const actionButtonCls = "sim-toolbar-btn";
 
 /** The reusable "Open in New Tab" / "Full Screen" pair every e-Lab
  * simulation gets for free, rendered once inside InteractiveFrame (the
@@ -25,8 +27,9 @@ const actionButtonCls =
  *   resolved for a given engine, "Open in New Tab" simply doesn't
  *   render -- Full Screen still does, since it needs no id.
  *
- * Secondary interface chrome, deliberately subdued (thin border, muted
- * text) so it never competes with an engine's own primary action button.
+ * Secondary interface chrome: a clearly outlined, solid-fill button (never
+ * white-on-white) that still reads as secondary next to an engine's own
+ * primary action button.
  * Labels collapse to icon-only + a native tooltip below the `sm`
  * breakpoint; aria-labels are always present regardless. */
 export default function SimulationActions({ targetRef, simulationId, iconOnly = false }) {
@@ -43,7 +46,7 @@ export default function SimulationActions({ targetRef, simulationId, iconOnly = 
           title="Open in new tab"
           className={actionButtonCls}
         >
-          <ExternalLink size={13} aria-hidden="true" />
+          <ExternalLink size={14} aria-hidden="true" />
           <span className={labelCls}>Open in New Tab</span>
         </button>
       )}
@@ -55,7 +58,7 @@ export default function SimulationActions({ targetRef, simulationId, iconOnly = 
           title={isFullscreen ? "Exit full screen" : "Full screen"}
           className={actionButtonCls}
         >
-          {isFullscreen ? <Minimize size={13} aria-hidden="true" /> : <Maximize size={13} aria-hidden="true" />}
+          {isFullscreen ? <Minimize size={14} aria-hidden="true" /> : <Maximize size={14} aria-hidden="true" />}
           <span className={labelCls}>{isFullscreen ? "Exit Full Screen" : "Full Screen"}</span>
         </button>
       )}

@@ -4,6 +4,7 @@ import { useSimulationPresentation } from "../interactive-shell/SimulationPresen
 import { useFullscreen } from "../interactive-shell/useFullscreen.js";
 import SimulationActions from "../interactive-shell/SimulationActions.jsx";
 import { classifyDashboard } from "./dashboardLayout.js";
+import "../interactive-shell/simulation-controls.css";
 import "./SimulationDashboard.css";
 
 // SIMULATION DASHBOARD LAYOUT -- the shared compact landscape layout every
@@ -63,7 +64,7 @@ export default function SimulationDashboard({
       id={id}
       role={role}
       aria-label={ariaLabel}
-      className="sd-root"
+      className="sd-root elab-sim"
       data-testid={testId}
       data-layout={layout}
       data-header={header}

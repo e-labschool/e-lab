@@ -63,7 +63,7 @@
   --sd-ink: #1e2a44;
   --sd-muted: #4a5a82;
   --sd-line: #e3eaf6;
-  --sd-blue: #2f7bf5;
+  --sd-blue: #2b66d9; /* white label on it holds >= 4.5:1 (was #2f7bf5 = 3.98:1) */
   --sd-s: 1; /* size scale 1..1.28, set from the measured box (fullscreen / big monitors) */
   --sd-gap: calc(8px * var(--sd-s));
   --sd-pad: calc(8px * var(--sd-s));
@@ -196,31 +196,46 @@
   gap: 5px;
   min-height: 30px;
   padding: 0 10px;
-  border: 1px solid #d5deef;
+  border: 1.5px solid var(--sim-btn-border);
   border-radius: 9px;
-  background: #fff;
-  color: var(--sd-navy);
+  background: var(--sim-btn-fill);
+  color: var(--sim-btn-ink);
   font-size: var(--sd-fs);
   font-weight: 600;
   line-height: 1;
   white-space: nowrap;
+  box-shadow: var(--sim-btn-shadow);
   cursor: pointer;
 }
-.sd-btn:hover {
-  background: #eef4ff;
+.sd-btn:hover:not(:disabled) {
+  background: var(--sim-btn-fill-hover);
+  border-color: var(--sim-btn-border-hover);
+}
+.sd-btn:active:not(:disabled) {
+  background: var(--sim-btn-fill-active);
+  border-color: var(--sim-btn-border-hover);
+  box-shadow: none;
 }
 .sd-btn--primary {
-  border-color: transparent;
+  border-color: var(--sd-blue);
   background: var(--sd-blue);
   color: #fff;
 }
-.sd-btn--primary:hover {
-  background: #2468db;
+.sd-btn--primary:hover:not(:disabled),
+.sd-btn--primary:active:not(:disabled) {
+  background: #1f55c0;
+  border-color: #1f55c0;
 }
+/* pressed toggle: solid accent fill + white label (a pale tint was ~1.1:1 against the panel) */
 .sd-btn--toggle[aria-pressed="true"] {
-  background: #e1edfd;
-  border-color: #9cc0f7;
-  color: #0f3f94;
+  background: var(--sim-btn-accent);
+  border-color: var(--sim-btn-accent);
+  color: #fff;
+}
+.sd-btn--toggle[aria-pressed="true"]:hover:not(:disabled),
+.sd-btn--toggle[aria-pressed="true"]:active:not(:disabled) {
+  background: var(--sim-btn-accent-hover);
+  border-color: var(--sim-btn-accent-hover);
 }
 .sd-btn--icon {
   padding: 0 6px;
@@ -232,13 +247,18 @@
   border-radius: 8px;
 }
 .sd-btn:disabled {
-  opacity: 0.55;
+  /* readable (>= 3:1) but clearly inert: dashed outline, no shadow */
+  background: transparent;
+  color: var(--sim-btn-border);
+  border-style: dashed;
+  box-shadow: none;
   cursor: not-allowed;
 }
 .sd-root :is(button, [role="tab"], [role="radio"], input[type="range"]):focus-visible,
 .sd-root [tabindex]:focus-visible {
-  outline: 2px solid var(--sd-blue);
-  outline-offset: 1px;
+  outline: 2px solid var(--sim-btn-focus);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px var(--sim-btn-focus-halo);
 }
 
 /* ---- Tabs ---------------------------------------------------------------- */
@@ -283,7 +303,12 @@
   box-shadow: 0 1px 2px rgba(20, 34, 107, 0.25);
 }
 .sd-tabs--segmented .sd-tab:not([aria-selected="true"]):not([aria-checked="true"]):hover {
-  background: rgba(255, 255, 255, 0.75);
+  background: #fff;
+  border-color: var(--sim-btn-border);
+}
+.sd-tabs--segmented .sd-tab:not([aria-selected="true"]):not([aria-checked="true"]):active {
+  background: var(--sim-btn-fill-active);
+  border-color: var(--sim-btn-border);
 }
 .sd-tab-main {
   display: block;
@@ -664,14 +689,24 @@
   width: 20px;
   height: 20px;
   padding: 0;
-  border: 1px solid #cbd6ec;
+  border: 1.5px solid var(--sim-btn-border);
   border-radius: 999px;
-  background: #fff;
-  color: var(--sd-navy);
+  background: var(--sim-btn-fill);
+  color: var(--sim-btn-ink);
   cursor: pointer;
 }
-.sd-step:hover {
-  background: #eef4ff;
+.sd-step:hover:not(:disabled) {
+  background: var(--sim-btn-fill-hover);
+  border-color: var(--sim-btn-border-hover);
+}
+.sd-step:active:not(:disabled) {
+  background: var(--sim-btn-fill-active);
+}
+.sd-step:disabled {
+  background: transparent;
+  color: var(--sim-btn-border);
+  border-style: dashed;
+  cursor: not-allowed;
 }
 .sd-note {
   margin: 2px 0 0;
@@ -830,15 +865,19 @@
   place-items: center;
   width: 34px;
   height: 34px;
-  border: 1px solid #d5deef;
+  border: 1.5px solid var(--sim-btn-border);
   border-radius: 50%;
-  background: #fff;
-  color: var(--sd-navy);
-  box-shadow: 0 1px 4px rgba(20, 34, 107, 0.15);
+  background: var(--sim-btn-fill);
+  color: var(--sim-btn-ink);
+  box-shadow: var(--sim-btn-shadow);
   cursor: pointer;
 }
-.sd-chamber-btn:hover {
-  background: #eef4ff;
+.sd-chamber-btn:hover:not(:disabled) {
+  background: var(--sim-btn-fill-hover);
+  border-color: var(--sim-btn-border-hover);
+}
+.sd-chamber-btn:active:not(:disabled) {
+  background: var(--sim-btn-fill-active);
 }
 
 .sd-chamber-foot {
@@ -868,10 +907,10 @@
   min-width: 0;
   min-height: 30px;
   padding: 0 6px;
-  border: 1px solid #d5deef;
+  border: 1.5px solid var(--sim-btn-border);
   border-radius: 8px;
-  background: #fff;
-  color: var(--sd-navy);
+  background: var(--sim-btn-fill);
+  color: var(--sim-btn-ink);
   font-size: var(--sd-fs-sm);
   font-weight: 600;
   line-height: 1;
@@ -879,12 +918,19 @@
   cursor: pointer;
 }
 .sd-tool:hover:not(:disabled) {
-  background: #eef4ff;
+  background: var(--sim-btn-fill-hover);
+  border-color: var(--sim-btn-border-hover);
+}
+.sd-tool:active:not(:disabled) {
+  background: var(--sim-btn-fill-active);
 }
 .sd-tool[aria-pressed="true"] {
-  background: #e1edfd;
-  border-color: #9cc0f7;
-  color: #0f3f94;
+  background: var(--sim-btn-accent);
+  border-color: var(--sim-btn-accent);
+  color: #fff;
+}
+.sd-tool[aria-pressed="true"]:hover:not(:disabled) {
+  background: var(--sim-btn-accent-hover);
 }
 .sd-tool--primary {
   flex: 1.25 1 0;
@@ -896,7 +942,9 @@
   background: #2468db;
 }
 .sd-tool:disabled {
-  opacity: 0.55;
+  background: transparent;
+  color: var(--sim-btn-border);
+  border-style: dashed;
   cursor: not-allowed;
 }
 .sd-tool svg {
@@ -1126,10 +1174,10 @@
   justify-content: space-between;
   gap: 8px;
   padding: 5px 8px;
-  border: 1px solid #f2e2b0;
+  border: 1px solid light-dark(#d4b24c, #7c9bdd);
   border-radius: 10px;
-  background: #fff7dc;
-  color: #4a3b0a;
+  background: light-dark(#fff7dc, #14306a);
+  color: light-dark(#4a3b0a, #e9f1ff);
   font-size: var(--sd-fs-sm);
 }
 

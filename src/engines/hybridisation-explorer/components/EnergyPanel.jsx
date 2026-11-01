@@ -5,7 +5,7 @@ import { condensedLatex } from "../model/elements.js";
 
 // Orbital box diagram. The ATOMIC section is the actual (ground or illustrative-excited) configuration of the atom; the
 // dashed HYBRID section below is the simplified hybrid-orbital model built from it. Boxes are the primary orbital-selection UI.
-const CLASS_CHIP = { s: "var(--hy-s-pos)", p: "var(--hy-p-pos)", d: "var(--hy-d-pos)" };
+const CHIP = (o) => `var(--hy-${o.kind === "s" ? "s" : o.kind[0] === "p" ? o.kind : "d"}-pos)`; // the same colour as the 3D lobe: 2px blue, 2py green, 2pz purple, s orange
 
 function Arrows({ e }) { return e === 0 ? null : <>{<span className="up" aria-hidden="true">{"↑"}</span>}{e === 2 && <span className="dn" aria-hidden="true">{"↓"}</span>}</>; }
 const spinText = (e) => (e === 0 ? "empty" : e === 1 ? "1 electron, spin up" : "2 electrons, paired");
@@ -56,7 +56,7 @@ export default function EnergyPanel({
                     const mixed = consumed.includes(o.id);
                     return (
                       <OrbitalBox
-                        key={o.id} id={o.id} latex={o.latex} plain={o.plain} electrons={o.electrons} chip={CLASS_CHIP[o.type]} selected={sel.has(o.id) && !mixed} hover={hoverId === o.id}
+                        key={o.id} id={o.id} latex={o.latex} plain={o.plain} electrons={o.electrons} chip={CHIP(o)} selected={sel.has(o.id) && !mixed} hover={hoverId === o.id}
                         disabled={!selectable || mixed} mixed={mixed} onClick={() => onToggle?.(o.id)} sub={mixed ? "mixed" : undefined}
                       />
                     );

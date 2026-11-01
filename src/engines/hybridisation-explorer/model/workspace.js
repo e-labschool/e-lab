@@ -15,7 +15,7 @@ export function createAtom(id, symbol, pos = [0, 0, 0], kind = "ground", promoti
 const cloneAtom = (a) => ({ ...a, selected: [...a.selected], hybrid: a.hybrid ? { ...a.hybrid } : null });
 
 export function initialPresent() {
-  return { atoms: [createAtom("a1", "C")], activeId: "a1", nextId: 2, note: "" };
+  return { atoms: [createAtom("a1", "C")], activeId: "a1", nextId: 2, note: "", formed: [] };
 }
 export function createHistory() { return { past: [], present: initialPresent(), gesture: null }; }
 
@@ -28,7 +28,14 @@ export function atomLabel(atoms, atom) {
 }
 const active = (p) => p.atoms.find((a) => a.id === p.activeId);
 const setAtom = (p, id, patch) => ({ ...p, atoms: p.atoms.map((a) => (a.id === id ? { ...a, ...patch } : a)) });
-const push = (h, present) => ({ ...h, past: [...h.past, h.present], present });
+/** Bonds the student has confirmed with "Form bond" stay formed only while their overlap is still valid (same ids as analyseBonds). */
+function pruneFormed(p) {
+  const formed = p.formed ?? []; if (!formed.length) return p.formed ? p : { ...p, formed: [] };
+  const live = new Set(analyseBonds(p.atoms.flatMap(atomOrbitalInstances)).bonds.map((b) => b.id));
+  const kept = formed.filter((id) => live.has(id));
+  return kept.length === formed.length ? p : { ...p, formed: kept };
+}
+const push = (h, present) => ({ ...h, past: [...h.past, h.present], present: pruneFormed(present) });
 
 /** What the controls show for the active atom: selection analysis, excitation availability, mix availability. */
 export function describeActive(atom) {
@@ -115,10 +122,15 @@ export function reduce(h, action) {
     case "gestureEnd": {
       const g = h.gesture; if (!g) return h;
       const moved = p.atoms.some((a) => { const b = g.atoms.find((x) => x.id === a.id); return !b || a.pos.some((v, i) => Math.abs(v - b.pos[i]) > 1e-6) || a.quat.some((v, i) => Math.abs(v - b.quat[i]) > 1e-6); });
-      return moved ? { ...h, gesture: null, past: [...h.past, { ...h.present, atoms: g.atoms, activeId: g.activeId }] } : { ...h, gesture: null };
+      return moved ? { ...h, gesture: null, past: [...h.past, { ...h.present, atoms: g.atoms, activeId: g.activeId }], present: pruneFormed(h.present) } : { ...h, gesture: null };
     }
     case "applyTransform": { // snap result: one undo step
       return push(h, { ...setAtom(p, action.id, { pos: action.pos, quat: action.quat }), activeId: action.id, note: action.note ?? "" });
+    }
+    case "formBonds": { // confirm the currently valid overlaps: they stay visible as formed bonds until the overlap stops being valid
+      const live = analyseBonds(p.atoms.flatMap(atomOrbitalInstances)).bonds; const ids = (action.ids ?? live.map((b) => b.id)).filter((id) => live.some((b) => b.id === id) && !(p.formed ?? []).includes(id));
+      if (!ids.length) return h;
+      return push(h, { ...p, formed: [...(p.formed ?? []), ...ids], note: action.note ?? "" });
     }
     case "note": return { ...h, present: { ...p, note: action.note } };
     case "undo": {

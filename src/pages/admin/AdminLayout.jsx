@@ -1,5 +1,7 @@
-import { useState } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { useRef, useState } from "react";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { useSessionState, sessionKey } from "../../lib/sessionState.js";
+import { useScrollRestoration, documentNavigationType } from "../../lib/scrollRestore.js";
 import { LayoutDashboard, BookOpen, FolderOpen, HelpCircle, Users, Lock, DatabaseBackup, Settings, Menu, X, ArrowLeft } from "lucide-react";
 import ProtectedRoute from "../../components/auth/ProtectedRoute.jsx";
 import Wordmark from "../../components/layout/Wordmark.jsx";
@@ -52,8 +54,14 @@ function SidebarNav({ onNavigate }) {
 function AdminChrome() {
   useTrackLastRoute("admin");
   const navigate = useNavigate();
-  const [collapsed, setCollapsed] = useState(false);
+  const location = useLocation();
+  const mainRef = useRef(null);
+  const [collapsed, setCollapsed] = useSessionState(sessionKey("admin", "sidebarCollapsed"), false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  // The admin pages scroll inside <main>, not the window. After a real page
+  // reload, put it back where it was (ordinary tab switches never move it).
+  const [isReload] = useState(() => documentNavigationType() === "reload");
+  useScrollRestoration({ key: sessionKey("scroll", "admin", location.pathname), ready: true, target: mainRef, allow: isReload, once: true });
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -116,7 +124,7 @@ function AdminChrome() {
             <AccountMenu />
           </div>
         </header>
-        <main className="flex-1 overflow-y-auto">
+        <main ref={mainRef} className="flex-1 overflow-y-auto">
           <Outlet />
         </main>
         <CopyrightNotice className="py-1.5 text-[10px]" />

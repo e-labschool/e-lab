@@ -1,9 +1,20 @@
 // Headless-Chromium verification for the 3D Hybridisation Explorer (needs a running dev server + Playwright/Chromium).
 // Usage: node scripts/verify-hybridisation-explorer.mjs [baseUrl] [outDir]     Route: /simulation/hybridisation-explorer
+// Without a baseUrl the app is built into a temp directory and served by `vite preview` on a free port (stopped at the end); a build is used
+// instead of the dev server so that concurrent source edits (HMR full reloads) cannot reset the page mid-run.
 // Honest limits: software GL (SwiftShader), synthetic mouse events only; no real GPU, no real touch hardware, Chromium only.
 import { chromium } from "/opt/node-tools/node_modules/playwright/index.mjs";
 import fs from "node:fs";
-const base = process.argv[2] || "http://127.0.0.1:5199";
+import net from "node:net";
+import { spawn } from "node:child_process";
+async function freePort() { return new Promise((res, rej) => { const srv = net.createServer(); srv.listen(0, "127.0.0.1", () => { const { port } = srv.address(); srv.close(() => res(port)); }); srv.on("error", rej); }); }
+let server = null; let base = process.argv[2];
+if (!base) {
+  const cwd = new URL("..", import.meta.url).pathname; const dist = `${process.env.TMPDIR || "/tmp"}/hy-verify-dist-${process.pid}`;
+  await new Promise((res, rej) => spawn("npx", ["vite", "build", "--outDir", dist, "--emptyOutDir"], { cwd, stdio: "ignore" }).on("exit", (c) => (c === 0 ? res() : rej(new Error(`vite build failed (${c})`)))));
+  const port = await freePort(); server = spawn("npx", ["vite", "preview", "--outDir", dist, "--port", String(port), "--strictPort", "--host", "127.0.0.1"], { cwd, stdio: "ignore" }); base = `http://127.0.0.1:${port}`;
+  for (let i = 0; i < 120; i += 1) { try { if ((await fetch(base)).ok) break; } catch { /* not up yet */ } await new Promise((r) => setTimeout(r, 500)); }
+}
 const out = process.argv[3] || "/tmp/hybridisation-verify";
 fs.mkdirSync(out, { recursive: true });
 const exe = process.env.CHROMIUM || "/opt/pw-browsers/chromium-1243/chrome-linux64/chrome";
@@ -20,7 +31,7 @@ async function open(size) {
   const ctx = await browser.newContext({ viewport: { width: size[0], height: size[1] } }); const p = await ctx.newPage(); p.errs = [];
   p.on("console", (m) => { if (["error", "warning"].includes(m.type()) && !IGNORE.some((r) => r.test(m.text()))) p.errs.push(`${m.type()}: ${m.text().slice(0, 200)}`); });
   p.on("pageerror", (e) => p.errs.push(`pageerror: ${e.message}`));
-  await p.goto(`${base}/simulation/hybridisation-explorer`, { waitUntil: "networkidle" }); await p.waitForSelector(T("hybridisation-workspace")); await sleep(1200); return p;
+  await p.goto(`${base}/simulation/hybridisation-explorer`, { waitUntil: "domcontentloaded" }); await p.waitForSelector(T("hybridisation-workspace")); await sleep(1200); return p;
 }
 async function layout(p, label, size) {
   const r = await p.evaluate(() => {
@@ -41,7 +52,7 @@ console.log("Layout at five viewports (both tabs)");
 for (const size of SIZES) {
   const p = await open(size); const tag = `${size[0]}x${size[1]}`;
   await layout(p, `${tag} lab`, size); await p.screenshot({ path: `${out}/lab-${tag}.png` });
-  await p.click(T("tab-molecules")); await sleep(500); await p.selectOption(T("select-molecule"), "C2H4"); for (let i = 0; i < 5; i += 1) await p.click(T("btn-next")); await sleep(2200);
+  await p.click(T("tab-molecules")); await sleep(500); await p.selectOption(T("select-molecule"), "C2H4"); for (let i = 0; i < 4; i += 1) await p.click(T("btn-next")); await sleep(2200);
   await layout(p, `${tag} molecules`, size); await p.screenshot({ path: `${out}/mol-${tag}.png` });
   check(p.errs.length === 0, `${tag}: console errors ${p.errs.join(" | ")}`); await p.context().close();
 }
@@ -69,7 +80,7 @@ console.log("Orbital Lab flows (1366x768)");
   await p.click(T("btn-reset")); await sleep(300); await p.click(T("box-2px")); await p.click(T("box-2py")); check(await p.locator(T("btn-mix")).isDisabled(), "p+p only: Mix disabled");
   // advanced sets
   for (const [sym, promo, ids, recipe, n] of [["P", "3s1-3p3-3d1", ["3s", "3px", "3py", "3pz", "3dz2"], "sp3d", 5], ["S", "3s1-3p3-3d2", ["3s", "3px", "3py", "3pz", "3dz2", "3dx2-y2"], "sp3d2", 6]]) {
-    await p.click(T("btn-reset")); await p.selectOption(T("select-element"), sym); await p.click(T("state-excited")); if (promo) { try { await p.selectOption(T("select-promotion"), promo); } catch { /* single promotion */ } }
+    await p.click(T("btn-reset")); await p.selectOption(T("select-element"), sym); await p.click(T("state-excited")); if (promo && (await p.locator(T("select-promotion")).count())) await p.selectOption(T("select-promotion"), promo).catch(() => {});
     for (const id of ids) await p.click(T(`box-${id}`)); await p.click(T("btn-mix")); await sleep(2600);
     const nb = await p.locator('[data-testid^="box-hybrid-"]').count(); check(nb === n, `${recipe}: ${n} hybrid boxes (got ${nb})`); await p.screenshot({ path: `${out}/mix-${recipe}.png` });
   }
@@ -105,6 +116,69 @@ console.log("Molecule Explorer flows (1366x768)");
   check(p.errs.length === 0, `molecule flows: console errors ${p.errs.join(" | ")}`); await p.context().close();
 }
 
-await browser.close();
+// ---------------------------------------------------------------------------------------------------------------------------------
+// Part 1 corrections: mixing morph, molecule step sequences, manual overlap build, p and d surfaces -- at all five viewports.
+const freeze = (p, v) => p.evaluate((x) => document.querySelector('[data-testid="hy-stage"]').__hy.api().freezeMorph(x), v);
+console.log("Mixing morph, frozen mid-animation (all viewports; sp / sp2 / sp3)");
+for (const size of SIZES) {
+  const tag = `${size[0]}x${size[1]}`; const p = await open(size);
+  for (const [recipe, ids] of [["sp", ["2s", "2px"]], ["sp2", ["2s", "2px", "2py"]], ["sp3", ["2s", "2px", "2py", "2pz"]]]) {
+    await p.click(T("btn-reset")); await sleep(250); await p.click(T("state-excited")); await freeze(p, 0);
+    for (const id of ids) await p.click(T(`box-${id}`)); await sleep(500);
+    await p.locator(T("hy-stage")).screenshot({ path: `${out}/morph-${recipe}-${tag}-0select.png` });
+    await p.click(T("btn-mix")); await sleep(400);
+    for (const v of [0.14, 0.5, 1]) { await freeze(p, v); await sleep(450); await p.locator(T("hy-stage")).screenshot({ path: `${out}/morph-${recipe}-${tag}-${Math.round(v * 100)}.png` }); }
+    await freeze(p, null); await sleep(2300);
+    const nb = await p.locator('[data-testid^="box-hybrid-"]').count(); check(nb === ids.length, `${tag} ${recipe}: ${ids.length} hybrids after mixing (got ${nb})`);
+    await p.locator(T("hy-stage")).screenshot({ path: `${out}/morph-${recipe}-${tag}-end.png` });
+  }
+  check(p.errs.length === 0, `${tag} morph: console errors ${p.errs.join(" | ")}`); await p.context().close();
+}
+
+console.log("Ethene and ethyne from step 1 to the final step (all viewports)");
+for (const size of SIZES) {
+  const tag = `${size[0]}x${size[1]}`; const p = await open(size); await p.click(T("tab-molecules")); await sleep(500);
+  for (const [mol, steps, sigma, pi] of [["C2H4", 5, 5, 1], ["C2H2", 6, 3, 2]]) {
+    await p.selectOption(T("select-molecule"), mol); await p.click(T("btn-mol-reset")); await sleep(1500);
+    for (let i = 0; i < steps; i += 1) {
+      if (i > 0) { await p.click(T("btn-next")); await sleep(2400); }
+      check(new RegExp(`${i + 1} / ${steps}`).test(await p.locator(T("step-count")).innerText()), `${tag} ${mol}: step ${i + 1}/${steps}`);
+      await p.locator(T("hy-stage")).screenshot({ path: `${out}/mol-${mol}-${tag}-s${i + 1}.png` });
+    }
+    check((await stage(p, "data-sigma")) === String(sigma) && (await stage(p, "data-pi")) === String(pi), `${tag} ${mol}: final ${sigma} sigma + ${pi} pi`);
+  }
+  check(p.errs.length === 0, `${tag} molecules: console errors ${p.errs.join(" | ")}`); await p.context().close();
+}
+
+console.log("Manual ethene-style overlap build, p and d surfaces (1366x768)");
+{
+  const p = await open([1366, 768]); const st = p.locator(T("hy-stage"));
+  await p.click(T("state-excited")); for (const id of ["2s", "2px", "2py"]) await p.click(T(`box-${id}`)); await p.click(T("btn-mix")); await sleep(2400);
+  await p.click(T("btn-duplicate")); await sleep(800); await st.screenshot({ path: `${out}/build-1-two-atoms.png` });
+  check((await p.locator(T("btn-form-bond")).count()) === 0, "Form bond is hidden while no valid overlap exists");
+  await p.click(T("btn-snap-now")); await sleep(1800); await st.screenshot({ path: `${out}/build-2-snapped.png` });
+  const ov = Number(await stage(p, "data-overlap")); check(ov > 0.02, `overlap highlight after snap (measure ${ov})`);
+  check((await p.locator(T("btn-form-bond")).count()) === 1, "Form bond appears once the overlap check passes");
+  await p.click(T("btn-form-bond")); await sleep(800); check((await stage(p, "data-formed")) !== "0", "bond stays formed"); await st.screenshot({ path: `${out}/build-3-formed.png` });
+  await p.locator(T("opt-focus")).evaluate((e) => e.click()); await sleep(1100); await st.screenshot({ path: `${out}/build-4-focus.png` });
+  await p.locator(T("opt-phase")).evaluate((e) => e.click()); await sleep(500); await st.screenshot({ path: `${out}/build-5-phase.png` });
+  // p orbitals (ground-state carbon) and d orbitals (sulfur)
+  await p.click(T("btn-reset")); await sleep(300); for (const id of ["2px", "2py", "2pz"]) { await p.click(T(`box-${id}`)); await sleep(500); await st.screenshot({ path: `${out}/orbital-${id}.png` }); await p.click(T(`box-${id}`)); }
+  await p.selectOption(T("select-element"), "S"); await sleep(400);
+  for (const id of ["3dxy", "3dz2"]) { await p.click(T(`box-${id}`)); await sleep(600); await st.screenshot({ path: `${out}/orbital-${id}.png` }); await p.click(T(`box-${id}`)); }
+  check(p.errs.length === 0, `build/p/d: console errors ${p.errs.join(" | ")}`); await p.context().close();
+}
+
+console.log("Play / Pause / Next / Previous / Reset latency (software GL, so only the step change and first draw are meaningful)");
+{
+  const p = await open([1366, 768]); await p.click(T("tab-molecules")); await sleep(5000);
+  const lat = async (id) => p.evaluate((tid) => new Promise((res) => { const st = document.querySelector('[data-testid="hy-stage"]'); const s0 = st.dataset.step; const t0 = performance.now(); const mo = new MutationObserver(() => { if (st.dataset.step !== s0) { mo.disconnect(); res(performance.now() - t0); } }); mo.observe(st, { attributes: true }); document.querySelector(`[data-testid="${tid}"]`).click(); setTimeout(() => { mo.disconnect(); res(-1); }, 3000); }), id);
+  const play = await lat("btn-play"); console.log(`  Play -> step change after ${play.toFixed(0)} ms`); check(play >= 0 && play < 100, `Play starts moving within 100 ms (${play.toFixed(0)} ms)`);
+  await p.click(T("btn-play")); await sleep(500);
+  for (const id of ["btn-next", "btn-prev", "btn-mol-reset"]) { const ms = await lat(id); console.log(`  ${id} -> ${ms.toFixed(0)} ms`); check(ms >= 0 && ms < 100, `${id} responds within 100 ms (${ms.toFixed(0)} ms)`); }
+  await p.context().close();
+}
+
+await browser.close(); server?.kill();
 console.log(`\n${checks} checks, ${problems.length} problems. Screenshots: ${out}`);
 if (problems.length) { console.log(problems.map((x) => ` - ${x}`).join("\n")); process.exit(1); }

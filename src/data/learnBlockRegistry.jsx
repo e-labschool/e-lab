@@ -1,7 +1,8 @@
-import { useState, useRef, useEffect } from "react";
-import DOMPurify from "dompurify";
+import { useState } from "react";
+import RichTextEditor from "../components/admin/RichTextEditor.jsx";
+import { sanitizeHtml } from "../lib/sanitizeHtml.js";
 import LearnMediaInput from "../components/admin/LearnMediaInput.jsx";
-import EquationFriendlyField, { pasteEquationFriendly, resolveMathAnnotationsInHtml } from "../components/admin/EquationFriendlyField.jsx";
+import EquationFriendlyField, { pasteEquationFriendly } from "../components/admin/EquationFriendlyField.jsx";
 import TableEditor from "../components/admin/learn/TableEditor.jsx";
 import { parseTabularPaste, createEmptyTable } from "../lib/tableParsing.js";
 import { getSyllabusCodeOptions } from "../lib/learn-tree.js";
@@ -9,8 +10,6 @@ import {
   Type, Image as ImageIcon, Video, FlaskConical, Box, PlayCircle,
   Lightbulb, BookMarked, AlertTriangle, Globe2, ListChecks, BarChart3,
   Columns2, HelpCircle, Beaker, Files, Link2, Table2,
-  Bold, Italic, Underline, Superscript, Subscript,
-  List, ListOrdered, AlignLeft, AlignCenter, AlignRight, Eraser,
   Plus, Trash2, ChevronUp, ChevronDown, Heading, Sigma, MessageSquareQuote,
 } from "lucide-react";
 
@@ -218,297 +217,10 @@ export function renderChemMarkup(markup) {
     .replace(/\^\{([^}]+)\}/g, "<sup>$1</sup>").replace(/\^(\S)/g, "<sup>$1</sup>");
 }
 
-/** Compact rich-text toolbar using contentEditable + execCommand — real
- * formatting without pulling in a WYSIWYG library. Output is sanitized
- * with DOMPurify (already an existing dependency) before ever being
- * rendered to a student. */
-const FORMAT_BLOCKS = [
-  { label: "Paragraph", value: "p" },
-  { label: "Heading", value: "h3" },
-  { label: "Subheading", value: "h4" },
-];
-const FONT_SIZES = [12, 14, 16, 18, 20, 24, 28, 32];
-const FONT_FAMILIES = [
-  { label: "Default", value: "inherit" },
-  { label: "Arial", value: "Arial, Helvetica, sans-serif" },
-  { label: "Georgia", value: "Georgia, 'Times New Roman', serif" },
-  { label: "Times New Roman", value: "'Times New Roman', Times, serif" },
-  { label: "Verdana", value: "Verdana, Geneva, sans-serif" },
-  { label: "Trebuchet MS", value: "'Trebuchet MS', sans-serif" },
-];
-const QUICK_COLOURS = [
-  ["#12161c", "Dark"], ["#3654D6", "Indigo"], ["#2B7A6E", "Teal"],
-  ["#B7791F", "Amber"], ["#B85C4A", "Coral"], ["#6D3FA3", "Violet"],
-];
-// Highlight (background colour) was missing entirely from this toolbar --
-// issue 2 names it explicitly ("colour/highlight pickers" must preserve
-// selection) but there was no highlight control to even test. Uses the
-// exact same quick-swatches + native colour-input pattern as Text
-// Colour, through the same applyInlineStyle()/selection-preservation
-// path, rather than a one-off implementation.
-const QUICK_HIGHLIGHTS = [
-  ["#fef08a", "Yellow"], ["#bbf7d0", "Green"], ["#bfdbfe", "Blue"],
-  ["#fecaca", "Red"], ["#e9d5ff", "Purple"],
-];
-
-/** An icon toolbar button with a real, human-readable tooltip (native
- * title attribute) — never a raw label like "\u2022 List" or "x\u00b2".
- * onMouseDown both prevents the default focus-steal AND saves the
- * current selection, so the click that follows always has something
- * valid to act on. */
-function ToolbarButton({ label, icon: Icon, onClick, active = false, saveSelection }) {
-  return (
-    <button
-      type="button"
-      title={label}
-      aria-label={label}
-      aria-pressed={active}
-      onMouseDown={(e) => { e.preventDefault(); saveSelection?.(); }}
-      onClick={onClick}
-      className={`flex h-7 w-7 items-center justify-center rounded hover:bg-[var(--color-line)]/40 ${active ? "bg-[var(--color-indigo-soft)] text-[var(--color-indigo)]" : "text-[var(--color-ink-soft)]"}`}
-    >
-      <Icon size={15} />
-    </button>
-  );
-}
-
-/** The old implementation called document.execCommand("foreColor"/etc)
- * directly from a native <input type="color">'s onChange. That's the bug:
- * opening the native colour picker (or any <select>) steals focus from
- * the contentEditable, and by the time onChange fires the browser has
- * already collapsed/lost the text selection that was supposed to be
- * coloured — execCommand then has nothing to apply to, or applies to
- * whatever the caret happens to be sitting at instead. The fix is to
- * capture (clone) the Range the moment the toolbar control is about to
- * steal focus (onMouseDown, which fires before that happens), then
- * restore it right before running the actual command. Font size/family
- * apply via a real inline-styled <span> instead of execCommand, since
- * execCommand("fontSize") only understands the legacy 1-7 HTML sizes, not
- * arbitrary px values.
- */
-/** Word/Google Docs paste into the rich-text editor often carries a lot of
- * MSO-specific markup bloat alongside the actual formatting. Rather than
- * letting the browser insert that raw, or stripping it down to plain text
- * (which would lose real <sub>/<sup> subscripts/superscripts — those
- * render natively fine in a contentEditable, unlike the plain-textarea
- * EquationFriendlyField fields elsewhere), any KaTeX/MathML equations are
- * first resolved to plain editable Unicode text (same pass used by the
- * plain-text fields — see EquationFriendlyField.jsx) so a pasted formula
- * becomes ordinary characters the admin can click into and edit, not a
- * rendered KaTeX DOM tree. What's left is then sanitized through the
- * exact same DOMPurify pass used for final student rendering and
- * inserted. Plain-text paste (no HTML on the clipboard) is left to the
- * browser's normal behaviour, which already preserves unicode characters
- * correctly. */
-function richTextPaste(event) {
-  const html = event.clipboardData?.getData("text/html");
-  if (!html) return;
-  event.preventDefault();
-  const mathResolved = resolveMathAnnotationsInHtml(html);
-  document.execCommand("insertHTML", false, sanitizeHtml(mathResolved));
-}
-
-export function RichTextEditor({ value, onChange }) {
-  const editorRef = useRef(null);
-  const savedRangeRef = useRef(null);
-
-  function saveSelection() {
-    const sel = window.getSelection();
-    if (!sel || sel.rangeCount === 0 || !editorRef.current) return;
-    const range = sel.getRangeAt(0);
-    if (editorRef.current.contains(range.commonAncestorContainer)) {
-      savedRangeRef.current = range.cloneRange();
-    }
-  }
-
-  // CENTRAL selection-preservation mechanism (issue 2). This is the one
-  // thing every toolbar control relies on -- mouse clicks, keyboard
-  // selection, and (critically) the multi-step colour/highlight picker
-  // interaction (open picker -> hover/click swatches -> pick a value) --
-  // instead of each control re-implementing its own save/restore timing.
-  //
-  // Previously, the ONLY place a selection got saved was each control's
-  // own onMouseDown (plus onMouseUp/onKeyUp on the editor itself). That
-  // is exactly the single-mousedown-save pattern that is fragile for a
-  // popover: a native <input type="color">'s OS-level picker dialog, or
-  // any custom popover rendered outside the toolbar button itself, can
-  // go through intermediate focus/blur cycles that a single mousedown
-  // handler never sees.
-  //
-  // document-level `selectionchange` fires for every selection change
-  // anywhere in the document (mouse, keyboard, drag, triple-click --
-  // every input method), so listening to it directly keeps
-  // savedRangeRef continuously in sync with "the last real selection the
-  // user made inside this editor", with ZERO per-control wiring. Once
-  // focus/selection leaves the editor (e.g. into a colour swatch, a
-  // native <select>, or a popover), `selectionchange` simply stops
-  // firing for a selection inside the editor, so savedRangeRef correctly
-  // keeps the last valid in-editor selection throughout that whole
-  // interaction -- exactly what every toolbar control (including a
-  // multi-step picker) needs restored right before it runs its format
-  // command.
-  useEffect(() => {
-    document.addEventListener("selectionchange", saveSelection);
-    return () => document.removeEventListener("selectionchange", saveSelection);
-  }, []);
-
-  function restoreSelection() {
-    if (!savedRangeRef.current || !editorRef.current) return;
-    editorRef.current.focus();
-    const sel = window.getSelection();
-    sel.removeAllRanges();
-    sel.addRange(savedRangeRef.current);
-  }
-
-  function exec(command, arg) {
-    restoreSelection();
-    document.execCommand(command, false, arg);
-    saveSelection();
-  }
-
-  function handleLink() {
-    restoreSelection();
-    const url = window.prompt("Link URL");
-    if (url) exec("createLink", url);
-  }
-
-  function applyInlineStyle(styleProp, styleValue) {
-    restoreSelection();
-    const sel = window.getSelection();
-    if (!sel || sel.rangeCount === 0 || !editorRef.current) return;
-    const range = sel.getRangeAt(0);
-    if (!editorRef.current.contains(range.commonAncestorContainer)) return;
-
-    const span = document.createElement("span");
-    span.style[styleProp] = styleValue;
-
-    if (range.collapsed) {
-      // Nothing highlighted — apply to a zero-width marker so whatever is
-      // typed next inherits it, per "current typing position".
-      span.appendChild(document.createTextNode("\u200B"));
-      range.insertNode(span);
-      const newRange = document.createRange();
-      newRange.setStart(span.firstChild, 1);
-      newRange.collapse(true);
-      sel.removeAllRanges();
-      sel.addRange(newRange);
-      savedRangeRef.current = newRange.cloneRange();
-    } else {
-      try {
-        range.surroundContents(span);
-      } catch {
-        const frag = range.extractContents();
-        span.appendChild(frag);
-        range.insertNode(span);
-      }
-      const newRange = document.createRange();
-      newRange.selectNodeContents(span);
-      sel.removeAllRanges();
-      sel.addRange(newRange);
-      savedRangeRef.current = newRange.cloneRange();
-    }
-    editorRef.current.focus();
-  }
-
-  return (
-    <div>
-      <div className="mb-1.5 flex flex-wrap items-center gap-1 rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] p-1">
-        <select
-          title="Paragraph style"
-          aria-label="Paragraph style"
-          defaultValue="p"
-          onMouseDown={saveSelection}
-          onChange={(e) => exec("formatBlock", e.target.value)}
-          className="rounded border border-[var(--color-line)] bg-[var(--color-paper-raised)] px-1 py-1 text-[11px] text-[var(--color-ink-soft)]"
-        >
-          {FORMAT_BLOCKS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
-        </select>
-
-        <select
-          title="Font family"
-          aria-label="Font family"
-          defaultValue=""
-          onMouseDown={saveSelection}
-          onChange={(e) => { if (e.target.value) applyInlineStyle("fontFamily", e.target.value); }}
-          className="max-w-[7.5rem] rounded border border-[var(--color-line)] bg-[var(--color-paper-raised)] px-1 py-1 text-[11px] text-[var(--color-ink-soft)]"
-        >
-          <option value="">Font</option>
-          {FONT_FAMILIES.map((f) => <option key={f.label} value={f.value}>{f.label}</option>)}
-        </select>
-
-        <select
-          title="Font size"
-          aria-label="Font size"
-          defaultValue=""
-          onMouseDown={saveSelection}
-          onChange={(e) => { if (e.target.value) applyInlineStyle("fontSize", `${e.target.value}px`); }}
-          className="rounded border border-[var(--color-line)] bg-[var(--color-paper-raised)] px-1 py-1 text-[11px] text-[var(--color-ink-soft)]"
-        >
-          <option value="">Size</option>
-          {FONT_SIZES.map((s) => <option key={s} value={s}>{s}</option>)}
-        </select>
-
-        <span className="mx-0.5 h-5 w-px bg-[var(--color-line)]" />
-
-        <ToolbarButton label="Bold" icon={Bold} saveSelection={saveSelection} onClick={() => exec("bold")} />
-        <ToolbarButton label="Italic" icon={Italic} saveSelection={saveSelection} onClick={() => exec("italic")} />
-        <ToolbarButton label="Underline" icon={Underline} saveSelection={saveSelection} onClick={() => exec("underline")} />
-        <ToolbarButton label="Superscript" icon={Superscript} saveSelection={saveSelection} onClick={() => exec("superscript")} />
-        <ToolbarButton label="Subscript" icon={Subscript} saveSelection={saveSelection} onClick={() => exec("subscript")} />
-
-        <span className="mx-0.5 h-5 w-px bg-[var(--color-line)]" />
-
-        <span className="px-1 text-[11px] text-[var(--color-ink-soft)]">Text Colour</span>
-        {QUICK_COLOURS.map(([colour, name]) => (
-          <button key={colour} type="button" title={`Text colour: ${name}`} aria-label={`Text colour ${name}`} onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={() => applyInlineStyle("color", colour)} className="h-5 w-5 rounded-full border border-black/10" style={{ backgroundColor: colour }} />
-        ))}
-        <label className="flex items-center gap-1 px-1 text-[11px] text-[var(--color-ink-soft)]" title="Custom text colour">
-          Custom
-          <input type="color" defaultValue="#12161c" onMouseDown={saveSelection} onChange={(e) => applyInlineStyle("color", e.target.value)} className="h-6 w-7 cursor-pointer rounded border border-[var(--color-line)] bg-transparent p-0.5" />
-        </label>
-
-        <span className="mx-0.5 h-5 w-px bg-[var(--color-line)]" />
-
-        <span className="px-1 text-[11px] text-[var(--color-ink-soft)]">Highlight</span>
-        {QUICK_HIGHLIGHTS.map(([colour, name]) => (
-          <button key={colour} type="button" title={`Highlight: ${name}`} aria-label={`Highlight ${name}`} onMouseDown={(e) => { e.preventDefault(); saveSelection(); }} onClick={() => applyInlineStyle("backgroundColor", colour)} className="h-5 w-5 rounded-full border border-black/10" style={{ backgroundColor: colour }} />
-        ))}
-        <label className="flex items-center gap-1 px-1 text-[11px] text-[var(--color-ink-soft)]" title="Custom highlight colour">
-          Custom
-          <input type="color" defaultValue="#fef08a" onMouseDown={saveSelection} onChange={(e) => applyInlineStyle("backgroundColor", e.target.value)} className="h-6 w-7 cursor-pointer rounded border border-[var(--color-line)] bg-transparent p-0.5" />
-        </label>
-        <ToolbarButton label="Remove Highlight" icon={Eraser} saveSelection={saveSelection} onClick={() => applyInlineStyle("backgroundColor", "transparent")} />
-
-        <span className="mx-0.5 h-5 w-px bg-[var(--color-line)]" />
-
-        <ToolbarButton label="Bullets" icon={List} saveSelection={saveSelection} onClick={() => exec("insertUnorderedList")} />
-        <ToolbarButton label="Numbered List" icon={ListOrdered} saveSelection={saveSelection} onClick={() => exec("insertOrderedList")} />
-
-        <span className="mx-0.5 h-5 w-px bg-[var(--color-line)]" />
-
-        <ToolbarButton label="Align Left" icon={AlignLeft} saveSelection={saveSelection} onClick={() => exec("justifyLeft")} />
-        <ToolbarButton label="Align Center" icon={AlignCenter} saveSelection={saveSelection} onClick={() => exec("justifyCenter")} />
-        <ToolbarButton label="Align Right" icon={AlignRight} saveSelection={saveSelection} onClick={() => exec("justifyRight")} />
-
-        <span className="mx-0.5 h-5 w-px bg-[var(--color-line)]" />
-
-        <ToolbarButton label="Link" icon={Link2} saveSelection={saveSelection} onClick={handleLink} />
-        <ToolbarButton label="Clear Formatting" icon={Eraser} saveSelection={saveSelection} onClick={() => exec("removeFormat")} />
-      </div>
-      <div
-        ref={editorRef}
-        contentEditable
-        suppressContentEditableWarning
-        onMouseUp={saveSelection}
-        onKeyUp={saveSelection}
-        onPaste={richTextPaste}
-        className="min-h-[100px] rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] px-3 py-2 text-sm text-[var(--color-ink)] focus:border-[var(--color-indigo)] focus:outline-none [&_h3]:text-lg [&_h3]:font-bold [&_h4]:text-base [&_h4]:font-semibold [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-[var(--color-indigo)] [&_a]:underline [&_sub]:text-[0.75em] [&_sup]:text-[0.75em] [&_sub]:relative [&_sup]:relative [&_sub]:[line-height:0] [&_sup]:[line-height:0]"
-        dangerouslySetInnerHTML={{ __html: resolveMathAnnotationsInHtml(value) }}
-        onBlur={(e) => onChange(e.currentTarget.innerHTML)}
-      />
-    </div>
-  );
-}
+// The Rich Text editor itself lives in components/admin/RichTextEditor.jsx
+// (Range-based formatting, snapshot undo/redo, drafts). Re-exported here so
+// every existing `import { RichTextEditor } from "learnBlockRegistry.jsx"` keeps working.
+export { RichTextEditor };
 
 // ============================================================
 // Per-type editors — compact forms, not elaborate. Given `content` and
@@ -530,7 +242,7 @@ export function BlockEditor({ blockType, content, onChange, pageId, blockId }) {
           </div>
           <div>
             <label className={labelCls}>Text</label>
-            <RichTextEditor value={content.html ?? ""} onChange={(html) => set("html", html)} />
+            <RichTextEditor value={content.html ?? ""} onChange={(html) => set("html", html)} draftScope={pageId && blockId ? `${pageId}:${blockId}:html` : undefined} />
           </div>
           <div className="rounded-md border border-[var(--color-line)] bg-[var(--color-paper)]/45 p-3">
             <p className="mb-2 text-xs font-semibold text-[var(--color-ink)]">Optional image inside this text block</p>
@@ -1050,6 +762,4 @@ function CompareContrastEditor({ content, set }) {
   );
 }
 
-export function sanitizeHtml(html) {
-  return DOMPurify.sanitize(html || "", { ADD_ATTR: ["style", "color"] });
-}
+export { sanitizeHtml };

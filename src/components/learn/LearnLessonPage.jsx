@@ -1,5 +1,7 @@
-import { useState, useEffect } from "react";
-import { useParams, useNavigate, useLocation } from "react-router-dom";
+import { useState, useEffect, useRef } from "react";
+import { useParams, useNavigate, useLocation, useNavigationType } from "react-router-dom";
+import { sessionKey } from "../../lib/sessionState.js";
+import { useScrollRestoration } from "../../lib/scrollRestore.js";
 import { ChevronLeft, ChevronRight, CheckCircle2, RotateCcw } from "lucide-react";
 import { getPublishedLesson, listPublishedLessonMeta } from "../../lib/learnContentService.js";
 import { getLearnCmsCurriculumTree } from "../../data/learnCmsCurriculum.js";
@@ -53,6 +55,12 @@ export default function LearnLessonPage() {
   const { conceptId: pageId } = useParams(); // param name kept as conceptId — see LearnLayout.jsx
   const navigate = useNavigate();
   const location = useLocation();
+  const navType = useNavigationType();
+  // Reload / browser Back-Forward land on the same lesson and should reopen at
+  // the saved scroll offset; a fresh navigation (sidebar click, Next lesson)
+  // starts at the top. Live tab switches never get here: nothing remounts.
+  const [restoreScroll] = useState(navType === "POP");
+  const restoreScrollRef = useRef(restoreScroll);
   const { user, profile } = useAuth();
   const studentLevel = profile?.level;
   const { settings: displaySettings } = useDisplaySettings();
@@ -115,7 +123,7 @@ export default function LearnLessonPage() {
           setContentPage(remembered);
         }
         if (user?.id) saveUserScopedValue(user.id, "learn:last-lesson", pageId);
-        window.scrollTo({ top: 0, behavior: "auto" });
+        if (restoreScrollRef.current) restoreScrollRef.current = false; else window.scrollTo({ top: 0, behavior: "auto" });
       })
       .catch((err) => setError(err.message || "Couldn't load this lesson."))
       .finally(() => setLoading(false));
@@ -151,6 +159,13 @@ export default function LearnLessonPage() {
     saveUserScopedValue(user.id, `learn:last-page:${pageId}`, safe);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageId, contentPage, lesson, studentLevel, user?.id]);
+
+  useScrollRestoration({
+    key: sessionKey("scroll", "learn", pageId, Number.isFinite(contentPage) ? contentPage : "last"),
+    ready: !loading && Boolean(lesson),
+    allow: restoreScroll,
+    once: true,
+  });
 
   if (loading) return <div className="flex min-h-[50vh] items-center justify-center"><ELabLoader /></div>;
   if (error) return <p className="p-10 text-center text-sm text-[var(--color-coral)]">{error}</p>;

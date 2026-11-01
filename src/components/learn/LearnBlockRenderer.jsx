@@ -11,6 +11,8 @@ import { findPublishedLessonBySyllabusCode } from "../../lib/learnContentService
 import ZoomableImage from "../image-viewer/ZoomableImage.jsx";
 import ZoomableHtml from "../image-viewer/ZoomableHtml.jsx";
 import { useNavigate } from "react-router-dom";
+import { SimulationSessionProvider } from "../interactive-shell/simulationSession.js";
+import { RICH_TEXT_TYPOGRAPHY, RICH_TEXT_STUDENT_HEADINGS } from "../../lib/richTextStyles.js";
 import { useAuth } from "../../context/AuthContext.jsx";
 
 // The scientific-content rendering pipeline itself (⟦math:...⟧, \( \),
@@ -32,7 +34,7 @@ export default function LearnBlockRenderer({ block }) {
         <section className="after:block after:clear-both after:content-['']">
           {c.title && <h2 className="mb-2 text-xl font-semibold tracking-tight" style={{ color: c.titleColor || "#f08484" }}>{c.title}</h2>}
           {c.imageUrl && wrap !== "none" && <WrappedContentImage content={c} />}
-          <ZoomableHtml className="prose-sm max-w-none text-justify text-[var(--color-ink-soft)] [&_h3]:text-left [&_h3]:text-lg [&_h3]:font-bold [&_h3]:text-[var(--color-ink)] [&_h4]:text-left [&_h4]:text-base [&_h4]:font-semibold [&_h4]:text-[var(--color-ink)] [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-[var(--color-indigo)] [&_a]:underline [&_sub]:text-[0.75em] [&_sup]:text-[0.75em] [&_sub]:relative [&_sup]:relative [&_sub]:[line-height:0] [&_sup]:[line-height:0]" html={sanitizeHtml(renderMathMarkersInHtml(resolveMathAnnotationsInHtml(c.html)))} />
+          <ZoomableHtml className={`prose-sm max-w-none text-justify text-[var(--color-ink-soft)] ${RICH_TEXT_TYPOGRAPHY} ${RICH_TEXT_STUDENT_HEADINGS}`} html={sanitizeHtml(renderMathMarkersInHtml(resolveMathAnnotationsInHtml(c.html)))} />
           {c.imageUrl && wrap === "none" && <WrappedContentImage content={c} />}
         </section>
       );
@@ -92,9 +94,11 @@ export default function LearnBlockRenderer({ block }) {
       const Sim = SIMULATION_COMPONENTS[c.simulationId];
       if (!Sim) return <PlaceholderBlock label="Simulation not yet configured" />;
       return (
-        <Suspense fallback={<div className="flex justify-center py-8"><ELabLoader /></div>}>
-          <Sim compact config={c.simulationConfig} />
-        </Suspense>
+        <SimulationSessionProvider value={`${block.page_id ?? "lesson"}:${block.id ?? c.simulationId}`}>
+          <Suspense fallback={<div className="flex justify-center py-8"><ELabLoader /></div>}>
+            <Sim compact config={c.simulationConfig} />
+          </Suspense>
+        </SimulationSessionProvider>
       );
     }
 

@@ -4,9 +4,10 @@
 //   perpendicular-to-the-axis p orbitals (pi), (3) the internuclear distance against a window derived from the lobe sizes,
 //   (4) phase (facing lobes must carry the same phase colour), and (5) occupancy (one unpaired electron in each orbital).
 // A close pair of atoms is never labelled as bonded unless every condition passes.
-import { P_AXIS, P_LATERAL, reach as reachOf } from "./orbitals.js";
-import { RECIPES } from "./hybrids.js";
-import { qRotate, sub, dot, len, scale, add, angleDeg, normalize, clamp } from "./vec.js";
+import { P_AXIS, reach as reachOf } from "./orbitals.js";
+import { overlapBetween } from "./overlapVolume.js";
+import { RECIPES, termsToKinds, peakDirection } from "./hybrids.js";
+import { qRotate, qFromUnitVectors, QI, sub, dot, len, scale, add, angleDeg, normalize, clamp } from "./vec.js";
 
 export const TOL = { sigmaDeg: 20, piParallelDeg: 15, piPerpDeg: 15 };
 const COS_SIGMA = Math.cos((TOL.sigmaDeg * Math.PI) / 180);
@@ -35,6 +36,7 @@ export function atomOrbitalInstances(atom) {
     out.push({
       key: `${atom.id}|${o.id}`, atomId: atom.id, orbId: o.id, cls: o.type, n: o.n, kind: o.kind, latex: o.latex, plain: o.plain, electrons: o.electrons,
       pos: atom.pos, axis: o.type === "p" ? qRotate(atom.quat, P_AXIS[o.kind]) : null, reach: reachOf(o.type, o.n),
+      terms: [[o.kind, 1]], quat: atom.quat,
     });
   }
   if (atom.hybrid) {
@@ -44,16 +46,40 @@ export function atomOrbitalInstances(atom) {
       out.push({
         key: `${atom.id}|${h.id}`, atomId: atom.id, orbId: h.id, cls: "hybrid", n: sOrb.n, kind: "hybrid", latex: recipe.latex, plain: recipe.id, electrons: h.electrons,
         pos: atom.pos, axis: qRotate(atom.quat, h.direction), reach: reachOf("hybrid", sOrb.n), hybridIndex: h.index, recipeId: recipe.id,
+        terms: termsToKinds(h.terms), quat: atom.quat,
       });
     }
   }
   return out;
 }
 
+// ---- distance windows from the DRAWN surfaces ---------------------------------------------------------------------------
+// A bond is only valid at separations where the two drawn lobes really overlap, so the window is derived from the continuous overlap
+// measure (model/overlapVolume.js) of a canonical aligned pair: `max` = where the overlap has just become visible (6 % of the peak overlap),
+// `ideal` = a comfortable overlap (40 %), `min` = where the nuclei have been pushed so close that the overlap has fallen back to 60 % of its peak.
+const THRESH = { max: 0.03, ideal: 0.4, min: 0.6 }; // fractions of the peak overlap
+const windowCache = new Map();
+/** Local direction of the facing (positive) lobe of an instance, or null for an s orbital. */
+function localLobeDir(o) {
+  if (o.cls === "s") return null;
+  if (o.cls === "p") return P_AXIS[o.terms[0][0]];
+  return peakDirection(o.terms);
+}
+const canon = (o, dir, pos) => ({ ...o, pos, atomId: "x", electrons: 1, quat: (() => { const l = localLobeDir(o); return l ? qFromUnitVectors(l, dir) : QI; })() });
 export function distanceWindow(type, a, b) {
-  if (type === "sigma") { const s = a.reach + b.reach; return { min: 0.35 * s, ideal: 0.6 * s, max: 0.95 * s }; }
-  const r = P_LATERAL * (a.reach + b.reach); // sum of the lateral half-widths of two parallel p lobes: they touch at d = r
-  return { min: 0.5 * r, ideal: 0.85 * r, max: 1.1 * r };
+  if (a.cls === "d" || b.cls === "d" || !a.terms || !b.terms) { const s = a.reach + b.reach; return { min: 0.35 * s, ideal: 0.6 * s, max: 0.95 * s }; }
+  const key = `${type}|${a.cls}|${a.reach.toFixed(3)}|${a.terms.map((t) => `${t[0]}${t[1].toFixed(4)}`).join("")}|${b.cls}|${b.reach.toFixed(3)}|${b.terms.map((t) => `${t[0]}${t[1].toFixed(4)}`).join("")}`;
+  let w = windowCache.get(key); if (w) return w;
+  const sum = a.reach + b.reach;
+  const at = (d) => (type === "sigma"
+    ? overlapBetween(canon(a, [1, 0, 0], [0, 0, 0]), canon(b, [-1, 0, 0], [d, 0, 0])).measure
+    : overlapBetween(canon(a, [0, 0, 1], [0, 0, 0]), canon(b, [0, 0, 1], [d, 0, 0])).measure);
+  // m(d) rises as the lobes approach, peaks when they overlap most and falls again if the nuclei are pushed on past each other.
+  let peak = 0; let dPeak = 0.05 * sum; for (let i = 1; i <= 20; i += 1) { const d = (i / 20) * sum; const m = at(d); if (m > peak) { peak = m; dPeak = d; } }
+  const far = (frac) => { let lo = dPeak; let hi = sum; const target = frac * peak; for (let i = 0; i < 14; i += 1) { const mid = 0.5 * (lo + hi); if (at(mid) > target) lo = mid; else hi = mid; } return 0.5 * (lo + hi); };
+  const near = (frac) => { let lo = 0.02 * sum; let hi = dPeak; const target = frac * peak; for (let i = 0; i < 14; i += 1) { const mid = 0.5 * (lo + hi); if (at(mid) < target) lo = mid; else hi = mid; } return 0.5 * (lo + hi); };
+  w = { min: Math.max(0.12 * sum, near(THRESH.min)), ideal: far(THRESH.ideal), max: far(THRESH.max) };
+  windowCache.set(key, w); return w;
 }
 
 // allowed sigma pairs (class names sorted alphabetically before joining)

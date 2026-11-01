@@ -1,5 +1,6 @@
-import { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { createContext, useContext, useEffect, useRef, useState, useCallback } from "react";
 import { supabase, isSupabaseConfigured } from "../lib/supabaseClient.js";
+import { sameJson, mergeSameUserSession } from "../lib/authSessionMerge.js";
 
 const AuthContext = createContext(null);
 
@@ -20,28 +21,43 @@ export function AuthProvider({ children }) {
   const [loadingProfile, setLoadingProfile] = useState(false);
   const [authError, setAuthError] = useState(null);
 
+  const profileRef = useRef(null);
+  const userIdRef = useRef(null);
+  useEffect(() => { profileRef.current = profile; }, [profile]);
+  useEffect(() => { userIdRef.current = session?.user?.id ?? null; }, [session]);
+
   // Returns the fetched row (or null) directly, in addition to updating
   // context state — callers that need the value immediately (e.g. the
   // sign-in redirect, which must read `role` right away) can await this
   // instead of racing a subsequent render of `profile`.
-  const fetchProfile = useCallback(async (userId) => {
+  //
+  // SILENT REVALIDATION (tab-switch bug): when a profile for this same
+  // user is already loaded, a refetch must NOT flip `loadingProfile` on
+  // (ProtectedRoute used to answer that with a full-page loader, which
+  // unmounted the entire signed-in tree -- Learn page, open simulation,
+  // admin editor -- and reset scroll to the top) and must not replace the
+  // profile object unless a field really changed. Errors are swallowed in
+  // silent mode so a flaky network on tab return can't blank the UI.
+  const fetchProfile = useCallback(async (userId, { silent } = {}) => {
     if (!supabase || !userId) {
       setProfile(null);
       return null;
     }
-    setLoadingProfile(true);
+    const isSilent = silent ?? profileRef.current?.id === userId;
+    if (!isSilent) setLoadingProfile(true);
     const { data, error } = await supabase
       .from("profiles")
       .select("*")
       .eq("id", userId)
       .maybeSingle();
-    setLoadingProfile(false);
+    if (!isSilent) setLoadingProfile(false);
     if (error) {
-      setAuthError(error.message);
-      return null;
+      if (!isSilent) setAuthError(error.message);
+      return isSilent ? profileRef.current : null;
     }
-    setProfile(data ?? null);
-    return data ?? null;
+    const next = data ?? null;
+    setProfile((prev) => (sameJson(prev, next) ? prev : next));
+    return next;
   }, []);
 
   useEffect(() => {
@@ -53,10 +69,23 @@ export function AuthProvider({ children }) {
       if (data.session?.user?.id) fetchProfile(data.session.user.id);
     });
 
-    const { data: subscription } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    const { data: subscription } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      const nextId = nextSession?.user?.id ?? null;
+      const sameUser = Boolean(nextId) && nextId === userIdRef.current;
+      if (sameUser) {
+        // supabase-js re-emits SIGNED_IN (and TOKEN_REFRESHED) for the
+        // already-signed-in user whenever the browser tab becomes visible
+        // again. That is a token bookkeeping event, not an identity
+        // change: keep the existing `user` object (so every effect keyed
+        // on it stays put), take the fresh tokens, and only revalidate
+        // the profile quietly for events that can actually change it.
+        setSession((prev) => mergeSameUserSession(prev, nextSession));
+        if (event === "USER_UPDATED") fetchProfile(nextId, { silent: true });
+        return;
+      }
       setSession(nextSession);
-      if (nextSession?.user?.id) {
-        fetchProfile(nextSession.user.id);
+      if (nextId) {
+        fetchProfile(nextId);
       } else {
         setProfile(null);
       }

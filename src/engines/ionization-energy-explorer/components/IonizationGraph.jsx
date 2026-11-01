@@ -37,16 +37,16 @@ export default function IonizationGraph({ element, values, currentStep, removalO
   });
 
   return (
-    <div className={isViewport ? "flex h-full min-h-0 flex-col rounded-md border border-[#1c2740] bg-[#0a0f1e] p-2.5" : "rounded-md border border-[#1c2740] bg-[#0a0f1e] p-4"}>
+    <div className={isViewport ? "sim-surface-dark flex h-full min-h-0 flex-col rounded-md border border-[#1c2740] bg-[#0a0f1e] p-2.5" : "sim-surface-dark rounded-md border border-[#1c2740] bg-[#0a0f1e] p-4"}>
       <div className={isViewport ? "mb-1.5 flex shrink-0 flex-wrap items-center justify-between gap-2" : "mb-3 flex flex-wrap items-center justify-between gap-2"}>
         <h3 className="text-xs font-semibold uppercase tracking-wide text-[#8fb4e0]">Successive Ionization Energy Graph &mdash; {element.name}</h3>
-        <div className="flex overflow-hidden rounded-md border border-[#274063]">
+        <div className="flex overflow-hidden rounded-md border border-[var(--sim-btn-border)]">
           <button
             type="button"
             aria-label="Show bar graph"
             aria-pressed={mode === "bar"}
             onClick={() => setMode("bar")}
-            className={`flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium ${mode === "bar" ? "bg-[#173257] text-[#eaf6ff]" : "text-[#7fa8d9]"}`}
+            className={`flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium ${mode === "bar" ? "bg-[#2f67c2] text-white" : "text-[#9cc0ee]"}`}
           >
             <BarChart3 size={12} /> Bar Graph
           </button>
@@ -55,7 +55,7 @@ export default function IonizationGraph({ element, values, currentStep, removalO
             aria-label="Show line graph"
             aria-pressed={mode === "line"}
             onClick={() => setMode("line")}
-            className={`flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium ${mode === "line" ? "bg-[#173257] text-[#eaf6ff]" : "text-[#7fa8d9]"}`}
+            className={`flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium ${mode === "line" ? "bg-[#2f67c2] text-white" : "text-[#9cc0ee]"}`}
           >
             <LineChartIcon size={12} /> Line Graph
           </button>

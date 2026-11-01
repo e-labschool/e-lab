@@ -218,7 +218,7 @@ export default function EquivalencePoint() {
   }
 
   return (
-    <section className="equivalence-simulation">
+    <section className="equivalence-simulation sim-surface-dark">
       <div className="equivalence-header">
         <div>
           <h2>Equivalence Point</h2>

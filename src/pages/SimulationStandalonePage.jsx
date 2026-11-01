@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { SIMULATION_REGISTRY } from "../data/simulationRegistry.js";
 import { SIMULATION_COMPONENTS } from "../data/simulationEngineComponents.js";
 import ELabLoader from "../components/ui/ELabLoader.jsx";
+import { SimulationSessionProvider } from "../components/interactive-shell/simulationSession.js";
 
 // The "Open in New Tab" destination -- a dedicated, standalone route
 // (/simulation/:simulationId) rather than reopening the whole Student
@@ -59,9 +60,11 @@ export default function SimulationStandalonePage() {
             its full title/subtitle header plus Simulation Actions.
             `standalone` puts the engine's InteractiveFrame into the same
             compact viewport layout Full Screen uses. */}
-        <Suspense fallback={<div className="flex h-full items-center justify-center"><ELabLoader /></div>}>
-          <Sim standalone />
-        </Suspense>
+        <SimulationSessionProvider value={`standalone:${simulationId}`}>
+          <Suspense fallback={<div className="flex h-full items-center justify-center"><ELabLoader /></div>}>
+            <Sim standalone />
+          </Suspense>
+        </SimulationSessionProvider>
       </main>
     </div>
   );

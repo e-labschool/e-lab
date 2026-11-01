@@ -88,6 +88,7 @@
 }
 .vx-atom:hover { transform: translateY(-1px); filter: brightness(1.08); }
 .vx-atom:active { cursor: grabbing; }
+.vx-atom:hover, .vx-atom:active { box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4), inset 0 -2px 4px rgba(0, 0, 0, 0.25) !important; }
 .vx-bonds { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; }
 .vx-bond { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; min-width: 0; padding: 4px 2px; border: 1px solid var(--vx-line); border-radius: 9px; background: var(--vx-panel-2); color: var(--vx-ink); font: inherit; cursor: grab; touch-action: none; user-select: none; line-height: 1.1; }
 .vx-bond[aria-pressed="true"] { border-color: var(--vx-accent); background: var(--vx-accent-soft); box-shadow: inset 0 0 0 1px var(--vx-accent); }
@@ -230,3 +231,42 @@
 .vx-explain li { line-height: 1.35; } .vx-explain .is-ok { color: var(--vx-ok); }
 
 @container (max-width: 640px) { .vx-viewer-hint:not([data-live]) { display: none; } }
+
+/* ---- Shared control contract on the navy surface ---------------------------------------------------
+   docs/SIMULATION_DASHBOARD_LAYOUT.md "Shared button style contract": every control gets a >= 3:1 outline
+   (the old --vx-line #28427f was ~1.6:1 against the navy), >= 4.5:1 labels, and visible hover / active / focus
+   states. Only variables and borders here -- no layout. */
+.vx-theme[data-vx-theme="dark"] [data-testid="vsepr-workspace"] {
+  --vx-ctl-line: #7c9bdd;           /* control outline, 4.6-6.1:1 on every navy panel */
+  --vx-accent-solid: #2358d0;       /* solid fill that holds a white label at 5.6:1 */
+  --sim-btn-fill: #1a3a78;
+  --sim-btn-fill-hover: #27498f;
+  --sim-btn-fill-active: #345aa8;
+  --sim-btn-ink: #eef4ff;
+  --sim-btn-border: #7c9bdd;
+  --sim-btn-border-hover: #d6e4ff;
+  --sim-btn-accent: #2358d0;
+  --sim-btn-accent-hover: #2d6af0;
+  --sim-btn-focus: #ffd166;
+  --sim-btn-hover-tint: rgba(214, 228, 255, 0.16);
+  --sim-btn-active-tint: rgba(0, 0, 0, 0.28);
+  --sim-btn-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+  --sd-blue: #2358d0;
+}
+.vx-theme[data-vx-theme="light"] [data-testid="vsepr-workspace"] { --vx-ctl-line: #5b6784; --vx-accent-solid: #2b66d9; }
+[data-testid="vsepr-workspace"] :is(.vx-btn, .vx-bond, .vx-lp, .vx-vt, .vx-sb-btn, .vx-why-btn, .vx-mol, .vx-sel select, .vx-field select, .vx-seg, .vx-search, .sd-btn, .sd-tab, .sim-toolbar-btn) { border-color: var(--vx-ctl-line); }
+[data-testid="vsepr-workspace"] :is(.vx-btn, .vx-bond, .vx-lp, .vx-vt, .vx-sb-btn, .vx-why-btn, .vx-mol, .sd-btn, .sd-tab):hover:not(:disabled) { border-color: #d6e4ff; }
+[data-testid="vsepr-workspace"] .sd-btn { border-width: 1.5px; }
+.vx-btn { border-width: 1.5px; }
+.vx-btn:disabled { opacity: 1; color: #9bb0d9; border-style: dashed; background: transparent; }
+.vx-btn--primary, .vx-sb-btn[aria-checked="true"] { background: var(--vx-accent-solid); border-color: #d6e4ff; }
+[data-testid="vsepr-workspace"] .sd-tab[aria-selected="true"] { border-color: #d6e4ff !important; background: var(--vx-accent-solid) !important; }
+[data-testid="vsepr-workspace"] .sd-tab:not([aria-selected="true"]) { border-color: var(--vx-ctl-line) !important; }
+.vx-seg-btn { color: var(--vx-ink); }                                   /* was --vx-muted: 2.2-2.4:1 on the navy track */
+.vx-seg-btn[aria-checked="true"], .vx-seg-btn[aria-selected="true"] { background: #1f4aa8; border-color: #d6e4ff; box-shadow: inset 0 0 0 1px #d6e4ff; }
+.vx-bond[aria-pressed="true"], .vx-vt[aria-pressed="true"] { border-color: #d6e4ff; box-shadow: inset 0 0 0 1px #d6e4ff; }
+.vx-btn:active:not(:disabled), .vx-bond:active, .vx-lp:active, .vx-vt:active, .vx-why-btn:active { background: var(--sim-btn-fill-active); }
+.vx-why-btn:hover, .vx-lp:hover, .vx-bond:hover { background: var(--vx-accent-soft); }
+.vx-vt:active { background: var(--sim-btn-fill-active); }
+.vx-seg-btn:active:not(:disabled) { background: var(--sim-btn-fill-active); }
+.vx-btn:focus-visible, .vx-atom:focus-visible, .vx-bond:focus-visible, .vx-lp:focus-visible, .vx-mol:focus-visible, .vx-seg-btn:focus-visible, .vx-vt:focus-visible { outline-color: #ffd166; }

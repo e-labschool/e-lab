@@ -12,12 +12,16 @@
   --hy-stage: radial-gradient(75% 70% at 50% 42%, #1a4290 0%, #0d2455 55%, #081a3f 100%);
   --hy-label-bg: rgba(8, 20, 50, 0.84); --hy-label-ink: #f4f8ff; --hy-warn: #ffc65c; --hy-ok: #7fe3a6; --hy-bad: #ff8f8f; --hy-danger: #ff7f86;
   --hy-shadow: 0 2px 10px rgba(0, 0, 0, 0.35); --hy-focus: #ffd166; --hy-box-bg: rgba(8, 20, 50, 0.6); --hy-box-on: #ffd166; --hy-switch-off: #3b4a70;
-  /* 3D: phase colours (positive lobe / negative lobe) per orbital family; hybrids 0-5 */
-  --hy-s-pos: #c9d6ff; --hy-s-neg: #8a9bd6; --hy-p-pos: #4f8cff; --hy-p-neg: #ff6b6b; --hy-d-pos: #b07cff; --hy-d-neg: #ffb454;
-  --hy-h0-pos: #22d3ee; --hy-h0-neg: #a5f0fb; --hy-h1-pos: #fb923c; --hy-h1-neg: #fdd0a6; --hy-h2-pos: #c084fc; --hy-h2-neg: #e5ccfd;
-  --hy-h3-pos: #4ade80; --hy-h3-neg: #bff5d2; --hy-h4-pos: #f472b6; --hy-h4-neg: #fbc4de; --hy-h5-pos: #94a3b8; --hy-h5-neg: #d3dae3;
-  --hy-sigma: #fff27a; --hy-pi: #b6ff3b; --hy-sel: #ffe9a8; --hy-nuc: #ffffff; --hy-ring-pos: #4f8cff; --hy-ring-neg: #ff6b6b;
-  --hy-axis-x: #ff6b6b; --hy-axis-y: #5ee08a; --hy-axis-z: #6ba6ff; --hy-lp: #ffffff;
+  /* 3D colour system (shared by both tabs). Each orbital has TWO shades of one hue: -pos = the vivid shade (wavefunction phase +),
+     -neg = the pale shade (wavefunction phase -). Phase is a sign of the wavefunction, NOT an electric charge.
+     2px blue, 2py green, 2pz purple, s red/orange, d gold, hybrids h0-h5 each their own hue (none repeats the p or s hues). */
+  --hy-s-pos: #ffa559; --hy-s-neg: #ff7a66;
+  --hy-px-pos: #3b82ff; --hy-px-neg: #a9c8ff; --hy-py-pos: #1fc46a; --hy-py-neg: #a6f0c4; --hy-pz-pos: #a855f7; --hy-pz-neg: #dfc4fb;
+  --hy-d-pos: #f5b82e; --hy-d-neg: #fde6a0;
+  --hy-h0-pos: #ec4899; --hy-h0-neg: #8f2a62; --hy-h1-pos: #1ccfe6; --hy-h1-neg: #14707d; --hy-h2-pos: #ff6b5e; --hy-h2-neg: #a83e36;
+  --hy-h3-pos: #a3e635; --hy-h3-neg: #5f8a1c; --hy-h4-pos: #f59e0b; --hy-h4-neg: #a56a07; --hy-h5-pos: #94a3b8; --hy-h5-neg: #5c6879;
+  --hy-sigma: #fff3a8; --hy-pi: #b6ff3b; --hy-sel: #ffe9a8; --hy-nuc: #ffffff; --hy-ring-pos: #4f8cff; --hy-ring-neg: #ff6b6b;
+  --hy-axis-x: #3b82ff; --hy-axis-y: #1fc46a; --hy-axis-z: #a855f7; --hy-lp: #ffffff;
   --hy-el-h: #f2f4f8; --hy-el-be: #b4e24c; --hy-el-b: #ffb5b5; --hy-el-c: #7d8497; --hy-el-n: #3b6fff; --hy-el-o: #ff4d4d; --hy-el-f: #7ee27e;
   --hy-el-si: #d8b98a; --hy-el-p: #ff9d2e; --hy-el-s: #ffe14d; --hy-el-cl: #3dd13d; --hy-el-xe: #8ad4ff; --hy-el-x: #c0c8de;
 }
@@ -28,11 +32,13 @@
   --hy-stage: radial-gradient(75% 70% at 50% 42%, #ffffff 0%, #eaf2ff 60%, #dbe7fb 100%);
   --hy-label-bg: rgba(255, 255, 255, 0.92); --hy-label-ink: #14226b; --hy-warn: #8a5a00; --hy-ok: #1d6b45; --hy-bad: #b3261e; --hy-danger: #b3261e;
   --hy-shadow: 0 1px 6px rgba(60, 90, 150, 0.15); --hy-focus: #b8860b; --hy-box-bg: #ffffff; --hy-box-on: #b8860b; --hy-switch-off: #b9c4de;
-  --hy-s-pos: #5b6fb8; --hy-s-neg: #8a9bd6; --hy-p-pos: #2f6fe8; --hy-p-neg: #e0483f; --hy-d-pos: #7d4fe0; --hy-d-neg: #e08a1e;
-  --hy-h0-pos: #0e9fb8; --hy-h0-neg: #9fdbe6; --hy-h1-pos: #e0711a; --hy-h1-neg: #f6c79c; --hy-h2-pos: #9b51e0; --hy-h2-neg: #d9bdf5;
-  --hy-h3-pos: #2eaf5e; --hy-h3-neg: #aee3c3; --hy-h4-pos: #d6439a; --hy-h4-neg: #f2b5d6; --hy-h5-pos: #6b7a8c; --hy-h5-neg: #c3ccd6;
+  --hy-s-pos: #e8741a; --hy-s-neg: #e0483f;
+  --hy-px-pos: #2f6fe8; --hy-px-neg: #9dbcf5; --hy-py-pos: #17a455; --hy-py-neg: #9adcb5; --hy-pz-pos: #8a3fe0; --hy-pz-neg: #cdb0f1;
+  --hy-d-pos: #d99a0b; --hy-d-neg: #f3d98d;
+  --hy-h0-pos: #d6439a; --hy-h0-neg: #f2b5d6; --hy-h1-pos: #0e9fb8; --hy-h1-neg: #9fdbe6; --hy-h2-pos: #e0483f; --hy-h2-neg: #f4b0aa;
+  --hy-h3-pos: #7fb81a; --hy-h3-neg: #cfe79a; --hy-h4-pos: #d98a06; --hy-h4-neg: #f3d09a; --hy-h5-pos: #6b7a8c; --hy-h5-neg: #c3ccd6;
   --hy-sigma: #e0b800; --hy-pi: #4caf00; --hy-sel: #b8860b; --hy-nuc: #1e2a44; --hy-ring-pos: #2f6fe8; --hy-ring-neg: #e0483f;
-  --hy-axis-x: #d63a3a; --hy-axis-y: #2e9e55; --hy-axis-z: #2f6fe8; --hy-lp: #1e2a44;
+  --hy-axis-x: #2f6fe8; --hy-axis-y: #17a455; --hy-axis-z: #8a3fe0; --hy-lp: #1e2a44;
   --hy-el-h: #9aa3b5; --hy-el-be: #7aa81a; --hy-el-b: #e08a8a; --hy-el-c: #4a5160; --hy-el-n: #2f55d6; --hy-el-o: #d63a3a; --hy-el-f: #3aa83a;
   --hy-el-si: #b89560; --hy-el-p: #e0801a; --hy-el-s: #d6b800; --hy-el-cl: #2e9e2e; --hy-el-xe: #4aa8d6; --hy-el-x: #7a859e;
 }
@@ -136,7 +142,13 @@
 .hy-chip--sigma { border-color: var(--hy-sigma); } .hy-chip--pi { border-color: var(--hy-pi); }
 .hy-legend { position: absolute; left: 8px; bottom: 8px; z-index: 3; display: flex; gap: 8px; align-items: center; padding: 3px 8px; border-radius: 999px; background: var(--hy-label-bg); border: 1px solid var(--hy-line); font-size: 10.5px; color: var(--hy-muted); max-width: calc(100% - 16px); pointer-events: none; }
 .hy-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 3px; vertical-align: -1px; }
-.hy-legend .pos { background: var(--hy-p-pos); } .hy-legend .neg { background: var(--hy-p-neg); } .hy-legend .sg { background: var(--hy-sigma); } .hy-legend .pi { background: var(--hy-pi); }
+.hy-legend .pos { background: var(--hy-px-pos); } .hy-legend .neg { background: var(--hy-px-neg); margin-right: 5px; margin-left: -6px; }
+.hy-legend { pointer-events: auto; }
+.hy-legend-btn { display: inline-flex; align-items: center; gap: 0; padding: 0 6px 0 4px; min-height: 20px; border: 1px solid var(--hy-line); border-radius: 999px; background: transparent; color: var(--hy-ink); font: inherit; cursor: pointer; white-space: nowrap; }
+.hy-legend-btn:hover { border-color: var(--hy-accent); }
+.hy-legend-btn[aria-pressed="true"] { background: var(--hy-accent-soft); border-color: var(--hy-accent); }
+.hy-legend-btn:focus-visible { outline: 2px solid var(--hy-focus); outline-offset: 2px; }
+.hy-phase { display: inline-block; min-width: 14px; padding: 0 3px; border-radius: 999px; background: rgba(8, 20, 50, 0.7); color: #fff; font-size: 12px; font-weight: 800; line-height: 14px; text-align: center; } .hy-legend .sg { background: var(--hy-sigma); } .hy-legend .pi { background: var(--hy-pi); }
 @container (max-width: 560px) { .hy-legend .hy-legend-long { display: none; } }
 .hy-tag { display: inline-block; padding: 0 6px; border-radius: 999px; background: var(--hy-label-bg); color: var(--hy-label-ink); border: 1px solid var(--hy-line); font-size: 12px; font-weight: 700; white-space: nowrap; line-height: 1.5; }
 .hy-tag--sel { border-color: var(--hy-focus); }
@@ -186,3 +198,35 @@
 .hy-explain-text { white-space: normal !important; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; text-overflow: clip !important; min-height: calc(var(--sd-fs) * 2.75); }
 .sd-root[data-layout="stacked"] .hy-explain-text { display: block; overflow: visible; }
 .hy-config b { margin-bottom: 2px; }
+
+/* ---- Shared control contract on the navy surface ---------------------------------------------------------------
+   Same recipe as the VSEPR Explorer (docs/SIMULATION_DASHBOARD_LAYOUT.md "Shared button style contract"): every control has a
+   >= 3:1 outline (the old --hy-line #28427f was ~1.6:1 on the navy), >= 4.5:1 labels in every state, a solid selected / primary
+   fill that holds a white label, distinct hover / active states and a visible focus ring. Colours only -- no layout. */
+[data-testid="hybridisation-workspace"] {
+  --hy-ctl-line: #7c9bdd;      /* control outline, >= 4.5:1 on every navy panel */
+  --hy-ctl-line-hover: #d6e4ff;
+  --hy-solid: #2358d0;         /* solid fill that holds a white label at 5.6:1 */
+  --hy-solid-hover: #1a40a0;
+  --hy-fill-hover: #27498f;
+  --hy-fill-active: #345aa8;
+  --hy-focus: #ffd166;
+  --sim-btn-fill: #1a3a78; --sim-btn-fill-hover: #27498f; --sim-btn-fill-active: #345aa8; --sim-btn-ink: #eef4ff;
+  --sim-btn-border: #7c9bdd; --sim-btn-border-hover: #d6e4ff; --sim-btn-accent: #2358d0; --sim-btn-accent-hover: #2d6af0; --sim-btn-focus: #ffd166;
+  --sd-blue: #2358d0;
+}
+[data-testid="hybridisation-workspace"] :is(.hy-btn, .hy-vt, .hy-legend-btn, .hy-collapse, .hy-field select, .sd-btn, .sd-tab, .sim-toolbar-btn) { border-color: var(--hy-ctl-line); }
+[data-testid="hybridisation-workspace"] :is(.hy-btn, .hy-vt, .hy-legend-btn, .hy-collapse, .sd-btn, .sd-tab):hover:not(:disabled) { background: var(--hy-fill-hover); border-color: var(--hy-ctl-line-hover); color: #eef4ff; }
+[data-testid="hybridisation-workspace"] :is(.hy-btn, .hy-vt, .hy-legend-btn, .hy-collapse, .sd-btn, .sd-tab):active:not(:disabled) { background: var(--hy-fill-active); color: #ffffff; }
+[data-testid="hybridisation-workspace"] :is(.hy-btn, .sd-btn) { border-width: 1.5px; }
+[data-testid="hybridisation-workspace"] .hy-btn--primary { background: var(--hy-solid); border-color: var(--hy-ctl-line-hover); color: #ffffff; }
+[data-testid="hybridisation-workspace"] .hy-btn--primary:hover:not(:disabled) { background: var(--hy-solid-hover); filter: none; border-color: #ffffff; color: #ffffff; }
+[data-testid="hybridisation-workspace"] .hy-btn--primary:active:not(:disabled) { background: #1c47a8; }
+[data-testid="hybridisation-workspace"] .hy-btn[aria-pressed="true"]:not(.hy-btn--primary), [data-testid="hybridisation-workspace"] .hy-vt[aria-pressed="true"], [data-testid="hybridisation-workspace"] .hy-legend-btn[aria-pressed="true"] { background: #1f4aa8; border-color: var(--hy-ctl-line-hover); box-shadow: inset 0 0 0 1px var(--hy-ctl-line-hover); color: #ffffff; }
+[data-testid="hybridisation-workspace"] .sd-tab[aria-selected="true"] { background: var(--hy-solid) !important; border-color: var(--hy-ctl-line-hover) !important; color: #ffffff !important; }
+[data-testid="hybridisation-workspace"] .sd-tab[aria-selected="true"]:hover { background: var(--hy-solid-hover) !important; color: #ffffff !important; }
+[data-testid="hybridisation-workspace"] .sd-tab:not([aria-selected="true"]) { border-color: var(--hy-ctl-line) !important; }
+.hy-btn:disabled { opacity: 1; color: #9bb0d9; border-style: dashed; background: transparent; }
+.hy-seg-btn { color: var(--hy-ink); }
+.hy-seg-btn[aria-checked="true"] { background: #1f4aa8; border-color: var(--hy-ctl-line-hover); box-shadow: inset 0 0 0 1px var(--hy-ctl-line-hover); color: #ffffff; }
+[data-testid="hybridisation-workspace"] :is(.hy-btn, .hy-vt, .hy-legend-btn, .hy-collapse, .hy-seg-btn, .hy-box, .hy-stage, .hy-field select, .sd-btn, .sd-tab, .sim-toolbar-btn):focus-visible { outline: 2px solid var(--hy-focus); outline-offset: 2px; }

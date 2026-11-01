@@ -31,4 +31,5 @@ export const SIMULATION_COMPONENTS = {
   "gas-laws-explorer": lazy(() => import("../engines/gas-laws-explorer/GasLawsExplorer.jsx")),
   "bonding-visualizer": lazy(() => import("../engines/bonding-visualizer/BondingVisualizer.jsx")),
   "hybridisation-explorer": lazy(() => import("../engines/hybridisation-explorer/HybridisationExplorer.jsx")),
+  "intermolecular-forces-visualiser": lazy(() => import("../engines/intermolecular-forces-visualiser/IntermolecularForcesVisualiser.jsx")),
 };

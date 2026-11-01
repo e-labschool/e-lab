@@ -1,18 +1,21 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { Move, Plus, Copy, Undo2, RotateCcw, Rotate3d, Magnet, Layers } from "lucide-react";
+import { Move, Plus, Copy, Undo2, RotateCcw, Rotate3d, Magnet, Layers, Link2 } from "lucide-react";
 import Sci from "./Sci.jsx";
 import EnergyPanel, { ExpandButton } from "./EnergyPanel.jsx";
 import ViewerStage from "./ViewerStage.jsx";
+import PhaseLegend from "./PhaseLegend.jsx";
+import { clockOverride } from "../scene/Scene3D.jsx";
 import { SELECTABLE_SYMBOLS, condensedLatex } from "../model/elements.js";
 import { getElementBySymbol } from "../../../data/chemistry/elements.js";
-import { RECIPES } from "../model/hybrids.js";
+import { RECIPES, mixOrbitals } from "../model/hybrids.js";
+import { workspaceOverlaps } from "../model/overlapVolume.js";
 import { createHistory, reduce, describeActive, selectionSummary, analyseWorkspace, atomLabel } from "../model/workspace.js";
 import { planSnap } from "../model/snap.js";
 import { bondSummary, REASON_TEXT, labelText } from "../model/overlap.js";
-import { orbitalSpecs } from "../scene/viewModel.js";
+import { orbitalSpecs, requestsFromSpecs, highlightFor } from "../scene/viewModel.js";
 import { qSlerp, lerp, len, sub, add } from "../model/vec.js";
 
-export const MIX_MS = 1500;
+export const MIX_MS = 1800; // Mix animation: ~0.25 s highlight, ~1.3 s morph, ~0.15 s settle
 const SNAP_MS = 450;
 const SNAP_MAX_COST = 4.2; // auto-snap on release only for atoms already reasonably close / aligned
 
@@ -24,9 +27,11 @@ export function Switch({ checked, onChange, children, testId, title }) {
   return <label className="hy-switch" title={title}><input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} data-testid={testId} /><span className="hy-track"><i /></span><span>{children}</span></label>;
 }
 
+const dotAxis = (o) => { const u = sub(o.b.pos, o.a.pos); const l = len(u) || 1; return (o.a.axis ? Math.abs(o.a.axis[0] * u[0] + o.a.axis[1] * u[1] + o.a.axis[2] * u[2]) / l : 0); };
+
 const fitFor = (atoms, count) => {
   const c = atoms.reduce((s, a) => add(s, a.pos), [0, 0, 0]).map((v) => v / atoms.length);
-  const rad = Math.max(1.9, ...atoms.map((a) => len(sub(a.pos, c)) + 1.9));
+  const rad = Math.max(1.55, ...atoms.map((a) => len(sub(a.pos, c)) + 1.6));
   return { key: `lab:${count}`, center: c, radius: rad, keepDirection: atoms.length > 1 };
 };
 
@@ -34,7 +39,7 @@ export default function useOrbitalLab() {
   const [hist, dispatch] = useReducer(reduce, undefined, createHistory);
   const [tool, setTool] = useState("move");
   const [showSigma, setShowSigma] = useState(true); const [showPi, setShowPi] = useState(true); const [autoSnap, setAutoSnap] = useState(false);
-  const [panelOpen, setPanelOpen] = useState(true);
+  const [panelOpen, setPanelOpen] = useState(true); const [focus, setFocus] = useState(false); const [showPhase, setShowPhase] = useState(false);
   const [hover, setHover] = useState(null); const [mixAnim, setMixAnim] = useState(null);
   const [resetCount, setResetCount] = useState(0);
   const histRef = useRef(hist); histRef.current = hist;
@@ -44,7 +49,7 @@ export default function useOrbitalLab() {
 
   useEffect(() => () => { snapRef.current += 1; timers.current.forEach(clearTimeout); }, []);
   // safety net: the mix animation always ends (also where WebGL is unavailable and nothing renders it)
-  useEffect(() => { if (!mixAnim) return undefined; const t = setTimeout(() => setMixAnim(null), MIX_MS + 250); return () => clearTimeout(t); }, [mixAnim]);
+  useEffect(() => { if (!mixAnim) return undefined; let t = 0; const arm = () => { t = setTimeout(() => { if (clockOverride.morph !== null) arm(); else setMixAnim(null); }, MIX_MS + 250); }; arm(); return () => clearTimeout(t); }, [mixAnim]);
 
   const analysis = useMemo(() => analyseWorkspace(present.atoms), [present.atoms]);
   const apply = useCallback((action) => { snapRef.current += 1; dispatch(action); }, []);
@@ -58,7 +63,7 @@ export default function useOrbitalLab() {
     dispatch({ type: "mix" });
   };
   const onUndo = () => { snapRef.current += 1; setMixAnim(null); dispatch({ type: "undo" }); };
-  const onReset = () => { snapRef.current += 1; setMixAnim(null); setHover(null); setTool("move"); setShowSigma(true); setShowPi(true); setAutoSnap(false); setResetCount((c) => c + 1); dispatch({ type: "reset" }); };
+  const onReset = () => { snapRef.current += 1; setMixAnim(null); setHover(null); setTool("move"); setShowSigma(true); setShowPi(true); setAutoSnap(false); setFocus(false); setShowPhase(false); setResetCount((c) => c + 1); dispatch({ type: "reset" }); };
 
   // ---- snap (animated; one undo step)
   const runSnap = useCallback((id, { threshold = Infinity } = {}) => {
@@ -92,19 +97,53 @@ export default function useOrbitalLab() {
   const onHover = useCallback((h) => setHover(h), []);
 
   // ---- scene view model
+  const formedSet = useMemo(() => new Set(present.formed ?? []), [present.formed]);
+  const overlaps = useMemo(() => workspaceOverlaps(analysis.instances), [analysis.instances]);
+  const bondByPair = useMemo(() => new Map(analysis.bonds.map((b) => [b.id.replace(/^(sigma|pi):/, ""), b])), [analysis.bonds]);
+  const unformed = analysis.bonds.filter((b) => !formedSet.has(b.id));
   const view = useMemo(() => {
+    const bonds = analysis.bonds.filter((b) => (b.type === "sigma" ? showSigma : showPi));
+    // overlap highlights: every in-phase intersection of two half-filled orbitals (size and brightness follow the overlap measure); confirmed bonds are drawn solid
+    const regions = []; const shown = new Set(); const tagAt = new Map();
+    const pushRegions = (id, type, hl, formed, minStrength = 0) => {
+      hl.regions.forEach((r, i) => regions.push({ ...r, id: `${id}#${i}`, type, strength: Math.max(r.strength, minStrength), alpha: 1, formed }));
+      if (hl.regions[0]) tagAt.set(id, hl.regions[0].center);
+    };
+    for (const o of overlaps) {
+      const bond = bondByPair.get(o.id); const type = bond ? bond.type : o.a.cls === "p" && o.b.cls === "p" && Math.abs(dotAxis(o)) < 0.5 ? "pi" : "sigma";
+      if (type === "sigma" ? !showSigma : !showPi) continue;
+      const formed = !!bond && formedSet.has(bond.id); shown.add(o.id);
+      pushRegions(o.id, type, { regions: o.regions.map((r) => ({ ...r, strength: o.strength })) }, formed);
+    }
+    for (const b of bonds) { // a confirmed bond is always drawn, even when its overlap measure is small
+      const pair = b.id.replace(/^(sigma|pi):/, ""); if (shown.has(pair) || !formedSet.has(b.id)) continue;
+      pushRegions(pair, b.type, highlightFor(b.a, b.b, b.type), true, 0.6);
+    }
+    const involved = new Map();
+    if (focus) {
+      for (const b of analysis.bonds) for (const o of [b.a, b.b]) { if (!involved.has(o.atomId)) involved.set(o.atomId, new Set()); involved.get(o.atomId).add(o.orbId); }
+      for (const o of overlaps) if (o.strength > 0.12) for (const q of [o.a, o.b]) { if (!involved.has(q.atomId)) involved.set(q.atomId, new Set()); involved.get(q.atomId).add(q.orbId); }
+    }
+    const fadeActive = focus && involved.size > 0;
     const atoms = present.atoms.map((a) => {
       const morphing = !!mixAnim && mixAnim.atomId === a.id && !!a.hybrid;
-      const orbitals = orbitalSpecs(a, { selected: new Set(a.selected), hover: hover && hover.atomId === a.id ? hover.orbId : null, morph: morphing });
+      const keep = involved.get(a.id) ?? new Set();
+      const fade = fadeActive ? new Set(a.orbitals.map((o) => o.id).concat((a.hybrid?.hybrids ?? []).map((h) => h.id)).filter((id) => !keep.has(id))) : null;
+      const orbitals = orbitalSpecs(a, { selected: new Set(a.selected), hover: hover && hover.atomId === a.id ? hover.orbId : null, morph: morphing, labels: !!a.hybrid, fade });
       for (const s of orbitals) if (s.cls === "hybrid") s.latex = RECIPES[a.hybrid.recipeId].latex;
       return { id: a.id, symbol: a.symbol, label: atomLabel(present.atoms, a), pos: a.pos, quat: a.quat, active: a.id === present.activeId, orbitals };
     });
-    const bonds = analysis.bonds.filter((b) => (b.type === "sigma" ? showSigma : showPi));
     return {
-      atoms, overlaps: bonds.map((b) => ({ ...b, alpha: 1 })), gizmo: tool === "rotate", morph: mixAnim ? { atomIds: [mixAnim.atomId], startMs: mixAnim.startMs, durMs: mixAnim.durMs } : null,
-      bondTags: bonds.length <= 8 ? bonds.map((b) => ({ id: b.id, type: b.type, latex: b.label, position: b.type === "pi" ? [b.center[0] + b.side[0] * 0.95, b.center[1] + b.side[1] * 0.95, b.center[2] + b.side[2] * 0.95] : add(b.center, [0, 0, -0.55]) })) : [],
+      atoms, regions, gizmo: tool === "rotate", showPhase, smooth: false, morph: mixAnim ? { atomIds: [mixAnim.atomId], startMs: mixAnim.startMs, durMs: mixAnim.durMs } : null,
+      bondTags: bonds.length <= 8 ? bonds.map((b) => { const c = tagAt.get(b.id.replace(/^(sigma|pi):/, "")) ?? b.center; return { id: b.id, type: b.type, latex: b.label, position: b.type === "pi" ? [c[0] + b.side[0] * 0.62, c[1] + b.side[1] * 0.62, c[2] + b.side[2] * 0.62] : [c[0], c[1], c[2] - 0.5] }; }) : [],
     };
-  }, [present.atoms, present.activeId, hover, mixAnim, analysis, showSigma, showPi, tool]);
+  }, [present.atoms, present.activeId, hover, mixAnim, analysis, overlaps, bondByPair, formedSet, showSigma, showPi, tool, focus, showPhase]);
+  const warm = useMemo(() => {
+    const specs = present.atoms.flatMap((a) => orbitalSpecs(a, {}));
+    const ids = active.selected.filter((id) => active.orbitals.some((o) => o.id === id)); const mixed = ids.length > 1 && !active.hybrid ? mixOrbitals(active.orbitals, ids) : null;
+    if (mixed?.ok) specs.push(...orbitalSpecs({ ...active, hybrid: { recipeId: mixed.recipeId, consumed: mixed.consumed, remaining: mixed.remaining, hybrids: mixed.hybrids, totalElectrons: mixed.totalElectrons } }, {}));
+    return requestsFromSpecs(specs);
+  }, [present.atoms, active]);
   const fit = useMemo(() => fitFor(present.atoms, `${present.atoms.length}:${resetCount}`), [present.atoms.length, resetCount]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- explanation line
@@ -161,7 +200,11 @@ export default function useOrbitalLab() {
           <button type="button" className="hy-btn" onClick={() => apply({ type: "duplicate" })} title="Copy the selected atom with its configuration, selection and hybridisation" data-testid="btn-duplicate"><Copy size={14} aria-hidden="true" /> Duplicate</button>
         </div>
         <Switch checked={autoSnap} onChange={setAutoSnap} testId="opt-snap" title="When on, releasing a dragged atom near a valid overlap smoothly aligns and positions it">Snap to Overlap</Switch>
+        <Switch checked={focus} onChange={setFocus} testId="opt-focus" title="Fade the orbitals that take no part in the overlap, so the bonding region stays clear">Focus on overlap</Switch>
         <button type="button" className="hy-btn hy-btn--wide" onClick={() => runSnap(present.activeId)} disabled={present.atoms.length < 2} title="Smoothly align the selected atom to its nearest valid overlap" data-testid="btn-snap-now"><Magnet size={14} aria-hidden="true" /> Snap now</button>
+        {unformed.length > 0 && (
+          <button type="button" className="hy-btn hy-btn--primary hy-btn--wide" onClick={() => apply({ type: "formBonds", note: `Bond formed: ${unformed.map((b) => labelText(b.label)).join(", ")}.` })} title="The overlap check passed: confirm it so the bond stays drawn" data-testid="btn-form-bond"><Link2 size={14} aria-hidden="true" /> Form bond{unformed.length > 1 ? "s" : ""}</button>
+        )}
         <div className="hy-pair">
           <Switch checked={showSigma} onChange={setShowSigma} testId="opt-sigma">Show {"σ"}</Switch>
           <Switch checked={showPi} onChange={setShowPi} testId="opt-pi">Show {"π"}</Switch>
@@ -180,17 +223,17 @@ export default function useOrbitalLab() {
       <div className="hy-viewer">
         <ViewerStage
           view={view} fit={fit} tool={tool} getAtom={getAtom} onOrbitalClick={onOrbitalClick} onAtomClick={onAtomClick} onHover={onHover}
-          onGestureStart={onGestureStart} onTransform={onTransform} onGestureEnd={onGestureEnd} onMorphDone={() => setMixAnim(null)} tools={tools}
+          onGestureStart={onGestureStart} onTransform={onTransform} onGestureEnd={onGestureEnd} onMorphDone={() => setMixAnim(null)} tools={tools} warm={warm}
           ariaLabel="3D workspace: atoms and their orbitals" testId="hy-stage"
-          extraData={{ "data-active": present.activeId, "data-atoms": present.atoms.length, "data-sigma": analysis.sigma, "data-pi": analysis.pi, "data-mixing": mixAnim ? "1" : "0" }}
+          extraData={{ "data-active": present.activeId, "data-atoms": present.atoms.length, "data-sigma": analysis.sigma, "data-pi": analysis.pi, "data-mixing": mixAnim ? "1" : "0", "data-formed": (present.formed ?? []).length, "data-overlap": overlaps.length ? overlaps[0].measure.toFixed(3) : "0" }}
         >
           <div className="hy-bondbar" data-testid="bond-bar" aria-live="polite">
             <b>Bonds:</b>
             <span className="hy-chip hy-chip--sigma" data-testid="count-sigma">{analysis.sigma} {"σ"}</span>
             <span className="hy-chip hy-chip--pi" data-testid="count-pi">{analysis.pi} {"π"}</span>
-            {barBonds.slice(0, 8).map((b) => <span key={b.id} className={`hy-chip hy-chip--${b.type}`} data-testid="bond-label"><Sci src={b.label} /></span>)}
+            {barBonds.slice(0, 8).map((b) => <span key={b.id} className={`hy-chip hy-chip--${b.type}`} data-testid="bond-label" data-formed={formedSet.has(b.id) ? "true" : "false"}>{formedSet.has(b.id) ? "✓ " : ""}<Sci src={b.label} /></span>)}
           </div>
-          <div className="hy-legend" aria-hidden="true"><span><i className="pos" />+ phase</span><span><i className="neg" />{"−"} phase</span><span className="hy-legend-long"><i className="sg" />{"σ"} overlap</span><span className="hy-legend-long"><i className="pi" />{"π"} overlap</span><span className="hy-legend-long">Educational shapes (angular part only)</span></div>
+          <PhaseLegend showPhase={showPhase} onToggle={setShowPhase} />
         </ViewerStage>
       </div>
     </div>

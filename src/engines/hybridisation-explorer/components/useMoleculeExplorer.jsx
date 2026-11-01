@@ -5,48 +5,57 @@ import ViewerStage from "./ViewerStage.jsx";
 import { Switch } from "./useOrbitalLab.jsx";
 import { MOLECULES, MOLECULE_BY_ID } from "../model/moleculeData.js";
 import { compileMolecule } from "../model/moleculeLayout.js";
-import { stepView, energyAtom, ANIM_MS } from "../scene/stepView.js";
+import { stepView, energyAtom, stepDuration, geometryRequests } from "../scene/stepView.js";
+import PhaseLegend from "./PhaseLegend.jsx";
+import { MOLECULE_DIR } from "../scene/Scene3D.jsx";
 import { bondSummary } from "../model/overlap.js";
 
-export const STEP_MS = 4200; // time one step is shown while playing
 const SUB = "₀₁₂₃₄₅₆₇₈₉";
 export const formulaUnicode = (plain) => plain.replace(/\d/g, (d) => SUB[Number(d)]);
+const idle = (fn) => (typeof requestIdleCallback === "function" ? requestIdleCallback(fn, { timeout: 200 }) : setTimeout(fn, 0));
 
 export default function useMoleculeExplorer({ active }) {
   const [molId, setMolId] = useState("C2H4");
-  const [step, setStep] = useState(0); const [playing, setPlaying] = useState(true); const [showEnergy, setShowEnergy] = useState(false);
-  const [clock, setClock] = useState({ start: 0, now: 0 });
+  const [step, setStep] = useState(0); const [playing, setPlaying] = useState(false); const [showEnergy, setShowEnergy] = useState(false);
+  const [labels, setLabels] = useState(true); const [showPhase, setShowPhase] = useState(false);
+  const [stamp, setStamp] = useState(0); // bumps whenever a step is (re)started: the scene restarts that step's animation from it
   const compiled = useMemo(() => compileMolecule(molId), [molId]);
   const last = compiled.steps.length - 1; const spec = MOLECULE_BY_ID[molId];
-  const startRef = useRef(0);
+  const stepRef = useRef(step); stepRef.current = step;
 
-  // each step change restarts the animation clock (re-render each frame for ANIM_MS)
+  // idle-time warm-up when the tab / molecule is selected: fill the overlap-lens cache for every step (the geometries are warmed by the viewer)
+  const warm = useMemo(() => geometryRequests(compiled), [compiled]);
   useEffect(() => {
     if (!active) return undefined;
-    const t0 = performance.now(); startRef.current = t0; setClock({ start: t0, now: t0 });
-    let raf = 0; const tick = () => { const now = performance.now(); setClock({ start: t0, now }); if (now - t0 < ANIM_MS + 120) raf = requestAnimationFrame(tick); };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [molId, step, active]);
+    let cancelled = false; let i = 0; const run = () => { if (cancelled || i > last) return; stepView(compiled, i, 0); i += 1; idle(run); };
+    idle(run); return () => { cancelled = true; };
+  }, [active, compiled, last]);
 
   useEffect(() => { if (!active) setPlaying(false); }, [active]);
+  // autoplay: every step is shown for its own motion time plus a short dwell (stepDuration), so there is no long motionless gap
   useEffect(() => {
     if (!active || !playing) return undefined;
-    if (step >= last) { const t = setTimeout(() => setPlaying(false), STEP_MS * 0.6); return () => clearTimeout(t); }
-    const t = setTimeout(() => setStep((s) => Math.min(last, s + 1)), STEP_MS);
+    const st = compiled.steps[Math.min(step, last)];
+    if (step >= last) { const t = setTimeout(() => setPlaying(false), 600); return () => clearTimeout(t); }
+    const t = setTimeout(() => { setStep((s) => Math.min(last, s + 1)); setStamp((n) => n + 1); }, stepDuration(st));
     return () => clearTimeout(t);
-  }, [active, playing, step, last, molId]);
+  }, [active, playing, step, last, compiled]);
 
-  const select = (id) => { setMolId(id); setStep(0); setPlaying(true); };
-  const next = () => { setPlaying(false); setStep((s) => Math.min(last, s + 1)); };
-  const prev = () => { setPlaying(false); setStep((s) => Math.max(0, s - 1)); };
-  const reset = useCallback(() => { setPlaying(false); setStep(0); setClock((c) => ({ start: performance.now(), now: performance.now() })); }, []);
-  const togglePlay = () => { if (playing) setPlaying(false); else { if (step >= last) setStep(0); setPlaying(true); } };
+  const select = (id) => { setMolId(id); setStep(0); setStamp((n) => n + 1); setPlaying(false); };
+  const go = (n) => { setStep(n); setStamp((c) => c + 1); };
+  const next = () => { setPlaying(false); go(Math.min(last, step + 1)); };
+  const prev = () => { setPlaying(false); go(Math.max(0, step - 1)); };
+  const reset = useCallback(() => { setPlaying(false); setStep(0); setStamp((n) => n + 1); }, []);
+  // Play starts moving at once: from the current step it immediately begins the NEXT step (or restarts from step 1 after the end)
+  const togglePlay = () => {
+    if (playing) { setPlaying(false); return; }
+    setPlaying(true);
+    if (step >= last) go(0); else go(step + 1);
+  };
 
   const st = compiled.steps[Math.min(step, last)];
-  const progress = clock.start ? Math.min(1, (clock.now - clock.start) / ANIM_MS) : 1;
-  const view = useMemo(() => stepView(compiled, Math.min(step, last), progress, clock.start, clock.now), [compiled, step, last, progress, clock.start, clock.now]);
-  const fit = useMemo(() => ({ key: `mol:${molId}`, center: compiled.center, radius: compiled.radius }), [molId, compiled]);
+  const view = useMemo(() => ({ ...stepView(compiled, Math.min(step, last), performance.now(), { labels }), showPhase }), [compiled, step, last, stamp, labels, showPhase]); // eslint-disable-line react-hooks/exhaustive-deps
+  const fit = useMemo(() => ({ key: `mol:${molId}`, center: compiled.center, radius: compiled.radius, dir: MOLECULE_DIR }), [molId, compiled]);
   const ea = energyAtom(compiled, Math.min(step, last));
 
   const controls = (
@@ -70,6 +79,7 @@ export default function useMoleculeExplorer({ active }) {
           {st.ring && <span className="hy-chip hy-chip--pi" data-testid="count-delocalised">+ delocalised {"π"}</span>}
         </div>
         <Switch checked={showEnergy} onChange={setShowEnergy} testId="opt-energy">Energy-level diagram</Switch>
+        <Switch checked={labels} onChange={setLabels} testId="opt-labels" title="Label the sigma and pi bonds on the finished molecule">{"σ/π"} labels</Switch>
         {spec.note && <p className="hy-note" data-testid="mol-note">{spec.note}</p>}
       </section>
     </div>
@@ -79,12 +89,12 @@ export default function useMoleculeExplorer({ active }) {
     <div className="hy-center" data-tab="molecules">
       <div className="hy-viewer">
         <ViewerStage
-          view={view} fit={fit} interactive={false} tool="move" getAtom={() => null} ariaLabel={`3D orbital model of ${formulaUnicode(spec.plain)}`} testId="hy-stage"
+          view={view} fit={fit} interactive={false} tool="move" getAtom={() => null} ariaLabel={`3D orbital model of ${formulaUnicode(spec.plain)}`} testId="hy-stage" warm={warm}
           extraData={{ "data-molecule": molId, "data-step": Math.min(step, last), "data-steps": compiled.steps.length, "data-playing": playing ? "1" : "0", "data-sigma": st.sigma, "data-pi": st.pi }}
           tools={<button type="button" className="hy-vt" aria-pressed={showEnergy} onClick={() => setShowEnergy((v) => !v)} title="Show the energy-level diagram of the atom in this step" data-testid="vt-energy"><Layers size={16} aria-hidden="true" /><span>Energy</span></button>}
         >
           <div className="hy-bondbar" data-testid="bond-bar"><b>{formulaUnicode(spec.plain)}</b><span className="hy-chip hy-chip--sigma">{st.sigma} {"σ"}</span><span className="hy-chip hy-chip--pi">{st.pi} {"π"}{st.ring ? " + delocalised" : ""}</span></div>
-          <div className="hy-legend" aria-hidden="true"><span><i className="pos" />+ phase</span><span><i className="neg" />{"−"} phase</span><span className="hy-legend-long"><i className="sg" />{"σ"} overlap</span><span className="hy-legend-long"><i className="pi" />{"π"} overlap</span><span className="hy-legend-long">Educational shapes (angular part only)</span></div>
+          <PhaseLegend showPhase={showPhase} onToggle={setShowPhase} />
         </ViewerStage>
       </div>
     </div>

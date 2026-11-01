@@ -80,13 +80,11 @@
   border-radius: 8px;
 
   border:
-    1px solid
-    rgba(148,163,184,0.25);
+    1.5px solid
+    var(--sim-btn-border);
 
   background: #111a26;
   color: #f8fafc;
-
-  outline: none;
 }
 
 .indicator-card {
@@ -135,15 +133,13 @@
   padding: 3px 8px;
 
   border-radius: 6px;
-  border: 1px solid rgba(148, 163, 184, 0.3);
+  border: 1.5px solid var(--sim-btn-border);
 
   background: #111a26;
   color: #f8fafc;
 
   font-size: 0.85rem;
   font-weight: 600;
-
-  outline: none;
 }
 
 .indicator-recommendation-note {

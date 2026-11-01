@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSimulationSessionState } from "../../components/interactive-shell/simulationSession.js";
 import InteractiveFrame from "../../components/interactive-shell/InteractiveFrame.jsx";
 import SimulationDashboard, { DashPanel, DashboardTabs, ExplainLine, PopoverSection, SettingToggle } from "../../components/simulation/SimulationDashboard.jsx";
 import { DEFAULT_CONTROLS, DEFAULT_DISPLAY, GAS, applyControlChange, createSimulation, resolveState, selectExplanation } from "./model.js";
@@ -44,11 +45,13 @@ export default function IdealGasSimulation({ compact = false, standalone = false
 function IdealGasWorkspace() {
   const reducedMotion = useReducedMotion();
   const [sim] = useState(() => createSimulation({ seed: (Math.random() * 2 ** 32) >>> 0 }));
-  const [controls, setControls] = useState({ ...DEFAULT_CONTROLS });
-  const [display, setDisplay] = useState({ ...DEFAULT_DISPLAY });
+  // Restored after a reload / navigate-away-and-back (sessionStorage, per Learn
+  // block); plain useState behaviour outside a Learn simulation block.
+  const [controls, setControls] = useSimulationSessionState("controls", () => ({ ...DEFAULT_CONTROLS }), (v) => v && typeof v === "object" && Object.keys(DEFAULT_CONTROLS).every((k) => k in v));
+  const [display, setDisplay] = useSimulationSessionState("display", () => ({ ...DEFAULT_DISPLAY }), (v) => v && typeof v === "object" && Object.keys(DEFAULT_DISPLAY).every((k) => k in v));
   const [playing, setPlaying] = useState(true);
   const [revealed, setRevealed] = useState(false);
-  const [showGraph, setShowGraph] = useState(false);
+  const [showGraph, setShowGraph] = useSimulationSessionState("showGraph", false, (v) => typeof v === "boolean");
 
   useEffect(() => { sim.setControls(controls); }, [sim, controls]);
   useEffect(() => { sim.setDisplay(display); }, [sim, display]);
@@ -71,8 +74,8 @@ function IdealGasWorkspace() {
     return () => clearTimeout(t);
   }, [controls]);
 
-  const handleControls = useCallback((patch) => setControls((c) => applyControlChange(c, patch)), []);
-  const handleDisplay = useCallback((patch) => setDisplay((d) => ({ ...d, ...patch })), []);
+  const handleControls = useCallback((patch) => setControls((c) => applyControlChange(c, patch)), [setControls]);
+  const handleDisplay = useCallback((patch) => setDisplay((d) => ({ ...d, ...patch })), [setDisplay]);
   const handleReset = useCallback(() => {
     sim.reset();
     setControls({ ...DEFAULT_CONTROLS });
@@ -81,7 +84,7 @@ function IdealGasWorkspace() {
     setDisplay({ ...DEFAULT_DISPLAY });
     setPlaying(true);
     setRevealed(false);
-  }, [sim]);
+  }, [sim, setControls, setDisplay]);
 
   const real = readings.mode === "real";
 

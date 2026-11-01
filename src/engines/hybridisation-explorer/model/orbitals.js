@@ -65,21 +65,37 @@ export function combination(terms, x, y, z) {
 // ---- size conventions of the drawing (scene units) -----------------------------------------------------------------
 /** Base size per principal quantum number. */
 export const nScale = (n) => ({ 1: 0.85, 2: 1.0, 3: 1.2, 4: 1.35, 5: 1.5 })[n] ?? 1.0 + 0.12 * (n - 2);
-/** Reach (distance nucleus -> lobe tip along the lobe axis) per orbital class. */
+/** Reach (distance nucleus -> lobe tip along the lobe axis) per orbital class. Deliberately modest so that atoms, the
+ *  bonding region and neighbouring lobes stay visible (the lobes are slim, so a large reach is not needed to read them). */
 export function reach(cls, n) {
   const s = nScale(n);
   switch (cls) {
-    case "s": return s;
-    case "p": return 1.25 * s;
-    case "hybrid": return 1.35 * s;
+    case "s": return 0.62 * s;
+    case "p": return 1.3 * s;
+    case "hybrid": return 1.05 * s;
     case "d": return 1.3 * s;
-    default: return s;
+    default: return 0.62 * s;
   }
 }
 
-/** Drawing exponent: surfaces are r = R (|f|/max|f|)^GAMMA. 1 would be the plain polar plot of the angular function (two tangent
- *  spheres for a p orbital); 2 the angular part of the probability density. 1.5 keeps lobes slim enough to read while the small
- *  back lobe of a hybrid stays visible. P_LATERAL = widest half-width of a p lobe / its reach for this exponent (used by the
- *  pi-overlap distance window so the overlap window matches what is drawn). Both are verified numerically in the tests. */
-export const GAMMA = 1.5;
-export const P_LATERAL = 0.43;
+/** Drawing exponent per orbital class. The surface is the polar plot r(dir) = R * sign(f) * (|f| / max|f|)^K of the ANGULAR
+ *  function f. K = 1 would be the raw |Y| polar plot (a p orbital = two tangent spheres, the "balloons" the old drawing looked
+ *  like); K = 2 is the angular part of the probability density; the larger exponents used for p and d lobes slim them into
+ *  tapered dumbbells / cloverleaves that pinch to a point at the nucleus (r -> 0 as the direction leaves the lobe axis).
+ *  Hybrids keep a smaller exponent so that the small back lobe stays visible: its size relative to the large lobe is exactly
+ *  (|f_back| / |f_front|)^K_HYBRID. This is an educational representation (angular part only, no radial wavefunction). */
+/** Extra lateral slimming of the DRAWN mesh per class (rendering only): hybrids are drawn a little slimmer than their polar plot so that they read as elongated lobes. */
+export const DRAW_WIDTH = { s: 1, p: 1, hybrid: 0.68, d: 1 };
+export const SURFACE_K = { s: 1, p: 2.3, hybrid: 2.0, d: 2.3 };
+/** Class of a term list: one s term = s, one p term = p, one d term = d, anything else = hybrid. */
+export function classOfTerms(terms) {
+  if (terms.length === 1) return typeOf(terms[0][0]);
+  return "hybrid";
+}
+/** Widest half-width of a p lobe divided by its reach for exponent K: max over theta of cos^K(theta) sin(theta) = (K/(K+1))^(K/2) / sqrt(K+1). */
+export const P_LATERAL = (SURFACE_K.p / (SURFACE_K.p + 1)) ** (SURFACE_K.p / 2) / Math.sqrt(SURFACE_K.p + 1);
+
+/** Colour family of an orbital kind: "s", "px", "py", "pz" or "d" (all five d orbitals share one phase palette). */
+export const colourKey = (kind) => (kind === "s" ? "s" : kind[0] === "p" ? kind : "d");
+/** Human readable colour used in the legend / docs: 2px blue, 2py green, 2pz purple, s red/orange, hybrids h0..h5. */
+export const COLOUR_NAMES = { s: "red/orange", px: "blue", py: "green", pz: "purple", d: "teal/gold" };

@@ -43,7 +43,10 @@ export default function ProtectedRoute({ role, children }) {
   // on, so a real user is never bounced back to /auth by a race condition.
   const stillResolvingProfile = Boolean(user) && !profile && !authError;
 
-  if (loadingSession || (user && loadingProfile) || stillResolvingProfile) {
+  // A loader is only for the FIRST resolution. If a profile is already
+  // loaded, a background refetch (`loadingProfile`) must never replace the
+  // page with a loader -- that unmounted the whole tree on every tab switch.
+  if (loadingSession || (user && loadingProfile && !profile) || stillResolvingProfile) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
         <ELabLoader />

@@ -202,7 +202,7 @@ export default function BufferActionVisualizer() {
   })();
 
   return (
-    <section className="buffer-sim">
+    <section className="buffer-sim sim-surface-dark">
       <header className="buffer-header">
         <h2>Buffer Action Visualizer</h2>
       </header>

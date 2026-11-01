@@ -63,7 +63,7 @@ export default function PHCalculatorVisualizer({ compact = false, standalone = f
           className="w-28 rounded border px-2 py-1 text-xs tabular-nums"
           style={{ borderColor: inputError ? "var(--color-coral)" : "var(--color-line)", background: "var(--color-paper-raised)", color: "var(--color-ink)" }}
         />
-        <button type="button" onClick={handleReset} className="flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium" style={{ color: "var(--color-ink-soft)", border: "1px solid var(--color-line)" }}>
+        <button type="button" onClick={handleReset} className="sim-btn flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium">
           <RotateCcw size={11} /> Reset
         </button>
       </div>
