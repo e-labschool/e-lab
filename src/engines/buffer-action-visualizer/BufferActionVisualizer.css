@@ -136,7 +136,7 @@
 .buffer-type-row select {
   padding: 5px 8px;
   border-radius: 7px;
-  border: 1px solid rgba(148, 163, 184, 0.3);
+  border: 1.5px solid var(--sim-btn-border);
   background: #111a26;
   color: #f8fafc;
   font-size: 0.78rem;
@@ -162,7 +162,7 @@
 .buffer-size-select select {
   padding: 4px 6px;
   border-radius: 6px;
-  border: 1px solid rgba(148, 163, 184, 0.3);
+  border: 1.5px solid var(--sim-btn-border);
   background: #111a26;
   color: #f8fafc;
   font-size: 0.72rem;
@@ -171,7 +171,7 @@
   min-height: 36px;
   padding: 6px 14px;
   border-radius: 8px;
-  border: 1px solid rgba(148, 163, 184, 0.22);
+  border: 1.5px solid var(--sim-btn-border);
   background: rgba(255, 255, 255, 0.05);
   color: #f8fafc;
   font-weight: 700;
@@ -179,9 +179,10 @@
   cursor: pointer;
   transition: transform 140ms ease, background 140ms ease;
 }
-.buffer-controls button:hover { transform: translateY(-1px); background: rgba(255, 255, 255, 0.09); }
-.buffer-btn-acid { border-color: rgba(194, 59, 59, 0.4); color: #e58c8c; }
-.buffer-btn-base { border-color: rgba(47, 75, 196, 0.4); color: #8ca0e5; }
+.buffer-controls button:hover { transform: translateY(-1px); background: rgba(255, 255, 255, 0.14); border-color: var(--sim-btn-border-hover); }
+.buffer-controls button:active { transform: none; background: rgba(255, 255, 255, 0.24); }
+.buffer-controls .buffer-btn-acid { border-color: #e58c8c; color: #f2a8a8; }
+.buffer-controls .buffer-btn-base { border-color: #8ca0e5; color: #a9b9f2; }
 .buffer-btn-reset { background: rgba(255, 255, 255, 0.025); }
 
 .buffer-reaction-line {

@@ -5,6 +5,7 @@
 // leave an inconsistent partial state -- there is nothing to "undo",
 // only a value to move.
 import { useState, useRef, useCallback, useEffect } from "react";
+import { clampFrameDeltaMs } from "../../../lib/frameTime.js";
 
 /** Maps the shared timeline `progress` into a clamped 0-1 sub-progress
  * for one apparatus element's own [start, end] window. Windows are
@@ -51,7 +52,9 @@ export function useSimulationTimeline({ durationMs, reducedMotion = false, activ
   const runLoop = useCallback(() => {
     function tick(now) {
       lastTimeRef.current ??= now;
-      const dt = now - lastTimeRef.current;
+      // Clamp: a hidden tab pauses rAF, and the first frame back must not
+      // leap the whole timeline forward (docs/STATE_PERSISTENCE.md).
+      const dt = clampFrameDeltaMs(now - lastTimeRef.current);
       lastTimeRef.current = now;
       setProgress((prev) => {
         const next = Math.min(1, prev + dt / durationMs);

@@ -323,6 +323,16 @@ const resources = [
     conceptIds: ["hybridization"],
     component: () => import("../engines/hybridisation-explorer/HybridisationExplorer.jsx"),
   },
+  {
+    id: "intermolecular-forces-visualiser",
+    title: "Intermolecular Forces Visualiser",
+    resourceType: "simulation",
+    categories: ["simulate","visualize","explore","teach"],
+    status: "live", // live | in-development | planned
+    description: "Drag molecules together and see London dispersion, dipole-induced dipole, dipole-dipole and hydrogen bonding on ball models or qualitative electron clouds, follow four guided lessons, and heat a substance through melting and boiling.",
+    conceptIds: ["intermolecular-forces","physical-properties-of-covalent-substances"],
+    component: () => import("../engines/intermolecular-forces-visualiser/IntermolecularForcesVisualiser.jsx"),
+  },
 ];
 
 export const resourcesById = Object.fromEntries(resources.map((r) => [r.id, r]));

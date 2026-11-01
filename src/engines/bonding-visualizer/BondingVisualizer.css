@@ -10,7 +10,7 @@
 /* ---- Element library ------------------------------------------------------ */
 .bv-library .sd-panel-body { display: flex; flex-direction: column; gap: 6px; min-height: 0; background: transparent; overflow: hidden; }
 .bv-count { font-size: 11px; font-weight: 700; color: var(--sd-muted); background: #edf3fd; border-radius: 999px; padding: 1px 7px; }
-.bv-search { display: flex; align-items: center; gap: 6px; padding: 0 8px; min-height: 30px; border: 1px solid #d5deef; border-radius: 9px; background: #fff; color: var(--sd-muted); flex: 0 0 auto; }
+.bv-search { display: flex; align-items: center; gap: 6px; padding: 0 8px; min-height: 30px; border: 1.5px solid var(--sim-btn-border); border-radius: 9px; background: #fff; color: var(--sd-muted); flex: 0 0 auto; }
 .bv-search input { flex: 1 1 0; min-width: 0; border: 0; outline: 0; background: transparent; font: inherit; font-size: var(--sd-fs); color: var(--sd-ink); }
 .bv-search:focus-within { outline: 2px solid var(--sd-blue); outline-offset: 1px; }
 .bv-hint { margin: 0; font-size: var(--sd-fs-sm); color: var(--sd-muted); line-height: 1.25; flex: 0 0 auto; }
@@ -19,10 +19,10 @@
 .bv-chips { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
 .bv-chip {
   position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto auto; column-gap: 7px; align-items: center;
-  min-height: 44px; padding: 4px 7px; border: 1px solid color-mix(in srgb, var(--chip) 55%, #d5deef); border-radius: 10px;
+  min-height: 44px; padding: 4px 7px; border: 1.5px solid color-mix(in srgb, var(--chip) 40%, #46526f); border-radius: 10px;
   background: color-mix(in srgb, var(--chip) 30%, #fff); color: var(--sd-ink); text-align: left; cursor: grab; touch-action: pan-x pan-y; user-select: none;
 }
-.bv-chip:hover { background: color-mix(in srgb, var(--chip) 48%, #fff); }
+.bv-chip:hover { background: color-mix(in srgb, var(--chip) 48%, #fff); border-color: var(--sim-btn-border-hover); }
 .bv-chip:active { cursor: grabbing; }
 .bv-chip[aria-disabled="true"] { opacity: 0.5; cursor: not-allowed; }
 .bv-chip-sym { grid-row: 1 / span 2; font-size: calc(17px * var(--sd-s)); font-weight: 800; color: var(--sd-navy); min-width: 26px; text-align: center; }
@@ -44,7 +44,7 @@
 .bv-badge { position: absolute; left: 8px; top: 8px; max-width: calc(100% - 60px); padding: 3px 9px; border-radius: 999px; background: #eaf1ff; border: 1px solid #c7d8fb; color: #1d3f9e; font-size: var(--sd-fs-sm); font-weight: 700; pointer-events: none; }
 .bv-badge--green { background: #e6f6ee; border-color: #bfe5d0; color: #1d6b45; }
 .bv-badge--amber { background: #fdf0e1; border-color: #f4d3ab; color: #8a4f0c; }
-.bv-corner-btn { position: absolute; right: 8px; top: 8px; z-index: 3; width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid #d5deef; border-radius: 50%; background: #fff; color: #b3261e; cursor: pointer; box-shadow: 0 1px 4px rgba(20, 34, 107, 0.15); }
+.bv-corner-btn { position: absolute; right: 8px; top: 8px; z-index: 3; width: 34px; height: 34px; display: grid; place-items: center; border: 1.5px solid var(--sim-btn-border); border-radius: 50%; background: #fff; color: #b3261e; cursor: pointer; box-shadow: 0 1px 4px rgba(20, 34, 107, 0.15); }
 .bv-corner-btn:hover { background: #fdecea; }
 .bv-corner-btn--br { top: auto; bottom: 8px; color: var(--sd-navy); }
 .bv-canvas:has(.bv-corner-btn--br) .bv-note { right: 52px; }
@@ -63,9 +63,10 @@
 .bv-options .sd-switch { flex: 0 1 auto; }
 .bv-examples { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
 .bv-examples-label { font-size: var(--sd-fs-sm); font-weight: 700; color: var(--sd-muted); }
-.bv-example { min-height: 28px; padding: 0 10px; border: 1px solid #d5deef; border-radius: 999px; background: #fff; color: var(--sd-navy); font-weight: 700; font-size: var(--sd-fs); cursor: pointer; }
-.bv-example:hover { background: #eef4ff; }
-.bv-example[aria-pressed="true"] { background: #e6f6ee; border-color: #8fd0b0; color: #14573a; }
+.bv-example { min-height: 28px; padding: 0 10px; border: 1.5px solid var(--sim-btn-border); border-radius: 999px; background: #fff; color: var(--sd-navy); font-weight: 700; font-size: var(--sd-fs); cursor: pointer; }
+.bv-example:hover { background: var(--sim-btn-fill-hover); border-color: var(--sim-btn-border-hover); }
+.bv-example:active { background: var(--sim-btn-fill-active); }
+.bv-example[aria-pressed="true"] { background: #d6f0e3; border-color: #1f7a55; color: #0f4a31; }
 .bv-ahl { margin-left: 4px; padding: 1px 6px; border-radius: 999px; background: #f1ebfb; color: #5b3a96; font-size: 10px; font-weight: 800; }
 
 /* ---- 3D --------------------------------------------------------------------- */
@@ -111,10 +112,11 @@
 .bv-addatoms-head { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; font-size: var(--sd-fs-sm); font-weight: 600; color: var(--sd-ink); }
 .bv-addatoms-count { font-weight: 800; color: #9a5a12; font-variant-numeric: tabular-nums; }
 .bv-addatoms-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
-.bv-addbtn { min-height: 34px; border: 1px solid #f0c48f; border-radius: 9px; background: #fff; color: #7a4608; font: inherit; font-size: var(--sd-fs); font-weight: 800; cursor: pointer; }
-.bv-addbtn:hover:not(:disabled) { background: #ffeed8; }
-.bv-addbtn:focus-visible { outline: 2px solid var(--sd-blue); outline-offset: 1px; }
-.bv-addbtn:disabled { opacity: 0.45; cursor: not-allowed; background: #f6f1ea; }
+.bv-addbtn { min-height: 34px; border: 1.5px solid #b96f27; border-radius: 9px; background: #fff; color: #7a4608; font: inherit; font-size: var(--sd-fs); font-weight: 800; cursor: pointer; }
+.bv-addbtn:hover:not(:disabled) { background: #ffe3bf; border-color: #7a4608; }
+.bv-addbtn:active:not(:disabled) { background: #ffd39a; }
+.bv-addbtn:focus-visible { outline: 2px solid var(--sim-btn-focus); outline-offset: 2px; }
+.bv-addbtn:disabled { color: #8a6a4a; border-style: dashed; cursor: not-allowed; background: #f6f1ea; }
 .bv-addatoms-limit { margin: 0; font-size: var(--sd-fs-sm); font-weight: 700; color: #8a5a00; }
 
 /* ---- Covalent: final sphere-and-bond structure ------------------------------ */

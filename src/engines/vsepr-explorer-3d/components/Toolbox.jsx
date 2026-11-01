@@ -2,8 +2,21 @@ import { useCallback, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Info, Redo2, RotateCcw, Trash2, Undo2 } from "lucide-react";
 import { ELEMENTS, TOOLBOX_ATOMS } from "../model/elements.js";
+import { readableInk } from "../../../components/interactive-shell/contrastInk.js";
 
 const DRAG_THRESHOLD = 6;
+
+// Atom discs carry the element symbol on a glossy radial gradient: the label sits ~36% of the way from the white highlight
+// to the element colour, i.e. on a LIGHTER tint than the nominal colour, which left white labels at 2-3.5:1 (F, Cl, O, N ...).
+// Presentation only: pick the label colour (white or deep navy) that reads best on that tint. The 3D scene is untouched.
+const hexRgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+const toHex = (c) => `#${c.map((v) => Math.round(v).toString(16).padStart(2, "0")).join("")}`;
+function atomChipStyle(el) {
+  const base = hexRgb(el.color);
+  const underLabel = toHex(base.map((v) => v + (255 - v) * 0.4));
+  return { "--c": el.color, "--t": readableInk(underLabel) };
+}
+
 const BOND_TOOLS = [
   { order: 1, label: "Single", glyph: "—", tip: "Single bond: one shared pair, ONE electron domain" },
   { order: 2, label: "Double", glyph: "=", tip: "Double bond: two shared pairs, still ONE electron domain" },
@@ -56,7 +69,7 @@ export default function Toolbox({
             const el = ELEMENTS[s];
             return (
               <button
-                key={s} type="button" className="vx-atom" data-testid={`tool-atom-${s}`} style={{ "--c": el.color, "--t": el.text }}
+                key={s} type="button" className="vx-atom" data-testid={`tool-atom-${s}`} style={atomChipStyle(el)}
                 title={`${el.name}: drag into the workspace, or click to add. The first atom becomes the central atom.`} aria-label={`${el.name} (${s})`} {...bind({ type: "atom", symbol: s }, { label: s, color: el.color, text: el.text, round: true })}
               ><span>{s}</span></button>
             );

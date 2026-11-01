@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { SPEED_OF_LIGHT } from "./waveMath.js";
+import { clampFrameDelta } from "../../../lib/frameTime.js";
 
 // The real frequency for visible-light wavelengths spans only a ~1.75x
 // range (400-700nm), but real values (~10^14 Hz) are far too fast to
@@ -43,7 +44,7 @@ export function useWavePhase({ wavelengthNm, paused }) {
     }
     function tick(time) {
       if (lastTimeRef.current !== null) {
-        const dtSeconds = (time - lastTimeRef.current) / 1000;
+        const dtSeconds = clampFrameDelta((time - lastTimeRef.current) / 1000);
         const cyclesPerSecond = visualCyclesPerSecond(wavelengthNm);
         phaseAccumRef.current += dtSeconds * cyclesPerSecond * 2 * Math.PI;
         setPhase(phaseAccumRef.current);

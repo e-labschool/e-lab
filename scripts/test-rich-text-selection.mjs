@@ -4,30 +4,18 @@
 // src/data/learnBlockRegistry.jsx) — run with:
 //   node scripts/test-rich-text-selection.mjs
 //
-// HONESTY NOTE (read before trusting any PASS below): this harness
-// renders the REAL, UNMODIFIED RichTextEditor component (via
-// react-dom/client) into a REAL jsdom DOM and drives it with REAL
-// DOM Range/Selection objects and dispatched Mouse/Event objects — this
-// is not a reimplementation or a mock of the selection logic. It proves
-// the actual save/restore/apply code path for every control that works
-// through applyInlineStyle() (text colour, highlight, font family, font
-// size) — exactly the "colour/highlight especially" controls the user
-// reported as still broken, and the ones whose fix (the central
-// `selectionchange` listener + the previously-entirely-missing
-// Highlight control) this change set adds.
-//
-// ONE real limitation, stated plainly rather than papered over: jsdom
-// does not implement `document.execCommand` at all (it throws
-// "not implemented"). That means Bold/Italic/Underline/Superscript/
-// Subscript/Bullets/Numbered-List/Align/Link/Clear-Formatting — every
-// control that goes through this file's `exec()` helper — cannot be
-// exercised end-to-end here. Those controls share the EXACT SAME
-// central save/restore mechanism under test below (same saveSelection,
-// same restoreSelection, same selectionchange listener, same
-// onMouseDown preventDefault pattern) — there is no separate code path
-// for them — but their *visible* DOM result after execCommand runs is
-// only verifiable in a real browser. Items 15/16/18 in the manual
-// acceptance checklist in the final report cover exactly this gap.
+// HONESTY NOTE (read before trusting any PASS below): this harness renders the
+// REAL RichTextEditor component (react-dom/client) into a REAL jsdom DOM and
+// drives it with real Range/Selection objects and dispatched events -- no
+// reimplementation of the editor logic. After the PART 3 rewrite every
+// formatting control (inline AND block level) runs through the pure DOM
+// functions in src/lib/richTextOps.js, which jsdom CAN execute (the old
+// editor needed document.execCommand, which jsdom lacks), so all controls are
+// exercised here. What jsdom still cannot prove: real mouse/keyboard
+// selection, native <select>/colour-picker focus behaviour, native undo, and
+// layout. Those are covered in headless Chromium by
+// scripts/verify-rich-text-editor.mjs. The second half of this file locks in
+// the sanitiser/student-render round trip and the draft-versioning rules.
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import { register } from "node:module";
@@ -39,6 +27,11 @@ globalThis.HTMLElement = dom.window.HTMLElement;
 globalThis.Node = dom.window.Node;
 globalThis.MouseEvent = dom.window.MouseEvent;
 globalThis.Event = dom.window.Event;
+globalThis.FocusEvent = dom.window.FocusEvent;
+globalThis.localStorage = dom.window.localStorage;
+// The editor schedules toolbar-state refreshes with rAF.
+globalThis.requestAnimationFrame = (cb) => setTimeout(() => cb(Date.now()), 0);
+globalThis.cancelAnimationFrame = (id) => clearTimeout(id);
 
 register("./jsx-loader-hooks.mjs", import.meta.url);
 
@@ -244,6 +237,148 @@ await test("a collapsed selection (caret, nothing highlighted) does not throw an
   // it must not duplicate or drop any of the EXISTING visible text.
   assert.equal(editor.textContent.replace(/​/g, ""), "short text", "collapsed-selection formatting must not duplicate or drop any existing visible text");
   assert.ok(editor.querySelector("span[style*=background-color]"), "a zero-width-marker span must exist for the caret position");
+});
+
+
+// ---------------------------------------------------------------------------
+// PART 3/5 additions
+// ---------------------------------------------------------------------------
+await test("font size from the toolbar <select> changes ONLY the selection even when the parent re-renders with the saved html (blur -> commit -> new value prop)", async () => {
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  let value = "<p>The quick brown fox jumps over the lazy dog</p><p>Another paragraph</p>";
+  const render = () => root.render(React.createElement(RichTextEditor, { value, onChange: (h) => { value = h; render(); } }));
+  render();
+  await tick(30);
+  const editor = container.querySelector("[contenteditable]");
+  selectPhrase(editor, "brown fox");
+  const sizeSelect = container.querySelector('select[aria-label="Font size"]');
+  sizeSelect.dispatchEvent(new window.MouseEvent("mousedown", { bubbles: true }));
+  // Simulate the editor losing focus to the select (blur commits + re-renders the parent)...
+  editor.dispatchEvent(new window.FocusEvent("blur", { bubbles: false }));
+  await tick(30);
+  // ...then the change arrives.
+  const nativeSet = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, "value").set;
+  nativeSet.call(sizeSelect, "24");
+  sizeSelect.dispatchEvent(new window.Event("change", { bubbles: true }));
+  await tick(30);
+  assert.equal(editor.innerHTML, '<p>The quick <span style="font-size: 24px;">brown fox</span> jumps over the lazy dog</p><p>Another paragraph</p>');
+});
+
+await test("Bold / Italic / Underline / Strikethrough / Sub / Sup buttons format exactly the selection", async () => {
+  const { editor, container } = await mount("<p>alpha beta gamma</p>");
+  const cases = [["Bold", "b"], ["Italic", "i"], ["Underline", "u"], ["Strikethrough", "s"], ["Superscript", "sup"], ["Subscript", "sub"]];
+  for (const [label, tag] of cases) {
+    selectPhrase(editor, "beta");
+    const btn = container.querySelector(`button[aria-label="${label}"]`);
+    clickControl(btn);
+    await tick();
+    assert.ok(editor.innerHTML.includes(`<${tag}>beta</${tag}>`), `${label} -> <${tag}> around beta only: ${editor.innerHTML}`);
+    assert.ok(editor.innerHTML.startsWith("<p>alpha ") && editor.innerHTML.endsWith(" gamma</p>"), `${label}: text outside the selection untouched`);
+    clickControl(btn);
+    await tick();
+    assert.equal(editor.innerHTML, "<p>alpha beta gamma</p>", `${label} toggles back off`);
+  }
+});
+
+await test("heading, alignment, list and indent controls are block-level (selected paragraph only)", async () => {
+  const { editor, container } = await mount("<p>one</p><p>two</p>");
+  selectPhrase(editor, "two");
+  const sel = container.querySelector('select[aria-label="Paragraph style"]');
+  Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, "value").set.call(sel, "h2");
+  sel.dispatchEvent(new window.Event("change", { bubbles: true }));
+  await tick();
+  assert.equal(editor.innerHTML, "<p>one</p><h2>two</h2>");
+  clickControl(container.querySelector('button[aria-label="Align Center"]')); await tick();
+  assert.equal(editor.innerHTML, '<p>one</p><h2 style="text-align: center;">two</h2>');
+  selectPhrase(editor, "one");
+  clickControl(container.querySelector('button[aria-label="Bullets"]')); await tick();
+  assert.ok(editor.innerHTML.startsWith("<ul><li>one</li></ul>"), editor.innerHTML);
+  clickControl(container.querySelector('button[aria-label="Clear Formatting"]')); await tick();
+  assert.ok(editor.innerHTML.startsWith("<ul><li>one</li></ul>"), "clear formatting is inline only: list structure stays");
+});
+
+await test("Undo/Redo toolbar buttons step through formatting history exactly", async () => {
+  const { editor, container } = await mount("<p>alpha beta gamma</p>");
+  selectPhrase(editor, "alpha"); clickControl(container.querySelector('button[aria-label="Bold"]')); await tick();
+  selectPhrase(editor, "gamma"); clickControl(container.querySelector('button[aria-label="Italic"]')); await tick();
+  clickControl(container.querySelector('button[aria-label="Undo"]')); await tick();
+  assert.equal(editor.innerHTML, "<p><b>alpha</b> beta gamma</p>");
+  clickControl(container.querySelector('button[aria-label="Undo"]')); await tick();
+  assert.equal(editor.innerHTML, "<p>alpha beta gamma</p>");
+  clickControl(container.querySelector('button[aria-label="Redo"]')); await tick();
+  clickControl(container.querySelector('button[aria-label="Redo"]')); await tick();
+  assert.equal(editor.innerHTML, "<p><b>alpha</b> beta <i>gamma</i></p>");
+});
+
+await test("an external value change (not produced by the editor) is adopted, an echo of its own value is not re-written", async () => {
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  root.render(React.createElement(RichTextEditor, { value: "<p>first</p>", onChange: () => {} }));
+  await tick(30);
+  const editor = container.querySelector("[contenteditable]");
+  const marker = editor.firstChild; // node identity must survive a same-value re-render
+  root.render(React.createElement(RichTextEditor, { value: "<p>first</p>", onChange: () => {} }));
+  await tick(30);
+  assert.equal(editor.firstChild, marker, "same value -> DOM nodes untouched");
+  root.render(React.createElement(RichTextEditor, { value: "<p>second</p>", onChange: () => {} }));
+  await tick(30);
+  assert.equal(editor.innerHTML, "<p>second</p>");
+});
+
+await test("saved HTML survives the student sanitiser + math pass (headings, font-size span, colour, highlight, align, indent, lists, sub/sup, links)", async () => {
+  const { sanitizeHtml } = await import("../src/lib/sanitizeHtml.js");
+  const { renderMathMarkersInHtml } = await import("../src/lib/scientificContent.jsx");
+  const saved = '<h1>T1</h1><h2 style="text-align: center;">T2</h2><h3>T3</h3><p style="margin-left: 24px; text-align: justify;">a <span style="font-size: 24px; color: rgb(54, 84, 214); background-color: rgb(254, 240, 138); font-family: Georgia, serif;">big</span> <b>b</b><i>i</i><u>u</u><s>s</s> H<sub>2</sub>O x<sup>2</sup> <a href="https://example.org">l</a> ⟦math:x^2⟧</p><ul><li>a<ol><li>n</li></ol></li></ul>';
+  const out = sanitizeHtml(renderMathMarkersInHtml(saved));
+  for (const needle of ["<h1>T1</h1>", 'text-align: center', "<h3>T3</h3>", "margin-left: 24px", "font-size: 24px", "color: rgb(54, 84, 214)", "background-color: rgb(254, 240, 138)", "font-family: Georgia", "<b>b</b>", "<i>i</i>", "<u>u</u>", "<s>s</s>", "<sub>2</sub>", "<sup>2</sup>", 'href="https://example.org"', "<ul><li>a<ol><li>n</li></ol></li></ul>"]) {
+    assert.ok(out.includes(needle), `student HTML lost "${needle}":\n${out}`);
+  }
+  assert.ok(!out.includes("⟦math:"), "the math marker was rendered, not left raw");
+  assert.ok(!/javascript:/i.test(sanitizeHtml('<a href="javascript:alert(1)">x</a>')), "sanitiser still strips javascript: URLs");
+});
+
+await test("draft versioning: restore only when the saved version is unchanged; never over newer saved content", async () => {
+  const d = await import("../src/lib/draftStore.js");
+  const mem = new Map();
+  const storage = { getItem: (k) => (mem.has(k) ? mem.get(k) : null), setItem: (k, v) => mem.set(k, v), removeItem: (k) => mem.delete(k) };
+  assert.equal(d.hashString("a"), d.hashString("a"));
+  assert.notEqual(d.hashString("a"), d.hashString("b"));
+  d.saveDraft("L1:B1", { html: "<p>draft</p>", baseHash: d.hashString("<p>saved</p>") }, storage);
+  const draft = d.loadDraft("L1:B1", storage);
+  assert.equal(d.decideDraft(draft, "<p>saved</p>"), "restore", "server unchanged -> auto restore");
+  assert.equal(d.decideDraft(draft, "<p>saved by someone else</p>"), "conflict", "server changed -> never auto-apply");
+  assert.equal(d.decideDraft(draft, "<p>draft</p>"), "none", "draft already equals saved -> nothing to restore");
+  assert.equal(d.decideDraft(null, "x"), "none");
+  d.clearDraft("L1:B1", storage);
+  assert.equal(d.loadDraft("L1:B1", storage), null);
+  mem.set("e-lab:draft:bad", "{not json");
+  assert.equal(d.loadDraft("bad", storage), null, "corrupt draft is ignored");
+});
+
+await test("component: unsaved draft is restored (server unchanged), NOT applied when the saved value changed, and does not call onChange by itself", async () => {
+  const { saveDraft, hashString } = await import("../src/lib/draftStore.js");
+  localStorage.clear();
+  saveDraft("P:B:html", { html: "<p>typed draft</p>", baseHash: hashString("<p>saved</p>"), savedAt: 1 });
+  let changes = 0;
+  let container = document.createElement("div"); document.body.appendChild(container);
+  let root = createRoot(container);
+  root.render(React.createElement(RichTextEditor, { value: "<p>saved</p>", onChange: () => { changes += 1; }, draftScope: "P:B:html" }));
+  await tick(40);
+  assert.equal(container.querySelector("[contenteditable]").innerHTML, "<p>typed draft</p>");
+  assert.ok(container.querySelector('[data-testid="rte-draft-notice"]')?.textContent.includes("Unsaved draft restored"));
+  assert.equal(changes, 0, "restoring must not write to the parent/server");
+  root.unmount();
+  assert.equal(changes, 0, "unmounting an untouched restored draft must not write either");
+  container = document.createElement("div"); document.body.appendChild(container);
+  root = createRoot(container);
+  root.render(React.createElement(RichTextEditor, { value: "<p>newer saved content</p>", onChange: () => { changes += 1; }, draftScope: "P:B:html" }));
+  await tick(40);
+  assert.equal(container.querySelector("[contenteditable]").innerHTML, "<p>newer saved content</p>", "newer saved content is kept");
+  assert.ok(container.querySelector('[data-testid="rte-draft-notice"]')?.textContent.includes("not applied"));
+  localStorage.clear();
 });
 
 console.log(`\n${passed} passed, ${failed} failed\n`);

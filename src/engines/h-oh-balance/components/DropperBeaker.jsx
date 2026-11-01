@@ -1,5 +1,6 @@
 import { PALETTE } from "../../particle-model-visualizer/data/palette.js";
 
+import { readableInk } from "../../../components/interactive-shell/contrastInk.js";
 const HCL_COLOR = "#D97757";
 const NAOH_COLOR = "#6C86EE";
 
@@ -35,7 +36,7 @@ function Dropper({ label, color, falling }) {
  */
 export default function DropperBeaker({ fallingReagent, onAddHCl, onAddNaOH, onReset, disabled }) {
   return (
-    <div className="flex flex-col items-center gap-1.5">
+    <div className="sim-surface-dark flex flex-col items-center gap-1.5">
       <span className="text-xs font-semibold" style={{ color: PALETTE.textSecondary }}>Reagents + Water</span>
 
       <div className="flex items-start justify-center gap-6">
@@ -57,8 +58,8 @@ export default function DropperBeaker({ fallingReagent, onAddHCl, onAddNaOH, onR
           type="button"
           onClick={onAddHCl}
           disabled={disabled}
-          className="rounded-md px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
-          style={{ background: HCL_COLOR }}
+          className="rounded-md px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
+          style={{ background: HCL_COLOR, color: readableInk(HCL_COLOR) }}
         >
           + Add HCl
         </button>
@@ -66,8 +67,8 @@ export default function DropperBeaker({ fallingReagent, onAddHCl, onAddNaOH, onR
           type="button"
           onClick={onAddNaOH}
           disabled={disabled}
-          className="rounded-md px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
-          style={{ background: NAOH_COLOR }}
+          className="rounded-md px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
+          style={{ background: NAOH_COLOR, color: readableInk(NAOH_COLOR) }}
         >
           + Add NaOH
         </button>
@@ -77,7 +78,7 @@ export default function DropperBeaker({ fallingReagent, onAddHCl, onAddNaOH, onR
         type="button"
         onClick={onReset}
         className="rounded-md border px-2.5 py-1 text-[11px] font-medium"
-        style={{ borderColor: PALETTE.borderStrong, color: PALETTE.textSecondary }}
+        style={{ borderColor: "var(--sim-btn-border)", color: PALETTE.textSecondary }}
       >
         Reset
       </button>

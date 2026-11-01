@@ -921,7 +921,7 @@ export default function TitrationPHCurve() {
       : "liquid-base";
 
   return (
-    <section className="titration-sim">
+    <section className="titration-sim sim-surface-dark">
       <header className="titration-title">
         <div>
           <h2>

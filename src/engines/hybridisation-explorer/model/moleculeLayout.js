@@ -5,7 +5,7 @@
 import { createAtom } from "./workspace.js";
 import { mixOrbitals } from "./hybrids.js";
 import { atomOrbitalInstances, analyseBonds, distanceWindow } from "./overlap.js";
-import { P_AXIS, reach as reachOf } from "./orbitals.js";
+import { P_AXIS, P_LATERAL, reach as reachOf } from "./orbitals.js";
 import { MOLECULE_BY_ID } from "./moleculeData.js";
 import { QI, add, sub, scale, neg, len, normalize, qMul, qRotate, qFromAxisAngle, qFromUnitVectors, signedAngleAbout, rad } from "./vec.js";
 
@@ -26,6 +26,7 @@ export function resolveRef(atom, ref) {
   if (!atom.orbitals.some((o) => o.id === ref)) throw new Error(`${atom.id} has no orbital ${ref}`);
   return ref;
 }
+const pseudoP = (n) => ({ cls: "p", n, reach: reachOf("p", n), terms: [["pz", 1]] }); // stand-in for a p orbital when only the pi window is needed
 const inst = (atom, orbId) => atomOrbitalInstances(atom).find((o) => o.orbId === orbId);
 
 /** Ideal centre distance of a bonded pair, honouring any pi bonds between the same two atoms (shorter, like a real C=C). */
@@ -34,7 +35,7 @@ export function idealBondDistance(sigmaA, sigmaB, piPairs = []) {
   if (!piPairs.length) return s.ideal;
   let lo = s.min; let hi = s.max;
   for (const [pa, pb] of piPairs) { const w = distanceWindow("pi", pa, pb); lo = Math.max(lo, w.min); hi = Math.min(hi, w.max); }
-  return lo <= hi ? lo + 0.45 * (hi - lo) : s.ideal;
+  return lo <= hi ? Math.min(hi, Math.max(lo, lo + 0.4 * (hi - lo))) : s.ideal; // near the close end of the shared window: the pi lobes need to be close to overlap
 }
 
 function placeChild(atoms, spec, bond, parentId, pRef, childId, cRef, rootDir) {
@@ -46,7 +47,7 @@ function placeChild(atoms, spec, bond, parentId, pRef, childId, cRef, rootDir) {
   let quat = lobe ? qFromUnitVectors(lobe, neg(f)) : QI;
   // distance (pi partners between the same two atoms shorten it)
   const piBonds = spec.bonds.filter((b) => b.type === "pi" && ((b.a[0] === parentId && b.b[0] === childId) || (b.a[0] === childId && b.b[0] === parentId)));
-  const piPairs = piBonds.map((b) => [{ reach: reachOf("p", P.orbitals[0].n) }, { reach: reachOf("p", C.orbitals[0].n) }]);
+  const piPairs = piBonds.map(() => [pseudoP(P.orbitals[0].n), pseudoP(C.orbitals[0].n)]);
   const d = idealBondDistance(pInst, cLocal, piPairs);
   const pos = add(P.pos, scale(f, d));
   // twist about the bond axis
@@ -67,8 +68,8 @@ export function layoutAtoms(spec) {
   const atoms = Object.fromEntries(Object.entries(spec.atoms).map(([id, a]) => [id, buildAtom(id, a)]));
   const placed = new Set([spec.root]); atoms[spec.root].pos = [0, 0, 0]; atoms[spec.root].quat = QI;
   if (spec.ring) { // regular hexagon in the xy plane: side = radius = C-C distance; hybrid h0 of every carbon points outward
-    const b0 = spec.bonds[0]; const pi = (id) => ({ reach: reachOf("hybrid", atoms[id].orbitals[0].n) });
-    const dσ = idealBondDistance(pi(b0.a[0]), pi(b0.b[0]), []); const dπ = idealBondDistance(pi(b0.a[0]), pi(b0.b[0]), [[{ reach: reachOf("p", 2) }, { reach: reachOf("p", 2) }]]);
+    const b0 = spec.bonds[0]; const pi = (id) => inst(atoms[id], atoms[id].hybrid.hybrids[0].id);
+    const dσ = idealBondDistance(pi(b0.a[0]), pi(b0.b[0]), []); const dπ = idealBondDistance(pi(b0.a[0]), pi(b0.b[0]), [[pseudoP(2), pseudoP(2)]]);
     const R = 0.5 * (dσ + dπ); // between a single and a double bond length, like benzene's intermediate C-C bonds
     spec.ring.forEach((id, i) => { const th = (Math.PI / 3) * i; atoms[id].pos = [R * Math.cos(th), R * Math.sin(th), 0]; atoms[id].quat = qFromAxisAngle([0, 0, 1], th); placed.add(id); });
   }
@@ -133,6 +134,23 @@ export function compileMolecule(idOrSpec) {
     const focus = st.focus ?? [...hybridised][0] ?? [...visible][0];
     return { index: i, text: st.text, visible: [...visible], hybridised: [...hybridised], newHybridise: newHyb, formed: [...formed], newForm: forms.map((b) => b.id), emphasise: st.emphasise ?? [], ring: !!st.ring, focus, sigma, pi };
   });
+  // ---- two-stage approach of pi-bonded pairs: after the sigma step the pair stays at a distance where the sigma lobes overlap but the two
+  // parallel p lobes have not yet met; in the pi step the pair closes to the final (shorter) distance so the sideways overlap is revealed.
+  const piStage = {};
+  const bondStep = (id) => steps.findIndex((s) => s.newForm.includes(id));
+  const sigmaCount = (atomId, upTo) => bonds.filter((b) => b.type === "sigma" && (b.a[0] === atomId || b.b[0] === atomId) && bondStep(b.id) <= upTo).length;
+  for (const pb of bonds.filter((b) => b.type === "pi")) {
+    const idA = pb.a[0]; const idB = pb.b[0]; const sg = bonds.find((b) => b.type === "sigma" && ((b.a[0] === idA && b.b[0] === idB) || (b.a[0] === idB && b.b[0] === idA)));
+    if (!sg) continue;
+    const stepPi = Math.min(...bonds.filter((b) => b.type === "pi" && ((b.a[0] === idA && b.b[0] === idB) || (b.a[0] === idB && b.b[0] === idA))).map((b) => bondStep(b.id)));
+    if (!(bondStep(sg.id) < stepPi) || piStage[idA] || piStage[idB]) continue;
+    const A = atoms[idA]; const B = atoms[idB]; const dFinal = len(sub(B.pos, A.pos)); const u = normalize(sub(B.pos, A.pos));
+    const pA = { cls: "p", n: A.orbitals[0].n, reach: reachOf("p", A.orbitals[0].n) }; const touch = P_LATERAL * (pA.reach + reachOf("p", B.orbitals[0].n));
+    const dStage = Math.max(dFinal + 0.2, Math.min(touch + 0.28, dFinal + 0.5)); const delta = dStage - dFinal;
+    const wA = sigmaCount(idA, stepPi - 1) > 1 ? 0 : 1; const wB = sigmaCount(idB, stepPi - 1) > 1 ? 0 : 1; const w = wA + wB; if (!w) continue;
+    if (wA) piStage[idA] = { step: stepPi, off: scale(u, -delta * (wA / w)) };
+    if (wB) piStage[idB] = { step: stepPi, off: scale(u, delta * (wB / w)) };
+  }
   const last = steps[steps.length - 1];
   if (last.sigma !== spec.expected.sigma || last.pi !== spec.expected.pi) problems.push(`last step counts ${last.sigma}σ+${last.pi}π, expected ${spec.expected.sigma}σ+${spec.expected.pi}π`);
   if (last.visible.length !== atomList.length) problems.push("not every atom is visible at the last step");
@@ -143,6 +161,6 @@ export function compileMolecule(idOrSpec) {
   for (const id of Object.keys(atoms)) if (!(id in anchorStep)) { anchorStep[id] = -1; offsets[id] = [0, 0, 0]; }
 
   const pts = atomList.map((a) => a.pos); const c = scale(pts.reduce((s, p) => add(s, p), [0, 0, 0]), 1 / pts.length);
-  const radius = Math.max(1, ...pts.map((p) => len(sub(p, c)))) + 1.4;
-  return { id: spec.id, spec, atoms, atomList, bonds, bondsById, analysis, steps, offsets, anchorStep, center: c, radius, problems, expected: spec.expected, delocalised: spec.ring ? { ring: spec.ring, orbital: "2pz" } : null };
+  const radius = Math.max(1, ...pts.map((p) => len(sub(p, c)))) + 0.8;
+  return { id: spec.id, spec, atoms, atomList, bonds, bondsById, analysis, steps, offsets, anchorStep, piStage, center: c, radius, problems, expected: spec.expected, delocalised: spec.ring ? { ring: spec.ring, orbital: "2pz" } : null };
 }

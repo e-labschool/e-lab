@@ -16,11 +16,13 @@ const MetallicMode = lazy(() => import("./components/MetallicMode.jsx"));
 // geometry in ./scene (pure, tested); this file and ./components only draw and wire controls.
 //
 // Lesson integration: <BondingVisualizer config={{ initialMode, allowedModes }} /> -- see model/config.js.
+// Tab colours: `solid` carries a white label (>= 4.5:1) and `border` outlines the unselected pastel tab (>= 3:1) -- see
+// docs/SIMULATION_DASHBOARD_LAYOUT.md "Shared button style contract".
 // The standalone route also accepts ?mode=covalent&modes=ionic,covalent.
 const TAB_STYLE = {
-  ionic: { icon: Atom, soft: "#e8efff", border: "#c5d6fb", text: "#2c4bb0", solid: "#4a6cf7" },
-  covalent: { icon: Link2, soft: "#e6f6ee", border: "#bfe5d0", text: "#1d6b45", solid: "#2f9e6b" },
-  metallic: { icon: Layers, soft: "#fdf0e1", border: "#f4d3ab", text: "#9a5a12", solid: "#e08a2b" },
+  ionic: { icon: Atom, soft: "#e8efff", border: "#6079d8", text: "#233e94", solid: "#3f55d9" },
+  covalent: { icon: Link2, soft: "#e6f6ee", border: "#3c9a74", text: "#124d33", solid: "#1f7a55" },
+  metallic: { icon: Layers, soft: "#fdf0e1", border: "#b96f27", text: "#783f09", solid: "#a8530f" },
 };
 const TAB_TITLE = {
   ionic: "Electron transfer, then electrostatic attraction between ions",

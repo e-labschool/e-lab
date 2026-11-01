@@ -3,7 +3,8 @@ import { Canvas } from "@react-three/fiber";
 import { Box, Maximize2, Minus, Plus } from "lucide-react";
 import SceneContent, { fitDistance, CAMERA_DIR } from "../scene/Scene3D.jsx";
 import { readTheme } from "../scene/theme.js";
-import { disposeAll } from "../scene/geometry.js";
+import { retainGeometry, releaseGeometry, warmGeometries } from "../scene/geometry.js";
+import { paletteFor } from "../scene/theme.js";
 import { detectWebGL, isSoftwareGL } from "./webgl.js";
 import { qMul, qFromAxisAngle, sub, dot, cross, normalize } from "../model/vec.js";
 
@@ -24,7 +25,7 @@ function rayPlane(ray, p0, n) {
  */
 export default function ViewerStage({
   view, fit, interactive = true, tool = "move", getAtom, onOrbitalClick, onAtomClick, onHover, onGestureStart, onTransform, onGestureEnd, onMorphDone,
-  tools, children, ariaLabel, testId = "hy-stage", fallback, themeVersion = 0, extraData,
+  tools, children, ariaLabel, testId = "hy-stage", fallback, themeVersion = 0, extraData, warm,
 }) {
   const containerRef = useRef(null); const apiRef = useRef(null); const viewRef = useRef(view);
   const gesture = useRef(null); const pending = useRef(null); const raf = useRef(0); const hoverRef = useRef(null);
@@ -42,11 +43,13 @@ export default function ViewerStage({
     return () => { ro?.disconnect(); delete el.__hy; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [themeVersion]);
-  useEffect(() => () => disposeAll(), []);
+  useEffect(() => { retainGeometry(); return () => releaseGeometry(); }, []);
+  // idle-time warm-up: build the cached geometries the current content needs BEFORE the student presses anything
+  useEffect(() => { if (theme && warm?.length) warmGeometries(warm, (name) => paletteFor(theme, name)); }, [theme, warm]);
 
   const fitKey = `${fit.key}|${fitToken}`;
   const fitProp = useMemo(() => ({ ...fit, key: fitKey }), [fit.center?.join(","), fit.radius, fitKey]); // eslint-disable-line react-hooks/exhaustive-deps
-  const camera = useMemo(() => { const d = fitDistance(fit.radius, size.w / Math.max(1, size.h)); const c = fit.center; return { fov: 40, near: 0.1, far: 220, up: [0, 0, 1], position: [c[0] + CAMERA_DIR[0] * d, c[1] + CAMERA_DIR[1] * d, c[2] + CAMERA_DIR[2] * d] }; }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const camera = useMemo(() => { const d = fitDistance(fit.radius, size.w / Math.max(1, size.h)); const c = fit.center; const dir = fit.dir ?? CAMERA_DIR; return { fov: 40, near: 0.1, far: 220, up: [0, 0, 1], position: [c[0] + dir[0] * d, c[1] + dir[1] * d, c[2] + dir[2] * d] }; }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const flush = useCallback(() => { raf.current = 0; const p = pending.current; pending.current = null; if (p) onTransform?.(p.id, p.patch); }, [onTransform]);
   const queue = (id, patch) => { pending.current = { id, patch }; if (!raf.current) raf.current = requestAnimationFrame(flush); };

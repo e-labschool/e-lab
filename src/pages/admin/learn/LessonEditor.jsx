@@ -22,6 +22,8 @@ import Badge from "../../../components/ui/Badge.jsx";
 import { splitLearnBlocksIntoPages } from "../../../lib/learnPagination.js";
 import { useAuth } from "../../../context/AuthContext.jsx";
 import { saveLearnDraft, loadLearnDraft, clearLearnDraft } from "../../../lib/learnAdminDraft.js";
+import { useSessionState, sessionKey } from "../../../lib/sessionState.js";
+import { hashString } from "../../../lib/draftStore.js";
 import { loadLearnAuthorDefaults, saveLearnAuthorDefaults } from "../../../lib/learnAuthorDefaults.js";
 import { getSyllabusCodeOptions } from "../../../lib/learn-tree.js";
 import { filterBlocksForStudent } from "../../../lib/learnLevelAccess.js";
@@ -49,13 +51,21 @@ export default function LessonEditor() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [showPicker, setShowPicker] = useState(false);
-  const [previewing, setPreviewing] = useState(false);
-  const [previewPage, setPreviewPage] = useState(0);
-  const [previewLevel, setPreviewLevel] = useState("SL");
+  // Panel/preview state persists in sessionStorage per lesson, so a reload (or
+  // navigating away and back) reopens the same preview/panels. Live tab
+  // switches never reset any of this in the first place (nothing remounts).
+  const uiKey = (name) => sessionKey("admin-learn", pageId || "new", name);
+  const [previewing, setPreviewing] = useSessionState(uiKey("previewing"), false);
+  const [previewPage, setPreviewPage] = useSessionState(uiKey("previewPage"), 0);
+  const [previewLevel, setPreviewLevel] = useSessionState(uiKey("previewLevel"), "SL");
+  const [dragArmedId, setDragArmedId] = useState(null);
   const [expandedBlockId, setExpandedBlockId] = useState(null);
   const [currentPageId, setCurrentPageId] = useState(pageId ?? null);
-  const [showDesignDefaults, setShowDesignDefaults] = useState(false);
+  const [showDesignDefaults, setShowDesignDefaults] = useSessionState(uiKey("designDefaults"), false);
   const [authorDefaults, setAuthorDefaults] = useState(() => loadLearnAuthorDefaults(user?.id));
+  const serverFormRef = useRef(null);
+  const [serverFormBase, setServerFormBase] = useState(null);
+  const [formDraftNotice, setFormDraftNotice] = useState(null); // "restored" | "skipped" | null
   const undoStack = useRef([]);
   const redoStack = useRef([]);
   const [, setHistoryTick] = useState(0);
@@ -85,9 +95,22 @@ export default function LessonEditor() {
         // a different lesson (or a stale one from a prior session) is
         // never applied here.
         const draft = user?.id ? loadLearnDraft(user.id) : null;
+        serverFormRef.current = serverForm;
+        setServerFormBase(serverForm);
         if (draft && draft.pageId === pageId && draft.formDraft) {
-          setForm({ ...serverForm, ...draft.formDraft });
           if (draft.expandedBlockId) setExpandedBlockId(draft.expandedBlockId);
+          // Only apply the remembered settings edits if the SAVED lesson is
+          // still the one they were based on -- never resurrect an old form
+          // over settings that were saved since (e.g. from another device).
+          const baseUnchanged = !draft.baseHash || draft.baseHash === hashString(JSON.stringify(serverForm));
+          const hasEdits = JSON.stringify({ ...serverForm, ...draft.formDraft }) !== JSON.stringify(serverForm);
+          if (baseUnchanged) {
+            setForm({ ...serverForm, ...draft.formDraft });
+            if (hasEdits) setFormDraftNotice("restored");
+          } else {
+            setForm(serverForm);
+            if (hasEdits) setFormDraftNotice("skipped");
+          }
         } else {
           setForm(serverForm);
         }
@@ -106,7 +129,7 @@ export default function LessonEditor() {
   // Admin tab and back restore exactly where the admin left off.
   useEffect(() => {
     if (!user?.id || !currentPageId || !formHydrated) return;
-    saveLearnDraft(user.id, { pageId: currentPageId, expandedBlockId, formDraft: form });
+    saveLearnDraft(user.id, { pageId: currentPageId, expandedBlockId, formDraft: form, baseHash: serverFormRef.current ? hashString(JSON.stringify(serverFormRef.current)) : null });
   }, [user?.id, currentPageId, expandedBlockId, form, formHydrated]);
 
   // Scrolls the restored block into view once the lesson has finished
@@ -117,6 +140,14 @@ export default function LessonEditor() {
     const el = document.getElementById(`learn-block-${expandedBlockId}`);
     el?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [loading, expandedBlockId]);
+
+  const formDirty = Boolean(serverFormBase) && JSON.stringify(form) !== JSON.stringify(serverFormBase);
+  useEffect(() => {
+    if (!formDirty) return undefined;
+    const warn = (e) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [formDirty]);
 
   async function ensurePageExists() {
     if (currentPageId) {
@@ -136,6 +167,8 @@ export default function LessonEditor() {
     try {
       const id = await ensurePageExists();
       await saveLessonAsDraft(id);
+      serverFormRef.current = form;
+      setServerFormBase(form);
       setStatus("draft");
       if (user?.id) clearLearnDraft(user.id); // now safely persisted — no unsaved draft to protect
     } catch (err) {
@@ -151,6 +184,8 @@ export default function LessonEditor() {
     try {
       const id = await ensurePageExists();
       const published = await publishLesson(id);
+      serverFormRef.current = form;
+      setServerFormBase(form);
       setStatus(published.status);
       if (user?.id) clearLearnDraft(user.id);
     } catch (err) {
@@ -269,6 +304,10 @@ export default function LessonEditor() {
   useEffect(() => {
     const onKey = (e) => {
       if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "z") return;
+      // Inside a text field / the Rich Text editor Ctrl+Z belongs to THAT
+      // field's own history, not to block-level undo.
+      const t = e.target;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
       e.preventDefault();
       if (e.shiftKey) handleRedo(); else handleUndo();
     };
@@ -441,6 +480,12 @@ export default function LessonEditor() {
           </div>
         </div>
 
+        {formDraftNotice && (
+          <div role="status" data-testid="lesson-draft-notice" className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-[var(--color-amber)]/40 bg-[var(--color-amber)]/10 px-3 py-1.5 text-xs text-[var(--color-ink)]">
+            <span>{formDraftNotice === "restored" ? "Unsaved settings draft restored." : "Unsaved settings from an earlier session were not applied because this lesson was saved since."}</span>
+            <button type="button" onClick={() => { if (formDraftNotice === "restored" && serverFormRef.current) setForm(serverFormRef.current); if (user?.id) clearLearnDraft(user.id); setFormDraftNotice(null); }} className="font-semibold text-[var(--color-coral)]">{formDraftNotice === "restored" ? "Discard" : "Dismiss"}</button>
+          </div>
+        )}
         {error && <p role="alert" className="mt-3 text-xs text-[var(--color-coral)]">{error}</p>}
         <div className="mt-4 flex gap-2">
           <Button variant="secondary" onClick={handleSaveDraft} disabled={saving}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Draft"}</Button>
@@ -475,14 +520,15 @@ export default function LessonEditor() {
               <div
                 key={block.id}
                 id={`learn-block-${block.id}`}
-                draggable
+                draggable={dragArmedId === block.id}
+                onDragEnd={() => setDragArmedId(null)}
                 onDragStart={(e) => handleDragStart(e, i)}
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={(e) => handleDrop(e, i)}
                 className={`rounded-md border bg-[var(--color-paper-raised)] ${block.visible ? "border-[var(--color-line)]" : "border-dashed border-[var(--color-line)] opacity-60"}`}
               >
                 <div className="flex items-center gap-2 border-b border-[var(--color-line)] px-3 py-2">
-                  <GripVertical size={14} className="cursor-grab text-[var(--color-ink-faint)]" />
+                  <span onMouseDown={() => setDragArmedId(block.id)} onMouseUp={() => setDragArmedId(null)} onTouchStart={() => setDragArmedId(block.id)} title="Drag to reorder" className="cursor-grab"><GripVertical size={14} className="text-[var(--color-ink-faint)]" /></span>
                   <span className="min-w-0 leading-tight">
                     <span className="block text-xs font-semibold text-[var(--color-ink-soft)]">{getLearnBlockDisplayLabel(block).typeLabel}</span>
                     {getLearnBlockDisplayLabel(block).preview && <span className="block truncate text-[11px] text-[var(--color-ink-faint)]">{getLearnBlockDisplayLabel(block).preview}</span>}

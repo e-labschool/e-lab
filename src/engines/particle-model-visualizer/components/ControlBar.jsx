@@ -11,7 +11,7 @@ function Chip({ active, onClick, icon, label, ariaLabel }) {
       title={ariaLabel || label}
       className="flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors"
       style={{
-        borderColor: active ? STATE_ACCENT.solid : PALETTE.border,
+        borderColor: active ? STATE_ACCENT.solid : "var(--sim-btn-border)",
         background: active ? "#6C86EE22" : "transparent",
         color: active ? "#8FA0EE" : PALETTE.textSecondary,
       }}
@@ -26,7 +26,7 @@ function Chip({ active, onClick, icon, label, ariaLabel }) {
  * for the chamber, centred beneath it. */
 export default function ControlBar({ running, onToggleRunning, showAttractions, onToggleAttractions, onReset }) {
   return (
-    <div className="flex items-center justify-center gap-2">
+    <div className="sim-surface-dark flex items-center justify-center gap-2">
       <Chip
         onClick={onToggleRunning}
         icon={running ? <Pause size={13} /> : <Play size={13} />}

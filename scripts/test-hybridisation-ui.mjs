@@ -88,12 +88,12 @@ console.log("Molecule Explorer");
 await test("tab switch keeps Orbital Lab state; dropdown has 11 molecules", async () => {
   await click(T("tab-molecules")); assert.equal($$(`${T("select-molecule")} option`).length, 11);
 });
-await test("ethene steps Next to 6/6 with 5 sigma and 1 pi; Previous and Reset work", async () => {
-  await setSelect(T("select-molecule"), "C2H4"); assert.match(txt(T("step-count")), /1 \/ 6/);
-  for (let i = 0; i < 5; i += 1) await click(T("btn-next"));
-  assert.match(txt(T("step-count")), /6 \/ 6/); assert.equal(txt(T("count-sigma")).replace(/\D/g, "") || "", txt(T("count-sigma")).replace(/\D/g, ""));
+await test("ethene steps Next to 5/5 with 5 sigma and 1 pi; Previous and Reset work", async () => {
+  await setSelect(T("select-molecule"), "C2H4"); assert.match(txt(T("step-count")), /1 \/ 5/);
+  for (let i = 0; i < 4; i += 1) await click(T("btn-next"));
+  assert.match(txt(T("step-count")), /5 \/ 5/); assert.equal(txt(T("count-sigma")).replace(/\D/g, "") || "", txt(T("count-sigma")).replace(/\D/g, ""));
   assert.equal($(T("hy-stage")).getAttribute("data-sigma"), "5"); assert.equal($(T("hy-stage")).getAttribute("data-pi"), "1"); assert.ok($(T("btn-next")).disabled);
-  await click(T("btn-prev")); assert.match(txt(T("step-count")), /5 \/ 6/); await click(T("btn-mol-reset")); assert.match(txt(T("step-count")), /1 \/ 6/);
+  await click(T("btn-prev")); assert.match(txt(T("step-count")), /4 \/ 5/); await click(T("btn-mol-reset")); assert.match(txt(T("step-count")), /1 \/ 5/);
 });
 await test("every molecule reaches its final step with the expected totals", async () => {
   const { compileMolecule } = await import("../src/engines/hybridisation-explorer/model/moleculeLayout.js"); const { MOLECULE_IDS } = await import("../src/engines/hybridisation-explorer/model/moleculeData.js");
@@ -104,6 +104,18 @@ await test("every molecule reaches its final step with the expected totals", asy
   }
 });
 await test("benzene shows the delocalised pi note", async () => { await setSelect(T("select-molecule"), "C6H6"); for (let i = 0; i < 20; i += 1) { if ($(T("btn-next")).disabled) break; await click(T("btn-next")); } assert.ok($(T("count-delocalised")) || /delocali/i.test(txt(T("hybridisation-explain")))); });
+
+await test("Play starts the next step at once (<100 ms), builds no geometry on the Play path; Pause/Next/Previous/Reset respond in <100 ms", async () => {
+  const G = await import("../src/engines/hybridisation-explorer/scene/geometry.js");
+  await setSelect(T("select-molecule"), "C2H4"); await click(T("btn-mol-reset")); assert.match(txt(T("step-count")), /1 \/ 5/);
+  const built0 = G.stats.built; const stepNow = () => txt(T("step-count")); const fire = (id) => $(T(id)).dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+  // dispatch the click, then poll every 2 ms until the visible state changed: this measures click -> DOM update, not the test's own tick
+  const respond = async (id, changed, label) => { const t0 = performance.now(); fire(id); while (!changed()) { if (performance.now() - t0 > 400) throw new Error(`${label}: no response`); await new Promise((r) => setTimeout(r, 2)); } const ms = performance.now() - t0; assert.ok(ms < 100, `${label} took ${ms.toFixed(0)} ms`); await tick(10); };
+  await respond("btn-play", () => /2 \/ 5/.test(stepNow()), "Play"); assert.equal($(T("btn-play")).getAttribute("aria-pressed"), "true");
+  await respond("btn-play", () => $(T("btn-play")).getAttribute("aria-pressed") === "false", "Pause");
+  await respond("btn-next", () => /3 \/ 5/.test(stepNow()), "Next"); await respond("btn-prev", () => /2 \/ 5/.test(stepNow()), "Previous"); await respond("btn-mol-reset", () => /1 \/ 5/.test(stepNow()), "Reset");
+  assert.equal(G.stats.built, built0, "no geometry may be built by Play / Pause / Next / Previous / Reset");
+});
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

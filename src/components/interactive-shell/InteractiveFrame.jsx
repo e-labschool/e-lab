@@ -5,6 +5,7 @@ import { useFullscreen } from "./useFullscreen.js";
 import { getSimulationIdForTitle } from "../../data/simulationRegistry.js";
 import { SimulationPresentationProvider } from "./SimulationPresentation.js";
 import CopyrightNotice from "../layout/CopyrightNotice.jsx";
+import "./simulation-controls.css";
 
 // The shared wrapper every engine renders inside. Handles chrome common to
 // ALL interactives (title, mode toggle, fullscreen, open-in-new-tab) so
@@ -57,7 +58,7 @@ export default function InteractiveFrame({ title, subtitle, children, compact = 
       <SimulationPresentationProvider
         value={{ mode, isEmbedded: !isViewport, isViewport, isFullscreen, isStandalone: mode === "standalone", frameRef, simulationId }}
       >
-        <div ref={frameRef} className={"sd-frame " + (isViewport ? "sd-frame--viewport" : "sd-frame--embedded")} data-sim-title={title}>
+        <div ref={frameRef} className={"sd-frame elab-sim " + (isViewport ? "sd-frame--viewport" : "sd-frame--embedded")} data-sim-title={title}>
           <div className="sd-frame-body">{children}</div>
           <div className="sd-frame-foot"><CopyrightNotice variant="simulation" /></div>
         </div>
@@ -72,7 +73,7 @@ export default function InteractiveFrame({ title, subtitle, children, compact = 
       <div
         ref={frameRef}
         className={
-          "border border-[var(--color-line)] bg-[var(--color-paper)] [&:fullscreen]:border-none [&:fullscreen]:bg-[var(--color-paper)] " +
+          "elab-sim border border-[var(--color-line)] bg-[var(--color-paper)] [&:fullscreen]:border-none [&:fullscreen]:bg-[var(--color-paper)] " +
           (isViewport
             ? // VIEWPORT MODE (fullscreen or standalone): fixed-height grid,
               // never taller than the viewport, never scrolling as a whole.

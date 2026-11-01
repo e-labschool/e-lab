@@ -1,3 +1,4 @@
+import { readableInk } from "../../components/interactive-shell/contrastInk.js";
 import { useState, useMemo, useCallback } from "react";
 import { Info } from "lucide-react";
 import InteractiveFrame from "../../components/interactive-shell/InteractiveFrame.jsx";
@@ -113,8 +114,8 @@ export default function OrbitalExplorerSimulation({ compact = false, standalone 
                       type="button"
                       onClick={() => handleSelectBase(base)}
                       aria-pressed={baseOrbital === base}
-                      className={`rounded-md px-2 py-1.5 text-xs font-semibold ${baseOrbital === base ? "text-white" : "border border-[var(--color-line)] text-[var(--color-ink-soft)]"}`}
-                      style={baseOrbital === base ? { backgroundColor: FAMILY_COLOR[familyOf(base)] } : undefined}
+                      className={`rounded-md px-2 py-1.5 text-xs font-semibold border ${baseOrbital === base ? "" : "border-[var(--color-line)] text-[var(--color-ink-soft)]"}`}
+                      style={baseOrbital === base ? { backgroundColor: FAMILY_COLOR[familyOf(base)], color: readableInk(FAMILY_COLOR[familyOf(base)]), borderColor: "var(--sim-btn-border-hover)" } : undefined}
                     >
                       {BASE_LABELS[base]}
                     </button>
