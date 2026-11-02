@@ -181,3 +181,7 @@
 [data-testid="imf-workspace"] .sim-btn--primary { border-color: #d6e4ff; }
 [data-testid="imf-workspace"] .sd-switch button { border: 1.5px solid transparent; }
 [data-testid="imf-workspace"] .sd-switch button[aria-checked="true"] { border-color: #d6e4ff; box-shadow: none; }
+
+/* phones: a taller stage and a shorter legend so the molecules stay the visual focus */
+[data-testid="imf-workspace"].sd-root[data-layout="stacked"] .sd-col--chamber { height: min(760px, 100vw + 300px); min-height: 520px; }
+@media (max-width: 560px) { .imf-legend-long { display: none; } .imf-legend { max-width: calc(100% - 16px); } }

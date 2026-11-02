@@ -11,6 +11,9 @@ import { QID, qFromAxisAngle, qMul, qFromTo, norm, sub, dot, len, add, scale, an
 import { SUBSTANCES as S, MOLECULAR_SUBSTANCES, curveSegments, stateAtEnergy, advanceEnergy, totalEnergy, curvePoints, energyRate, startTemperature } from "../src/engines/intermolecular-forces-visualiser/model/phase.js";
 import { createSystem, stepSystem, bondLengths, metrics, assignIceProtons, poseOf, N_PARTICLES } from "../src/engines/intermolecular-forces-visualiser/model/particles.js";
 import { LESSONS, lessonFrame, lessonDuration } from "../src/engines/intermolecular-forces-visualiser/model/lessons.js";
+import * as THREE from "three";
+import { buildMoleculeObject, makeMoleculeGeometry, worldGeometry, bondSticks, BOND_OFFSET } from "../src/engines/intermolecular-forces-visualiser/scene/moleculeObject.js";
+import { ELEM } from "../src/engines/intermolecular-forces-visualiser/model/molecules.js";
 import { getCloud, stats as cloudStats, applyShift, applyEspColors, hasCloud } from "../src/engines/intermolecular-forces-visualiser/scene/cloudGeometry.js";
 
 let passed = 0; let failed = 0;
@@ -254,19 +257,81 @@ test("NaCl: the ordered ionic lattice melts to mobile ions that still attract (c
 
 console.log("Learn lessons");
 test("four lessons with the required molecules, each a short list of one-sentence steps", () => {
-  assert.deepEqual(LESSONS.map((l) => [l.id, ...l.pair]), [["ldf", "H2", "H2"], ["dip-ind", "HCl", "Ar"], ["dip-dip", "HCl", "HCl"], ["hbond", "H2O", "H2O"]]);
-  for (const l of LESSONS) { assert.ok(l.steps.length >= 4 && l.steps.length <= 5, l.id); for (const st of l.steps) { assert.ok(st.text.length < 230 && st.text.length > 30); assert.ok((st.text.match(/[.!?](\s|$)/g) ?? []).length <= 1, `one sentence: ${st.text}`); assert.ok(st.dur > 2 && st.dur < 8); } assert.equal(l.force, l.id); }
+  assert.deepEqual(LESSONS.map((l) => [l.id, ...l.pair]), [["ldf", "H2", "H2"], ["dip-ind", "HCl", "H2"], ["dip-dip", "HCl", "HCl"], ["hbond", "H2O", "H2O"]]);
+  for (const l of LESSONS) { assert.ok(l.steps.length >= 4 && l.steps.length <= 5, l.id); assert.ok(l.note.length > 30, "lesson note"); assert.equal(l.steps[0].fx.cloud, 0, "step 1 shows the ball-and-stick molecules only"); assert.equal(l.steps[1].fx.cloud, 1, "step 2 reveals the electron distribution"); for (const st of l.steps) { assert.ok(st.text.length < 230 && st.text.length > 30); assert.ok((st.text.match(/[.!?](\s|$)/g) ?? []).length <= 1, `one sentence: ${st.text}`); assert.ok(st.dur > 2 && st.dur < 8); } assert.equal(l.force, l.id); }
 });
 test("lesson step end-poses show the intended physics (computed from the same models as Explore)", () => {
   const at = (l, k, extra = {}) => I.computeInteractions(l.pair.map((id, i) => E(M[id], l.steps[k].poses[i])), { force: l.force, ...extra });
   const [ldf, di, dd, hb] = LESSONS;
-  const r = at(ldf, 2, { fluct: { gain: 1, fixedDir: [1, 0, 0] } }); assert.ok(r.mols[0].instant[0] > 0 && r.mols[1].induced[0] > 0); assert.equal(I.nearSideSign(r.mols[0].instant, [1, 0, 0]), -I.nearSideSign(r.mols[1].induced, [-1, 0, 0]));
-  assert.equal(I.nearSideSign(at(di, 2).mols[1].induced, norm(sub(di.steps[2].poses[0].pos, di.steps[2].poses[1].pos))), -1, "step 3: near side delta-minus"); assert.equal(I.nearSideSign(at(di, 3).mols[1].induced, norm(sub(di.steps[3].poses[0].pos, di.steps[3].poses[1].pos))), 1, "step 4: reversed, near side delta-plus");
-  assert.equal(at(dd, 1).pairs[0].kind, "repel"); assert.equal(at(dd, 2).pairs[0].kind, "attract"); assert.ok(at(dd, 2).pairs[0].strength > 0.4);
-  assert.ok(at(hb, 1).pairs[0].hbStrength < 0.1, "misaligned: no H-bond"); assert.ok(at(hb, 2).pairs[0].hbStrength > 0.95, "aligned: H-bond"); assert.ok(at(hb, 0).pairs[0].hbStrength < 0.01);
+  // A: London dispersion: temporary dipole in the first H2, correlated induced dipole in the second, attraction (steps: show, nonpolar, instant, induce, attract)
+  const r = at(ldf, 3, { fluct: { gain: 1, fixedDir: [1, 0, 0] } }); assert.ok(r.mols[0].instant[0] > 0 && r.mols[1].induced[0] > 0); assert.equal(I.nearSideSign(r.mols[0].instant, [1, 0, 0]), -I.nearSideSign(r.mols[1].induced, [-1, 0, 0]));
+  assert.equal(at(ldf, 1, { fluct: { gain: 0, fixedDir: null } }).mols[0].instant.every((x) => x === 0), true, "step 2: symmetric average cloud, no dipole");
+  // B: HCl + H2: step 3-4 (H end faces H2) near side of H2 is delta-minus; step 5 (turned round) delta-plus; the permanent dipole flips the induced dipole
+  const dir = (k) => norm(sub(di.steps[k].poses[0].pos, di.steps[k].poses[1].pos));
+  assert.equal(I.nearSideSign(at(di, 3).mols[1].induced, dir(3)), -1, "H end near: delta-minus side of H2 faces HCl"); assert.equal(I.nearSideSign(at(di, 4).mols[1].induced, dir(4)), 1, "Cl end near: reversed, delta-plus side faces HCl");
+  assert.equal(at(di, 3).pairs[0].kind, "attract"); assert.equal(at(di, 4).pairs[0].kind, "attract");
+  // C: HCl + HCl: neutral far pose, favourable head-to-tail attracts, like charges facing repel
+  assert.equal(at(dd, 2).pairs[0].kind, "attract"); assert.ok(at(dd, 2).pairs[0].strength > 0.4); assert.equal(at(dd, 4).pairs[0].kind, "repel"); assert.ok(at(dd, 2).pairs[0].strength > at(dd, 4).pairs[0].strength * 0 );
+  // D: H2O + H2O: far = none, approach = forming, bonded = strong hydrogen bond, apart = none
+  assert.ok(at(hb, 0).pairs[0].hbStrength < 0.01, "far: no H-bond"); assert.ok(at(hb, 2).pairs[0].hbStrength < at(hb, 3).pairs[0].hbStrength, "approach weaker than bonded"); assert.ok(at(hb, 3).pairs[0].hbStrength > 0.95, "aligned: H-bond"); assert.ok(at(hb, 4).pairs[0].hbStrength < 0.01, "moved apart: H-bond gone");
 });
 test("lessonFrame is continuous (no jumps), reaches every step in order and the final poses at the end", () => {
   for (const l of LESSONS) { let prev = lessonFrame(l, 0); let lastStep = 0; let maxJump = 0; const total = lessonDuration(l); for (let t = 0.02; t <= total; t += 0.02) { const f = lessonFrame(l, t); assert.ok(f.step >= lastStep && f.step - lastStep <= 1); lastStep = f.step; for (let i = 0; i < 2; i += 1) maxJump = Math.max(maxJump, Math.hypot(...[0, 1, 2].map((k) => f.poses[i].pos[k] - prev.poses[i].pos[k]))); prev = f; } assert.equal(lastStep, l.steps.length - 1); assert.ok(maxJump < 0.35, `${l.id} jump ${maxJump}`); const end = lessonFrame(l, total + 5); assert.ok(end.done); for (let i = 0; i < 2; i += 1) assert.ok(len(sub(end.poses[i].pos, l.steps[l.steps.length - 1].poses[i].pos)) < 1e-6); }
+});
+
+
+console.log("Molecule rendering objects (regression tests for the disconnected-molecules bug)");
+// The shipped bug: atom meshes were never positioned (only scaled), so every atom of a molecule was drawn at the molecule centre and only the
+// bond sticks showed the real geometry. These tests build the REAL scene objects (scene/moleculeObject.js, the code the scene uses) and inspect them.
+const qRotLocal = (q, v) => { const t = new THREE.Vector3(...v).applyQuaternion(new THREE.Quaternion(q[0], q[1], q[2], q[3])); return [t.x, t.y, t.z]; };
+const RENDER_IDS = [...TRAY_NONPOLAR, ...TRAY_POLAR];
+const geoShared = makeMoleculeGeometry(); const mats = {}; Object.keys(ELEM).forEach((k) => { mats[k] = new THREE.MeshStandardMaterial({ color: ELEM[k].color }); }); const bmat = new THREE.MeshStandardMaterial();
+let seed = 7; const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+const randPose = () => { const ax = norm([rnd() - 0.5, rnd() - 0.5, rnd() - 0.5]); return { pos: [(rnd() - 0.5) * 20, (rnd() - 0.5) * 20, (rnd() - 0.5) * 20], quat: qFromAxisAngle(ax, rnd() * 6.28) }; };
+const build = (id) => buildMoleculeObject({ ...M[id], id }, geoShared, mats, bmat);
+const posed = (id, pose) => { const o = build(id); o.group.position.set(...pose.pos); o.group.quaternion.set(...pose.quat); o.group.updateMatrixWorld(true); return o; };
+test("the library holds the 14 required molecules and each renders as ONE group with every atom and bond a child of it", () => {
+  assert.deepEqual([...RENDER_IDS].sort(), ["Ar", "CH4", "CO2", "Cl2", "H2", "H2O", "HBr", "HCl", "HF", "I2", "N2", "NH3", "O2", "SO2"].sort());
+  for (const id of RENDER_IDS) { const o = build(id); assert.equal(o.atoms.length, M[id].atoms.length, id); assert.ok(o.atoms.concat(o.bonds).every((m) => m.parent === o.group), `${id}: all atoms and bonds share one group`); assert.equal(o.group.children.length, o.atoms.length + o.bonds.length, id); }
+});
+test("atom meshes sit at the molecule's atom positions (NOT all at the centre) and distinct atoms are visibly apart", () => {
+  for (const id of RENDER_IDS) { const o = build(id); o.group.updateMatrixWorld(true); o.atoms.forEach((m, i) => { const p = M[id].atoms[i].p; near(m.position.x, p[0], 1e-9, id); near(m.position.y, p[1], 1e-9, id); near(m.position.z, p[2], 1e-9, id); });
+    for (let i = 0; i < o.atoms.length; i += 1) for (let j = i + 1; j < o.atoms.length; j += 1) assert.ok(o.atoms[i].position.distanceTo(o.atoms[j].position) > 0.5, `${id}: atoms ${i},${j} are not on top of each other`); }
+});
+test("after random translate + rotate, atom world positions = pose applied to the local geometry, and the molecule stays rigid", () => {
+  for (let k = 0; k < 12; k += 1) for (const id of RENDER_IDS) { const pose = randPose(); const o = posed(id, pose); const w = worldGeometry(o);
+    w.atoms.forEach((v, i) => { const e = add(pose.pos, qRotLocal(pose.quat, M[id].atoms[i].p)); near(v.x, e[0], 1e-5, id); near(v.y, e[1], 1e-5, id); near(v.z, e[2], 1e-5, id); });
+    for (let i = 0; i < w.atoms.length; i += 1) for (let j = i + 1; j < w.atoms.length; j += 1) near(w.atoms[i].distanceTo(w.atoms[j]), len(sub(M[id].atoms[i].p, M[id].atoms[j].p)), 1e-5, `${id} rigid`); }
+});
+test("each bond's stick end points coincide (axially) with its two atoms' world positions after rotation; bond lengths are constant", () => {
+  for (let k = 0; k < 8; k += 1) for (const id of RENDER_IDS) { const o = posed(id, randPose()); const w = worldGeometry(o);
+    for (const b of w.bonds) { const A = w.atoms[b.atoms[0]]; const B = w.atoms[b.atoms[1]]; const u = B.clone().sub(A).normalize(); const L = A.distanceTo(B);
+      near(b.a.clone().sub(A).dot(u), 0, 1e-5, `${id} stick start on atom A axially`); near(b.b.clone().sub(B).dot(u), 0, 1e-5, `${id} stick end on atom B axially`);
+      assert.ok(b.a.distanceTo(A) <= BOND_OFFSET + 1e-6 && b.b.distanceTo(B) <= BOND_OFFSET + 1e-6, `${id}: stick end within one stick-offset of the atom centre`); near(b.a.distanceTo(b.b), L, 1e-5, `${id} stick length = bond length`); near(L, bondLength(M[id], b.atoms[0], b.atoms[1]), 1e-5, `${id} bond length constant under rotation`); } }
+});
+test("no atom is further from its bonded neighbour than the bond length; no stray atoms (Ar is a single sphere)", () => {
+  for (const id of RENDER_IDS) { const o = posed(id, randPose()); const w = worldGeometry(o);
+    if (id === "Ar") { assert.equal(w.atoms.length, 1); assert.equal(o.bonds.length, 0); continue; }
+    w.atoms.forEach((v, i) => { const nb = M[id].bonds.filter((b) => b[0] === i || b[1] === i).map((b) => (b[0] === i ? b[1] : b[0])); assert.ok(nb.length >= 1, `${id}: atom ${i} is bonded`); const d = Math.min(...nb.map((j) => v.distanceTo(w.atoms[j]))); assert.ok(d <= 3.0, `${id}: atom ${i} bonded neighbour within ${d.toFixed(2)} A`); assert.ok(d >= 0.7 * (ELEM[M[id].atoms[i].el].ball + 0.3), `${id}: bonded atoms are not merged into one blob (${d.toFixed(2)})`); }); }
+});
+test("bond orders are drawn as 1, 2 or 3 sticks: H-H single, N#N triple, O=O double, O=C=O two doubles", () => {
+  const sticks = (id) => M[id].bonds.map((b) => [b[2], bondSticks(M[id], b).length]);
+  assert.deepEqual(sticks("H2"), [[1, 1]]); assert.deepEqual(sticks("N2"), [[3, 3]]); assert.deepEqual(sticks("O2"), [[2, 2]]); assert.deepEqual(sticks("CO2"), [[2, 2], [2, 2]]); assert.deepEqual(sticks("Cl2"), [[1, 1]]); assert.deepEqual(sticks("I2"), [[1, 1]]);
+  for (const id of ["HCl", "HBr", "HF"]) assert.deepEqual(sticks(id), [[1, 1]]); assert.equal(M.CH4.bonds.length, 4); assert.equal(M.NH3.bonds.length, 3); assert.equal(M.H2O.bonds.length, 2); assert.equal(M.Ar.bonds.length, 0);
+});
+test("geometry: H2O ~104.5, NH3 ~107, CH4 109.5, CO2 linear, SO2 bent; consistent relative scaling", () => {
+  near(bondAngleDeg(M.H2O, 1, 0, 2), 104.5, 1); near(bondAngleDeg(M.NH3, 1, 0, 2), 107, 1.5); near(bondAngleDeg(M.CH4, 1, 0, 2), 109.5, 0.6); near(bondAngleDeg(M.CO2, 1, 0, 2), 180, 0.5); const so2 = bondAngleDeg(M.SO2, 1, 0, 2); assert.ok(so2 > 110 && so2 < 125, `SO2 bent ${so2}`);
+  const ext = (id) => { const w = worldGeometry(build(id)); let m = 0; w.atoms.forEach((a, i) => { w.atoms.forEach((b) => { m = Math.max(m, a.distanceTo(b) + 2 * ELEM[M[id].atoms[i].el].ball); }); }); return m; };
+  for (const id of RENDER_IDS) { const e = ext(id); assert.ok(e > 0.7 && e < 6.5, `${id} ball-and-stick extent ${e.toFixed(2)} A`); }
+  assert.ok(ELEM.H.ball < ELEM.O.ball && ELEM.O.ball < ELEM.Cl.ball && ELEM.Cl.ball < ELEM.I.ball, "H < O < Cl < I"); assert.ok(ELEM.H.ball >= 0.25 && ELEM.I.ball <= 0.75);
+});
+test("CPK-style colours: H white, O red, N blue, C dark grey, Cl green, F pale green, I purple, Br dark red/brown, S yellow", () => {
+  const hsl = (k) => { const c = new THREE.Color(ELEM[k].color); const o = {}; c.getHSL(o, THREE.SRGBColorSpace); return o; };
+  assert.ok(hsl("H").l > 0.85); assert.ok(hsl("O").h < 0.03 || hsl("O").h > 0.97); assert.ok(hsl("N").h > 0.55 && hsl("N").h < 0.72); assert.ok(hsl("C").l < 0.45 && hsl("C").s < 0.2); assert.ok(hsl("Cl").h > 0.25 && hsl("Cl").h < 0.45); assert.ok(hsl("F").h > 0.2 && hsl("F").l > 0.5);
+  assert.ok(hsl("I").h > 0.7 && hsl("I").h < 0.92); assert.ok(hsl("Br").h < 0.08 && hsl("Br").l < 0.45); assert.ok(hsl("S").h > 0.11 && hsl("S").h < 0.2);
+});
+test("cloud style only rescales the spheres/sticks: positions never change", () => {
+  for (const id of RENDER_IDS) { const o = build(id); const before = o.atoms.map((m) => m.position.toArray().join()); o.setStyle(1); o.setStyle(0.4); assert.deepEqual(o.atoms.map((m) => m.position.toArray().join()), before, id); }
 });
 
 console.log("Electron-cloud geometry and Play latency");

@@ -20,7 +20,7 @@ export const ELEM = {
   C: { ...VSEPR_ELEMENTS.C, mass: 12.011, vdw: 1.7, ball: 0.42 },
   N: { ...VSEPR_ELEMENTS.N, mass: 14.007, vdw: 1.55, ball: 0.42 },
   O: { ...VSEPR_ELEMENTS.O, mass: 15.999, vdw: 1.52, ball: 0.41 },
-  F: { ...VSEPR_ELEMENTS.F, mass: 18.998, vdw: 1.47, ball: 0.38 },
+  F: { ...VSEPR_ELEMENTS.F, color: "#90e050", mass: 18.998, vdw: 1.47, ball: 0.38 },
   S: { ...VSEPR_ELEMENTS.S, mass: 32.06, vdw: 1.8, ball: 0.5 },
   Cl: { ...VSEPR_ELEMENTS.Cl, mass: 35.45, vdw: 1.75, ball: 0.5 },
   Br: { ...VSEPR_ELEMENTS.Br, mass: 79.904, vdw: 1.85, ball: 0.55 },

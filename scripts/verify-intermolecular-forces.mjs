@@ -131,20 +131,67 @@ console.log("Four IMF scenarios");
   check(p.errs.length === 0, `scenario errors: ${p.errs.join(" | ")}`); await p.context().close();
 }
 
-console.log("Learn lessons, latency, Try in Explore");
+// ---- structure check: the scene graph's atoms and bonds, projected to the screen, must be visible and connected ------------------------
+async function checkStructure(p, label, expectIds) {
+  const geo = await p.evaluate(() => document.querySelector('[data-testid="imf-stage"]').__imf.api().screenGeometry());
+  const sb = await stageBox(p); const ids = geo.map((g) => g.id).sort(); if (expectIds) check(JSON.stringify(ids) === JSON.stringify([...expectIds].sort()), `${label}: scene holds ${JSON.stringify(expectIds)} (got ${JSON.stringify(ids)})`);
+  for (const g of geo) {
+    const tag = `${label} ${g.id}`; check(g.sameParent && g.groupChildren >= g.atoms.length, `${tag}: atoms and bonds are all children of ONE group`);
+    for (const a of g.atoms) check(a.screen[0] > sb.x && a.screen[0] < sb.x + sb.width && a.screen[1] > sb.y && a.screen[1] < sb.y + sb.height, `${tag}: atom ${a.el} inside the stage (${a.screen.map((v) => v.toFixed(0))})`);
+    for (const b of g.bonds) { const A = g.atoms[b.atoms[0]].screen; const B = g.atoms[b.atoms[1]].screen; const len = Math.hypot(A[0] - B[0], A[1] - B[1]); const pxPerA = len / 1; // generous: stick ends within 0.3 of the bond length of their atom centres (multiple bonds are offset sideways)
+      const da = Math.hypot(b.a[0] - A[0], b.a[1] - A[1]); const db = Math.hypot(b.b[0] - B[0], b.b[1] - B[1]); void pxPerA; check(da <= 0.3 * Math.max(len, 30) + 2 && db <= 0.3 * Math.max(len, 30) + 2, `${tag}: bond ${b.atoms} ends at its atoms (${da.toFixed(1)}, ${db.toFixed(1)} px of ${len.toFixed(0)} px)`); check(len > 6, `${tag}: bonded atoms are not on top of each other (${len.toFixed(1)} px)`); }
+    for (const a of g.atoms) { const h = await p.evaluate(([x, y]) => document.querySelector('[data-testid="imf-stage"]').__imf.api().hit(x, y), a.screen); check(h && h.uid === g.uid, `${tag}: atom ${a.el} is really rendered at its projected centre (hit ${JSON.stringify(h)})`); }
+    if (g.atoms.length > 1) { const A = g.bonds[0].a; const B = g.bonds[0].b; /* midpoint of the first stick (multiple bonds are drawn as parallel sticks) */ const h = await p.evaluate(([x, y]) => document.querySelector('[data-testid="imf-stage"]').__imf.api().hit(x, y), [(A[0] + B[0]) / 2, (A[1] + B[1]) / 2]); check(h && h.uid === g.uid, `${tag}: a bond is rendered between its atoms`); }
+  }
+}
+console.log("All 14 tray molecules: one connected structure each (Explore), after drag and rotate too");
 {
-  const p = await open([1366, 768]); const lats = [];
-  for (const l of LESSONS) {
-    await p.click(T("tab-learn")); await p.click(T(`lesson-${l.id}`)); await p.click(T("btn-lesson-reset")); await sleep(300);
-    const t0 = Date.now(); await p.click(T("btn-play")); await p.waitForFunction(() => Number(document.querySelector('[data-testid="imf-stage"]').dataset.lessonT || 0) > 0, null, { timeout: 3000 }).catch(() => {});
-    const lat = await p.evaluate(() => document.querySelector('[data-testid="imf-stage"]').dataset.playLatency); lats.push(`${l.id}: ${lat} ms (click-to-first-change, in-page)`); check(lat && Number(lat) < 100, `${l.id}: Play latency ${lat} ms`);
-    const seen = new Set(); const deadline = Date.now() + 40000; while (Date.now() < deadline) { seen.add(await txt(p, "what-is-happening")); if (/Play/.test(await txt(p, "btn-play"))) break; await sleep(250); }
-    check(seen.size >= l.steps.length - 1, `${l.id}: stepped through ${seen.size}/${l.steps.length} steps`); await p.screenshot({ path: `${out}/learn-${l.id}-end.png` });
+  const p = await open([1366, 768]); const ALL = ["H2", "N2", "O2", "Cl2", "CH4", "CO2", "Ar", "I2", "HCl", "HBr", "SO2", "H2O", "NH3", "HF"];
+  for (const id of ALL) {
+    if (await p.locator(T("clear-workspace")).isEnabled()) await p.click(T("clear-workspace")); await p.click(T(`tray-${id}`)); await sleep(650); await checkStructure(p, `explore`, [id]);
+    const sb = await stageBox(p); await p.screenshot({ path: `${out}/mol-${id}.png`, clip: { x: sb.x + sb.width / 2 - 170, y: sb.y + sb.height / 2 - 110, width: 340, height: 220 } });
+  }
+  // two molecules, drag one, rotate one, structure still intact
+  await p.click(T("clear-workspace")); await p.click(T("tray-H2O")); await p.click(T("tray-N2")); await sleep(600); await checkStructure(p, "two molecules", ["H2O", "N2"]);
+  const m = await molPos(p); const n2 = m.find((x) => x.id === "N2"); const [sx, sy] = await screenOf(p, n2.pos); await p.mouse.move(sx, sy); await p.mouse.down(); await p.mouse.move(sx - 80, sy + 50, { steps: 6 }); await p.mouse.up(); await sleep(400); await checkStructure(p, "after drag", ["H2O", "N2"]);
+  await p.click(T("drag-mode") + " >> text=Rotate"); const n2b = (await molPos(p)).find((x) => x.id === "N2"); const [rx, ry] = await screenOf(p, n2b.pos); await p.mouse.move(rx, ry); await p.mouse.down(); await p.mouse.move(rx + 40, ry + 25, { steps: 6 }); await p.mouse.up(); await sleep(400); await checkStructure(p, "after rotate", ["H2O", "N2"]);
+  for (let i = 0; i < 3; i += 1) await p.click(T("rot-tilt")); await sleep(300); await checkStructure(p, "after tilt buttons", ["H2O", "N2"]);
+  await p.click(T("view-switch") + " >> text=Electron Cloud"); await sleep(600); await checkStructure(p, "cloud mode", ["H2O", "N2"]); await p.screenshot({ path: `${out}/explore-cloud-two.png` });
+  await p.click(T("view-switch") + " >> text=Ball Model"); await sleep(400); check((await p.locator(T("cloud-legend")).count()) === 0, "Ball Model hides the cloud legend");
+  check(p.errs.length === 0, `molecule errors: ${p.errs.join(" | ")}`); await p.context().close();
+}
+
+console.log("Learn: four demonstrations stepped to the end at 1366x768 and 390x844 (screenshots per step), latency, Replay, Try in Explore");
+{
+  const lats = [];
+  for (const size of [[1366, 768], [390, 844]]) {
+    const p = await open(size); const tag = `${size[0]}x${size[1]}`; await p.click(T("tab-learn")); await sleep(600);
+    for (const l of LESSONS) {
+      await p.click(T(`lesson-${l.id}`)); await sleep(300); if (/Pause/.test(await txt(p, "btn-play"))) await p.click(T("btn-play")); await p.click(T("step-0")); await sleep(500);
+      const seen = [];
+      for (let k = 0; k < l.steps.length; k += 1) {
+        if (k > 0) { await p.click(T("btn-next")); const lat = await p.evaluate(() => document.querySelector('[data-testid="imf-stage"]').dataset.stepLatency); if (size[0] === 1366) lats.push(`${l.id}#${k + 1}: ${lat}`); check(lat && Number(lat) < 100, `${tag} ${l.id} step ${k + 1}: Next click-to-first-frame ${lat} ms`); }
+        await sleep(450); const text = await txt(p, "what-is-happening"); seen.push(text); check(text === l.steps[k].text, `${tag} ${l.id} step ${k + 1}: explanation is synchronised ("${text.slice(0, 40)}...")`);
+        check((await txt(p, "live-step")).startsWith(`Step ${k + 1}`), `${tag} ${l.id}: step counter ${await txt(p, "live-step")}`); await checkStructure(p, `${tag} ${l.id} step ${k + 1}`, l.pair);
+        await p.screenshot({ path: `${out}/learn-${tag}-${l.id}-${k + 1}.png` });
+      }
+      check(new Set(seen).size === l.steps.length, `${tag} ${l.id}: ${l.steps.length} distinct synchronised sentences`);
+      await layout(p, `${tag} learn ${l.id}`, size);
+    }
+    if (size[0] === 1366) {
+      // Play: click to first visual change; pause at an exact moment; Replay restarts; autoplay runs through the steps
+      await p.click(T("lesson-ldf")); await sleep(200); if (/Pause/.test(await txt(p, "btn-play"))) await p.click(T("btn-play")); await p.click(T("btn-replay")); await sleep(200);
+      const lat = await p.evaluate(() => document.querySelector('[data-testid="imf-stage"]').dataset.playLatency); lats.push(`ldf play: ${lat}`); check(lat && Number(lat) < 100, `Replay/Play click-to-first-change ${lat} ms`);
+      await sleep(5200); await p.click(T("btn-play")); const t1 = await p.evaluate(() => document.querySelector('[data-testid="imf-stage"]').dataset.lessonT); await sleep(700); const t2 = await p.evaluate(() => document.querySelector('[data-testid="imf-stage"]').dataset.lessonT); check(t1 === t2 && Number(t1) > 3, `Pause freezes the animation at an exact moment (t ${t1} -> ${t2})`);
+      await p.screenshot({ path: `${out}/learn-paused-mid.png` }); await p.click(T("btn-replay")); await sleep(500); check((await txt(p, "live-step")).startsWith("Step 1"), "Replay restarts at step 1");
+      // the whole lesson plays through on its own without blank gaps
+      const stepsSeen = new Set(); const t0 = Date.now(); while (Date.now() - t0 < 30000) { stepsSeen.add(await txt(p, "live-step")); if (/Play/.test(await txt(p, "btn-play"))) break; await sleep(200); } check(stepsSeen.size === 5, `autoplay visits all 5 steps (${[...stepsSeen]})`);
+      await p.click(T("lesson-hbond")); await sleep(200); if (/Pause/.test(await txt(p, "btn-play"))) await p.click(T("btn-play")); await p.click(T("step-3")); await p.click(T("btn-try-explore")); await sleep(700);
+      const m = await molPos(p); check(m.length === 2 && m.every((x) => x.id === "H2O"), "Try in Explore transfers H2O + H2O"); check((await p.locator(T("force-hbond")).getAttribute("aria-checked")) === "true", "Try in Explore sets the force"); await checkStructure(p, "after Try in Explore", ["H2O", "H2O"]);
+    }
+    check(p.errs.length === 0, `learn ${tag} errors: ${p.errs.join(" | ")}`); await p.context().close();
   }
   console.log("  latencies", lats.join(" | "));
-  await p.click(T("lesson-hbond")); await p.click(T("btn-lesson-reset")); await p.click(T("btn-next")); await p.click(T("btn-next")); await p.click(T("btn-try-explore")); await sleep(700);
-  const m = await molPos(p); check(m.length === 2 && m.every((x) => x.id === "H2O"), "Try in Explore transfers H2O + H2O"); check((await p.locator(T("force-hbond")).getAttribute("aria-checked")) === "true", "Try in Explore sets the force");
-  check(p.errs.length === 0, `learn errors: ${p.errs.join(" | ")}`); await p.context().close();
 }
 
 console.log("Intra vs Inter popover, tab hide/show");
@@ -152,7 +199,7 @@ console.log("Intra vs Inter popover, tab hide/show");
   const p = await open([1366, 768]); await p.click(`${T("intra-inter")} button, button:has-text("Intra vs Inter")`).catch(() => {}); await sleep(400);
   check((await p.locator(T("intra-inter-panel")).count()) === 1, "popover opens"); await p.screenshot({ path: `${out}/popover.png` });
   const t = await txt(p, "intra-inter-panel"); check(/O.?H/.test(t) && /NaCl/.test(t) && /copper/i.test(t) && /hydrogen/i.test(t), "popover content");
-  await p.keyboard.press("Escape"); await p.click(T("tray-HCl")); await p.click(T("tray-Ar")); await p.click(T("force-dip-ind")); await p.click(T("tab-learn")); await p.click(T("lesson-dip-ind")); await p.click(T("btn-next")); await sleep(300);
+  await p.keyboard.press("Escape"); await p.click(T("tray-HCl")); await p.click(T("tray-Ar")); await p.click(T("force-dip-ind")); await p.click(T("tab-learn")); await p.click(T("lesson-dip-ind")); await sleep(200); if (/Pause/.test(await txt(p, "btn-play"))) await p.click(T("btn-play")); await p.click(T("step-0")); await p.click(T("btn-next")); await sleep(300);
   const before = await txt(p, "what-is-happening");
   await p.evaluate(() => { Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true }); Object.defineProperty(document, "hidden", { value: true, configurable: true }); document.dispatchEvent(new Event("visibilitychange")); }); await sleep(1500);
   await p.evaluate(() => { Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true }); Object.defineProperty(document, "hidden", { value: false, configurable: true }); document.dispatchEvent(new Event("visibilitychange")); }); await sleep(800);

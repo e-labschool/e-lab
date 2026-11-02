@@ -90,26 +90,34 @@ await test("Intra vs Inter popover covers covalent, ionic, metallic, the Bonding
 });
 
 console.log("Learn");
-await test("four lessons; Learn autoplays; Next/Previous/Reset step through; each step is one sentence", async () => {
+const pause = async () => { if (/Pause/.test(txt(T("btn-play")))) await click(T("btn-play")); };
+await test("four lessons (data-driven step lists); Next/Previous jump at once; every step text is the lesson's own sentence; Replay restarts", async () => {
   await click(T("tab-learn")); await until(() => $(T("learn-chamber")), 2000, "learn"); assert.equal($$('[data-testid^="lesson-"]').length, 4);
   const { LESSONS } = await import("../src/engines/intermolecular-forces-visualiser/model/lessons.js");
+  assert.deepEqual(LESSONS.map((l) => l.pair.join("+")), ["H2+H2", "HCl+H2", "HCl+HCl", "H2O+H2O"]);
   for (const l of LESSONS) {
-    await click(T(`lesson-${l.id}`)); await click(T("btn-lesson-reset")); assert.match(txt(T("live-step")), new RegExp(`1 / ${l.steps.length}`));
-    for (let i = 0; i < l.steps.length - 1; i += 1) { assert.equal(txt(T("what-is-happening")), l.steps[i].text); await click(T("btn-next")); }
+    await click(T(`lesson-${l.id}`)); await pause(); await click(T("btn-replay")); await pause(); await click(T("step-0")); assert.match(txt(T("live-step")), new RegExp(`1 / ${l.steps.length}`));
+    for (let i = 0; i < l.steps.length - 1; i += 1) { assert.equal(txt(T("what-is-happening")), l.steps[i].text); await click(T("btn-next")); assert.match(txt(T("live-step")), new RegExp(`${i + 2} / ${l.steps.length}`)); }
     assert.equal(txt(T("what-is-happening")), l.steps[l.steps.length - 1].text); assert.ok($(T("btn-next")).disabled);
-    await click(T("btn-prev")); assert.match(txt(T("live-step")), new RegExp(`${l.steps.length - 1} / ${l.steps.length}`)); await click(T("btn-lesson-reset"));
+    await click(T("btn-prev")); assert.match(txt(T("live-step")), new RegExp(`${l.steps.length - 1} / ${l.steps.length}`)); await click(T("step-0")); assert.ok($(T("btn-prev")).disabled);
   }
+  assert.ok(!$(T("btn-freeze")), "Learn keeps minimal controls: Play/Pause, Previous, Next, Replay, Try in Explore");
 });
-await test("Freeze Moment exists for the dispersion lesson; Try in Explore transfers molecules and force", async () => {
-  await click(T("lesson-ldf")); assert.ok($(T("btn-freeze"))); await click(T("btn-freeze")); assert.equal($(T("btn-freeze")).getAttribute("aria-pressed"), "true");
-  await click(T("lesson-hbond")); await click(T("btn-try-explore")); await until(() => $(T("explore-chamber")), 2000, "explore");
-  assert.match(txt(T("tray-panel")), /2\/6/); assert.equal($(T("force-hbond")).getAttribute("aria-checked"), "true"); 
+await test("the Learn step survives switching to Explore and back (session state)", async () => {
+  await click(T("lesson-dip-dip")); await pause(); await click(T("step-2")); assert.match(txt(T("live-step")), /3 \/ 5/);
+  await click(T("tab-explore")); await click(T("tab-learn")); await pause(); assert.match(txt(T("live-step")), /3 \/ 5/); assert.equal($(T("lesson-dip-dip")).getAttribute("aria-checked"), "true");
 });
-await test("Play click -> first visible change is quick and builds no geometry", async () => {
+await test("Try in Explore transfers molecules and force (H-bond lesson: two waters, hydrogen bonding)", async () => {
+  await click(T("lesson-hbond")); await pause(); await click(T("step-3")); await click(T("btn-try-explore")); await until(() => $(T("explore-chamber")), 2000, "explore");
+  assert.match(txt(T("tray-panel")), /2\/6/); assert.equal($(T("force-hbond")).getAttribute("aria-checked"), "true");
+});
+await test("Play / Next click -> first visible change is quick and builds no geometry", async () => {
   const G = await import("../src/engines/intermolecular-forces-visualiser/scene/cloudGeometry.js");
-  await click(T("tab-learn")); await click(T("lesson-dip-ind")); await click(T("btn-lesson-reset")); const built0 = G.stats.built;
+  await click(T("tab-learn")); await click(T("lesson-dip-ind")); await pause(); await click(T("step-0")); const built0 = G.stats.built;
   const t0 = performance.now(); $(T("btn-play")).dispatchEvent(new window.MouseEvent("click", { bubbles: true })); while (!/Pause/.test(txt(T("btn-play"))) && performance.now() - t0 < 400) await new Promise((r) => setTimeout(r, 2));
-  assert.ok(performance.now() - t0 < 100, "Play label toggled quickly"); assert.equal(G.stats.built, built0, "no clouds built on the Play path");
+  assert.ok(performance.now() - t0 < 100, "Play label toggled quickly"); await pause();
+  const t1 = performance.now(); $(T("btn-next")).dispatchEvent(new window.MouseEvent("click", { bubbles: true })); while (!/2 \/ 5/.test(txt(T("live-step"))) && performance.now() - t1 < 400) await new Promise((r) => setTimeout(r, 2));
+  assert.ok(performance.now() - t1 < 100, "Next updates the step at once"); assert.equal(G.stats.built, built0, "no clouds built on the Play / Next path");
 });
 
 console.log("Heat & Phase Change");

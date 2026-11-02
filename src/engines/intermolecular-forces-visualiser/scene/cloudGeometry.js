@@ -85,6 +85,7 @@ export function applyShift(cloud, shift, out) {
 
 export const ESP_RED = [0.9, 0.22, 0.2]; export const ESP_BLUE = [0.2, 0.42, 0.93]; export const ESP_NEUTRAL = [0.82, 0.88, 0.97];
 const V0 = 0.035; // e/A: potential at which the colour saturates
+const perceptual = (x) => tanhSafe(Math.sign(x) * Math.sqrt(Math.abs(x))); // square-root compression: weak induced dipoles stay visible (qualitative picture)
 const P_COLOR = 0.03; // e*A: induced / instantaneous dipole at which the pole colour is ~76 % saturated
 /**
  * Electrostatic-potential colours for the vertices (qualitative): red = relatively electron-rich (negative potential),
@@ -95,7 +96,7 @@ export function applyEspColors(cloud, p, out, gain = 1) {
   const n = cloud.count; const D = cloud.dirs; const pl = Math.hypot(p[0], p[1], p[2]);
   for (let i = 0; i < n; i += 1) {
     let t = tanhSafe(cloud.esp[i] / V0);
-    if (pl > 1e-9) t = Math.max(-1, Math.min(1, t + tanhSafe(((D[3 * i] * p[0] + D[3 * i + 1] * p[1] + D[3 * i + 2] * p[2]) * gain) / P_COLOR)));
+    if (pl > 1e-9) t = Math.max(-1, Math.min(1, t + perceptual(((D[3 * i] * p[0] + D[3 * i + 1] * p[1] + D[3 * i + 2] * p[2]) * gain) / P_COLOR)));
     const a = Math.abs(t); const tgt = t < 0 ? ESP_RED : ESP_BLUE;
     out[3 * i] = ESP_NEUTRAL[0] + (tgt[0] - ESP_NEUTRAL[0]) * a; out[3 * i + 1] = ESP_NEUTRAL[1] + (tgt[1] - ESP_NEUTRAL[1]) * a; out[3 * i + 2] = ESP_NEUTRAL[2] + (tgt[2] - ESP_NEUTRAL[2]) * a;
   }

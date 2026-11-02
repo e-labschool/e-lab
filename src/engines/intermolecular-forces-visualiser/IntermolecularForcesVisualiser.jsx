@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BookOpen, ChevronsLeftRight, ChevronsRightLeft, Compass, FlipHorizontal2, Flame, Pause, Play, RotateCcw, RotateCw, Rotate3d, SkipBack, SkipForward, Snowflake, Thermometer, Trash2, ArrowLeft, Camera } from "lucide-react";
+import { BookOpen, ChevronsLeftRight, ChevronsRightLeft, Compass, FlipHorizontal2, Flame, Pause, Play, RotateCcw, RotateCw, Rotate3d, SkipBack, SkipForward, Snowflake, Thermometer, Trash2, ArrowLeft, Camera, Repeat } from "lucide-react";
 import InteractiveFrame from "../../components/interactive-shell/InteractiveFrame.jsx";
 import SimulationDashboard, { DashPanel, DashboardTabs, ExplainLine, LiveStrip, MiniSwitch, PopoverSection, SettingToggle, SliderRow } from "../../components/simulation/SimulationDashboard.jsx";
 import { useSimulationSessionState } from "../../components/interactive-shell/simulationSession.js";
@@ -13,7 +13,7 @@ import HeatingGraph from "./components/HeatingGraph.jsx";
 import useHeatSim from "./components/useHeatSim.js";
 import { MOLECULES, TRAY_NONPOLAR, TRAY_POLAR, COMPARE_PAIRS } from "./model/molecules.js";
 import { FORCES, FORCE_LABEL, FORCE_SHORT, computeInteractions } from "./model/imf.js";
-import { LESSONS, LESSON_BY_ID, lessonDuration, lessonFrame, lessonStepStart } from "./model/lessons.js";
+import { LESSONS, LESSON_BY_ID, lessonDuration, lessonExtent, lessonFrame, lessonStepSettled, lessonStepStart } from "./model/lessons.js";
 import { exploreNarration } from "./model/narration.js";
 import { MOLECULAR_SUBSTANCES, SUBSTANCES, CO2_NOTE, PHASE_LABEL } from "./model/phase.js";
 import { MAX_IN_WORKSPACE, START_GAP, addMolecule, changeSeparation, cloneAll, focusPair, fromPoses, layoutRow, removeMolecule, rotateEntry, validateWorkspace } from "./model/workspace.js";
@@ -41,6 +41,8 @@ function Workspace() {
   const [force, setForce] = useSimulationSessionState("force", "ldf", oneOf(FORCES));
   const [view, setView] = useSimulationSessionState("view", "ball", oneOf(["ball", "cloud"]));
   const [showDelta, setShowDelta] = useSimulationSessionState("delta", false, (v) => typeof v === "boolean");
+  const [showDipole, setShowDipole] = useSimulationSessionState("dipole", false, (v) => typeof v === "boolean");
+  const [learnView, setLearnView] = useState(null); // null = the lesson reveals the electron cloud itself; "ball" / "cloud" = the student chose
   const [exaggeration, setExaggeration] = useSimulationSessionState("exaggeration", 1.5, (v) => isFinitePos(v) && v >= 1 && v <= 3);
   const [molsState, setMolsState] = useSimulationSessionState("mols", [], validateWorkspace);
   const [lessonId, setLessonId] = useSimulationSessionState("lesson", "ldf", (v) => !!LESSON_BY_ID[v]);
@@ -53,7 +55,7 @@ function Workspace() {
   const [selectedUid, setSelectedUid] = useState(null);
   const [frozen, setFrozen] = useState(false);
   const [playing, setPlaying] = useState(false);
-  const [step, setStep] = useState(0);
+  const [step, setStep] = useSimulationSessionState("learnStep", 0, (v) => Number.isInteger(v) && v >= 0 && v <= 4);
   const [summary, setSummary] = useState(null);
   const [notice, setNotice] = useState("");
   const [rev, setRev] = useState(0);
@@ -63,7 +65,7 @@ function Workspace() {
   const molsRef = useRef(cloneAll(molsState)); // Explore workspace (committed + live-mutated while dragging)
   const learnRef = useRef([]); // the two molecules of the current lesson
   const liveRef = useRef(molsRef.current); // what the scene draws
-  const simRef = useRef({ t: 0, lt: 0, fx: null, inter: null });
+  const simRef = useRef({ t: 0, lt: mode === "learn" && LESSON_BY_ID[lessonId] ? lessonStepStart(LESSON_BY_ID[lessonId], Math.min(step, LESSON_BY_ID[lessonId].steps.length - 1)) + 0.001 : 0, fx: null, inter: null, mark: null });
   const rootRef = useRef(null);
   const latency = useRef({ clickAt: 0, ms: null });
 
@@ -100,12 +102,13 @@ function Workspace() {
         const l = LESSON_BY_ID[cur.lessonId]; const total = lessonDuration(l);
         if (cur.playing) {
           const before = S.lt; S.lt = Math.min(total, S.lt + dt); dirty = true;
-          if (latency.current.clickAt && S.lt > before) { latency.current.ms = performance.now() - latency.current.clickAt; latency.current.clickAt = 0; const el = stageRef.current?.el?.(); if (el) el.dataset.playLatency = latency.current.ms.toFixed(1); }
+          if (latency.current.clickAt && S.lt > before) { S.mark = { t0: latency.current.clickAt, key: "playLatency" }; latency.current.clickAt = 0; }
           if (S.lt >= total && !ended) { ended = true; setPlaying(false); }
         }
         const f = applyLesson(l, S.lt); if (f.step !== lastStep) { lastStep = f.step; setStep(f.step); }
         if (!cur.frozen && f.fx.gain > 0 && !f.fx.fixedDir) { S.t += dt; dirty = true; }
         const el = stageRef.current?.el?.(); if (el && dirty) { el.dataset.lessonT = S.lt.toFixed(2); el.dataset.lessonStep = String(f.step); }
+        if (!cur.playing && S.mark) dirty = true;
       } else if (cur.force === "ldf" && !cur.frozen && molsRef.current.length >= 2) { S.t += dt; dirty = true; }
       if (cur.mode === "learn" && !cur.playing) ended = false;
       if (dirty) stageRef.current?.invalidate();
@@ -145,16 +148,17 @@ function Workspace() {
     latency.current.clickAt = performance.now(); latency.current.ms = null; setPlaying(true);
   };
   const jumpStep = (k) => {
-    const S = simRef.current; const kk = Math.max(0, Math.min(lesson.steps.length - 1, k)); S.lt = lessonStepStart(lesson, kk);
-    applyLesson(lesson, S.lt); setStep(kk); stageRef.current?.invalidate();
+    const S = simRef.current; const kk = Math.max(0, Math.min(lesson.steps.length - 1, k)); S.lt = kk === 0 ? 0.001 : lessonStepSettled(lesson, kk);
+    S.mark = { t0: performance.now(), key: "stepLatency" }; applyLesson(lesson, S.lt); setStep(kk); stageRef.current?.invalidate();
   };
-  const prevStep = () => jumpStep(step > 0 || simRef.current.lt - lessonStepStart(lesson, step) < 0.4 ? step - 1 : step);
+  const prevStep = () => jumpStep(step - 1);
   const resetLesson = () => { const S = simRef.current; S.lt = 0; S.t = 0; setPlaying(false); setFrozen(false); applyLesson(lesson, 0); setStep(0); stageRef.current?.invalidate(); };
-  const chooseLesson = (id) => { simRef.current.lt = 0; simRef.current.t = 0; setLessonId(id); setStep(0); setFrozen(false); latency.current.clickAt = performance.now(); setPlaying(!reducedMotion()); };
+  const replay = () => { const S = simRef.current; S.lt = 0; S.t = 0; setFrozen(false); applyLesson(lesson, 0); setStep(0); latency.current.clickAt = performance.now(); setPlaying(true); stageRef.current?.invalidate(); };
+  const chooseLesson = (id) => { simRef.current.lt = 0; simRef.current.t = 0; setLessonId(id); setStep(0); setFrozen(false); setLearnView(null); latency.current.clickAt = performance.now(); setPlaying(!reducedMotion()); };
   const switchMode = (m) => {
     if (m === mode) return;
     setMode(m); setHeat(false);
-    if (m === "learn") { simRef.current.lt = 0; setStep(0); setFrozen(false); latency.current.clickAt = performance.now(); setPlaying(!reducedMotion()); } else setPlaying(false);
+    if (m === "learn") { const k = Math.min(step, lesson.steps.length - 1); simRef.current.lt = k === 0 ? 0 : lessonStepSettled(lesson, k); setFrozen(false); latency.current.clickAt = performance.now(); setPlaying(!reducedMotion()); } else setPlaying(false);
   };
   const tryInExplore = () => {
     const f = applyLesson(lesson, simRef.current.lt);
@@ -168,7 +172,12 @@ function Workspace() {
 
   // ---- derived UI -------------------------------------------------------------------------------------------------------------------------------------
   const effForce = mode === "learn" ? lesson.force : force;
-  const opts = useMemo(() => ({ force: effForce, view, showDelta, exaggeration, mode: interactMode, selectedUid: mode === "explore" ? selectedUid : null, interactive: mode === "explore" && !heat }), [effForce, view, showDelta, exaggeration, interactMode, selectedUid, mode, heat]);
+  const effView = mode === "learn" ? (learnView ?? "auto") : view;
+  const frame = useMemo(() => (mode === "learn" ? lessonExtent(lesson) : null), [mode, lesson]);
+  const frameKey = mode === "learn" ? `L${lessonId}` : `E${molsRef.current.length}`;
+  const opts = useMemo(() => ({ force: effForce, view: effView, showDelta, showDipole: mode === "explore" && showDipole, exaggeration: mode === "learn" ? 2.5 : exaggeration, mode: interactMode, selectedUid: mode === "explore" ? selectedUid : null, interactive: mode === "explore" && !heat, frame, frameKey }), [effForce, effView, showDelta, showDipole, exaggeration, interactMode, selectedUid, mode, heat, frame, frameKey]);
+  const stepCloud = (lesson.steps[Math.min(step, lesson.steps.length - 1)]?.fx.cloud ?? 0) > 0.5;
+  const cloudShown = mode === "learn" ? (learnView ? learnView === "cloud" : stepCloud) : view === "cloud";
   const list = liveRef.current; void liveTick; void rev;
   const inter = summary?.inter ?? simRef.current.inter;
   const lessonFx = simRef.current.fx;
@@ -202,8 +211,9 @@ function Workspace() {
         ))}
       </div>
       <div className="imf-viewbar">
-        <MiniSwitch options={[{ id: "ball", label: "Ball Model" }, { id: "cloud", label: "Electron Cloud" }]} value={view} onChange={setView} ariaLabel="Molecule display" testId="view-switch" large />
-        <button type="button" className="sim-btn imf-mini" aria-pressed={showDelta} onClick={() => setShowDelta((v) => !v)} data-testid="delta-toggle" title="Show partial charges (permanent) and temporary / induced charges">Show δ⁺/δ⁻</button>
+        <MiniSwitch options={[{ id: "ball", label: "Ball Model" }, { id: "cloud", label: "Electron Cloud" }]} value={mode === "learn" ? (cloudShown ? "cloud" : "ball") : view} onChange={mode === "learn" ? setLearnView : setView} ariaLabel="Molecule display" testId="view-switch" large />
+        {mode === "explore" && <button type="button" className="sim-btn imf-mini" aria-pressed={showDelta} onClick={() => setShowDelta((v) => !v)} data-testid="delta-toggle" title="Show partial charges (permanent) and temporary / induced charges">Show δ⁺/δ⁻</button>}
+        {mode === "explore" && <button type="button" className="sim-btn imf-mini" aria-pressed={showDipole} onClick={() => setShowDipole((v) => !v)} data-testid="dipole-toggle" title="Show small dipole arrows (vectors, not forces)">Dipoles</button>}
       </div>
     </div>
   );
@@ -212,11 +222,11 @@ function Workspace() {
       London dispersion acts between <b>all</b> atoms and molecules, polar or not{effForce !== "ldf" ? `; here ${FORCE_LABEL[effForce]} is emphasised.` : "."}
     </p>
   );
-  const cloudLegend = view === "cloud" && (
+  const cloudLegend = cloudShown && (
     <div className="imf-legend" data-testid="cloud-legend" role="note">
       <b>Electron-density surface</b> (qualitative, not a quantum calculation)
       <span className="imf-legend-bar" aria-hidden="true" />
-      <span><i style={{ background: "#e5483f" }} />electron-rich <i style={{ background: "#3a6fe8" }} />electron-poor – <em>electrostatic potential colouring</em>, not the electrons themselves</span>
+      <span><i style={{ background: "#e5483f" }} />electron-rich <i style={{ background: "#3a6fe8" }} />electron-poor<span className="imf-legend-long"> – <em>electrostatic potential colouring</em>, not the electrons themselves</span></span>
     </div>
   );
 
@@ -282,13 +292,12 @@ function Workspace() {
         {note}
         <div className="imf-bar" role="toolbar" aria-label="Playback controls" data-testid="playback">
           <div className="imf-btns">
-            <button type="button" className="sim-btn" onClick={prevStep} data-testid="btn-prev" disabled={step === 0 && simRef.current.lt < 0.3}><SkipBack size={14} aria-hidden="true" /> Previous</button>
+            <button type="button" className="sim-btn" onClick={prevStep} data-testid="btn-prev" disabled={step === 0}><SkipBack size={14} aria-hidden="true" /> Previous</button>
             <button type="button" className="sim-btn sim-btn--primary" onClick={playPause} data-testid="btn-play" aria-label={playing ? "Pause" : "Play"}>{playing ? <><Pause size={14} aria-hidden="true" /> Pause</> : <><Play size={14} aria-hidden="true" /> Play</>}</button>
             <button type="button" className="sim-btn" onClick={() => jumpStep(step + 1)} data-testid="btn-next" disabled={step >= lesson.steps.length - 1}>Next <SkipForward size={14} aria-hidden="true" /></button>
-            <button type="button" className="sim-btn" onClick={resetLesson} data-testid="btn-lesson-reset"><RotateCcw size={14} aria-hidden="true" /> Reset</button>
+            <button type="button" className="sim-btn" onClick={replay} data-testid="btn-replay" title="Restart this demonstration from the beginning and play it"><Repeat size={14} aria-hidden="true" /> Replay</button>
           </div>
           <div className="imf-btns">
-            {lesson.force === "ldf" && <button type="button" className="sim-btn" aria-pressed={frozen} onClick={() => setFrozen((v) => !v)} data-testid="btn-freeze" title="Freeze the fluctuating electron cloud so you can point at the instantaneous and induced dipoles"><Camera size={14} aria-hidden="true" /> Freeze Moment</button>}
             <button type="button" className="sim-btn sim-btn--primary" onClick={tryInExplore} data-testid="btn-try-explore"><Compass size={14} aria-hidden="true" /> Try in Explore</button>
           </div>
         </div>
@@ -307,7 +316,7 @@ function Workspace() {
       </DashPanel>
     );
     live = <LiveStrip items={[{ id: "s", label: "Step", value: `${step + 1} / ${lesson.steps.length}`, bg: "#e6efff", testId: "live-step" }, { id: "f", label: "Force", value: FORCE_LABEL[lesson.force], bg: "#e8f6ec", testId: "live-force" }]} />;
-    explain = <ExplainLine text={lesson.steps[step]?.text ?? ""} testId="what-is-happening" />;
+    explain = <ExplainLine text={lesson.steps[Math.min(step, lesson.steps.length - 1)]?.text ?? ""} testId="what-is-happening" details={<p className="imf-detail">{lesson.note}</p>} detailsLabel="About this demonstration" />;
   } else {
     const fpNow = focusPair(molsRef.current); const sep = fpNow ? fpNow.d : null;
     const pr = summary?.focus && molsRef.current.length >= 2 ? summary.focus : null;

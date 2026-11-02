@@ -193,7 +193,7 @@ export function computeInteractions(entries, ctx = {}) {
     out.mols[j].p = add(out.mols[j].induced, out.mols[j].instant);
     // cloud shift is against the dipole direction, saturating (a visual choice, labelled qualitative in the UI)
     const pm = len(out.mols[j].p);
-    const smax = 0.3 * entries[j].mol.radius; const sh = pm > 1e-9 ? smax * Math.tanh(pm / P0_SAT) * exaggeration : 0;
+    const smax = 0.3 * entries[j].mol.radius; const sh = pm > 1e-9 ? smax * Math.tanh(Math.sqrt(pm / P0_SAT)) * exaggeration : 0;
     out.mols[j].shift = pm > 1e-9 ? scale(norm(out.mols[j].p), -sh) : [0, 0, 0];
   }
   // 3) pair indicators
