@@ -229,5 +229,61 @@ console.log("Heat & Phase Change: every substance solid -> gas -> back, graph pl
   check(p.errs.length === 0, `heat errors: ${p.errs.join(" | ")}`); await p.context().close();
 }
 
+
+console.log("Round 3: clouds never spin, H2 alone / approaching / separating, London Learn steps, liquid structure and transient lines");
+{
+  const p = await open([1366, 768]); const stage = () => p.locator(T("imf-stage"));
+  const ci = () => p.evaluate(() => document.querySelector('[data-testid="imf-stage"]').__imf.api().cloudInfo());
+  const inter = () => p.evaluate(() => { const s = document.querySelector('[data-testid="imf-stage"]').__imf.sim().inter; return s ? { p: s.mols.map((m) => m.p.slice()), instant: s.mols.map((m) => m.instant.slice()), induced: s.mols.map((m) => m.induced.slice()), pairs: s.pairs.map((q) => ({ r: q.r, kind: q.kind, strength: q.strength })) } : null; });
+  const setup = async (ids) => { if (await p.locator(T("clear-workspace")).isEnabled()) await p.click(T("clear-workspace")); for (const id of ids) await p.click(T(`tray-${id}`)); await sleep(500); };
+  const approach = async (d) => { for (let k = 0; k < 70; k += 1) { const i = await inter(); if (i && i.pairs[0] && i.pairs[0].r <= d) break; await p.click(T("btn-closer")); await sleep(70); } };
+  const apart = async (d) => { for (let k = 0; k < 90; k += 1) { const i = await inter(); if (i && i.pairs[0] && i.pairs[0].r >= d) break; await p.click(T("btn-apart")); await sleep(70); } };
+  const stageDiff = (a, b) => p.evaluate(async ([x, y]) => 0, [a, b]);
+  void stageDiff;
+  const grab = () => p.evaluate(() => { const c = document.querySelector('[data-testid="imf-stage"] canvas'); const t = document.createElement("canvas"); t.width = 200; t.height = 112; const g = t.getContext("2d"); g.drawImage(c, 0, 0, c.width, c.height, 0, 0, 200, 112); return Array.from(g.getImageData(0, 0, 200, 112).data); });
+  const diff = (a, b) => { let d = 0; for (let i = 0; i < a.length; i += 4) d += Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2]); return d / (a.length / 4) / 3; };
+  // H2 alone
+  await setup(["H2"]); await p.click(T("force-ldf")); await p.click(T("view-switch") + " >> text=Electron Cloud"); await p.click(T("delta-toggle")); await sleep(600);
+  let i0 = await inter(); check(i0.p[0].every((x) => x === 0), "H2 alone: no net dipole (symmetric time-averaged cloud)"); await stage().screenshot({ path: `${out}/r3-h2-alone.png` });
+  const labelCount = await p.evaluate(() => { const st = document.querySelector('[data-testid="imf-stage"]').__imf; return st.mols().length; }); check(labelCount === 1, "one molecule");
+  // no spin: scene-graph rotation of the cloud equals the molecule's and is constant over several idle seconds; frame diffs stay tiny
+  await setup(["H2", "H2"]); await p.click(T("force-ldf")); await approach(3.9); await sleep(700);
+  const c0 = await ci(); const f0 = await grab(); await sleep(1500); const f1 = await grab(); await sleep(1500); const c1 = await ci(); const f2 = await grab(); await sleep(1000);
+  check(c1.every((m) => m.mol.every((v, k) => Math.abs(v - m.cloud[k]) < 1e-6)), "cloud group's world rotation equals the molecule's"); check(c0.every((m, k) => m.mol.every((v, j) => Math.abs(v - c1[k].mol[j]) < 1e-9)), "molecule/cloud rotation constant over 3 idle seconds");
+  check(diff(f0, f1) < 1.2 && diff(f1, f2) < 1.2, `frame diffs between idle frames are tiny (${diff(f0, f1).toFixed(2)}, ${diff(f1, f2).toFixed(2)} of 255): nothing rotates`);
+  const cs0 = c0.map((m) => m.colourSum); const cs1 = c1.map((m) => m.colourSum); check(cs0.every((v, k) => Math.abs(v - cs1[k]) / Math.max(1, Math.abs(v)) < 0.02), `cloud colours are state-driven, not time-driven (${cs0.map((v) => v.toFixed(0))} vs ${cs1.map((v) => v.toFixed(0))})`);
+  // correlated polarisation on approach: facing ends opposite; weakens on separation; back to symmetric
+  const near = await inter(); const dirv = [1, 0, 0]; void dirv; const pa = near.p[0]; const pb = near.induced[1]; const ax = (await molPos(p)); const d = ax[1].pos.map((v, k) => v - ax[0].pos[k]); const dd = (u, v) => u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+  check(Math.hypot(...pa) > 0.01 && Math.hypot(...pb) > 0.0008, `approach: first H2 has an instantaneous dipole (${Math.hypot(...pa).toFixed(3)}), neighbour an induced one (${Math.hypot(...pb).toFixed(4)})`); check(dd(pa, d) * dd(pb, d) > 0, "facing ends are opposite (the induced dipole is parallel to the source dipole along the axis -> near ends opposite)");
+  await stage().screenshot({ path: `${out}/r3-h2-near.png` }); const strNear = near.pairs[0].strength;
+  await apart(8.8); await sleep(700); const far = await inter(); check(Math.hypot(...far.p[0]) < 0.001 && Math.hypot(...far.induced[1]) < 0.0008 && far.pairs[0].strength < strNear * 0.1, "separated: polarisation and indicator return to ~0 (symmetric average cloud)"); await stage().screenshot({ path: `${out}/r3-h2-apart.png` });
+  check(p.errs.length === 0, `H2 scenario errors: ${p.errs.join(" | ")}`);
+  // London lesson: five steps, spec sentences, physics per step
+  await p.click(T("tab-learn")); await sleep(800); await p.click(T("lesson-ldf")); await sleep(500);
+  const SENT = ["H₂ is nonpolar and has no permanent dipole.", "A momentary electron-density fluctuation creates an instantaneous dipole.", "The instantaneous dipole induces a correlated dipole in the neighboring molecule.", "The correlated temporary dipoles produce a London dispersion attraction.", "As the molecules separate, their dispersion interaction becomes weaker."];
+  const mags = [];
+  for (let k = 0; k < 5; k += 1) { await p.click(T(`step-${k}`)); await sleep(800); check((await txt(p, "what-is-happening")) === SENT[k], `London step ${k + 1} sentence`); const it = await inter(); mags.push([Math.hypot(...it.instant[0]), Math.hypot(...it.induced[1]), it.pairs[0].strength]); await stage().screenshot({ path: `${out}/r3-learn-ldf-${k + 1}.png` }); }
+  check(mags[0][0] === 0 && mags[1][0] > 0.01 && mags[2][1] > 0.0008 && mags[3][2] > 0.08 && mags[4][0] < 0.001 && mags[4][2] < mags[3][2] * 0.1, `London steps behave: ${JSON.stringify(mags.map((m) => m.map((v) => +v.toFixed(4))))}`);
+  const cl0 = await ci(); await sleep(2500); const cl1 = await ci(); check(cl0.every((m, k) => m.mol.every((v, j) => Math.abs(v - cl1[k].mol[j]) < 1e-9 && Math.abs(m.cloud[j] - cl1[k].cloud[j]) < 1e-9)), "Learn: clouds do not rotate while paused/idle");
+  check(p.errs.length === 0, `London lesson errors: ${p.errs.join(" | ")}`); await p.context().close();
+}
+{
+  const p = await open([1440, 900]); await p.click(T("tray-H2O")); await p.click(T("btn-heat-view")); await sleep(600);
+  const cubeNum = () => p.evaluate(() => { const c = document.querySelector('[data-testid="imf-cube-stage"]').__imfCube; const it = c.sim().items[0]; const s = it.sys; const n = s.n; let nn = 0; let h = 0; for (let i = 0; i < n; i += 1) { let best = 1e9; for (let j = 0; j < n; j += 1) if (j !== i) best = Math.min(best, Math.hypot(s.pos[3 * i] - s.pos[3 * j], s.pos[3 * i + 1] - s.pos[3 * j + 1], s.pos[3 * i + 2] - s.pos[3 * j + 2])); nn += best; const k = s.site[i]; h += (s.pos[3 * i] - s.homePos[k][0]) ** 2 + (s.pos[3 * i + 1] - s.homePos[k][1]) ** 2 + (s.pos[3 * i + 2] - s.homePos[k][2]) ** 2; }
+    const bonds = []; for (const [a, b] of s.mol.bonds) { for (let i = 0; i < n; i += 1) { const q = [s.quat[4 * i], s.quat[4 * i + 1], s.quat[4 * i + 2], s.quat[4 * i + 3]]; const rot = (v) => { const [x, y, z, w] = q; const t = [2 * (y * v[2] - z * v[1]), 2 * (z * v[0] - x * v[2]), 2 * (x * v[1] - y * v[0])]; return [v[0] + w * t[0] + (y * t[2] - z * t[1]), v[1] + w * t[1] + (z * t[0] - x * t[2]), v[2] + w * t[2] + (x * t[1] - y * t[0])]; }; const A = rot(s.mol.atoms[a].p); const B = rot(s.mol.atoms[b].p); bonds.push(Math.hypot(A[0] - B[0], A[1] - B[1], A[2] - B[2])); } }
+    return { phase: it.st.phase, melt: it.st.melt, vap: it.st.vap, nn: nn / n / s.nn, home: Math.sqrt(h / n) / s.nn, links: (s.links || []).filter((l) => l.w > 0.5).map((l) => `${l.i}-${l.j}`), bondMin: Math.min(...bonds), bondMax: Math.max(...bonds), maxLinkD: Math.max(0, ...(s.links || []).filter((l) => l.w > 0.5).map((l) => l.d / s.nn)) }; });
+  await p.click(T("btn-heat")); const rec = { solid: [], melting: [], liquid: [], boiling: [], gas: [] }; const t0 = Date.now(); let lastPhase = ""; let nLiq = 0; const liqSets = [];
+  while (Date.now() - t0 < 70000) { const n = await cubeNum(); rec[n.phase]?.push(n); if (n.phase === "liquid") { nLiq += 1; liqSets.push(new Set(n.links)); } if (n.phase === "gas" && rec.gas.length > 6) break; if (n.phase !== lastPhase) { lastPhase = n.phase; await p.locator(T("heat-chamber")).screenshot({ path: `${out}/r3-heat-H2O-${n.phase}.png` }).catch(() => {}); } await sleep(250); }
+  const mean = (a, f) => a.reduce((s, x) => s + f(x), 0) / Math.max(1, a.length);
+  const sNN = mean(rec.solid, (x) => x.nn); const lNN = mean(rec.liquid.slice(Math.floor(rec.liquid.length / 4)), (x) => x.nn); const gNN = mean(rec.gas, (x) => x.nn);
+  console.log(`  H2O in the browser: nearest-neighbour/nn solid ${sNN.toFixed(2)} liquid ${lNN.toFixed(2)} gas ${gNN.toFixed(2)}; displacement-from-lattice ${mean(rec.solid, (x) => x.home).toFixed(2)} / ${mean(rec.liquid, (x) => x.home).toFixed(2)} / ${mean(rec.gas, (x) => x.home).toFixed(2)}`);
+  check(lNN / sNN > 1.03 && lNN / sNN < 1.22 && gNN > lNN * 1.25, "browser: liquid spacing 1.0-1.2x the solid, gas far wider"); check(mean(rec.solid, (x) => x.home) < 0.3 && mean(rec.liquid, (x) => x.home) > 0.9 && mean(rec.gas, (x) => x.home) > mean(rec.liquid, (x) => x.home), "browser: order solid > liquid > gas");
+  const melting = rec.melting.map((x) => x.melt); check(melting.length > 8 && melting.every((v, k) => k === 0 || v >= melting[k - 1] - 1e-9) && melting.some((v) => v > 0.2 && v < 0.8), "melt fraction rises gradually through the plateau"); const boiling = rec.boiling.map((x) => x.vap); check(boiling.length > 8 && boiling.some((v) => v > 0.2 && v < 0.8), "vapour fraction rises gradually through the plateau");
+  const all = new Set(); liqSets.forEach((st) => st.forEach((k) => all.add(k))); const everOn = [...all].filter((k) => liqSets.every((st) => st.has(k))); check(all.size > 15 && everOn.length === 0, `liquid water: ${all.size} different pairs take turns, none is connected in every sampled frame`);
+  const counts = liqSets.map((st) => st.size); check(Math.max(...counts) > Math.min(...counts) + 2, `liquid line count varies (${Math.min(...counts)}-${Math.max(...counts)})`); check(mean(rec.gas, (x) => x.links.length) < 1.5 && Math.max(...rec.gas.map((x) => x.maxLinkD)) < 1.7, "gas: essentially no lines, none long-range");
+  check([...rec.solid, ...rec.liquid, ...rec.boiling, ...rec.gas].every((x) => Math.abs(x.bondMax - x.bondMin) < 1e-6 || x.bondMax - x.bondMin < 0.02), "O-H covalent bond lengths identical in every phase (the H-O-H geometry is rigid)");
+  check(p.errs.length === 0, `heat structure errors: ${p.errs.join(" | ")}`); await p.context().close();
+}
+
 await browser.close(); if (server) server.kill();
 console.log(`\n${checks - problems.length}/${checks} checks passed; screenshots in ${out}`); if (problems.length) { console.log("PROBLEMS:\n - " + problems.join("\n - ")); process.exit(1); }

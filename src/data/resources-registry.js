@@ -333,6 +333,16 @@ const resources = [
     conceptIds: ["intermolecular-forces","physical-properties-of-covalent-substances"],
     component: () => import("../engines/intermolecular-forces-visualiser/IntermolecularForcesVisualiser.jsx"),
   },
+  {
+    id: "spectroscopy-studio",
+    title: "Spectroscopy Simulation Lab",
+    resourceType: "simulation",
+    categories: ["simulate","visualize","explore","teach"],
+    status: "in-development", // live | in-development | planned  (1H NMR and Splitting Patterns are built; MS, IR and combined structure determination are placeholders)
+    description: "A virtual NMR laboratory: examine the proton and its spin states, apply a field and a radiofrequency pulse (Bloch-equation model), explore the spectrometer, the free induction decay and the Fourier transform, then build and interpret proton NMR spectra of molecules. Mass spectrometry, infrared and combined structure determination are in development.",
+    conceptIds: [],
+    component: () => import("../engines/spectroscopy-studio/SpectroscopyStudio.jsx"),
+  },
 ];
 
 export const resourcesById = Object.fromEntries(resources.map((r) => [r.id, r]));

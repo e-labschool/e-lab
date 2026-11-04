@@ -10,7 +10,7 @@
 //   dipole-dipole       point-charge Coulomb sum over the model partial charges (orientation + distance dependent)
 //   hydrogen bond       X-H...A with X, A in {N, O, F}: H...A distance window, X-H...A angle >= ~150 deg, acceptor lone-pair alignment
 import { ELEM, MOLECULES, atomWorld } from "./molecules.js";
-import { add, angleDeg, cross, dist, dot, len, norm, qFromTo, qRot, scale, smoothstep, sub } from "./vec.js";
+import { add, angleDeg, dist, dot, len, norm, qFromTo, qRot, scale, smoothstep, sub } from "./vec.js";
 
 export const FORCES = ["ldf", "dip-ind", "dip-dip", "hbond"];
 export const FORCE_LABEL = { ldf: "London dispersion", "dip-ind": "Dipole–induced dipole", "dip-dip": "Dipole–dipole", hbond: "Hydrogen bonding" };
@@ -40,7 +40,16 @@ export function fieldOfPointDipole(p, at, point) {
   return scale(sub(scale(rh, 3 * dot(p, rh)), p), 1 / (d2 * d));
 }
 /** Induced dipole (e*A) of a molecule in a field E: p = alpha' E. */
-export const inducedDipole = (mol, field) => scale(field, mol.alpha);
+/** Molecular axis (unit vector, molecule frame) of a linear nonpolar molecule, else null. */
+const linearAxis = (mol) => { if (mol._axis !== undefined) return mol._axis; const a = mol.atoms; mol._axis = a.length >= 2 && (mol.kind === "diatomic" || mol.id === "CO2") && !mol.polar ? norm(sub(a[a.length - 1].p, a[0].p)) : null; return mol._axis; };
+const ANISO_F = 0.09; // polarizability anisotropy of a linear molecule: alpha_par = alpha (1 + 2f), alpha_perp = alpha (1 - f); f = 0.09 ~ alpha_par/alpha_perp = 1.3 (H2: 1.29)
+/** Effective polarizability (A^3) of `mol` along the world direction `dir`: anisotropic for linear molecules, so the response depends on orientation. */
+export function alphaAlong(mol, quat, dir) { const ax = quat ? linearAxis(mol) : null; if (!ax) return mol.alpha; const c = dot(qRot(quat, ax), norm(dir)); return mol.alpha * (1 - ANISO_F + 3 * ANISO_F * c * c); }
+/** Induced dipole p = alpha . E (A^3 * e/A^2 = e*A); with `quat` the molecule's polarizability tensor is axially symmetric about its bond axis. */
+export function inducedDipole(mol, field, quat) {
+  const ax = quat ? linearAxis(mol) : null; if (!ax) return scale(field, mol.alpha);
+  const w = qRot(quat, ax); const par = dot(field, w); return add(scale(field, mol.alpha * (1 - ANISO_F)), scale(w, mol.alpha * 3 * ANISO_F * par));
+}
 
 // ---- London dispersion ---------------------------------------------------------------------------------------------------
 /** London estimate of the dispersion energy (eV, negative = attraction): U = -3/2 * IA*IB/(IA+IB) * alphaA * alphaB / r^6. Uses ionisation energy AND polarizability, not size alone. */
@@ -48,17 +57,17 @@ export function londonEnergyEv(a, b, r) {
   const Ia = IONISATION_EV[a.id] ?? 13; const Ib = IONISATION_EV[b.id] ?? 13;
   return (-1.5 * ((Ia * Ib) / (Ia + Ib)) * a.alpha * b.alpha) / r ** 6;
 }
-/** Instantaneous-dipole direction of the fluctuating molecule: sweeps through all orientations relative to the A->B axis. t in seconds. */
-export function fluctuationDirection(t, axis, seed = 0) {
-  const a = norm(axis); const helper = Math.abs(a[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
-  const e1 = norm(cross(a, helper)); const e2 = cross(a, e1);
-  const th = 2 * Math.PI * 0.31 * t + 0.9 * Math.sin(1.3 * t + seed) + seed;
-  const ph = 0.8 * t + 1.7 * Math.sin(0.5 * t) + seed * 2;
-  const s = Math.sin(th); const perp = add(scale(e1, Math.cos(ph)), scale(e2, Math.sin(ph)));
-  return norm(add(scale(a, Math.cos(th)), scale(perp, s)));
-}
-export const fluctuationAmplitude = (t) => 0.55 + 0.45 * Math.abs(Math.sin(1.9 * t + 0.4));
-export const P_FLUCT = 0.045; // e*A: visual amplitude of the instantaneous dipole of the reference molecule (H2)
+/**
+ * Instantaneous (fluctuation) dipole of a nonpolar molecule that has a nonpolar neighbour. It is CORRELATED with the neighbour, not a
+ * spinning vector: the electron-rich end is the one facing away from the neighbour (delta+ end faces it) along the A->B axis, so the
+ * field it makes at B induces the opposite facing end on B. The only time dependence is a bounded breathing of the amplitude
+ * (never a direction sweep), so the cloud can neither spin nor change which end is which.
+ */
+export const fluctuationAmplitude = (t) => 0.9 + 0.1 * Math.sin(1.7 * t);
+/** 1 at contact, smoothly 0 when the molecules are far apart: the correlation (and so the visible fluctuation) needs a close neighbour. */
+export const fluctuationGate = (r, radiusA, radiusB) => { const s = radiusA + radiusB; return 1 - smoothstep(1.15 * s, 2.0 * s, r); };
+export const P_MIN_VISIBLE = 0.0008; // e*A: below this net dipole nothing is labelled or connected (the display is the symmetric average)
+export const P_FLUCT = 0.07; // e*A: visual amplitude of the instantaneous dipole of the reference molecule (H2)
 
 /** Sign (+1 delta-plus, -1 delta-minus) of the end of a dipole p that faces the direction `toward`. 0 when perpendicular. */
 export function nearSideSign(p, toward) { const c = dot(norm(p), norm(toward)); return Math.abs(c) < 1e-6 ? 0 : c > 0 ? 1 : -1; }
@@ -144,7 +153,7 @@ export function pairApplicability(force, a, b) {
 
 // ---- the whole-scene model -----------------------------------------------------------------------------------------------------
 const U0_IND = 2.4e-4; // e^2/A scale of the induced-dipole attraction indicator
-const U0_LDF = 0.025; // eV scale of the London indicator
+const U0_LDF = 0.012; // eV scale of the London indicator
 const P0_SAT = 0.03; // e*A: saturation of the visual cloud shift
 /** Greedy nearest-neighbour pairing; source = lower index. Returns [[i, j], ...] */
 export function pairUp(entries, maxDist = 16) {
@@ -180,8 +189,10 @@ export function computeInteractions(entries, ctx = {}) {
   for (const [i, j] of matched) {
     const A = entries[i]; const B = entries[j];
     const axis = sub(B.pose.pos, A.pose.pos); if (len(axis) < 1e-6) continue;
-    const dir = fluct.fixedDir ? norm(fluct.fixedDir) : fluctuationDirection(t, axis, i * 0.7);
-    const amp = (fluct.fixedDir ? 1 : fluctuationAmplitude(t)) * fluct.gain * P_FLUCT * Math.sqrt(A.mol.alpha / 0.787);
+    if (A.mol.polar || B.mol.polar) continue; // a permanent dipole dominates: polar molecules are never "sources"; they just polarise the neighbour
+    const dir = fluct.fixedDir ? norm(fluct.fixedDir) : norm(axis);
+    const gate = fluctuationGate(len(axis), A.mol.radius, B.mol.radius);
+    const amp = (fluct.fixedDir ? 1 : fluctuationAmplitude(t)) * gate * fluct.gain * P_FLUCT * Math.sqrt(A.mol.alpha / 0.787);
     const p = scale(dir, amp); out.mols[i].instant = p; out.mols[i].source = true; sources.push({ idx: i, p, at: A.pose.pos });
   }
   // 2) fields at every molecule from the permanent charges of the others and the instantaneous dipoles
@@ -189,7 +200,7 @@ export function computeInteractions(entries, ctx = {}) {
     let e = [0, 0, 0];
     for (let i = 0; i < n; i += 1) if (i !== j) e = add(e, fieldOfMolecule(entries[i].mol, entries[i].pose, entries[j].pose.pos));
     for (const s of sources) if (s.idx !== j) e = add(e, fieldOfPointDipole(s.p, s.at, entries[j].pose.pos));
-    out.mols[j].field = e; out.mols[j].induced = inducedDipole(entries[j].mol, e);
+    out.mols[j].field = e; out.mols[j].induced = inducedDipole(entries[j].mol, e, entries[j].pose.quat);
     out.mols[j].p = add(out.mols[j].induced, out.mols[j].instant);
     // cloud shift is against the dipole direction, saturating (a visual choice, labelled qualitative in the UI)
     const pm = len(out.mols[j].p);
@@ -204,7 +215,7 @@ export function computeInteractions(entries, ctx = {}) {
     const hbStrength = hb.reduce((m, h) => Math.max(m, h.strength), 0);
     let kind = "none"; let strength = 0; let sign = 0; let energyEv = 0;
     const ov = overlapOf(A.mol, A.pose, B.mol, B.pose);
-    if (force === "ldf") { energyEv = londonEnergyEv(A.mol, B.mol, Math.max(r, 2.2)); strength = 1 - Math.exp(-Math.abs(energyEv) / U0_LDF); sign = 1; kind = "attract"; }
+    if (force === "ldf") { const axisAB = sub(B.pose.pos, A.pose.pos); energyEv = londonEnergyEv({ id: A.mol.id, alpha: alphaAlong(A.mol, A.pose.quat, axisAB) }, { id: B.mol.id, alpha: alphaAlong(B.mol, B.pose.quat, axisAB) }, Math.max(r, 2.2)); strength = (1 - Math.exp(-Math.abs(energyEv) / U0_LDF)) * (A.mol.polar || B.mol.polar ? 1 : fluctuationGate(r, A.mol.radius, B.mol.radius)); sign = 1; kind = "attract"; }
     else if (force === "dip-ind" && app.applicable) {
       const ea = fieldOfMolecule(A.mol, A.pose, B.pose.pos); const eb = fieldOfMolecule(B.mol, B.pose, A.pose.pos);
       const u = -0.5 * B.mol.alpha * dot(ea, ea) - 0.5 * A.mol.alpha * dot(eb, eb); energyEv = u * EV_PER_E2_PER_A; strength = 1 - Math.exp(-Math.abs(u) / U0_IND); sign = 1; kind = "attract";
@@ -213,6 +224,33 @@ export function computeInteractions(entries, ctx = {}) {
     } else if (force === "hbond" && app.applicable) { strength = hbStrength; sign = hbStrength > HB.threshold ? 1 : 0; kind = sign ? "hbond" : "none"; }
     out.pairs.push({ i, j, r, applicable: app.applicable, text: app.text, kind, strength: Math.min(1, strength), sign, energyEv, overlap: ov, hbStrength, hbonds: hb.filter((h) => h.strength > HB.threshold), matched: matched.some(([a, b]) => a === i && b === j) });
     for (const h of hb) out.hbonds.push(h);
+  }
+  return out;
+}
+
+// ---- charge sites and the dotted indicator lines (shared by Explore, Learn and the tests) --------------------------------------------------
+/** Charge sites of a molecule (world positions, sign +1 = delta+ / -1 = delta-): every charged ATOM of a polar molecule (multi-site, not one lumped
+ *  pair), the two ends of the induced / instantaneous dipole of a nonpolar one -- nothing at all while that dipole is below P_MIN_VISIBLE
+ *  (the symmetric time-averaged cloud has no poles). `st` = the molecule's entry of computeInteractions(). */
+export function chargeSites(mol, pose, st) {
+  const out = [];
+  if (mol.polar) { mol.atoms.forEach((a, k) => { if (Math.abs(a.q) > 0.02) out.push({ p: atomWorld(mol, pose, k), sign: a.q > 0 ? 1 : -1 }); }); return out; }
+  const pl = len(st.p); if (pl < P_MIN_VISIBLE) return out;
+  const u = norm(st.p); const c = add(pose.pos, st.shift); const R = mol.radius * 0.55; // p points to the delta+ end
+  out.push({ p: add(c, scale(u, R)), sign: 1 }); out.push({ p: add(c, scale(u, -R)), sign: -1 });
+  return out;
+}
+/** One dotted indicator per interacting pair: attraction joins the nearest OPPOSITE pair of charge sites, repulsion the nearest LIKE pair, so
+ *  delta+ ... delta+ (or delta- ... delta-) is never drawn as an attraction. Hydrogen bonds join the donor H to the acceptor atom. */
+export function interactionLines(entries, inter, force) {
+  const out = [];
+  for (const pr of inter.pairs) {
+    const A = entries[pr.i]; const B = entries[pr.j];
+    if (force === "hbond") { for (const h of pr.hbonds) out.push({ i: pr.i, j: pr.j, kind: "hbond", a: h.H, b: h.A, signA: 1, signB: -1, strength: h.strength, hbond: h }); continue; }
+    if ((pr.kind !== "attract" && pr.kind !== "repel") || pr.strength < 0.04) continue;
+    const sa = chargeSites(A.mol, A.pose, inter.mols[pr.i]); const sb = chargeSites(B.mol, B.pose, inter.mols[pr.j]); let best = null;
+    for (const x of sa) for (const y of sb) { const same = x.sign === y.sign; if ((pr.kind === "attract") === same) continue; const dd = dist(x.p, y.p); if (!best || dd < best.d) best = { d: dd, a: x.p, b: y.p, signA: x.sign, signB: y.sign }; }
+    if (best && best.d > 0.6) out.push({ i: pr.i, j: pr.j, kind: pr.kind, a: best.a, b: best.b, signA: best.signA, signB: best.signB, strength: pr.strength, d: best.d });
   }
   return out;
 }

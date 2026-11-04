@@ -1,0 +1,45 @@
+/* e-Lab loader — animates the REAL logo asset (public/branding/e-lab-icon.png)
+   itself, never a redrawn substitute. Restrained: a gentle breathing scale
+   on the logo plus 2 small bubbles rising near its neck, nothing that
+   distorts the image, no spin, no glow, no bounce. */
+
+.elab-loader-mark {
+  animation: elab-breathe 1.6s ease-in-out infinite;
+  transform-origin: center;
+}
+
+@keyframes elab-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.035); }
+}
+
+.elab-loader-bubble {
+  animation-name: elab-bubble-rise;
+  animation-timing-function: ease-out;
+  animation-iteration-count: infinite;
+}
+
+@keyframes elab-bubble-rise {
+  0% { transform: translateY(0) scale(0.7); opacity: 0; }
+  25% { opacity: 0.85; }
+  100% { transform: translateY(-10px) scale(1); opacity: 0; }
+}
+
+.elab-loader-exit {
+  animation: elab-loader-exit 0.35s ease-in forwards;
+}
+
+@keyframes elab-loader-exit {
+  0% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(0.94); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .elab-loader-mark,
+  .elab-loader-bubble {
+    animation: none !important;
+  }
+  .elab-loader-bubble {
+    opacity: 0.5;
+  }
+}

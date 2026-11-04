@@ -1,0 +1,495 @@
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { useParams, useNavigate, useBlocker } from "react-router-dom";
+import { Flag, Loader2, Calculator as CalculatorIcon, Sigma, AlertTriangle, Maximize, Table2, BookOpen, Clock } from "lucide-react";
+import { supabase } from "../../../lib/supabaseClient.js";
+import { getChallengeQuestions, saveAnswer, updateChallengeProgress, submitChallenge, abandonChallenge } from "../../../lib/challengeService.js";
+import { hydrateChallengeQuestions } from "../../../lib/canonicalQuestions.js";
+import { CUSTOM_CHALLENGE_CONFIG } from "../../../lib/assessmentConfig.js";
+import QuestionRenderer from "./QuestionRenderer.jsx";
+import Calculator from "./Calculator.jsx";
+import SymbolPalette, { insertAtCursor } from "./SymbolPalette.jsx";
+import PeriodicTableTool from "./PeriodicTableTool.jsx";
+import DataBooklet from "./DataBooklet.jsx";
+import ELabLoader from "../../../components/ui/ELabLoader.jsx";
+import Button from "../../../components/ui/Button.jsx";
+
+function formatClock(totalSeconds) {
+  const s = Math.max(0, Math.round(totalSeconds));
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  return `${m}:${String(rem).padStart(2, "0")}`;
+}
+
+const config = CUSTOM_CHALLENGE_CONFIG; // swap for EXAM_SIMULATION_CONFIG when that mode exists — nothing else here changes
+
+export default function ChallengeSession() {
+  const { challengeId } = useParams();
+  const navigate = useNavigate();
+  const [challenge, setChallenge] = useState(null);
+  const [rows, setRows] = useState([]);
+  const [questionsMap, setQuestionsMap] = useState(new Map());
+  const [answers, setAnswers] = useState({});
+  const [flagged, setFlagged] = useState(new Set());
+  const [index, setIndex] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [confirmMode, setConfirmMode] = useState(null); // null | "submit" | "end"
+  const [submitting, setSubmitting] = useState(false);
+  const startedAtRef = useRef(null);
+
+  // Pre-challenge consent screen — only for a genuinely fresh challenge
+  // (nothing answered, still on question 1); a refreshed/resumed
+  // in-progress challenge skips straight back into the assessment rather
+  // than re-prompting, since fullscreen can't be silently re-requested
+  // after a reload anyway.
+  const [readyScreenDismissed, setReadyScreenDismissed] = useState(false);
+  const [fullscreenAvailable, setFullscreenAvailable] = useState(true);
+
+  // ---- Focus / fullscreen monitoring ----
+  const [violationCount, setViolationCount] = useState(0);
+  const [interruptionOverlay, setInterruptionOverlay] = useState(false);
+  const hasFocusRef = useRef(true);
+  const violationCountRef = useRef(0); // mirrors state for use inside listeners without stale closures
+
+  // ---- Navigation lock ----
+  const [pendingBlockedNav, setPendingBlockedNav] = useState(null);
+  const submittedRef = useRef(false);
+
+  useEffect(() => {
+    if (!supabase) return;
+    Promise.all([
+      supabase.from("student_challenges").select("*").eq("id", challengeId).single(),
+      getChallengeQuestions(challengeId),
+    ])
+      .then(async ([{ data: c, error: cErr }, qRows]) => {
+        if (cErr) throw cErr;
+        if (c.status !== "in_progress") {
+          navigate(`/student/solve/${challengeId}/report`, { replace: true });
+          return;
+        }
+        // Pinned rows are hydrated from their exact question_versions
+        // snapshot here — never the live canonical row, never the
+        // legacy JS bank merely because an id matches — so what the
+        // student sees can never diverge from what was securely marked.
+        const hydrated = await hydrateChallengeQuestions(qRows);
+
+        // Every row MUST resolve to a real question before this challenge
+        // is considered loadable. This is deliberately strict: a single
+        // unresolved row previously caused index misalignment between
+        // rows[] and a separately-filtered questions[] array, since both
+        // were indexed positionally but only one of them shrank. Failing
+        // loudly here, with the row/question id named, replaces what was
+        // previously a silent blank page.
+        const unresolved = qRows.filter((r) => !hydrated.get(r.id));
+        if (unresolved.length > 0) {
+          throw new Error(
+            `Couldn't load ${unresolved.length} question${unresolved.length === 1 ? "" : "s"} in this challenge (e.g. "${unresolved[0].question_id}"). Please contact support if this persists.`
+          );
+        }
+
+        setQuestionsMap(hydrated);
+        setChallenge(c);
+        setRows(qRows);
+        setIndex(c.current_question_index ?? 0);
+        setFlagged(new Set(c.flagged_question_ids ?? []));
+        setAnswers(Object.fromEntries(qRows.map((r) => [r.question_id, r.student_answer])));
+        setViolationCount(c.focus_violation_count ?? 0);
+        violationCountRef.current = c.focus_violation_count ?? 0;
+        startedAtRef.current = new Date(c.started_at).getTime();
+        const alreadyStarted = (c.current_question_index ?? 0) > 0 || qRows.some((r) => r.student_answer != null);
+        setReadyScreenDismissed(alreadyStarted);
+      })
+      .catch((err) => setError(err.message || "Couldn't load this challenge."))
+      .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [challengeId]);
+
+  // Positional alignment with rows[] is guaranteed by construction now
+  // (every row resolved or the load already failed above) — looking each
+  // one up by its own row id, never filtering, so index-based access
+  // (questions[index] / rows[index]) can never drift apart.
+  const questions = useMemo(() => rows.map((r) => questionsMap.get(r.id)), [rows, questionsMap]);
+  const current = questions[index];
+  const currentRow = rows[index];
+
+  const [remainingSeconds, setRemainingSeconds] = useState(null);
+
+  const doSubmit = useCallback(async (terminationReason = "submitted") => {
+    if (submittedRef.current || !challenge) return;
+    submittedRef.current = true;
+    setSubmitting(true);
+    const questionsById = Object.fromEntries(questions.map((q) => [q.id, q]));
+    const durationSeconds = Math.round((Date.now() - startedAtRef.current) / 1000);
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen().catch(() => {});
+      await submitChallenge(challenge.id, { questionsById, durationSeconds, terminationReason, focusViolationCount: violationCountRef.current });
+      navigate(`/student/solve/${challenge.id}/report`, { replace: true });
+    } catch (err) {
+      setError(err.message || "Something went wrong submitting your challenge.");
+      submittedRef.current = false;
+      setSubmitting(false);
+    }
+  }, [challenge, questions, navigate]);
+
+  useEffect(() => {
+    if (!challenge?.time_limit_seconds || !startedAtRef.current || !readyScreenDismissed) return;
+    const tick = () => {
+      const elapsed = (Date.now() - startedAtRef.current) / 1000;
+      const remaining = challenge.time_limit_seconds - elapsed;
+      setRemainingSeconds(remaining);
+      if (remaining <= 0) doSubmit("time_expired");
+    };
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [challenge, doSubmit, readyScreenDismissed]);
+
+  // ---- Focus/visibility/fullscreen monitoring ----
+  // The timer keeps running while a student is away — per the brief,
+  // leaving must never be rewarded with frozen time. Multiple events
+  // (blur + visibilitychange) can fire for the same tab-switch; a
+  // focused->unfocused EDGE (hasFocusRef flipping true->false) is what
+  // counts as one violation, not each individual event.
+  useEffect(() => {
+    if (!readyScreenDismissed || submittedRef.current) return;
+
+    function registerLeave() {
+      // The one guard that actually matters here: submittedRef flips to
+      // true synchronously at the very start of doSubmit(), before its
+      // own exitFullscreen() call — which is exactly what fires this
+      // listener a moment later. The effect's own top-level "return" only
+      // ran once at setup time; it can't react to a ref changing later,
+      // so this check has to live inside the handler itself. This is the
+      // fix for the "Assessment Interrupted" flash on a normal submit.
+      if (submittedRef.current) return;
+      if (!hasFocusRef.current) return; // already counted this departure
+      hasFocusRef.current = false;
+      const next = violationCountRef.current + 1;
+      violationCountRef.current = next;
+      setViolationCount(next);
+      setInterruptionOverlay(true);
+      if (next >= config.maxFocusViolations) {
+        doSubmit("focus_violation");
+      }
+    }
+    function registerReturn() {
+      hasFocusRef.current = true;
+    }
+
+    function onVisibility() { if (document.hidden) registerLeave(); }
+    function onBlur() { registerLeave(); }
+    function onFocus() { registerReturn(); }
+    function onFullscreenChange() { if (!document.fullscreenElement) registerLeave(); }
+
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("blur", onBlur);
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("blur", onBlur);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [readyScreenDismissed, challenge, doSubmit]);
+
+  // ---- beforeunload: browsers only ever show their own native wording,
+  // never custom text — this is disclosed in the final report, not hidden. ----
+  useEffect(() => {
+    if (!readyScreenDismissed || !config.navigationLocked) return;
+    function handler(e) {
+      if (submittedRef.current) return;
+      e.preventDefault();
+      e.returnValue = "";
+    }
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [readyScreenDismissed]);
+
+  // ---- In-app navigation lock ----
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      config.navigationLocked && readyScreenDismissed && !submittedRef.current && currentLocation.pathname !== nextLocation.pathname
+  );
+  useEffect(() => {
+    if (blocker.state === "blocked") setPendingBlockedNav(true);
+  }, [blocker.state]);
+
+  async function handleStartChallenge() {
+    // Always attempted regardless of config.fullscreenRequired — that
+    // flag is reserved for a future stricter mode that would BLOCK
+    // starting without it; today's Custom Challenge always tries, then
+    // proceeds either way, per the brief.
+    try {
+      await document.documentElement.requestFullscreen?.();
+    } catch {
+      setFullscreenAvailable(false);
+    }
+    setReadyScreenDismissed(true);
+  }
+
+  async function goTo(nextIndex) {
+    if (currentRow) await saveAnswer(challenge.id, currentRow.question_id, answers[currentRow.question_id]);
+    setIndex(nextIndex);
+    updateChallengeProgress(challenge.id, { currentQuestionIndex: nextIndex });
+  }
+
+  async function toggleFlag() {
+    const next = new Set(flagged);
+    if (next.has(currentRow.question_id)) next.delete(currentRow.question_id);
+    else next.add(currentRow.question_id);
+    setFlagged(next);
+    await updateChallengeProgress(challenge.id, { flaggedQuestionIds: [...next] });
+  }
+
+  const answeredCount = rows.filter((r) => {
+    const a = answers[r.question_id];
+    return a != null && a !== "" && !(typeof a === "object" && Object.values(a).every((v) => !v));
+  }).length;
+  const unansweredCount = rows.length - answeredCount;
+
+  // ---- Calculator / Symbols ----
+  const [calculatorOpen, setCalculatorOpen] = useState(false);
+  const [symbolsOpen, setSymbolsOpen] = useState(false);
+  const [periodicTableOpen, setPeriodicTableOpen] = useState(false);
+  const [dataBookletOpen, setDataBookletOpen] = useState(false);
+  const activeInputRef = useRef(null);
+  const activeSetterRef = useRef(null);
+  function registerActiveInput(el, setter) {
+    activeInputRef.current = el;
+    activeSetterRef.current = setter;
+  }
+  function insertSymbol(symbol) {
+    const el = activeInputRef.current;
+    const setter = activeSetterRef.current;
+    if (!el || !setter) return;
+    const result = insertAtCursor(el, symbol);
+    if (result) {
+      setter(result.value);
+      requestAnimationFrame(() => { el.focus(); el.setSelectionRange(result.cursor, result.cursor); });
+    }
+  }
+
+  async function handleEndAndLeave() {
+    await abandonChallenge(challenge.id, { focusViolationCount: violationCountRef.current });
+    submittedRef.current = true;
+    blocker.proceed?.();
+  }
+
+  if (loading) return <div className="flex min-h-screen items-center justify-center bg-[var(--color-paper)]"><ELabLoader /></div>;
+  if (error) return <p className="p-10 text-center text-sm text-[var(--color-coral)]">{error}</p>;
+  if (!challenge || !current) {
+    // Defense in depth: the loading effect above should already have
+    // set `error` for any resolution failure before reaching this point,
+    // but this state should never silently render nothing either way —
+    // a blank page with no diagnostic is exactly the bug being fixed here.
+    return <p className="p-10 text-center text-sm text-[var(--color-coral)]">This challenge couldn't be loaded. Please go back and try again, or contact support if this persists.</p>;
+  }
+
+  if (!readyScreenDismissed) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-[var(--color-paper)] px-6 text-center">
+        <p className="font-[var(--font-display)] text-2xl font-semibold text-[var(--color-ink)]">Ready to begin?</p>
+        <p className="max-w-sm text-sm text-[var(--color-ink-soft)]">
+          Once started, e-Lab will enter focused assessment mode. Leaving the assessment screen may be recorded.
+        </p>
+        <Button onClick={handleStartChallenge}>Start Challenge</Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex min-h-screen flex-col bg-[var(--color-paper)]">
+      {/* Top assessment toolbar */}
+      <header className="sticky top-0 z-30 border-b border-[var(--color-line)] bg-[var(--color-paper)]/95 px-4 py-2.5 backdrop-blur">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2">
+          <p className="text-sm font-semibold text-[var(--color-ink)]">e-Lab Challenge</p>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <ToolbarButton icon={CalculatorIcon} label="Calculator" onClick={() => { setCalculatorOpen((v) => !v); setSymbolsOpen(false); }} active={calculatorOpen} />
+            <ToolbarButton icon={Sigma} label="Symbols" onClick={() => { setSymbolsOpen((v) => !v); setCalculatorOpen(false); }} active={symbolsOpen} />
+            <ToolbarButton icon={Table2} label="Periodic Table" onClick={() => setPeriodicTableOpen(true)} />
+            <ToolbarButton icon={BookOpen} label="Data Booklet" onClick={() => setDataBookletOpen(true)} />
+          </div>
+        </div>
+        {!fullscreenAvailable && (
+          <p className="mx-auto mt-1.5 flex max-w-6xl items-center gap-1.5 text-[11px] text-[var(--color-ink-faint)]">
+            <Maximize size={11} /> Focused fullscreen mode isn't available on this device — the challenge still works normally.
+          </p>
+        )}
+      </header>
+
+      <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col lg:flex-row">
+        {/* LEFT — persistent, strongly-contrasting panel: timer, navigator, counts, end challenge.
+            Dark like the app's global sidebar (visual consistency), while the
+            question panel itself stays calm/light — reduces stimulation on the
+            content that actually matters, per the assessment-calm requirement,
+            without losing the "strongly contrasting" panel this brief asks for. */}
+        <aside className="w-full shrink-0 border-b border-[#1B2436] bg-[#0B1220] p-4 lg:w-[220px] lg:border-b-0 lg:border-r">
+          <div className="flex items-center gap-2 text-[#8C97B8]">
+            <Clock size={15} />
+            <span className="text-xs font-semibold uppercase tracking-wide">Time Remaining</span>
+          </div>
+          {remainingSeconds != null ? (
+            <p role="timer" aria-live="polite" className={`mt-1 font-mono text-3xl font-bold ${remainingSeconds < 60 ? "text-[#E0917E]" : "text-white"}`}>
+              {formatClock(remainingSeconds)}
+            </p>
+          ) : (
+            <p className="mt-1 text-sm text-[#8C97B8]">Untimed</p>
+          )}
+
+          <div className="mt-4 flex items-center justify-between text-xs text-[#8C97B8]">
+            <span className="font-semibold uppercase tracking-wide">Question Navigation</span>
+          </div>
+          <div className="mt-2 grid grid-cols-5 gap-1.5 lg:grid-cols-4">
+            {rows.map((r, i) => {
+              const isAnswered = answers[r.question_id] != null && answers[r.question_id] !== "";
+              const isFlagged = flagged.has(r.question_id);
+              return (
+                <button
+                  key={r.question_id} type="button" onClick={() => goTo(i)}
+                  aria-current={i === index ? "true" : undefined}
+                  aria-label={`Question ${i + 1}${isAnswered ? ", answered" : ", unanswered"}${isFlagged ? ", flagged" : ""}`}
+                  title={`Question ${i + 1}${isAnswered ? " \u2014 answered" : " \u2014 unanswered"}${isFlagged ? " \u2014 flagged" : ""}`}
+                  className={`relative flex h-9 items-center justify-center rounded border text-xs font-semibold ${
+                    i === index ? "border-white bg-white text-[#0B1220]" :
+                    isAnswered ? "border-[#4FB3A3]/50 bg-[#4FB3A3]/15 text-[#4FB3A3]" :
+                    "border-white/15 text-[#8C97B8]"
+                  }`}
+                >
+                  {i + 1}
+                  {isFlagged && <Flag size={9} className="absolute -right-1 -top-1 text-[#E2872F]" />}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="mt-4 rounded-md border border-white/10 bg-white/5 p-3 text-xs text-[#8C97B8]">
+            <p className="font-semibold text-white">{questions.length} Questions</p>
+            <p className="mt-1">Answered {answeredCount}</p>
+            <p>Unanswered {unansweredCount}</p>
+            <p>Flagged {flagged.size}</p>
+          </div>
+          {violationCount > 0 && (
+            <p className="mt-3 text-[11px] text-[#8C97B8]">Focus interruptions: {violationCount}</p>
+          )}
+
+          <button
+            type="button" onClick={() => setConfirmMode("end")}
+            className="mt-4 w-full rounded-md border border-white/15 px-3 py-2 text-xs font-semibold text-[#8C97B8] hover:border-[#E0917E] hover:text-[#E0917E]"
+          >
+            End Challenge
+          </button>
+        </aside>
+
+        {/* CENTRAL — the question itself, comfortably wide but never full-bleed */}
+        <main className="mx-auto w-full max-w-[880px] flex-1 px-4 py-6 sm:py-8">
+          <div className="mb-3 flex items-center justify-between text-xs text-[var(--color-ink-faint)]">
+            <span>{challenge.topic_codes.join(" + ")}</span>
+            <span>Question {index + 1} of {questions.length}</span>
+          </div>
+
+          <div className="rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-6 shadow-[0_1px_2px_rgba(20,30,80,0.05),0_4px_14px_-4px_rgba(20,30,80,0.08)] sm:p-8">
+            <QuestionRenderer
+              question={current}
+              questionNumber={index + 1}
+              answer={answers[current.id]}
+              onAnswer={(value) => setAnswers((prev) => ({ ...prev, [current.id]: value }))}
+              onFocusInput={registerActiveInput}
+            />
+          </div>
+
+          <div className="mt-4 flex items-center justify-between">
+            <button type="button" onClick={toggleFlag} className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm font-medium ${flagged.has(currentRow.question_id) ? "border-[var(--color-amber)] bg-[var(--color-amber-soft)] text-[var(--color-amber)]" : "border-[var(--color-line)] text-[var(--color-ink-soft)]"}`}>
+              <Flag size={14} /> {flagged.has(currentRow.question_id) ? "Flagged" : "Flag Question"}
+            </button>
+            <div className="flex items-center gap-2.5">
+              <Button variant="secondary" disabled={index === 0} onClick={() => goTo(index - 1)}>Previous</Button>
+              {index < questions.length - 1 ? (
+                <Button onClick={() => goTo(index + 1)}>Next</Button>
+              ) : (
+                <Button onClick={() => setConfirmMode("submit")} disabled={submitting}>
+                  {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Submit Challenge"}
+                </Button>
+              )}
+            </div>
+          </div>
+        </main>
+      </div>
+
+      {(calculatorOpen || symbolsOpen) && (
+        <div className="fixed bottom-6 right-4 z-40">
+          {calculatorOpen && <Calculator onClose={() => setCalculatorOpen(false)} />}
+          {symbolsOpen && <SymbolPalette onSelect={insertSymbol} onClose={() => setSymbolsOpen(false)} />}
+        </div>
+      )}
+      {periodicTableOpen && <PeriodicTableTool onClose={() => setPeriodicTableOpen(false)} />}
+      {dataBookletOpen && <DataBooklet onClose={() => setDataBookletOpen(false)} />}
+
+      {/* Explicit End Challenge / Submit confirm — shared by both entry points */}
+      {confirmMode && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setConfirmMode(null)}>
+          <div className="w-full max-w-sm rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-5" onClick={(e) => e.stopPropagation()}>
+            <p className="text-sm font-medium text-[var(--color-ink)]">{confirmMode === "end" ? "End Challenge?" : "Submit Challenge?"}</p>
+            <p className="mt-1 text-xs text-[var(--color-ink-faint)]">
+              {unansweredCount > 0 ? `You still have ${unansweredCount} unanswered question${unansweredCount === 1 ? "" : "s"}.` : "Your current challenge is still in progress."}
+            </p>
+            <div className="mt-4 flex gap-3">
+              <Button variant="ghost" onClick={() => setConfirmMode(null)}>{confirmMode === "end" ? "Continue Challenge" : "Return to Challenge"}</Button>
+              <Button variant="danger" onClick={() => doSubmit("submitted")} disabled={submitting}>
+                {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Submit & End"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Blocked in-app navigation (Learn/Resources/etc link, back button within the SPA) */}
+      {pendingBlockedNav && blocker.state === "blocked" && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-sm rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-5">
+            <p className="flex items-center gap-1.5 text-sm font-medium text-[var(--color-ink)]"><AlertTriangle size={15} className="text-[var(--color-amber)]" /> Challenge in progress</p>
+            <p className="mt-1 text-xs text-[var(--color-ink-faint)]">Leaving this assessment will end your current challenge.</p>
+            <div className="mt-4 flex gap-3">
+              <Button onClick={() => { setPendingBlockedNav(false); blocker.reset?.(); }}>Stay in Challenge</Button>
+              <Button variant="danger" onClick={handleEndAndLeave}>End &amp; Leave</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Focus-interruption overlay — first/second violation only; the
+          3rd auto-submits via doSubmit above, so this overlay never has
+          to offer anything beyond "resume". */}
+      {interruptionOverlay && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-paper)] p-6" role="alertdialog" aria-modal="true">
+          <div className="max-w-sm text-center">
+            <AlertTriangle size={22} className="mx-auto text-[var(--color-amber)]" />
+            <p className="mt-3 font-[var(--font-display)] text-lg font-semibold text-[var(--color-ink)]">Assessment interrupted</p>
+            <p className="mt-2 text-sm text-[var(--color-ink-soft)]">
+              You left the active challenge screen. For a focused assessment, remain on this screen until the challenge is completed.
+            </p>
+            {violationCount >= 2 && (
+              <p className="mt-2 text-sm font-medium text-[var(--color-coral)]">
+                This assessment has been interrupted multiple times. Another interruption will automatically submit your challenge.
+              </p>
+            )}
+            <p className="mt-3 text-xs text-[var(--color-ink-faint)]">Focus interruptions: {violationCount}</p>
+            <Button className="mt-4" onClick={() => setInterruptionOverlay(false)}>Resume Challenge</Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ToolbarButton({ icon: Icon, label, onClick, active }) {
+  return (
+    <button
+      type="button" onClick={onClick} aria-label={label} aria-pressed={active}
+      className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium ${active ? "border-[var(--color-indigo)] bg-[var(--color-indigo-soft)] text-[var(--color-indigo)]" : "border-[var(--color-line)] text-[var(--color-ink-soft)] hover:border-[var(--color-ink)]"}`}
+    >
+      <Icon size={13} /> <span className="hidden sm:inline">{label}</span>
+    </button>
+  );
+}

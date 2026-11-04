@@ -30,6 +30,7 @@ export const SIMULATION_REGISTRY = {
   "bonding-visualizer": { label: "Bonding Visualizer" },
   "hybridisation-explorer": { label: "Hybridisation Explorer (3D)" },
   "intermolecular-forces-visualiser": { label: "Intermolecular Forces Visualiser" },
+  "spectroscopy-studio": { label: "Spectroscopy Simulation Lab" },
 };
 
 // label -> id, built once. This is what lets InteractiveFrame resolve a

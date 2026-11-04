@@ -34,3 +34,33 @@ Real GPU, real touch hardware, Safari and Firefox, screen readers. Clouds are sm
 * **Regression tests** (`scripts/test-imf-model.mjs`, fail on the bug): one group per molecule, atom meshes at their geometry positions, rigidity and exact atom world positions after random translate/rotate, stick ends coincide with atoms, constant bond lengths, bonded-neighbour distances, bond orders, angles (H2O 104.5, NH3 107, CH4 109.5, CO2 180, SO2 bent), colours. Headless Chromium projects the real scene graph to the screen for all 14 molecules (and after drag, rotate, tilt, cloud mode, and in every Learn step) and checks atoms are inside the stage, stick ends are at their atoms and a ray cast at every atom centre really hits that molecule.
 * **Learn**: four data-driven demonstrations (H2+H2, HCl+H2, HCl+HCl, H2O+H2O), 5 steps each, one sentence each, Show molecules -> Reveal electron distribution -> Demonstrate -> Highlight attraction. Controls: Play/Pause, Previous, Next, Replay, Try in Explore. Next / Previous jump to the settled state of the step at once (about 5-15 ms to the first drawn frame). The lesson and step persist (`useSimulationSessionState`). Induced polarisation is drawn with a square-root visual compression and Learn uses the maximum exaggeration so weak induced dipoles are visible (qualitative; real induced dipoles are far smaller than permanent ones).
 * **Indicators**: no arrows or halos by default. Thin dashed beads join the facing charge centres (green attraction, red repulsion, yellow hydrogen bond); small dipole arrows only with the Dipoles switch (Explore); delta labels only for atoms that carry charge.
+
+## Round 3: spinning clouds, correlated H2 polarisation, sign logic, liquid structure
+
+**Root cause of the spinning clouds.** `computeInteractions` gave the first molecule of every nearest-neighbour pair an instantaneous dipole whose
+DIRECTION was `fluctuationDirection(t, axis, seed)`: a vector swept through all orientations as a function of time (angles `2*pi*0.31*t + ...`),
+applied unconditionally in London mode. The cloud shift (`applyShift`) and the ESP colours (`applyEspColors`) are functions of that dipole, so the
+red/blue regions and the bulge circled the molecule although the mesh itself never turned. The sweep is gone.
+
+* The instantaneous dipole is now CORRELATED and deterministic: along the A->B axis, delta+ end facing the neighbour (so the neighbour's induced dipole
+  makes its facing end delta-). The only time dependence left is a +-10 % breathing of the amplitude (`fluctuationAmplitude`), never a direction.
+* It exists only for nonpolar-nonpolar pairs and is gated by separation (`fluctuationGate`, 1 at contact -> 0 at 2 x the sum of radii), so H2 alone,
+  or far from another H2, is the symmetric average (no labels, no arrow, neutral colour). Nothing is ever permanently assigned to H2.
+* The cloud mesh is a child of the same group as the molecule; `api.cloudInfo()` exposes both world quaternions (identical) for the tests.
+* Polarisability of linear molecules is axially anisotropic (alpha_par/alpha_perp ~ 1.3), so response and London strength depend on orientation.
+* Polar molecules: atom populations weight the Gaussian blobs (`atomWeight`, delta- atoms heavier), so the cloud follows the real (bent) geometry and its
+  density centre sits towards delta-. Their delta labels are permanent atom labels; induced response shows only as cloud deformation.
+* `chargeSites` / `interactionLines` (model/imf.js) are the single source of the dotted indicators for Explore, Learn and the tests: attraction joins the
+  nearest OPPOSITE pair of charge sites (every charged atom is a site), repulsion the nearest LIKE pair, an H-bond joins donor H and acceptor atom.
+* Learn London dispersion: five steps with the five required sentences; same renderer and model as Explore.
+
+**Heat cube.** `model/particles.js`: pair spacing `d0 = nn (1 + expand * meltedness * cohesion)` (expand 0.09; 0.09 for H-bonded liquids) so the
+liquid is 1.05-1.2 x the solid spacing, liquid thermal energy ~ sqrt(T/Tm), a soft H...A pull for water/NH3 (force + torque) so molecules turn into
+H-bond geometry. Transient interaction links (`updateLinks`): geometry criterion (water: D...A < 1.09-1.3 nn and H-D...A < 28-48 deg; polar: favourable
+Coulomb energy only; nonpolar: contact distance; NaCl: opposite ions), stable while solid, a break rate + refractory period as sites melt, hysteresis
+(form > 0.5, keep > 0.2), fade in/out; a gas particle only links on contact. Rendered as dotted bead rows (CubeScene). Measured in `scripts/test-imf-model.mjs`
+(`phaseSample`) and in Chromium (`verify-intermolecular-forces.mjs`).
+
+Approximations: the visible dipole amplitude, colour gain and cloud shift are exaggerated qualitative choices (labelled in the UI); line counts in the
+liquid are a visual summary of a geometric H-bond criterion, not a computed network; the particle dynamics are a visual Langevin model (N = 48), the
+phase fractions come from the energy model. NH3 H-bond lines are sparse (geometry rarely satisfied in the schematic lattice).

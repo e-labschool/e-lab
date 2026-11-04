@@ -1,0 +1,257 @@
+/* Spectroscopy Simulation Lab. Only what the shared Simulation Dashboard Layout does not already provide.
+   THEME: every colour is a variable. Default "dark" (deep navy) = the SAME default as VSEPR_THEME / HYBRIDISATION_THEME, with restrained
+   teal / cyan / violet accents. Colour is never the only carrier of meaning: alpha / beta, field, RF and magnetisation are also labelled. */
+
+.ss-theme { display: contents; }
+
+.ss-theme[data-ss-theme="dark"] [data-testid="spectroscopy-workspace"] {
+  --ss-bg: radial-gradient(120% 90% at 50% 0%, #11295c 0%, #0b1d45 55%, #091634 100%);
+  --ss-panel: rgba(12, 27, 66, 0.82); --ss-panel-2: rgba(30, 52, 108, 0.55); --ss-line: #2b4780; --ss-ctl: #7da2e6;
+  --ss-ink: #e9f1ff; --ss-muted: #aabfe8; --ss-faint: #8197c8;
+  --ss-teal: #2dd4bf; --ss-cyan: #38bdf8; --ss-violet: #a78bfa; --ss-amber: #fbbf24; --ss-rose: #f472b6; --ss-orange: #fb923c; --ss-green: #86efac; --ss-red: #fca5a5;
+  --ss-accent: #2dd4bf; --ss-accent2: #38bdf8; --ss-accent-solid: #0f766e;
+  --ss-alpha: #2dd4bf; --ss-beta: #a78bfa; --ss-b0: #38bdf8; --ss-rf: #fb923c; --ss-mag: #fcd34d; --ss-mxy: #f472b6; --ss-neutral: #c7d2ea;
+  --ss-stage: radial-gradient(80% 75% at 50% 40%, #16397d 0%, #0c2253 58%, #081a3f 100%);
+  --ss-plot-bg: rgba(8, 20, 50, 0.55); --ss-grid: rgba(150, 175, 230, 0.16); --ss-axis: #8da4d8; --ss-tick: #b9c9ee;
+  --ss-label-bg: rgba(8, 20, 50, 0.86); --ss-label-ink: #f4f8ff; --ss-warn: #ffd37a; --ss-ok: #86efac; --ss-bad: #ffa3a3;
+  --ss-shadow: 0 2px 10px rgba(0, 0, 0, 0.35); --ss-focus: #ffd166;
+}
+
+/* ---- Shell overrides ----------------------------------------------------- */
+[data-testid="spectroscopy-workspace"].sd-root {
+  --sd-navy: var(--ss-ink); --sd-ink: var(--ss-ink); --sd-muted: var(--ss-muted); --sd-line: var(--ss-line); --sd-blue: #2563eb;
+  background: var(--ss-bg); border-color: var(--ss-line); color: var(--ss-ink); color-scheme: dark;
+}
+[data-testid="spectroscopy-workspace"] .sd-btn { background: var(--ss-panel-2); border-color: var(--ss-ctl); color: var(--ss-ink); }
+[data-testid="spectroscopy-workspace"] .sd-btn:hover:not(:disabled) { background: rgba(56, 189, 248, 0.2); }
+[data-testid="spectroscopy-workspace"] .sd-bottom { background: var(--ss-panel); border-color: var(--ss-line); box-shadow: none; }
+[data-testid="spectroscopy-workspace"] .sd-title { color: var(--ss-ink); }
+[data-testid="spectroscopy-workspace"] .sd-subtitle { color: var(--ss-muted); }
+[data-testid="spectroscopy-workspace"] .sd-explain-text { color: var(--ss-ink); }
+[data-testid="spectroscopy-workspace"] .sd-pop-panel { background: #0d2050; color: var(--ss-ink); border-color: var(--ss-line); }
+[data-testid="spectroscopy-workspace"] .sd-header-actions { gap: 8px; }
+[data-testid="spectroscopy-workspace"] .sd-header-tabs { min-width: 0; }
+[data-testid="spectroscopy-workspace"].sd-root[data-header="one"] .sd-header { grid-template-columns: minmax(150px, max-content) minmax(0, 1fr) auto; }
+[data-testid="spectroscopy-workspace"] .sd-subtitle { max-width: 26ch; }
+[data-testid="spectroscopy-workspace"] .sd-tabs--segmented { flex-wrap: wrap; }
+[data-testid="spectroscopy-workspace"] .sd-title-block { overflow: hidden; }
+[data-testid="spectroscopy-workspace"].sd-root:not([data-layout="stacked"]) .sd-col--controls { flex: 0 0 clamp(200px, 19%, 290px); }
+[data-testid="spectroscopy-workspace"].sd-root:not([data-layout="stacked"]) .sd-main[data-graph="shown"] .sd-col--graph { flex: 0 0 clamp(240px, 27%, 440px); }
+[data-testid="spectroscopy-workspace"] .sd-col--chamber { min-width: 0; }
+/* Molecular stages, Splitting Patterns and placeholders use the whole width: the controls column is only for the physics stages. */
+[data-testid="spectroscopy-workspace"]:has(.ss-chamber:not([data-kind="physics"])) .sd-col--controls { display: none; }
+[data-testid="spectroscopy-workspace"] .sd-col--graph { overflow: hidden; }
+[data-testid="spectroscopy-workspace"].sd-root[data-layout="stacked"] .sd-col--chamber { height: auto; min-height: 560px; }
+[data-testid="spectroscopy-workspace"].sd-root[data-layout="stacked"] .sd-col--controls { display: flex; }
+[data-testid="spectroscopy-workspace"].sd-root[data-layout="stacked"]:has(.ss-chamber:not([data-kind="physics"])) .sd-col--controls { display: none; }
+[data-testid="spectroscopy-workspace"] .ss-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); border: 0; white-space: nowrap; }
+
+.ss-slot { min-height: 0; min-width: 0; display: flex; flex-direction: column; gap: 6px; height: 100%; overflow-x: hidden; overflow-y: auto; scrollbar-width: thin; }
+.ss-slot--graph { overflow-y: auto; }
+.ss-explain { min-width: 0; display: block; }
+.ss-explain .sd-explain-text, .ss-explain-text { margin: 0; font-size: var(--sd-fs); line-height: 1.35; overflow: visible; display: block; white-space: normal; }
+.ss-explain-text b { color: var(--ss-teal); }
+
+/* ---- Chamber, stepper, stage box ---------------------------------------- */
+.ss-chamber { display: flex; flex-direction: column; gap: var(--sd-gap); height: 100%; min-height: 0; min-width: 0; }
+.ss-stagebox { flex: 1 1 0; min-height: 0; min-width: 0; position: relative; display: flex; flex-direction: column; overflow: hidden; border-radius: 12px; }
+.ss-chamber[data-kind="physics"] .ss-stagebox { background: var(--ss-stage); border: 1px solid var(--ss-line); }
+.ss-chamber[data-kind="dev"] .ss-stagebox { background: var(--ss-panel); border: 1px solid var(--ss-line); }
+
+.ss-stepper { container-type: inline-size; }
+@container (max-width: 760px) { .ss-step-sub { display: none; } .ss-step-btn { padding: 4px 7px; gap: 5px; } .ss-step-label { font-size: var(--sd-fs); } }
+@container (max-width: 560px) { .ss-step:not(.is-current) .ss-step-label { display: none; } .ss-step:not(.is-current) { flex: 0 0 44px; } }
+.ss-stepper ol { display: flex; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.ss-step { flex: 1 1 0; min-width: 0; position: relative; }
+.ss-step-btn {
+  width: 100%; display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 4px 10px; text-align: left; cursor: pointer;
+  border: 1.5px solid var(--ss-ctl); border-radius: 10px; background: var(--ss-panel-2); color: var(--ss-ink); font: inherit;
+}
+.ss-step-btn:hover { background: rgba(56, 189, 248, 0.2); }
+.ss-step.is-current .ss-step-btn { background: var(--ss-accent-solid); border-color: #5eead4; color: #fff; }
+.ss-step-n { flex: 0 0 auto; width: 22px; height: 22px; border-radius: 50%; display: inline-grid; place-items: center; font-weight: 800; font-size: 12px; border: 1.5px solid currentColor; }
+.ss-step-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.15; }
+.ss-step-label { font-weight: 700; font-size: calc(var(--sd-fs) + 0.5px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ss-step-sub { font-size: var(--sd-fs-sm); opacity: 0.85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ss-root-narrow .ss-step-sub { display: none; }
+[data-testid="spectroscopy-workspace"][data-w="md"] .ss-step-sub, [data-testid="spectroscopy-workspace"][data-layout="stacked"] .ss-step-sub { display: none; }
+[data-testid="spectroscopy-workspace"][data-layout="stacked"] .ss-step-label { font-size: 11px; white-space: normal; }
+[data-testid="spectroscopy-workspace"][data-layout="stacked"] .ss-step-btn { padding: 4px 6px; gap: 4px; min-height: 44px; }
+[data-testid="spectroscopy-workspace"][data-layout="stacked"] .ss-step-n { width: 18px; height: 18px; font-size: 11px; }
+
+/* ---- Transport ------------------------------------------------------------ */
+.ss-transport { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-width: 0; flex: 1 1 auto; }
+.ss-transport .sd-btn--sm { min-height: 30px; }
+.ss-speed-label { font-size: var(--sd-fs-sm); color: var(--ss-muted); margin-left: 6px; }
+.ss-time-note { font-size: var(--sd-fs-sm); color: var(--ss-muted); margin-left: auto; text-align: right; }
+[data-testid="spectroscopy-workspace"][data-w="md"] .ss-transport .sd-btn--sm span { display: none; }
+[data-testid="spectroscopy-workspace"][data-w="md"] .ss-time-note { display: none; }
+
+/* ---- Placeholder ----------------------------------------------------------- */
+.ss-dev { margin: auto; max-width: 560px; padding: 24px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px; color: var(--ss-ink); }
+.ss-dev h3 { margin: 4px 0 0; font-size: 20px; }
+.ss-dev p { margin: 0; color: var(--ss-muted); }
+.ss-dev-badge { display: inline-block; padding: 2px 10px; border-radius: 999px; border: 1.5px solid var(--ss-amber); color: var(--ss-amber) !important; font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+.ss-dev-note { font-size: 12.5px; }
+.ss-dev svg { color: var(--ss-amber); }
+
+/* ---- Dark surfaces for the shared segmented controls ----------------------- */
+[data-testid="spectroscopy-workspace"] .sd-tabs--segmented { background: var(--ss-panel-2); border: 1px solid var(--ss-line); }
+[data-testid="spectroscopy-workspace"] .sd-tabs--segmented .sd-tab { color: var(--ss-ink); padding: 2px 9px; font-size: calc(var(--sd-fs) - 0.5px); }
+[data-testid="spectroscopy-workspace"] .sd-tabs--segmented .sd-tab[aria-selected="true"],
+[data-testid="spectroscopy-workspace"] .sd-tabs--segmented .sd-tab[aria-checked="true"] { background: var(--ss-accent-solid); color: #fff; box-shadow: none; }
+[data-testid="spectroscopy-workspace"] .sd-tabs--segmented .sd-tab:not([aria-selected="true"]):not([aria-checked="true"]):hover { background: rgba(56, 189, 248, 0.2); border-color: var(--ss-line); }
+[data-testid="spectroscopy-workspace"] .sd-switch { background: var(--ss-panel-2); border: 1px solid var(--ss-line); }
+[data-testid="spectroscopy-workspace"] .sd-switch button { color: var(--ss-ink); min-height: 26px; padding: 0 9px; font-size: var(--sd-fs-sm); }
+[data-testid="spectroscopy-workspace"] .sd-switch button[aria-checked="true"] { background: var(--ss-accent-solid); color: #fff; }
+[data-testid="spectroscopy-workspace"] .sd-switch button:not([aria-checked="true"]):hover { background: rgba(56, 189, 248, 0.2); }
+
+/* ---- Physics stages: activities, groups, controls ------------------------- */
+.ss-activities { display: flex; gap: 4px; padding: 6px 8px 0; flex: 0 0 auto; flex-wrap: wrap; }
+.ss-activity { min-height: 30px; padding: 0 12px; border: 1.5px solid var(--ss-ctl); border-radius: 9px; background: var(--ss-panel-2); color: var(--ss-ink); font: inherit; font-weight: 700; font-size: var(--sd-fs); cursor: pointer; }
+.ss-activity:hover { background: rgba(56, 189, 248, 0.2); }
+.ss-activity[aria-selected="true"] { background: var(--ss-accent-solid); border-color: #5eead4; color: #fff; }
+.ss-activity-body { flex: 1 1 0; min-height: 0; min-width: 0; display: flex; padding: 8px; gap: 8px; position: relative; }
+.ss-viz-col { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 6px; }
+.ss-viz { position: relative; flex: 1 1 0; min-width: 0; min-height: 0; border-radius: 10px; overflow: hidden; }
+.ss-three { position: absolute; inset: 0; }
+.ss-three canvas { display: block; }
+.ss-nogl { margin: auto; max-width: 420px; text-align: center; padding: 16px; color: var(--ss-muted); }
+.ss-nogl p { margin: 4px 0; }
+.ss-field-split { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; gap: 8px; width: 100%; }
+.ss-viz--main { flex: 1.35 1 0; }
+.ss-field-side { flex: 1 1 0; min-width: 0; min-height: 0; overflow: auto; border: 1px solid var(--ss-line); border-radius: 10px; background: var(--ss-plot-bg); padding: 6px; }
+.ss-energy { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.ss-energy > svg { flex: 1 1 0; min-height: 0; max-width: 100%; }
+.ss-energy-notes { flex: 0 0 auto; font-size: var(--sd-fs-sm); color: var(--ss-muted); }
+.ss-energy-notes p { margin: 2px 0; }
+.ss-tag { font-size: 12px; font-weight: 700; white-space: nowrap; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8); }
+.ss-badge-tl { position: absolute; top: 8px; left: 8px; max-width: min(52%, 420px); padding: 6px 9px; border-radius: 9px; background: var(--ss-label-bg); border: 1px solid var(--ss-line); color: var(--ss-label-ink); font-size: var(--sd-fs-sm); line-height: 1.3; display: flex; flex-direction: column; gap: 2px; }
+.ss-badge-tl b { color: var(--ss-teal); font-size: var(--sd-fs); }
+.ss-badge--warn { border-color: var(--ss-amber); }
+.ss-badge--warn b { color: var(--ss-amber); }
+.ss-hud { position: absolute; right: 8px; top: 8px; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; padding: 5px 9px; border-radius: 9px; background: var(--ss-label-bg); border: 1px solid var(--ss-line); font-size: var(--sd-fs); max-width: 44%; text-align: right; }
+.ss-hud b { color: var(--ss-mag); }
+.ss-legend { display: flex; flex-wrap: wrap; gap: 3px 12px; margin: 0; padding: 0; list-style: none; font-size: var(--sd-fs-sm); color: var(--ss-muted); }
+.ss-legend li { display: inline-flex; align-items: center; gap: 5px; }
+.ss-legend-bl { position: absolute; left: 8px; bottom: 8px; max-width: calc(100% - 16px); padding: 5px 8px; border-radius: 9px; background: var(--ss-label-bg); border: 1px solid var(--ss-line); }
+.ss-legend-inline { padding: 2px 6px; }
+.ss-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
+.ss-dot--arrow { border-radius: 2px 6px 6px 2px; width: 13px; height: 7px; }
+.ss-dot--bar { border-radius: 2px; width: 14px; height: 4px; }
+
+.ss-group { flex: 0 0 auto; padding: 7px 8px; border: 1px solid var(--ss-line); border-radius: 11px; background: var(--ss-panel); display: flex; flex-direction: column; gap: 6px; }
+.ss-group-head h3 { margin: 0; font-size: var(--sd-fs); font-weight: 800; color: var(--ss-teal); letter-spacing: 0.01em; }
+.ss-btnrow { display: flex; gap: 6px; flex-wrap: wrap; }
+.ss-btnrow .sd-btn { flex: 1 1 auto; }
+.ss-hint { margin: 0; font-size: var(--sd-fs-sm); color: var(--ss-muted); line-height: 1.35; }
+.ss-hint b { color: var(--ss-ink); }
+.ss-const { color: var(--ss-faint); }
+.ss-check { display: flex; gap: 7px; align-items: flex-start; font-size: var(--sd-fs); cursor: pointer; }
+.ss-check input { margin-top: 3px; accent-color: #2dd4bf; width: 15px; height: 15px; }
+.ss-check small { display: block; color: var(--ss-muted); font-size: var(--sd-fs-sm); }
+.ss-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; margin: 0; }
+.ss-stat { padding: 4px 7px; border-radius: 8px; background: var(--ss-panel-2); border: 1px solid var(--ss-line); min-width: 0; }
+.ss-stat dt { font-size: var(--sd-fs-sm); color: var(--ss-muted); line-height: 1.2; }
+.ss-stat dd { margin: 0; font-weight: 800; font-size: calc(var(--sd-fs) + 1px); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.ss-stat dd small { font-weight: 600; color: var(--ss-muted); font-size: var(--sd-fs-sm); }
+.ss-stat--b0 dd { color: var(--ss-cyan); } .ss-stat--mag dd { color: var(--ss-mag); } .ss-stat--mxy dd { color: var(--ss-mxy); } .ss-stat--rf dd { color: var(--ss-rf); }
+.ss-stat--alpha dd { color: var(--ss-alpha); } .ss-stat--beta dd { color: var(--ss-beta); }
+.ss-teacher { flex: 0 0 auto; padding: 7px 9px; border-radius: 11px; border: 1.5px dashed var(--ss-violet); background: rgba(167, 139, 250, 0.1); font-size: var(--sd-fs-sm); line-height: 1.4; color: var(--ss-ink); }
+.ss-teacher h4 { margin: 0 0 3px; font-size: var(--sd-fs); color: var(--ss-violet); display: flex; gap: 5px; align-items: center; }
+.ss-teacher p { margin: 3px 0; }
+.ss-predict { flex: 0 0 auto; padding: 7px 9px; border-radius: 11px; border: 1.5px solid var(--ss-cyan); background: rgba(56, 189, 248, 0.08); font-size: var(--sd-fs); }
+.ss-predict-q { margin: 0 0 6px; font-weight: 700; line-height: 1.3; }
+.ss-predict-opts { display: flex; flex-direction: column; gap: 4px; }
+.ss-chip { text-align: left; min-height: 28px; padding: 3px 9px; border-radius: 8px; border: 1.5px solid var(--ss-ctl); background: var(--ss-panel-2); color: var(--ss-ink); font: inherit; font-size: var(--sd-fs); cursor: pointer; }
+.ss-chip:hover { background: rgba(56, 189, 248, 0.2); }
+.ss-chip[aria-checked="true"] { background: #1d4ed8; border-color: #93c5fd; color: #fff; }
+.ss-predict-fb { margin: 6px 0 0; line-height: 1.35; font-size: var(--sd-fs); }
+.ss-predict-fb.is-ok b { color: var(--ss-ok); } .ss-predict-fb.is-no b { color: var(--ss-warn); }
+.ss-link { background: none; border: 0; padding: 0; font: inherit; color: var(--ss-cyan); text-decoration: underline; cursor: pointer; }
+.ss-plotbox { position: relative; min-width: 0; }
+.ss-plot { display: block; max-width: 100%; }
+.ss-plot-bg { fill: var(--ss-plot-bg); }
+.ss-grid { stroke: var(--ss-grid); stroke-width: 1; }
+.ss-axis { stroke: var(--ss-axis); stroke-width: 1; fill: none; }
+.ss-tick { fill: var(--ss-tick); font-size: 11px; }
+.ss-axis-label { fill: var(--ss-muted); font-size: 11.5px; }
+.ss-cursor { stroke: #fff; stroke-width: 1.3; stroke-dasharray: 2 3; }
+.ss-svgtext { fill: var(--ss-ink); font-size: 12px; }
+.ss-svgtext--sm { font-size: 10.5px; fill: var(--ss-muted); }
+.ss-svgtext--b { font-weight: 800; }
+.ss-rfstrip { flex: 0 0 auto; width: 100%; height: 54px; }
+.ss-box { fill: rgba(251, 146, 60, 0.18); stroke: var(--ss-rf); stroke-width: 1.5; } .ss-wire { stroke: var(--ss-rf); stroke-width: 2; }
+.ss-coil { fill: none; stroke: var(--ss-rf); stroke-width: 2; } .ss-tube { fill: rgba(125, 211, 252, 0.3); stroke: #7dd3fc; stroke-width: 1.2; }
+
+.ss-res { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 8px; width: 100%; }
+.ss-res-top { flex: 1.5 1 0; min-height: 0; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.ss-res-bottom { flex: 1 1 0; min-height: 0; display: flex; gap: 10px; min-width: 0; }
+.ss-res-plot2 { flex: 1.4 1 0; min-width: 0; min-height: 0; overflow: hidden; }
+.ss-res-facts { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 6px; overflow: auto; }
+.ss-viz-title { margin: 0; font-size: calc(var(--sd-fs) + 1.5px); font-weight: 800; color: var(--ss-ink); }
+.ss-clickplot { cursor: crosshair; min-height: 0; flex: 1 1 0; }
+.ss-meter { margin: auto; max-width: 440px; width: 100%; text-align: center; }
+.ss-meter-bar { height: 22px; border-radius: 11px; background: var(--ss-panel-2); border: 1px solid var(--ss-line); overflow: hidden; margin: 6px 0; }
+.ss-meter-bar > div { height: 100%; background: linear-gradient(90deg, #f472b6, #fcd34d); transition: width 0.15s; }
+.ss-orient { width: 100%; max-height: 260px; }
+
+/* Slider rows, notes and switches of the shared dashboard on the navy surface */
+[data-testid="spectroscopy-workspace"] .sd-row { background: rgba(20, 40, 92, 0.7); border-color: var(--ss-line); border-left-color: var(--sd-color); color: var(--ss-ink); }
+[data-testid="spectroscopy-workspace"] .sd-row--active, [data-testid="spectroscopy-workspace"] .sd-row--edit { background: color-mix(in srgb, var(--sd-color) 16%, rgba(12, 27, 66, 0.9)); border-color: color-mix(in srgb, var(--sd-color) 45%, #0c1b42); border-left-color: var(--sd-color); }
+[data-testid="spectroscopy-workspace"] .sd-row-label { color: var(--ss-ink); }
+[data-testid="spectroscopy-workspace"] .sd-note { color: var(--ss-warn); }
+[data-testid="spectroscopy-workspace"] .sd-setting-text { color: var(--ss-ink); }
+[data-testid="spectroscopy-workspace"] .sd-setting input { accent-color: #2dd4bf; }
+[data-testid="spectroscopy-workspace"] .sd-badge { color: #fff; }
+
+/* ---- Instrument and signal ------------------------------------------------ */
+.ss-instr-wrap { position: relative; flex: 1 1 0; min-width: 0; min-height: 0; border-radius: 10px; overflow: hidden; }
+.ss-instr { position: absolute; inset: 0; width: 100%; height: 100%; }
+.ss-instr-foot { position: absolute; left: 10px; right: 10px; bottom: 6px; text-align: left; pointer-events: none; text-shadow: 0 1px 2px #000; }
+.ss-instr .ss-svgtext { pointer-events: none; }
+.ss-comp { cursor: pointer; outline: none; transition: opacity 0.25s; }
+.ss-comp-hit { fill: transparent; stroke: transparent; stroke-width: 2; }
+.ss-comp:hover .ss-comp-hit { stroke: var(--c); stroke-dasharray: 5 4; }
+.ss-comp.is-sel { filter: drop-shadow(0 0 7px var(--c)); }
+.ss-comp.is-sel .ss-comp-hit { stroke: var(--c); stroke-width: 2.5; }
+.ss-comp:focus-visible .ss-comp-hit { stroke: var(--ss-focus); stroke-width: 3; stroke-dasharray: none; }
+.ss-comp.is-dim { opacity: 0.55; }
+.ss-box { fill: rgba(30, 52, 108, 0.7); stroke-width: 1.6; }
+.ss-box--tx { stroke: #fbbf24; } .ss-box--rx { stroke: #a78bfa; } .ss-box--pr { stroke: #f472b6; }
+.ss-display { fill: rgba(8, 20, 50, 0.8); stroke: #f472b6; stroke-width: 1.4; }
+.ss-hud--mini { top: auto; bottom: 30px; right: 10px; padding: 4px; }
+.ss-mini { display: flex; gap: 6px; }
+.ss-steplist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.ss-steplink { width: 100%; display: flex; gap: 8px; align-items: center; text-align: left; min-height: 28px; padding: 2px 8px; border: 1.5px solid var(--ss-ctl); border-radius: 8px; background: var(--ss-panel-2); color: var(--ss-ink); font: inherit; font-size: var(--sd-fs); cursor: pointer; }
+.ss-steplink:hover { background: rgba(56, 189, 248, 0.2); }
+.ss-steplink[aria-current="step"] { background: var(--ss-accent-solid); border-color: #5eead4; color: #fff; }
+.ss-steplink-n { width: 18px; height: 18px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 11px; font-weight: 800; border: 1.5px solid currentColor; flex: 0 0 auto; }
+.ss-complist { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
+.ss-compbtn { display: flex; align-items: center; gap: 6px; min-height: 28px; padding: 2px 8px; border: 1.5px solid var(--ss-ctl); border-left: 4px solid var(--c); border-radius: 8px; background: var(--ss-panel-2); color: var(--ss-ink); font: inherit; font-size: var(--sd-fs-sm); text-align: left; cursor: pointer; }
+.ss-compbtn:hover { background: rgba(56, 189, 248, 0.2); }
+.ss-compbtn[aria-pressed="true"] { background: var(--ss-accent-solid); border-color: #5eead4; border-left-color: var(--c); color: #fff; }
+.ss-swatch { display: none; }
+.ss-info { margin: 0; font-size: var(--sd-fs-sm); line-height: 1.4; }
+.ss-info b { color: var(--ss-teal); }
+.ss-group-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+
+.ss-signal { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 6px; width: 100%; }
+.ss-signal-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex: 0 0 auto; }
+.ss-sample-note { font-size: var(--sd-fs-sm); color: var(--ss-muted); }
+.ss-signal-plot { flex: 1 1 0; min-height: 0; min-width: 0; border: 1px solid var(--ss-line); border-radius: 10px; overflow: hidden; background: var(--ss-plot-bg); }
+.ss-signal-foot { flex: 0 0 auto; }
+.ss-comp-list { margin: 0; padding: 0 0 0 16px; font-size: var(--sd-fs-sm); line-height: 1.5; }
+
+/* Boundary contrast for selected fills (>= 3:1 against the dark surround). */
+[data-testid="spectroscopy-workspace"] .sd-tabs--segmented .sd-tab[aria-selected="true"],
+[data-testid="spectroscopy-workspace"] .sd-tabs--segmented .sd-tab[aria-checked="true"],
+[data-testid="spectroscopy-workspace"] .sd-switch button[aria-checked="true"] { box-shadow: none; border: 1.5px solid #5eead4; transition: none; }
+[data-testid="spectroscopy-workspace"] .sim-btn { border-color: #93c5fd; }
+[data-testid="spectroscopy-workspace"] .sd-btn--primary { border-color: #5eead4; }
+
+/* Narrow containers: the header actions wrap instead of running past the edge. */
+[data-testid="spectroscopy-workspace"] .sd-header-actions { flex-wrap: wrap; min-width: 0; justify-content: flex-end; }
+[data-testid="spectroscopy-workspace"][data-layout="stacked"] .sd-header { grid-template-columns: minmax(0, 1fr); grid-template-areas: "title" "actions" "tabs"; }
+[data-testid="spectroscopy-workspace"][data-layout="stacked"] .sd-header-tabs { justify-self: stretch; width: 100%; min-width: 0; overflow-x: auto; }
+[data-testid="spectroscopy-workspace"][data-layout="stacked"] .sd-header-actions { justify-content: flex-start; }

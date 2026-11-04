@@ -13,7 +13,8 @@
 import { MOLECULES } from "./molecules.js";
 import { SUBSTANCES } from "./phase.js";
 import { generateIonicBlock } from "../../bonding-visualizer/model/lattice.js";
-import { QID, cross, dot, norm, qFromFrames, qFromTo, qMul, qNorm, qRot, scale, smoothstep, sub, add, len } from "./vec.js";
+import { coulombEv } from "./imf.js";
+import { angleDeg, QID, cross, dot, norm, qFromFrames, qFromTo, qMul, qNorm, qRot, scale, smoothstep, sub, add, len } from "./vec.js";
 
 export const N_PARTICLES = 48;
 export function rng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
@@ -87,7 +88,7 @@ function orientations(subst, info, sites, mol, R) {
 
 // ---- system ------------------------------------------------------------------------------------------------------------------
 /** Dynamics constants (visual time units: Angstrom and seconds of simulated display time). */
-export const DYN = { kHome: 22, kRot: 16, kRep: 60, kAtt: 4.0, rc: 1.55, gravity: 1.2, ionK: 14, vmax: 26 };
+export const DYN = { kHome: 22, kRot: 16, kRep: 60, kAtt: 4.0, rc: 1.55, gravity: 1.2, ionK: 14, vmax: 26, expand: 0.09, kHb: 4, hbAtt: 0.6, hbExpand: 0.09, hbRot: 4, ionKT: 1.5, ionExpand: 0 };
 
 export function createSystem(id, seed = 11) {
   const sub0 = SUBSTANCES[id]; if (!sub0) throw new Error(`Unknown substance ${id}`);
@@ -113,6 +114,7 @@ export function createSystem(id, seed = 11) {
     homePos: homePos.map((p) => p.slice()), homeQuat: homeQuat.map((q) => q.slice()), site: Int32Array.from([...Array(n).keys()]),
     uMelt, vBoil, charge: new Int8Array(n), partner: new Int32Array(n).fill(-1), prevMelt: 0, wh: new Float64Array(n), c: new Float64Array(n).fill(1),
     time: 0, acc: 0, radius: 0.5 * nn,
+    hb: !ionic && hasHbond(mol), expand: ionic ? DYN.ionExpand : hasHbond(mol) ? DYN.hbExpand : DYN.expand, // H-bonded liquids keep their donor...acceptor contacts, so they open up less
   };
   for (let i = 0; i < n; i += 1) { sys.pos.set(homePos[i], 3 * i); sys.quat.set(homeQuat[i], 4 * i); if (ionic) sys.charge[i] = arr.info[i].species === 0 ? 1 : -1; }
   if (ionic) { // ion-pair partners for the vapour: greedy nearest opposite
@@ -138,7 +140,8 @@ export function stepSystem(sys, dt, st) {
     if (!sys.ionic) reassignSites(sys); else reassignIons(sys);
   }
   sys.prevMelt = st.melt;
-  while (sys.acc >= H && steps < 8) { sys.acc -= H; steps += 1; integrate(sys, H, st); sys.time += H; }
+  const adv = sys.acc; while (sys.acc >= H && steps < 8) { sys.acc -= H; steps += 1; integrate(sys, H, st); sys.time += H; }
+  updateLinks(sys, st, Math.max(adv - sys.acc, 0));
 }
 
 function reassignIons(sys) {
@@ -150,6 +153,22 @@ function reassignIons(sys) {
 }
 
 const lerp = (a, b, t) => a + (b - a) * t;
+/** Donor H of molecule `d` pulled towards the acceptor atom of molecule `a` (a soft H...A attraction between 1.9 and 3.1 A): this is what makes
+ *  water molecules turn towards each other into hydrogen-bond geometry instead of tumbling past at random. Force + torque on both rigid bodies. */
+function hbondPull(sys, d, a, cij, fx, tq) {
+  const mol = sys.mol; const pd = poseOf(sys, d); const pa = poseOf(sys, a);
+  for (const { h } of mol.donors) {
+    const H = atomPosition(sys, d, h); const rH = [H[0] - pd.pos[0], H[1] - pd.pos[1], H[2] - pd.pos[2]];
+    for (const acc of mol.acceptors) {
+      const A = atomPosition(sys, a, acc.atom); const v = [A[0] - H[0], A[1] - H[1], A[2] - H[2]]; const dist = Math.hypot(v[0], v[1], v[2]);
+      if (dist > 3.1 || dist < 1e-6) continue;
+      const f = DYN.kHb * cij * (dist > 1.9 ? Math.sin((Math.PI * (dist - 1.9)) / 1.2) : -3.5 * (1.9 - dist)); // attraction beyond 1.9 A, soft repulsion inside it
+      const F = [(f * v[0]) / dist, (f * v[1]) / dist, (f * v[2]) / dist]; const rA = [A[0] - pa.pos[0], A[1] - pa.pos[1], A[2] - pa.pos[2]];
+      for (let k = 0; k < 3; k += 1) { fx[3 * d + k] += F[k]; fx[3 * a + k] -= F[k]; }
+      const t1 = cross(rH, F); const t2 = cross(rA, F); for (let k = 0; k < 3; k += 1) { tq[3 * d + k] += t1[k]; tq[3 * a + k] -= t2[k]; }
+    }
+  }
+}
 function integrate(sys, h, st) {
   const { n, pos, vel, quat, omega, nn, L, sub: s, ionic } = sys; const R = sys.rngState;
   const tm = Math.max(0.05, st.T / s.Tm); const tb = Math.max(0.05, st.T / s.Tb);
@@ -160,20 +179,24 @@ function integrate(sys, h, st) {
     sys.c[i] = 1 - smoothstep(sys.vBoil[i] - 0.04, sys.vBoil[i] + 0.1, st.vap);
     if (st.melt < 0.001) sys.wh[i] = 1; if (st.vap < 0.001) sys.c[i] = 1; if (st.vap > 0.999) sys.c[i] = 0;
   }
-  const fx = new Float64Array(3 * n);
-  const d0 = nn; const rc = d0 * DYN.rc;
+  const fx = new Float64Array(3 * n); const tq = new Float64Array(3 * n);
+  const expand = sys.expand; const rcMax = nn * (1 + expand) * DYN.rc * 2.2;
   for (let i = 0; i < n; i += 1) for (let j = i + 1; j < n; j += 1) {
     const dx = pos[3 * j] - pos[3 * i]; const dy = pos[3 * j + 1] - pos[3 * i + 1]; const dz = pos[3 * j + 2] - pos[3 * i + 2];
-    const r2 = dx * dx + dy * dy + dz * dz; if (r2 > (rc * 2.2) ** 2 || r2 < 1e-9) continue; const r = Math.sqrt(r2);
+    const r2 = dx * dx + dy * dy + dz * dz; if (r2 > rcMax * rcMax || r2 < 1e-9) continue; const r = Math.sqrt(r2);
     const cij = Math.min(sys.c[i], sys.c[j]); let f = 0; // + = repulsion along i->j
+    // preferred spacing: the lattice spacing while the pair is still solid-like, 13 % wider (a looser, disordered contact) as it melts; the
+    // widening scales with the cohesion so that a released (gas) particle is simply a hard-ish sphere again
+    const d0 = nn * (1 + expand * (1 - 0.5 * (sys.wh[i] + sys.wh[j])) * cij); const rc = d0 * DYN.rc;
     if (ionic) { // Coulomb-like: like charges push apart (+), unlike pull together (-), short-range hard core; scaled by cohesion
       const qq = sys.charge[i] * sys.charge[j]; const rcore = d0 * 0.92;
       if (r < rcore) f += DYN.kRep * (rcore - r);
       if (r < 3 * nn) f += (qq * DYN.ionK * cij * (1 - 0.95 * Math.min(sys.wh[i], sys.wh[j]))) / (r2 + 0.5 * nn);
     } else if (r < d0) f = DYN.kRep * (d0 - r);
-    else if (r < rc) f = -DYN.kAtt * cij * (1 - 0.85 * Math.min(sys.wh[i], sys.wh[j])) * Math.sin((Math.PI * (r - d0)) / (rc - d0));
+    else if (r < rc) f = -DYN.kAtt * (sys.hb ? DYN.hbAtt : 1) * cij * (1 - 0.85 * Math.min(sys.wh[i], sys.wh[j])) * Math.sin((Math.PI * (r - d0)) / (rc - d0));
     const ux = dx / r; const uy = dy / r; const uz = dz / r; // force on j = +f u, on i = -f u  (f>0 pushes apart)
     fx[3 * j] += f * ux; fx[3 * j + 1] += f * uy; fx[3 * j + 2] += f * uz; fx[3 * i] -= f * ux; fx[3 * i + 1] -= f * uy; fx[3 * i + 2] -= f * uz;
+    if (sys.hb && cij > 0 && r < nn * 1.45) { hbondPull(sys, i, j, cij, fx, tq); hbondPull(sys, j, i, cij, fx, tq); }
   }
   const lim = L / 2 - 0.55 * nn;
   for (let i = 0; i < n; i += 1) {
@@ -185,9 +208,9 @@ function integrate(sys, h, st) {
       const j = sys.partner[i]; const dx = pos[3 * j] - pos[3 * i]; const dy = pos[3 * j + 1] - pos[3 * i + 1]; const dz = pos[3 * j + 2] - pos[3 * i + 2]; const r = Math.hypot(dx, dy, dz) || 1;
       const f = 30 * gasW * (r - 0.84 * nn); fx[3 * i] += (f * dx) / r; fx[3 * i + 1] += (f * dy) / r; fx[3 * i + 2] += (f * dz) / r;
     }
-    const kTs = 1.8 * tm * tm; const kTl = 2.4 * tm; const kTg = 30 * tb; // visual temperatures
+    const kTs = 1.8 * tm * tm; const kTl = (ionic ? DYN.ionKT : 3.6) * Math.sqrt(tm); const kTg = 30 * tb; // visual temperatures
     const kT = lerp(lerp(kTs, kTl, free), kTg, gasW);
-    const gam = lerp(lerp(2.2, 3.0, free), 0.5, gasW);
+    const gam = lerp(lerp(2.2, 2.4, free), 0.5, gasW);
     const sig = Math.sqrt(2 * gam * kT * h);
     for (let a = 0; a < 3; a += 1) {
       let v = vel[3 * i + a]; v += (fx[3 * i + a] - gam * v) * h + sig * gauss(R); const vm = DYN.vmax; if (v > vm) v = vm; else if (v < -vm) v = -vm; vel[3 * i + a] = v;
@@ -200,8 +223,8 @@ function integrate(sys, h, st) {
     const q = [quat[4 * i], quat[4 * i + 1], quat[4 * i + 2], quat[4 * i + 3]]; const qh = sys.homeQuat[k];
     let dq = qMul(q, [-qh[0], -qh[1], -qh[2], qh[3]]); if (dq[3] < 0) dq = [-dq[0], -dq[1], -dq[2], -dq[3]];
     const sn = Math.hypot(dq[0], dq[1], dq[2]); const ang = 2 * Math.atan2(sn, dq[3]); const ax = sn > 1e-9 ? [dq[0] / sn, dq[1] / sn, dq[2] / sn] : [0, 0, 0];
-    const kTrs = 0.32 * tm; const kTrl = 7 * tm; const kTrg = 10 * tb; const kTr = lerp(lerp(kTrs, kTrl, free), kTrg, gasW); const gr = lerp(lerp(2.5, 3.0, free), 0.4, gasW); const sr = Math.sqrt(2 * gr * kTr * h);
-    for (let a = 0; a < 3; a += 1) { let w = omega[3 * i + a]; w += (-DYN.kRot * wh * ang * ax[a] - gr * w) * h + sr * gauss(R); w = Math.max(-14, Math.min(14, w)); omega[3 * i + a] = w; }
+    const kTrs = 0.32 * tm; const kTrl = (hasHbond(sys.mol) ? DYN.hbRot : 7) * tm; const kTrg = 10 * tb; const kTr = lerp(lerp(kTrs, kTrl, free), kTrg, gasW); const gr = lerp(lerp(2.5, 3.0, free), 0.4, gasW); const sr = Math.sqrt(2 * gr * kTr * h);
+    for (let a = 0; a < 3; a += 1) { let w = omega[3 * i + a]; w += (-DYN.kRot * wh * ang * ax[a] + tq[3 * i + a] - gr * w) * h + sr * gauss(R); w = Math.max(-14, Math.min(14, w)); omega[3 * i + a] = w; }
     const wl = Math.hypot(omega[3 * i], omega[3 * i + 1], omega[3 * i + 2]);
     if (wl > 1e-9) { const half = (wl * h) / 2; const sH = Math.sin(half) / wl; const dr = [omega[3 * i] * sH, omega[3 * i + 1] * sH, omega[3 * i + 2] * sH, Math.cos(half)]; const nq = qNorm(qMul(dr, q)); quat.set(nq, 4 * i); }
   }
@@ -231,5 +254,98 @@ export function metrics(sys) {
     homeMs += (sys.pos[3 * i] - sys.homePos[k][0]) ** 2 + (sys.pos[3 * i + 1] - sys.homePos[k][1]) ** 2 + (sys.pos[3 * i + 2] - sys.homePos[k][2]) ** 2;
     ymin = Math.min(ymin, sys.pos[3 * i + 1]); ymax = Math.max(ymax, sys.pos[3 * i + 1]); spd += Math.hypot(sys.vel[3 * i], sys.vel[3 * i + 1], sys.vel[3 * i + 2]); coh += sys.c[i];
   }
-  return { meanNN: nnSum / n / sys.nn, homeRms: Math.sqrt(homeMs / n) / sys.nn, span: (ymax - ymin) / sys.nn, meanSpeed: spd / n, cohesion: coh / n };
+  return { q6: q6Order(sys), meanNN: nnSum / n / sys.nn, homeRms: Math.sqrt(homeMs / n) / sys.nn, span: (ymax - ymin) / sys.nn, meanSpeed: spd / n, cohesion: coh / n };
+}
+
+// ---- transient intermolecular-interaction lines ("links") ---------------------------------------------------------------------------
+// A link is a short-lived dotted line between two molecules that currently satisfy the geometric criterion of the interaction that holds
+// the substance together: a hydrogen bond (donor H ... acceptor lone pair; the same geometry test as the Explore workspace) for water,
+// NH3 and HF, a favourable dipole-dipole contact for other polar molecules, a brief dispersion contact for nonpolar ones, opposite ions
+// for NaCl. In the SOLID they are stable (nothing breaks while the lattice holds); as sites melt they get a break rate and a refractory
+// period, so in the LIQUID every link has a finite lifetime and forms and breaks as the molecules tumble past each other (hysteresis: it
+// forms at geometry > 0.6 and survives down to 0.25). A released (gas) particle has no cohesion, so only contact collisions give a link.
+// Links fade in / out (w) instead of popping. This is a qualitative picture of the interaction network, not a computed H-bond count.
+export const LINK = { form: 0.6, keep: 0.25, kForm: 0.5, kBreak: 1.5, kFormHb: 2.5, kBreakHb: 0.8, hbForm: 0.5, hbKeep: 0.2, cool: 0.35, fade: 9, cutoff: 1.5 };
+const hasHbond = (m) => !!m && m.donors?.length > 0 && m.acceptors?.length > 0;
+function linkGeometry(sys, i, j, d, pi, pj) { // -> { g: 0..1 geometry quality, a, b: world anchor points }
+  const nn = sys.nn; const ci = pi.pos; const cj = pj.pos;
+  if (sys.ionic) { const opp = sys.charge[i] !== sys.charge[j]; return { g: opp ? 1 - smoothstep(1.12 * nn, 1.45 * nn, d) : 0, a: ci, b: cj, kind: "ion" }; }
+  const mol = sys.mol;
+  if (hasHbond(mol)) {
+    // standard geometric H-bond criterion used in simulation analysis: donor...acceptor heavy-atom distance < 3.5 A and the H-D...A angle < 30 deg
+    // (smoothed to 0.2 .. 1 so a bond fades as the geometry degrades); tried in both directions, the better one is drawn
+    let best = null;
+    const scan = (dm, dp, am, ap) => { for (const { d, h } of dm.donors) for (const acc of am.acceptors) {
+      const D = atomWorldQuick(dm, dp, d); const H = atomWorldQuick(dm, dp, h); const A = atomWorldQuick(am, ap, acc.atom);
+      const dDA = len(sub(A, D)); const ang = angleDeg(sub(H, D), sub(A, D)); const g = (1 - smoothstep(sys.nn * 1.09, sys.nn * 1.3, dDA)) * (1 - smoothstep(28, 48, ang));
+      if (!best || g > best.g) best = { g, a: H, b: A, dDA, ang };
+    } };
+    scan(mol, pi, mol, pj); scan(mol, pj, mol, pi);
+    if (best) return { g: best.g, a: best.a, b: best.b, kind: "hbond", dDA: best.dDA, ang: best.ang };
+    return { g: 0, a: ci, b: cj, kind: "hbond" };
+  }
+  const d0e = nn * (1 + sys.expand); let g = 1 - smoothstep(1.05 * d0e, 1.3 * d0e, d); let kind = "dispersion";
+  let a = ci; let b = cj;
+  if (mol.polar) { // favourable dipole-dipole contact only: like charges facing each other are not drawn as an attraction
+    kind = "dipole"; const u = coulombEv(mol, pi, mol, pj); g *= 1 - smoothstep(-0.01, 0.01, u) ; if (u >= 0) g = 0;
+  }
+  if (mol.atoms.length > 1) { // anchor on the closest pair of atoms
+    let bd = Infinity; for (let p = 0; p < mol.atoms.length; p += 1) for (let q = 0; q < mol.atoms.length; q += 1) { const A = atomWorldQuick(mol, pi, p); const B = atomWorldQuick(mol, pj, q); const dd = len(sub(A, B)); if (dd < bd) { bd = dd; a = A; b = B; } }
+  }
+  return { g, a, b, kind };
+}
+function atomWorldQuick(mol, pose, k) { const v = qRot(pose.quat, mol.atoms[k].p); return [pose.pos[0] + v[0], pose.pos[1] + v[1], pose.pos[2] + v[2]]; }
+
+export function updateLinks(sys, st, dt) {
+  const n = sys.n; const map = sys.linkMap ?? (sys.linkMap = new Map()); const R = sys.linkRng ?? (sys.linkRng = rng(97));
+  const cut = sys.nn * (1 + sys.expand) * LINK.cutoff; const cut2 = cut * cut; const poses = new Array(n);
+  const poseFor = (i) => poses[i] ?? (poses[i] = poseOf(sys, i)); const seen = new Set();
+  for (let i = 0; i < n; i += 1) for (let j = i + 1; j < n; j += 1) {
+    const dx = sys.pos[3 * j] - sys.pos[3 * i]; const dy = sys.pos[3 * j + 1] - sys.pos[3 * i + 1]; const dz = sys.pos[3 * j + 2] - sys.pos[3 * i + 2]; const d2 = dx * dx + dy * dy + dz * dz;
+    const key = i * n + j; const e = map.get(key);
+    if (d2 > cut2) { if (e) { e.on = false; e.cool = 0; } continue; }
+    const d = Math.sqrt(d2); const coh = Math.min(sys.c[i], sys.c[j]); const solid = Math.min(sys.wh[i], sys.wh[j]);
+    const geo = linkGeometry(sys, i, j, d, poseFor(i), poseFor(j));
+    // gas: only contact collisions; condensed: the geometry criterion, scaled by the pair's cohesion
+    const contact = 1 - smoothstep(0.95 * sys.nn, 1.15 * sys.nn, d);
+    const g = Math.max(geo.g * smoothstep(0.2, 0.7, coh), geo.kind === "hbond" ? 0 : geo.g * contact * (1 - coh));
+    const hb = geo.kind === "hbond"; const tForm = hb ? LINK.hbForm : LINK.form; const tKeep = hb ? LINK.hbKeep : LINK.keep; const kF = hb ? LINK.kFormHb : LINK.kForm; const kB = hb ? LINK.kBreakHb : LINK.kBreak;
+    let en = e;
+    if (!en && g > tForm) { // may form (always at once while the pair is solid-like)
+      if (solid > 0.85 || R() < kF * dt) { en = { on: true, w: 0, cool: 0, i, j }; map.set(key, en); }
+    } else if (en && !en.on && g > tForm && en.cool <= 0 && (solid > 0.85 || R() < kF * dt)) en.on = true;
+    if (!en) continue;
+    en.g = g; en.solid = solid; en.a = geo.a; en.b = geo.b; en.kind = geo.kind; en.d = d; seen.add(key);
+    if (en.on) {
+      const hazard = kB * (1 - smoothstep(0.7, 1.0, solid));
+      if (g < tKeep || R() < hazard * dt) { en.on = false; en.cool = LINK.cool * (0.5 + R()); }
+    } else en.cool -= dt;
+  }
+  const out = []; const fade = Math.min(1, dt * LINK.fade);
+  for (const [key, en] of map) {
+    if (!seen.has(key) && en.on) en.on = false;
+    en.w += ((en.on ? 1 : 0) - en.w) * fade; if (!en.on && en.w < 0.03) { map.delete(key); continue; }
+    if (en.a && en.w > 0.03) out.push(en);
+  }
+  sys.links = out;
+}
+
+/** Steinhardt q6 bond-orientational order, lattice-free, scaled by sqrt(N_neighbours) so that a random arrangement gives ~1 whatever the (surface-dominated, N = 48) coordination is; a crystal gives clearly more. Mean over molecules with >= 4 neighbours within 1.4 nn. */
+export function q6Order(sys) {
+  const n = sys.n; const cutoff = sys.nn * 1.4; let sum = 0; let cnt = 0;
+  for (let i = 0; i < n; i += 1) {
+    const nb = []; for (let j = 0; j < n; j += 1) { if (j === i) continue; const v = [sys.pos[3 * j] - sys.pos[3 * i], sys.pos[3 * j + 1] - sys.pos[3 * i + 1], sys.pos[3 * j + 2] - sys.pos[3 * i + 2]]; const l = len(v); if (l < cutoff) nb.push([v[0] / l, v[1] / l, v[2] / l]); }
+    if (nb.length < 4) continue;
+    let q2 = 0; for (let m = -6; m <= 6; m += 1) { let re = 0; let im = 0; for (const u of nb) { const y = ylm6(m, u); re += y[0]; im += y[1]; } q2 += (re * re + im * im) / (nb.length * nb.length); }
+    sum += Math.sqrt(((4 * Math.PI) / 13) * q2) * Math.sqrt(nb.length); cnt += 1;
+  }
+  return cnt ? sum / cnt : 0;
+}
+function ylm6(m, u) { // complex spherical harmonic Y_6^m(u), via associated Legendre recurrence
+  const am = Math.abs(m); const x = Math.max(-1, Math.min(1, u[2])); const l = 6;
+  let pmm = 1; if (am > 0) { const somx2 = Math.sqrt((1 - x) * (1 + x)); let fact = 1; for (let i = 1; i <= am; i += 1) { pmm *= -fact * somx2; fact += 2; } }
+  let plm; if (l === am) plm = pmm; else { let pmmp1 = x * (2 * am + 1) * pmm; if (l === am + 1) plm = pmmp1; else { let pll = 0; let a = pmm; let b = pmmp1; for (let ll = am + 2; ll <= l; ll += 1) { pll = ((2 * ll - 1) * x * b - (ll + am - 1) * a) / (ll - am); a = b; b = pll; } plm = pll; } }
+  const fac = (k) => { let f = 1; for (let i = 2; i <= k; i += 1) f *= i; return f; };
+  const norm0 = Math.sqrt(((2 * l + 1) / (4 * Math.PI)) * (fac(l - am) / fac(l + am))); const phi = Math.atan2(u[1], u[0]);
+  const sgn = m < 0 && am % 2 === 1 ? -1 : 1; return [sgn * norm0 * plm * Math.cos(m * phi), sgn * norm0 * plm * Math.sin(m * phi)];
 }

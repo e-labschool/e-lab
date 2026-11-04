@@ -1,0 +1,216 @@
+/* ==========================================================================
+   Shared simulation CONTROL STYLE (buttons, tabs, segmented options, selects)
+   Contract: docs/SIMULATION_DASHBOARD_LAYOUT.md  ->  "Shared button style contract".
+   Audited by: npm run verify:button-contrast  (scripts/verify-simulation-button-contrast.mjs)
+
+   Why this exists: the app's decorative tokens (--color-line #DCE1F0, white/pale fills) are fine for
+   dividers but give a control boundary of only ~1.2:1 against the page, so Fullscreen / New Tab / Reset /
+   option buttons disappeared (white-on-white, pale-on-pale). Every control now draws its boundary from
+   --sim-btn-border (>= 3:1 on every surface it appears on) and shows hover / active / selected / focus
+   states that are visible on light AND dark surfaces.
+
+   Tokens (override them on a surface that is not light-on-white, e.g. the VSEPR navy theme):
+     --sim-btn-fill / -hover / -active   solid control fill (opaque, so it never depends on what is behind it)
+     --sim-btn-ink                       label + icon colour (>= 4.5:1 on all three fills)
+     --sim-btn-border / -hover           control boundary (>= 3:1 against the surface)
+     --sim-btn-accent / -accent-ink      selected / primary solid fill and its label (>= 4.5:1)
+     --sim-btn-focus / -focus-halo       focus-visible ring (2px outline, 2px gap filled by a contrasting halo) -- readable on any surface
+     --sim-btn-hover-tint / -active-tint translucent overlay used on controls whose own fill is engine-specific
+   ========================================================================== */
+
+:root {
+  --sim-btn-fill: #ffffff;
+  --sim-btn-fill-hover: #e4eafc;
+  --sim-btn-fill-active: #ccd7f7;
+  --sim-btn-ink: #12161c;
+  --sim-btn-border: #5b6784;
+  --sim-btn-border-hover: #12161c;
+  --sim-btn-accent: #4457d6;
+  --sim-btn-accent-hover: #3647bd;
+  --sim-btn-accent-ink: #ffffff;
+  --sim-btn-focus: #1b3fd1;
+  --sim-btn-focus-halo: #ffffff;
+  --sim-btn-hover-tint: rgba(54, 84, 214, 0.1);
+  --sim-btn-active-tint: rgba(54, 84, 214, 0.18);
+  --sim-btn-shadow: 0 1px 2px rgba(18, 22, 28, 0.18);
+  /* solid fills used by engines for coloured action buttons; every one holds white text at >= 4.5:1 */
+  --sim-fill-indigo: #4457d6;
+  --sim-fill-teal: #2b7a6e;
+  --sim-fill-amber: #b15a14;
+  --sim-fill-violet: #7a4fb0;
+  --sim-fill-green: #4b7a3d;
+  --sim-fill-coral: #ad503c;
+}
+.dark {
+  --sim-btn-fill: #1b212b;
+  --sim-btn-fill-hover: #29313f;
+  --sim-btn-fill-active: #394560;
+  --sim-btn-ink: #edeef0;
+  --sim-btn-border: #8792ab;
+  --sim-btn-border-hover: #edeef0;
+  --sim-btn-accent: #4d60e0;
+  --sim-btn-accent-hover: #5f70ea;
+  --sim-fill-indigo: #4d60e0;
+  --sim-btn-focus: #a9bbff;
+  --sim-btn-focus-halo: #0c0f14;
+  --sim-btn-hover-tint: rgba(169, 187, 255, 0.1);
+  --sim-btn-active-tint: rgba(0, 0, 0, 0.28);
+  --sim-btn-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+/* The dashboard panel paints its OWN surface and declares its own color-scheme (light by default, even when the app is
+   in dark mode; the navy VSEPR / Hybridisation themes declare `color-scheme: dark`). light-dark() therefore picks the
+   right control tokens for whichever surface the panel is actually painting. */
+.sd-root {
+  --sim-btn-fill: light-dark(#ffffff, #1a3a78);
+  --sim-btn-fill-hover: light-dark(#e4eafc, #27498f);
+  --sim-btn-fill-active: light-dark(#ccd7f7, #345aa8);
+  --sim-btn-ink: light-dark(#14226b, #eef4ff);
+  --sim-btn-border: light-dark(#5b6784, #7c9bdd);
+  --sim-btn-border-hover: light-dark(#14226b, #d6e4ff);
+  --sim-btn-accent: light-dark(#2b66d9, #2358d0);
+  --sim-btn-accent-hover: light-dark(#1f55c0, #2d6af0);
+  --sim-btn-focus: light-dark(#1b3fd1, #ffd166);
+  --sim-btn-focus-halo: light-dark(#ffffff, #0b1230);
+  --sim-btn-hover-tint: light-dark(rgba(54, 84, 214, 0.1), rgba(214, 228, 255, 0.1));
+  --sim-btn-active-tint: light-dark(rgba(54, 84, 214, 0.18), rgba(0, 0, 0, 0.28));
+  --sim-btn-shadow: light-dark(0 1px 2px rgba(20, 34, 107, 0.2), 0 1px 3px rgba(0, 0, 0, 0.45));
+}
+
+/* ---- The shell's own action buttons (Open in New Tab / Full Screen) --------
+   Also the recommended class for any engine-owned toolbar button: <button className="sim-btn">. */
+.sim-toolbar-btn,
+.sim-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 11px;
+  border: 1.5px solid var(--sim-btn-border);
+  border-radius: 8px;
+  background: var(--sim-btn-fill);
+  color: var(--sim-btn-ink);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: var(--sim-btn-shadow);
+  cursor: pointer;
+  transition: background-color 0.12s, border-color 0.12s, box-shadow 0.12s, transform 0.12s;
+}
+.sim-toolbar-btn:hover:not(:disabled),
+.sim-btn:hover:not(:disabled) {
+  background: var(--sim-btn-fill-hover);
+  border-color: var(--sim-btn-border-hover);
+}
+.sim-toolbar-btn:active:not(:disabled),
+.sim-btn:active:not(:disabled) {
+  background: var(--sim-btn-fill-active);
+  border-color: var(--sim-btn-border-hover);
+  transform: translateY(1px);
+  box-shadow: none;
+}
+.sim-btn--primary,
+.sim-btn[aria-pressed="true"],
+.sim-btn[aria-selected="true"],
+.sim-btn[aria-checked="true"] {
+  background: var(--sim-btn-accent);
+  border-color: var(--sim-btn-accent);
+  color: var(--sim-btn-accent-ink);
+}
+.sim-btn--primary:hover:not(:disabled),
+.sim-btn[aria-pressed="true"]:hover:not(:disabled),
+.sim-btn[aria-selected="true"]:hover:not(:disabled),
+.sim-btn[aria-checked="true"]:hover:not(:disabled) {
+  background: var(--sim-btn-accent-hover);
+  border-color: var(--sim-btn-accent-hover);
+}
+.sim-toolbar-btn:disabled,
+.sim-btn:disabled {
+  /* disabled stays readable (>= 3:1) and keeps its outline, but loses the shadow and the pointer */
+  background: transparent;
+  color: var(--sim-btn-border);
+  border-style: dashed;
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+/* ---- Safety net for every OTHER control inside a simulation ----------------
+   Older engines style their buttons with Tailwind utilities that use the decorative --color-line token for the
+   border and have no hover / active / focus state. Unlayered CSS beats Tailwind's layered utilities, so these
+   scoped rules (InteractiveFrame and the dashboard root carry .elab-sim) lift those controls to the contract
+   without touching engine logic. Engines may opt out of a rule by not using these utility classes. */
+.elab-sim :is(button, select, summary, [role="tab"], [role="radio"], [role="switch"])[class~="border-[var(--color-line)]"] {
+  border-color: var(--sim-btn-border);
+}
+.elab-sim :is(button, summary, [role="tab"], [role="radio"], [role="switch"]):not(:disabled):not([aria-disabled="true"]):not(:focus-visible):not(.sim-toolbar-btn, .sim-btn, .sd-btn, .sd-tool, .sd-step, .sd-chamber-btn):hover {
+  box-shadow: inset 0 0 0 100vmax var(--sim-btn-hover-tint);
+}
+.elab-sim :is(button, summary, [role="tab"], [role="radio"], [role="switch"]):not(:disabled):not([aria-disabled="true"]):not(:focus-visible):not(.sim-toolbar-btn, .sim-btn, .sd-btn, .sd-tool, .sd-step, .sd-chamber-btn):active {
+  box-shadow: inset 0 0 0 100vmax var(--sim-btn-active-tint);
+}
+/* solid-fill action buttons (white label): swap the soft token fills for the >= 4.5:1 shades */
+.elab-sim :is(button, [role="tab"], [role="radio"])[class~="bg-[var(--color-indigo)]"] { background-color: var(--sim-fill-indigo); }
+.elab-sim :is(button, [role="tab"], [role="radio"])[class~="bg-[var(--color-teal)]"] { background-color: var(--sim-fill-teal); }
+.elab-sim :is(button, [role="tab"], [role="radio"])[class~="bg-[var(--color-amber)]"] { background-color: var(--sim-fill-amber); }
+.elab-sim :is(button, [role="tab"], [role="radio"])[class~="bg-[var(--color-violet)]"] { background-color: var(--sim-fill-violet); }
+.elab-sim :is(button, [role="tab"], [role="radio"])[class~="bg-[var(--color-green)]"] { background-color: var(--sim-fill-green); }
+.elab-sim :is(button, [role="tab"], [role="radio"])[class~="bg-[var(--color-coral)]"] { background-color: var(--sim-fill-coral); }
+
+/* ---- Visible keyboard focus everywhere (2px ring, 2px gap, >= 3:1) ---------- */
+.elab-sim :is(button, select, summary, a, input, textarea, [role="tab"], [role="radio"], [role="switch"], [tabindex]):focus-visible,
+.sim-surface-dark :is(button, select, summary, a, input, textarea, [role="tab"], [role="radio"], [role="switch"], [tabindex]):focus-visible {
+  outline: 2px solid var(--sim-btn-focus);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px var(--sim-btn-focus-halo); /* the 2px gap is filled with a contrasting halo: the ring reads on light, dark AND canvas surfaces */
+}
+/* ...except range sliders, whose thumb is drawn by the UA: outline only */
+.elab-sim input[type="range"]:focus-visible, .sim-surface-dark input[type="range"]:focus-visible { box-shadow: none; }
+/* Mode toggle pill in the classic shell header (a radiogroup wrapper, not a button) */
+.elab-sim [role="radiogroup"][class~="border-[var(--color-line)]"] {
+  border-color: var(--sim-btn-border);
+}
+.sim-toolbar-btn svg { flex: 0 0 auto; }
+.sd-header-actions .sim-toolbar-btn { min-height: 30px; padding: 0 9px; }
+
+/* ---- Permanently dark panels (Buffer, Titration, Equivalence Point, graph panels ...) ----------------------
+   Add class="sim-surface-dark" to the panel root: its controls get the dark-surface tokens in BOTH app themes
+   (a light-mode page still contains a dark panel), so outlines, labels and the focus ring stay >= 3:1 / 4.5:1. */
+.sim-surface-dark {
+  --sim-btn-fill: #1b2533;
+  --sim-btn-fill-hover: #2a374d;
+  --sim-btn-fill-active: #38486a;
+  --sim-btn-ink: #f1f5f9;
+  --sim-btn-border: #8793ab;
+  --sim-btn-border-hover: #e2e8f0;
+  --sim-btn-accent: #4d60e0;
+  --sim-btn-accent-hover: #5f70ea;
+  --sim-fill-indigo: #4d60e0;
+  --sim-btn-focus: #ffd166;
+  --sim-btn-focus-halo: #0b1020;
+  --sim-btn-hover-tint: rgba(226, 232, 240, 0.1);
+  --sim-btn-active-tint: rgba(0, 0, 0, 0.28);
+  --sim-btn-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+.sim-surface-dark :is(button, select, summary):not(:disabled):hover { border-color: var(--sim-btn-border-hover); }
+.elab-sim select:not(:disabled):hover { border-color: var(--sim-btn-border-hover); }
+/* ghost buttons that use the faint ink token for their label: lift to the soft ink (4.5:1 even on their hover tint) */
+.elab-sim :is(button, [role="tab"], [role="radio"])[class~="text-[var(--color-ink-faint)]"] { color: var(--color-ink-soft); }
+
+/* Segmented dashboard tabs sit edge to edge inside their track: draw the focus ring INSIDE the tab so it never lands on a
+   neighbouring tab's fill (selected tab: white ring on the accent fill; unselected: the focus colour on the pale track). */
+.sd-root .sd-tabs--segmented .sd-tab:focus-visible { outline-offset: -3px; box-shadow: none; }
+.sd-root .sd-tabs--segmented .sd-tab[aria-selected="true"]:focus-visible,
+.sd-root .sd-tabs--segmented .sd-tab[aria-checked="true"]:focus-visible { outline-color: #fff; }
+
+/* Segmented option groups built from Tailwind utilities (a bordered div holding aria-pressed buttons whose selected state
+   is a pale "-soft" tint): give the group a real outline and turn the pale selected tint into a solid accent fill. */
+.elab-sim :is(div, span)[class~="border-[var(--color-line)]"]:has(> :is(button, [role="tab"], [role="radio"])) {
+  border-color: var(--sim-btn-border);
+}
+.elab-sim :is(button, [role="tab"], [role="radio"])[aria-pressed="true"]:is([class~="bg-[var(--color-indigo-soft)]"], [class~="bg-[var(--color-teal-soft)]"], [class~="bg-[var(--color-amber-soft)]"], [class~="bg-[var(--color-violet-soft)]"], [class~="bg-[var(--color-green-soft)]"], [class~="bg-[var(--color-coral-soft)]"]),
+.elab-sim :is(button, [role="tab"], [role="radio"])[aria-selected="true"]:is([class~="bg-[var(--color-indigo-soft)]"], [class~="bg-[var(--color-teal-soft)]"]),
+.elab-sim :is(button, [role="tab"], [role="radio"])[aria-checked="true"]:is([class~="bg-[var(--color-indigo-soft)]"], [class~="bg-[var(--color-teal-soft)]"]) {
+  background-color: var(--sim-btn-accent);
+  color: var(--sim-btn-accent-ink);
+}

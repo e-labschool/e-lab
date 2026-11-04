@@ -1,0 +1,116 @@
+import StimulusRenderer from "../../teacher/qbuilder/components/visuals/StimulusRenderer.jsx";
+import StimulusErrorBoundary from "../../../components/ui/StimulusErrorBoundary.jsx";
+import ZoomableImage from "../../../components/image-viewer/ZoomableImage.jsx";
+import { ScientificText } from "../../../lib/scientificContent.jsx";
+
+// Renders a question during an active challenge — no correctness
+// feedback, no explanations, no hints, ever (enforced by simply never
+// receiving/passing that data down; see ChallengeSession.jsx, which only
+// fetches question content, not markschemes, into this component).
+// Supports the answer types the current Question Bank actually has data
+// for (MCQ, Calculation/numeric, Short/Extended text) — Multi-part
+// questions render each part as its own short-response field, keyed by
+// part id, which is the honest way to support them without inventing
+// per-part answer-type metadata the bank doesn't have yet.
+//
+// `questionNumber` is the challenge's own 1-based position — the ONLY
+// number ever shown to the student. The underlying Question Bank id
+// (question.id) is never rendered here.
+export default function QuestionRenderer({ question, questionNumber, answer, onAnswer, onFocusInput }) {
+  return (
+    <div>
+      <div className="mb-3 flex items-baseline justify-between">
+        <p className="font-[var(--font-display)] text-lg font-semibold text-[var(--color-ink)]">Question {questionNumber}</p>
+        {question.marks != null && <span className="text-xs text-[var(--color-ink-faint)]">[{question.marks} mark{question.marks === 1 ? "" : "s"}]</span>}
+      </div>
+
+      {question.stimulus && (
+        <div className="mb-5">
+          <StimulusErrorBoundary questionId={question.id}>
+            <StimulusRenderer stimulus={question.stimulus} questionId={question.id} />
+          </StimulusErrorBoundary>
+        </div>
+      )}
+
+      <p className="text-[15px] leading-relaxed text-[var(--color-ink)]"><ScientificText text={question.questionText} /></p>
+
+      <div className="mt-5">
+        {question.parts?.length > 0 ? (
+          <div className="flex flex-col gap-4">
+            {question.parts.map((part) => (
+              <div key={part.id}>
+                <p className="flex items-baseline justify-between text-sm text-[var(--color-ink-soft)]">
+                  <span><span className="font-medium text-[var(--color-ink)]">({part.id})</span> <ScientificText text={part.questionText} /></span>
+                  {part.marks != null && <span className="ml-1.5 shrink-0 text-xs text-[var(--color-ink-faint)]">[{part.marks} mark{part.marks === 1 ? "" : "s"}]</span>}
+                </p>
+                <textarea
+                  rows={2}
+                  value={answer?.[part.id] ?? ""}
+                  onChange={(e) => onAnswer({ ...(answer ?? {}), [part.id]: e.target.value })}
+                  onFocus={(e) => onFocusInput?.(e.target, (v) => onAnswer({ ...(answer ?? {}), [part.id]: v }))}
+                  className="mt-1.5 w-full rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] px-3 py-2 text-sm text-[var(--color-ink)] focus:border-[var(--color-indigo)] focus:outline-none focus:ring-2 focus:ring-[var(--color-indigo)]/30"
+                  aria-label={`Answer for part ${part.id}`}
+                />
+              </div>
+            ))}
+          </div>
+        ) : question.questionType === "MCQ" ? (
+          <div className="flex flex-col gap-2" role="radiogroup" aria-label="Answer options">
+            {question.options?.map((opt, index) => {
+              // Canonical imports exist in two historical option shapes:
+              // { id: "A", text: "..." } and "A. ...". Render both
+              // consistently so older imported batches do not appear blank.
+              const fallbackId = String.fromCharCode(65 + index);
+              const rawText = typeof opt === "string" ? opt : opt?.text ?? "";
+              const parsed = typeof opt === "string" ? rawText.match(/^\s*([A-Z])(?:[.)]|\s*-)?\s*(.*)$/s) : null;
+              const optionId = typeof opt === "string" ? (parsed?.[1] ?? fallbackId) : (opt?.id ?? fallbackId);
+              const optionText = typeof opt === "string" ? (parsed?.[2] || rawText) : rawText;
+              // Optional per-option image (object options only). Clicking the
+              // image enlarges it; ZoomableImage stops the click so the
+              // surrounding <label> never selects/answers the option.
+              const optionImage = typeof opt === "object" && opt ? (opt.imageUrl || opt.image?.src || (typeof opt.image === "string" ? opt.image : "")) : "";
+              const optionImageAlt = typeof opt === "object" && opt ? (opt.imageAlt || opt.image?.alt || `Option ${optionId}`) : "";
+              return (
+                <label
+                  key={optionId}
+                  className={`flex cursor-pointer items-center gap-3 rounded-md border px-3.5 py-2.5 text-sm transition-colors ${
+                    answer === optionId ? "border-[var(--color-indigo)] bg-[var(--color-indigo-soft)]" : "border-[var(--color-line)] hover:border-[var(--color-ink)]"
+                  }`}
+                >
+                  <input type="radio" name={`q-${question.id}`} checked={answer === optionId} onChange={() => onAnswer(optionId)} className="accent-[var(--color-indigo)]" />
+                  <span className="font-medium text-[var(--color-ink-faint)]">{optionId}</span>
+                  {optionText && <ScientificText text={optionText} className="text-[var(--color-ink)]" />}
+                  {optionImage && <ZoomableImage src={optionImage} alt={optionImageAlt} title="Click to enlarge" className="max-h-40 w-auto max-w-full rounded-md border border-[var(--color-line)] bg-white object-contain" />}
+                </label>
+              );
+            })}
+          </div>
+        ) : question.questionType === "Calculation" ? (
+          <div>
+            <label className="mb-1 block text-xs font-medium text-[var(--color-ink-soft)]" htmlFor={`ans-${question.id}`}>Your answer</label>
+            <input
+              id={`ans-${question.id}`}
+              type="text"
+              inputMode="decimal"
+              value={answer ?? ""}
+              onChange={(e) => onAnswer(e.target.value)}
+              onFocus={(e) => onFocusInput?.(e.target, onAnswer)}
+              placeholder="Enter your numerical answer"
+              className="w-full max-w-xs rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] px-3 py-2 text-sm text-[var(--color-ink)] focus:border-[var(--color-indigo)] focus:outline-none focus:ring-2 focus:ring-[var(--color-indigo)]/30"
+            />
+          </div>
+        ) : (
+          <textarea
+            rows={question.questionType === "Extended Response" ? 8 : 4}
+            value={answer ?? ""}
+            onChange={(e) => onAnswer(e.target.value)}
+            onFocus={(e) => onFocusInput?.(e.target, onAnswer)}
+            placeholder="Write your response"
+            className="w-full rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] px-3 py-2.5 text-sm text-[var(--color-ink)] focus:border-[var(--color-indigo)] focus:outline-none focus:ring-2 focus:ring-[var(--color-indigo)]/30"
+            aria-label="Your response"
+          />
+        )}
+      </div>
+    </div>
+  );
+}

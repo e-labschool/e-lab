@@ -12,6 +12,7 @@ import { tanhSafe } from "./cloudMath.js";
 
 export const stats = { built: 0, buildMs: 0 };
 const LN2 = Math.LN2;
+const CLOUD_R = 0.8; // each atom blob has 0.8 x its van der Waals radius, so a bent molecule keeps a visibly bent envelope (lobes) instead of one round blob
 
 /** Indexed icosphere (unit radius) with `subdiv` midpoint subdivisions: 12, 42, 162, 642, 2562 vertices. */
 export function icosphere(subdiv) {
@@ -26,11 +27,22 @@ export function icosphere(subdiv) {
   const index = new Uint32Array(f.length * 3); f.forEach((tri, i) => index.set(tri, 3 * i));
   return { dirs, index, count: v.length };
 }
+/** Density-weighted centroid of the electron density enclosed by the iso-surface (grid integral, 0.2 A). Compared with the same molecule with
+ *  equal atom populations it shows which way the permanent polarity pulls the cloud (towards the delta- side). */
+function densityCentroid(atoms, iso, rMax) {
+  const h = 0.2; const n = Math.ceil((rMax + 0.4) / h); let sx = 0; let sy = 0; let sz = 0; let sw = 0;
+  for (let i = -n; i <= n; i += 1) for (let j = -n; j <= n; j += 1) for (let k = -n; k <= n; k += 1) {
+    const x = i * h; const y = j * h; const z = k * h; const rho = densityAt(atoms, x, y, z); if (rho < iso) continue; sx += rho * x; sy += rho * y; sz += rho * z; sw += rho;
+  }
+  return sw > 0 ? [sx / sw, sy / sw, sz / sw] : [0, 0, 0];
+}
 let ico = null;
 const getIco = () => ico ?? (ico = icosphere(4));
 
+/** Relative electron population of an atom from its partial charge: electron-rich (delta-) atoms carry more density, electron-poor (delta+) less. Nonpolar molecules: all 1. */
+export const atomWeight = (q) => Math.max(0.55, Math.min(1.6, 1 - 1.0 * (q || 0)));
 function densityAt(atoms, x, y, z) {
-  let s = 0; for (const a of atoms) { const dx = x - a.x; const dy = y - a.y; const dz = z - a.z; s += Math.exp((-LN2 * (dx * dx + dy * dy + dz * dz)) / a.R2); } return s;
+  let s = 0; for (const a of atoms) { const dx = x - a.x; const dy = y - a.y; const dz = z - a.z; s += a.w * Math.exp((-LN2 * (dx * dx + dy * dy + dz * dz)) / a.R2); } return s;
 }
 const cache = new Map();
 export const hasCloud = (id) => cache.has(id);
@@ -41,12 +53,14 @@ export function clearClouds() { cache.clear(); }
 export function getCloud(id) {
   const hit = cache.get(id); if (hit) return hit;
   const t0 = typeof performance !== "undefined" ? performance.now() : Date.now();
-  const mol = MOLECULES[id]; const atoms = mol.atoms.map((a) => ({ x: a.p[0], y: a.p[1], z: a.p[2], R2: ELEM[a.el].vdw ** 2 }));
+  const mol = MOLECULES[id]; const atoms = mol.atoms.map((a) => ({ x: a.p[0], y: a.p[1], z: a.p[2], R2: (ELEM[a.el].vdw * CLOUD_R) ** 2, w: atomWeight(a.q) }));
   const g = getIco(); const V = g.count;
   // iso level: reach |r| + R along the farthest atom's direction
   let far = atoms[0]; let best = -1; for (const a of atoms) { const d = Math.hypot(a.x, a.y, a.z) + Math.sqrt(a.R2); if (d > best) { best = d; far = a; } }
   const fl = Math.hypot(far.x, far.y, far.z); const u = fl > 1e-6 ? [far.x / fl, far.y / fl, far.z / fl] : [1, 0, 0];
   const iso = densityAt(atoms, u[0] * best, u[1] * best, u[2] * best);
+  // the blobs are 0.8 x vdW (lobes keep the molecular shape); the finished surface is scaled back up so it reaches the same vdW envelope as before
+  let reachFull = 0; mol.atoms.forEach((a) => { reachFull = Math.max(reachFull, Math.hypot(...a.p) + ELEM[a.el].vdw); }); const sc = reachFull / best;
   const tMax = best + 2.4; const positions = new Float32Array(V * 3); const normals = new Float32Array(V * 3); const esp = new Float32Array(V); let rMax = 0;
   for (let i = 0; i < V; i += 1) {
     const dx = g.dirs[3 * i]; const dy = g.dirs[3 * i + 1]; const dz = g.dirs[3 * i + 2];
@@ -54,15 +68,15 @@ export function getCloud(id) {
     for (let t = tMax; t > 0.05; t -= 0.14) { if (densityAt(atoms, dx * t, dy * t, dz * t) >= iso) { tIn = t; break; } tOut = t; }
     if (tIn < 0) tIn = 0.05;
     for (let k = 0; k < 14; k += 1) { const m = (tIn + tOut) / 2; if (densityAt(atoms, dx * m, dy * m, dz * m) >= iso) tIn = m; else tOut = m; }
-    const t = (tIn + tOut) / 2; const px = dx * t; const py = dy * t; const pz = dz * t; positions[3 * i] = px; positions[3 * i + 1] = py; positions[3 * i + 2] = pz; rMax = Math.max(rMax, t);
+    const t = (tIn + tOut) / 2; const px = dx * t; const py = dy * t; const pz = dz * t; const sx = px * sc; const sy = py * sc; const sz = pz * sc; positions[3 * i] = sx; positions[3 * i + 1] = sy; positions[3 * i + 2] = sz; rMax = Math.max(rMax, t * sc);
     // outward normal = -grad(rho), analytic
     let gx = 0; let gy = 0; let gz = 0; let v = 0;
-    for (const a of atoms) { const ex = px - a.x; const ey = py - a.y; const ez = pz - a.z; const w = Math.exp((-LN2 * (ex * ex + ey * ey + ez * ez)) / a.R2) * ((2 * LN2) / a.R2); gx += w * ex; gy += w * ey; gz += w * ez; }
+    for (const a of atoms) { const ex = px - a.x; const ey = py - a.y; const ez = pz - a.z; const w = a.w * Math.exp((-LN2 * (ex * ex + ey * ey + ez * ez)) / a.R2) * ((2 * LN2) / a.R2); gx += w * ex; gy += w * ey; gz += w * ez; }
     const gl = Math.hypot(gx, gy, gz) || 1; normals[3 * i] = gx / gl; normals[3 * i + 1] = gy / gl; normals[3 * i + 2] = gz / gl;
-    for (let a = 0; a < mol.atoms.length; a += 1) { const q = mol.atoms[a].q; if (q === 0) continue; const ex = px - mol.atoms[a].p[0]; const ey = py - mol.atoms[a].p[1]; const ez = pz - mol.atoms[a].p[2]; v += q / Math.sqrt(ex * ex + ey * ey + ez * ez + 0.64); }
+    for (let a = 0; a < mol.atoms.length; a += 1) { const q = mol.atoms[a].q; if (q === 0) continue; const ex = sx - mol.atoms[a].p[0]; const ey = sy - mol.atoms[a].p[1]; const ez = sz - mol.atoms[a].p[2]; v += q / Math.sqrt(ex * ex + ey * ey + ez * ez + 0.64); }
     esp[i] = v;
   }
-  const cloud = { id, positions, normals, dirs: g.dirs, index: g.index, esp, count: V, rMax, iso };
+  const cloud = { id, densityCenter: densityCentroid(atoms, iso, rMax / sc).map((v) => v * sc), densityCenterEven: densityCentroid(atoms.map((q) => ({ ...q, w: 1 })), iso, rMax / sc).map((v) => v * sc), positions, normals, dirs: g.dirs, index: g.index, esp, count: V, rMax, iso };
   cache.set(id, cloud); stats.built += 1; stats.buildMs += (typeof performance !== "undefined" ? performance.now() : Date.now()) - t0;
   return cloud;
 }
@@ -86,7 +100,7 @@ export function applyShift(cloud, shift, out) {
 export const ESP_RED = [0.9, 0.22, 0.2]; export const ESP_BLUE = [0.2, 0.42, 0.93]; export const ESP_NEUTRAL = [0.82, 0.88, 0.97];
 const V0 = 0.035; // e/A: potential at which the colour saturates
 const perceptual = (x) => tanhSafe(Math.sign(x) * Math.sqrt(Math.abs(x))); // square-root compression: weak induced dipoles stay visible (qualitative picture)
-const P_COLOR = 0.03; // e*A: induced / instantaneous dipole at which the pole colour is ~76 % saturated
+const P_COLOR = 0.008; // e*A: induced / instantaneous dipole at which the pole colour is ~76 % saturated
 /**
  * Electrostatic-potential colours for the vertices (qualitative): red = relatively electron-rich (negative potential),
  * blue = relatively electron-poor (positive). Static part from the permanent charges + a dipole part for an induced / instantaneous

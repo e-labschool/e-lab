@@ -1,0 +1,157 @@
+// Builds the Learn sidebar's tree directly from buildRoadmap() (the same
+// resolver /explore and the old Learn page already used) — this is not a
+// second curriculum database. It only adds DISPLAY codes like "S1.1.1",
+// derived purely from each concept's position within its subtopic's
+// existing conceptIds ordering (already the single source of truth in
+// src/data/curricula/dp-chemistry/2025.js). No concept is added, removed,
+// or renumbered independently of that ordering — if that file's concept
+// list for a subtopic changes, these codes shift accordingly and nothing
+// here needs to change.
+import { buildRoadmap } from "./curriculum-resolver.js";
+import { getSyllabusPointsForSubtopic, getSyllabusPointLevel } from "../data/curricula/dp-chemistry/syllabus-points-2025.js";
+
+let cachedTree = null;
+
+export function getLearnTree() {
+  if (cachedTree) return cachedTree;
+
+  const roadmap = buildRoadmap("dp-chemistry", "2025");
+  if (!roadmap) return null;
+
+  let totalConcepts = 0;
+  const conceptIndex = new Map(); // conceptId -> { concept, section, topic, subtopic, code, flatIndex }
+  const flatOrder = [];
+
+  const sections = roadmap.sections.map((section) => {
+    const sectionShort = section.label; // "Structure" | "Reactivity"
+    const topics = section.topics.map((topic) => {
+      const unitNumber = topic.id.split("-")[1]; // "structure-1" -> "1"
+      const unitCode = `${sectionShort[0]}${unitNumber}`; // "S1", "R2"
+      const subtopics = topic.subtopics.map((subtopic) => {
+        const subtopicNumber = subtopic.id.split("-")[1]; // "structure-1.1" -> "1.1"
+        const subtopicCode = `${sectionShort[0]}${subtopicNumber}`; // "S1.1"
+        // Syllabus-code navigation/progress uses the official 2025 guide
+        // understandings (S1.1.1, R3.1.1, etc.), not the position of
+        // e-Lab's broader internal concept buckets. This prevents codes
+        // and titles from drifting when internal content is reorganized.
+        const syllabusPoints = getSyllabusPointsForSubtopic(subtopicCode);
+        const concepts = syllabusPoints.map((point) => {
+          const concept = { id: point.code, code: point.code, title: point.title };
+          totalConcepts += 1;
+          const entry = { concept, code: point.code, sectionLabel: sectionShort, topicLabel: topic.label, subtopicLabel: subtopic.label, subtopicCode, subtopicId: subtopic.id };
+          conceptIndex.set(concept.id, entry);
+          flatOrder.push(concept.id);
+          return concept;
+        });
+
+        // Keep legacy e-Lab concept IDs resolvable for older resources and
+        // existing question-bank metadata, without using them to invent
+        // syllabus numbering.
+        for (const legacyConcept of subtopic.concepts) {
+          if (!conceptIndex.has(legacyConcept.id)) {
+            conceptIndex.set(legacyConcept.id, { concept: legacyConcept, code: null, sectionLabel: sectionShort, topicLabel: topic.label, subtopicLabel: subtopic.label, subtopicCode, subtopicId: subtopic.id });
+          }
+        }
+        return { id: subtopic.id, code: subtopicCode, label: subtopic.label, concepts };
+      });
+      return { id: topic.id, code: unitCode, label: topic.label, subtopics };
+    });
+    return { id: section.id, label: sectionShort, description: section.description, topics };
+  });
+
+  cachedTree = { sections, totalConcepts, conceptIndex, flatOrder };
+  return cachedTree;
+}
+
+/** Full context (section/topic/subtopic labels + display code) for one concept, or null. */
+export function getConceptContext(conceptId) {
+  const tree = getLearnTree();
+  return tree?.conceptIndex.get(conceptId) ?? null;
+}
+
+/** Resolve an Admin-authored Learn lesson code (for example S1.1.1) to
+ * the existing progress concept id. This keeps CMS lessons on the same
+ * learning_progress model instead of creating a second progress system. */
+export function getConceptIdForLessonCode(lessonCode) {
+  const tree = getLearnTree();
+  if (!tree || !lessonCode) return null;
+  const wanted = String(lessonCode).trim().toUpperCase();
+  for (const [conceptId, entry] of tree.conceptIndex.entries()) {
+    if (String(entry.code || "").toUpperCase() === wanted) return conceptId;
+  }
+  return null;
+}
+
+
+/** Resolve multiple Admin-selected syllabus codes to unique progress concept ids. */
+export function getConceptIdsForLessonCodes(lessonCodes) {
+  const codes = Array.isArray(lessonCodes) ? lessonCodes : [lessonCodes];
+  return [...new Set(codes.map(getConceptIdForLessonCode).filter(Boolean))];
+}
+
+/** Selectable syllabus-code entries from the authoritative Learn tree. */
+export function getSyllabusCodeOptions(parentTopic = null) {
+  const tree = getLearnTree();
+  if (!tree) return [];
+  const out = [];
+  for (const section of tree.sections) for (const topic of section.topics) for (const subtopic of topic.subtopics) {
+    if (parentTopic && subtopic.id !== parentTopic) continue;
+    for (const concept of subtopic.concepts) out.push({ code: concept.code, conceptId: concept.id, title: concept.title || concept.label || concept.id, level: getSyllabusPointLevel(concept.code), subtopicId: subtopic.id, subtopicLabel: subtopic.label });
+  }
+  return out;
+}
+
+/** The concept immediately before/after this one in curriculum order, or null at the ends. */
+export function getAdjacentConcepts(conceptId) {
+  const tree = getLearnTree();
+  if (!tree) return { previous: null, next: null };
+  const idx = tree.flatOrder.indexOf(conceptId);
+  if (idx === -1) return { previous: null, next: null };
+  const previousId = idx > 0 ? tree.flatOrder[idx - 1] : null;
+  const nextId = idx < tree.flatOrder.length - 1 ? tree.flatOrder[idx + 1] : null;
+  return {
+    previous: previousId ? tree.conceptIndex.get(previousId) : null,
+    next: nextId ? tree.conceptIndex.get(nextId) : null,
+  };
+}
+
+/** All concept IDs belonging to one topic (e.g. all of "structure-1"), for milestone/progress rollups. */
+export function getConceptIdsForTopic(topicId) {
+  const tree = getLearnTree();
+  if (!tree) return [];
+  for (const section of tree.sections) {
+    const topic = section.topics.find((t) => t.id === topicId);
+    if (topic) return topic.subtopics.flatMap((s) => s.concepts.map((c) => c.id));
+  }
+  return [];
+}
+
+/**
+ * Best-effort "Learn This Concept" link target for a Question Bank
+ * question — questions are tagged to a subtopic (e.g. "Structure 1.2"),
+ * not a single specific concept, so this resolves to the FIRST concept
+ * within that subtopic rather than inventing a precise mapping the data
+ * doesn't support. Disclosed as an approximation, not exact.
+ */
+export function getFirstConceptIdForSubtopicCode(subtopicCode) {
+  const tree = getLearnTree();
+  if (!tree || !subtopicCode) return null;
+  for (const section of tree.sections) {
+    for (const topic of section.topics) {
+      const subtopic = topic.subtopics.find((s) => s.code === subtopicCode);
+      if (subtopic?.concepts.length) return subtopic.concepts[0].id;
+    }
+  }
+  return null;
+}
+
+/** Aggregate completed/total counts for an arbitrary list of concept IDs — used for topic/section rollups and milestones. Lives here (a plain data module) rather than in ProgressContext.jsx (a React provider) so pure logic never depends on a .jsx file. */
+export function summarizeProgress(progress, conceptIds) {
+  let completed = 0, inProgress = 0;
+  for (const id of conceptIds) {
+    const status = progress[id]?.status;
+    if (status === "completed") completed += 1;
+    else if (status === "in_progress") inProgress += 1;
+  }
+  return { completed, inProgress, total: conceptIds.length };
+}

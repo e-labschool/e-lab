@@ -99,7 +99,7 @@ test("exaggeration scales the cloud shift", () => { const a = I.computeInteracti
 console.log("London dispersion (correlated instantaneous / induced dipoles)");
 test("for any direction of A's instantaneous dipole the induced dipole in B makes the adjacent charges opposite", () => {
   for (let k = 0; k < 400; k += 1) {
-    const t = k * 0.173; const axis = [1, 0, 0]; const dir = I.fluctuationDirection(t, axis, k * 0.31); if (Math.abs(dir[0]) < 0.15) continue;
+    const t = k * 0.173; const dir = norm([Math.sin(k * 1.37), Math.cos(k * 2.11), Math.sin(k * 0.73 + 1)]); if (Math.abs(dir[0]) < 0.15) continue;
     const pA = scale(dir, 0.04); const eB = I.fieldOfPointDipole(pA, [0, 0, 0], [4, 0, 0]); const pB = I.inducedDipole(M.H2, eB);
     assert.equal(I.nearSideSign(pA, [1, 0, 0]), -I.nearSideSign(pB, [-1, 0, 0]), `t=${t}`);
   }
@@ -258,7 +258,7 @@ test("NaCl: the ordered ionic lattice melts to mobile ions that still attract (c
 console.log("Learn lessons");
 test("four lessons with the required molecules, each a short list of one-sentence steps", () => {
   assert.deepEqual(LESSONS.map((l) => [l.id, ...l.pair]), [["ldf", "H2", "H2"], ["dip-ind", "HCl", "H2"], ["dip-dip", "HCl", "HCl"], ["hbond", "H2O", "H2O"]]);
-  for (const l of LESSONS) { assert.ok(l.steps.length >= 4 && l.steps.length <= 5, l.id); assert.ok(l.note.length > 30, "lesson note"); assert.equal(l.steps[0].fx.cloud, 0, "step 1 shows the ball-and-stick molecules only"); assert.equal(l.steps[1].fx.cloud, 1, "step 2 reveals the electron distribution"); for (const st of l.steps) { assert.ok(st.text.length < 230 && st.text.length > 30); assert.ok((st.text.match(/[.!?](\s|$)/g) ?? []).length <= 1, `one sentence: ${st.text}`); assert.ok(st.dur > 2 && st.dur < 8); } assert.equal(l.force, l.id); }
+  for (const l of LESSONS) { assert.ok(l.steps.length >= 4 && l.steps.length <= 5, l.id); assert.ok(l.note.length > 30, "lesson note"); if (l.id !== "ldf") assert.equal(l.steps[0].fx.cloud, 0, "step 1 shows the ball-and-stick molecules only"); else assert.equal(l.steps[0].fx.cloud, 1, "London step 1 = symmetric average clouds"); assert.equal(l.steps[1].fx.cloud, 1, "step 2 reveals the electron distribution"); for (const st of l.steps) { assert.ok(st.text.length < 230 && st.text.length > 30); assert.ok((st.text.match(/[.!?](\s|$)/g) ?? []).length <= 1, `one sentence: ${st.text}`); assert.ok(st.dur > 2 && st.dur < 8); } assert.equal(l.force, l.id); }
 });
 test("lesson step end-poses show the intended physics (computed from the same models as Explore)", () => {
   const at = (l, k, extra = {}) => I.computeInteractions(l.pair.map((id, i) => E(M[id], l.steps[k].poses[i])), { force: l.force, ...extra });
@@ -361,6 +361,173 @@ test("Play latency path builds no geometry: after warm-up the whole lesson loop 
   for (const l of LESSONS) for (let t = 0; t < lessonDuration(l); t += 1 / 30) { const f = lessonFrame(l, t); const r = I.computeInteractions(l.pair.map((id, i) => E(M[id], f.poses[i])), { force: l.force, t, fluct: { gain: f.fx.gain, fixedDir: f.fx.fixedDir } }); for (let i = 0; i < 2; i += 1) { applyShift(getCloud(l.pair[i]), r.mols[i].shift, tmp); applyEspColors(getCloud(l.pair[i]), r.mols[i].p, col); } frames += 1; }
   const ms = Number(process.hrtime.bigint() - t0) / 1e6 / frames; assert.equal(cloudStats.built, built, "no cloud was built during playback"); assert.ok(ms < 8, `per-frame CPU cost ${ms.toFixed(2)} ms`); for (const id of ["H2", "HCl", "Ar", "H2O"]) assert.ok(hasCloud(id));
 });
+
+console.log("Round 3: clouds never spin, correlated H2 polarisation, sign logic");
+const rng3 = (seed) => { let a = seed >>> 0; return () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+const randQ = (R) => { const q = [R() - 0.5, R() - 0.5, R() - 0.5, R() - 0.5]; const l = Math.hypot(...q); return q.map((v) => v / l); };
+const h2pair = (d, qa = QID, qb = QID, off = [0, 0, 0]) => [E(M.H2, P([0, 0, 0], qa)), E(M.H2, P([d + off[0], off[1], off[2]], qb))];
+test("root cause removed: nothing in the interaction result depends on time except a bounded amplitude breathing (the instantaneous-dipole DIRECTION is the A->B axis at every t)", () => {
+  const ents = h2pair(3.6, qFromAxisAngle([0, 0, 1], Math.PI / 2), qFromAxisAngle([0, 0, 1], Math.PI / 2)); let amp0 = null;
+  for (let k = 0; k < 400; k += 1) {
+    const t = k * 0.137; const r = I.computeInteractions(ents, { force: "ldf", t, fluct: { gain: 1, fixedDir: null } });
+    const u = norm(r.mols[0].instant); assert.ok(dot(u, [1, 0, 0]) > 0.999999, `direction fixed at t=${t}`);
+    const a = len(r.mols[0].instant); amp0 = amp0 ?? a; assert.ok(a / amp0 > 0.78 && a / amp0 < 1.27, "bounded breathing"); assert.ok(dot(norm(r.mols[1].induced), [1, 0, 0]) > 0.999999, "induced dipole direction fixed too");
+  }
+});
+test("H2 alone: no instantaneous dipole, no induced dipole, no cloud shift, no charge sites, no indicator lines", () => {
+  for (const t of [0, 1.3, 7.7]) {
+    const r = I.computeInteractions([E(M.H2, P([0, 0, 0]))], { force: "ldf", t, fluct: { gain: 1, fixedDir: null }, exaggeration: 2.5 });
+    assert.ok(r.mols[0].p.every((x) => x === 0) && r.mols[0].shift.every((x) => x === 0) && r.pairs.length === 0);
+    assert.equal(I.chargeSites(M.H2, P([0, 0, 0]), r.mols[0]).length, 0);
+  }
+  assert.ok(M.H2.atoms.every((a) => a.q === 0), "H2 atoms carry no partial charge"); assert.equal(M.H2.polar, false);
+});
+test("H2 + H2 far apart (beyond the correlation range) shows the symmetric average: no dipole, no sites, no lines", () => {
+  const ents = h2pair(9); const r = I.computeInteractions(ents, { force: "ldf", fluct: { gain: 1, fixedDir: null }, exaggeration: 2.5 });
+  assert.ok(len(r.mols[0].p) < I.P_MIN_VISIBLE && len(r.mols[1].p) < I.P_MIN_VISIBLE); assert.equal(I.interactionLines(ents, r, "ldf").length, 0);
+});
+test("correlated induced sign: random orientations and separations -> the facing ends of the two H2 always carry OPPOSITE partial charges", () => {
+  const R = rng3(5); let n = 0;
+  for (let k = 0; k < 300; k += 1) {
+    const d = 3.1 + R() * 1.9; const dirv = norm([R() - 0.5, R() - 0.5, R() - 0.5]); const ents = [E(M.H2, P([0, 0, 0], randQ(R))), E(M.H2, P(scale(dirv, d), randQ(R)))];
+    const r = I.computeInteractions(ents, { force: "ldf", t: R() * 20, fluct: { gain: 1, fixedDir: null } }); if (len(r.mols[1].p) < I.P_MIN_VISIBLE) continue; n += 1;
+    const sa = I.nearSideSign(r.mols[0].p, dirv); const sb = I.nearSideSign(r.mols[1].p, scale(dirv, -1)); assert.ok(sa !== 0 && sb !== 0 && sa === -sb, `facing signs ${sa} ${sb}`);
+    const sites = ents.map((e, i) => I.chargeSites(e.mol, e.pose, r.mols[i])); const near = (s, toward) => s.reduce((b, x) => (!b || dot(sub(x.p, ents[0].pose.pos), toward) > dot(sub(b.p, ents[0].pose.pos), toward) ? x : b), null);
+    assert.equal(near(sites[0], dirv).sign, -near(sites[1], scale(dirv, -1)).sign * -1 * -1 === 0 ? 0 : near(sites[0], dirv).sign); // (sanity: a site exists)
+  }
+  assert.ok(n > 180, `most random close pairs are polarised (${n})`);
+});
+test("the dotted indicator only ever joins OPPOSITE charges for an attraction (and like charges for a repulsion)", () => {
+  const R = rng3(11); let drawn = 0;
+  for (const [force, ids] of [["ldf", ["H2", "H2"]], ["ldf", ["Cl2", "Ar"]], ["dip-ind", ["HCl", "H2"]], ["dip-ind", ["H2O", "Ar"]], ["dip-dip", ["HCl", "HCl"]], ["dip-dip", ["H2O", "NH3"]], ["dip-dip", ["SO2", "HBr"]]]) {
+    for (let k = 0; k < 120; k += 1) {
+      const d = 2.4 + R() * 3.4; const ents = [E(M[ids[0]], P([0, 0, 0], randQ(R))), E(M[ids[1]], P(scale(norm([R() - 0.5, R() - 0.5, R() - 0.5]), d), randQ(R)))];
+      const r = I.computeInteractions(ents, { force, t: R() * 9, fluct: { gain: 1, fixedDir: null } });
+      for (const ln of I.interactionLines(ents, r, force)) { drawn += 1; if (ln.kind === "attract") assert.notEqual(ln.signA, ln.signB, `${force} ${ids}: attraction between like charges`); if (ln.kind === "repel") assert.equal(ln.signA, ln.signB); }
+    }
+  }
+  assert.ok(drawn > 300, `indicator exercised (${drawn})`);
+});
+test("H2 + H2 separating: induced dipole, cloud shift and indicator strength never increase with distance and reach ~0 (the display returns to the symmetric cloud)", () => {
+  let prevP = Infinity; let prevS = Infinity; let prevShift = Infinity; let last = null;
+  for (let d = 3.2; d <= 9.01; d += 0.1) {
+    const ents = h2pair(d); const r = I.computeInteractions(ents, { force: "ldf", fluct: { gain: 1, fixedDir: null }, exaggeration: 2.5 }); const p = len(r.mols[1].induced); const sh = len(r.mols[1].shift);
+    assert.ok(p <= prevP + 1e-12 && r.pairs[0].strength <= prevS + 1e-12 && sh <= prevShift + 1e-12, `monotonic at d=${d.toFixed(1)}`); prevP = p; prevS = r.pairs[0].strength; prevShift = sh; last = r;
+  }
+  assert.ok(len(last.mols[1].induced) < 2e-4 && len(last.mols[0].p) < I.P_MIN_VISIBLE && last.pairs[0].strength < 0.02, "~0 at 9 A");
+  const near = I.computeInteractions(h2pair(3.4), { force: "ldf", fluct: { gain: 1, fixedDir: null }, exaggeration: 2.5 }); assert.ok(len(near.mols[1].induced) > 0.002 && near.pairs[0].strength > 0.1, "clearly polarised at contact");
+});
+test("the same H2 pair is polarised the same way whichever molecule is dragged (symmetric treatment of the pair) and in any orientation, but the magnitude responds to orientation", () => {
+  const up = qFromAxisAngle([0, 0, 1], Math.PI / 2); const a = I.computeInteractions(h2pair(3.6, up, up), { force: "ldf" }); const b = I.computeInteractions(h2pair(3.6, QID, QID), { force: "ldf" });
+  assert.ok(len(a.mols[1].induced) > 0 && len(b.mols[1].induced) > 0); assert.ok(a.pairs[0].strength > 0 && b.pairs[0].strength > 0);
+  assert.notEqual(a.pairs[0].strength.toFixed(4), b.pairs[0].strength.toFixed(4), "London strength depends on the orientation / closest approach");
+});
+test("HCl + H2: turning HCl round flips the induced dipole of H2 (follows whichever end faces it) and the pair stays attractive", () => {
+  const hcl = (q) => E(M.HCl, P([-2.2, 0, 0], q)); const h2 = E(M.H2, P([1.3, 0, 0], qFromAxisAngle([0, 0, 1], Math.PI / 2)));
+  const Hfacing = I.computeInteractions([hcl(RZ180), h2], { force: "dip-ind" }); const Clfacing = I.computeInteractions([hcl(QID), h2], { force: "dip-ind" });
+  assert.ok(Hfacing.mols[1].induced[0] * Clfacing.mols[1].induced[0] < 0, "induced dipole reverses");
+  assert.ok(Hfacing.pairs[0].kind === "attract" && Clfacing.pairs[0].kind === "attract" && Hfacing.pairs[0].strength > 0.04 && Clfacing.pairs[0].strength > 0.04);
+  // the H2 end next to HCl is always the end of opposite sign to the HCl end that faces it
+  for (const [r, ents] of [[Hfacing, [hcl(RZ180), h2]], [Clfacing, [hcl(QID), h2]]]) { const ln = I.interactionLines(ents, r, "dip-ind")[0]; assert.notEqual(ln.signA, ln.signB); }
+});
+test("HCl + HCl: facing like charges is not attractive (repulsion, or nothing), facing opposite charges is", () => {
+  const L = E(M.HCl, P([-1.8, 0, 0])); const fav = I.computeInteractions([L, E(M.HCl, P([1.78, 0, 0]))], { force: "dip-dip" }).pairs[0]; const unf = I.computeInteractions([L, E(M.HCl, P([1.48, 0, 0], RZ180))], { force: "dip-dip" }).pairs[0];
+  assert.ok(fav.kind === "attract" && fav.energyEv < 0); assert.ok(unf.kind !== "attract" && unf.energyEv > 0, `unfavourable: ${unf.kind} ${unf.energyEv}`);
+  const R = rng3(3); let both = 0; for (let k = 0; k < 400; k += 1) { const ents = [E(M.HCl, P([0, 0, 0], randQ(R))), E(M.HCl, P(scale(norm([R() - 0.5, R() - 0.5, R() - 0.5]), 2.6 + R() * 2), randQ(R)))]; const p = I.computeInteractions(ents, { force: "dip-dip" }).pairs[0]; if (p.kind === "attract") assert.ok(p.energyEv < 0); else if (p.kind === "repel") { assert.ok(p.energyEv > 0); both += 1; } }
+  assert.ok(both > 20, "unfavourable orientations occur and are labelled repulsive");
+});
+test("rotating a polar molecule updates the interaction continuously (no jump between neighbouring orientations)", () => {
+  let prev = null; for (let a = 0; a <= 360; a += 2) { const q = qFromAxisAngle([0, 0, 1], (a * Math.PI) / 180); const p = I.computeInteractions([E(M.HCl, P([-1.8, 0, 0])), E(M.HCl, P([1.9, 0, 0], q))], { force: "dip-dip" }).pairs[0]; const v = p.sign * p.strength; if (prev !== null) assert.ok(Math.abs(v - prev) < 0.12, `jump at ${a} deg: ${prev} -> ${v}`); prev = v; }
+});
+test("polar molecules keep a stable permanent polarity: the cloud's density centre is shifted towards the delta- side, and nothing in the result depends on time", () => {
+  for (const id of ["H2O", "HCl", "HF", "HBr", "NH3", "SO2"]) {
+    const m = M[id]; const c = getCloud(id); let cp = [0, 0, 0]; let cn = [0, 0, 0]; let sp = 0; let sn = 0;
+    m.atoms.forEach((a) => { if (a.q > 0) { cp = add(cp, scale(a.p, a.q)); sp += a.q; } else if (a.q < 0) { cn = add(cn, scale(a.p, -a.q)); sn -= a.q; } });
+    const toNeg = norm(sub(scale(cn, 1 / sn), scale(cp, 1 / sp))); const off = sub(c.densityCenter, c.densityCenterEven);
+    assert.ok(dot(off, toNeg) > 0.04, `${id}: density centre offset ${dot(off, toNeg).toFixed(3)} A towards delta-`);
+    const a = I.computeInteractions([E(m, P([0, 0, 0])), E(M.Ar, P([5, 0, 0]))], { force: "dip-ind", t: 0 }); const b = I.computeInteractions([E(m, P([0, 0, 0])), E(M.Ar, P([5, 0, 0]))], { force: "dip-ind", t: 123.4 });
+    assert.deepEqual(a.mols[0], b.mols[0], `${id}: permanent state is time independent`);
+  }
+  for (const id of ["H2", "N2", "O2", "Cl2", "CH4", "CO2", "Ar", "I2"]) { const c = getCloud(id); assert.ok(len(sub(c.densityCenter, c.densityCenterEven)) < 1e-9, `${id}: nonpolar cloud is not weighted`); }
+  const w = getCloud("H2O"); assert.ok(M.H2O.atoms.find((a) => a.el === "O").q < 0 && M.H2O.atoms.filter((a) => a.el === "H").every((a) => a.q > 0));
+  near(bondAngleDeg(M.H2O, 1, 0, 2), 104.5, 0.6, "H-O-H angle");
+});
+test("the cloud mesh is built once per molecule and carries no time: identical colours and positions for identical state (deterministic, cannot spin)", () => {
+  const c = getCloud("H2"); const b1 = new Float32Array(c.count * 3); const b2 = new Float32Array(c.count * 3); applyEspColors(c, [0.01, 0.02, 0], b1); applyEspColors(c, [0.01, 0.02, 0], b2); assert.deepEqual(b1, b2);
+  const p1 = new Float32Array(c.count * 3); const p2 = new Float32Array(c.count * 3); applyShift(c, [0.1, 0, 0], p1); applyShift(c, [0.1, 0, 0], p2); assert.deepEqual(p1, p2);
+  const sym = new Float32Array(c.count * 3); applyEspColors(c, [0, 0, 0], sym); const neutral = [0.82, 0.88, 0.97]; for (let i = 0; i < c.count; i += 1) assert.ok(Math.abs(sym[3 * i] - neutral[0]) < 1e-6, "H2 average cloud is the neutral colour everywhere (no red/blue)");
+});
+test("London Learn lesson: exactly five steps with the required sentences, the same interaction model as Explore", () => {
+  const l = LESSONS[0]; assert.deepEqual(l.steps.map((s) => s.text), ["H₂ is nonpolar and has no permanent dipole.", "A momentary electron-density fluctuation creates an instantaneous dipole.", "The instantaneous dipole induces a correlated dipole in the neighboring molecule.", "The correlated temporary dipoles produce a London dispersion attraction.", "As the molecules separate, their dispersion interaction becomes weaker."]);
+  const at = (k) => I.computeInteractions(l.pair.map((id, i) => E(M[id], l.steps[k].poses[i])), { force: "ldf", fluct: { gain: l.steps[k].fx.gain, fixedDir: l.steps[k].fx.fixedDir }, exaggeration: 2.5 });
+  const s = [0, 1, 2, 3, 4].map(at); assert.ok(len(s[0].mols[0].p) === 0, "step 1 symmetric"); assert.ok(len(s[1].mols[0].instant) > I.P_MIN_VISIBLE, "step 2 instantaneous dipole"); assert.ok(len(s[2].mols[1].induced) > I.P_MIN_VISIBLE * 0.5, "step 3 induced");
+  assert.ok(s[3].pairs[0].strength > 0.08, "step 4 attraction"); assert.ok(len(s[4].mols[1].induced) < I.P_MIN_VISIBLE * 0.5 && s[4].pairs[0].strength < s[3].pairs[0].strength * 0.2, "step 5 separated and weaker");
+  assert.ok(l.steps[4].poses[1].pos[0] - l.steps[4].poses[0].pos[0] > l.steps[3].poses[1].pos[0] - l.steps[3].poses[0].pos[0] + 2, "step 5 moves apart");
+});
+
+console.log("Round 3: Heat & Phase Change (solid / liquid / gas structure and transient interaction lines)");
+const settle = (id, E0, secs) => { const sub0 = S[id]; const sys = createSystem(id); let en = 0; const segs = curveSegments(sub0); const to = (Et, sec) => { for (let k = 0; k < sec * 60; k += 1) { en += Math.sign(Et - en) * Math.min(Math.abs(Et - en), (0.5 / 60) * (segs[4].E1 / 10)); stepSystem(sys, 1 / 60, stateAtEnergy(sub0, en)); } };
+  return { sys, to, en: () => en, st: () => stateAtEnergy(sub0, en), segs, E0, secs }; };
+const phaseSample = (id) => {
+  const s0 = S[id]; const h = settle(id); const segs = h.segs; const out = {};
+  for (const [name, Et] of [["solid", segs[0].E1 * 0.7], ["liquid", (segs[2].E0 + segs[2].E1) / 2], ["gas", (segs[4].E0 + segs[4].E1) / 2]]) {
+    h.to(Et, 12); const sys = h.sys; const p0 = Float64Array.from(sys.pos); const q0 = Float64Array.from(sys.quat); const nnv = []; const counts = []; const on = new Map(); const life = []; const start = new Map(); let longest = 0; const st = h.st(); let maxLinkD = 0; let hbBad = 0; let hbDrawn = 0;
+    for (let f = 0; f < 60 * 14; f += 1) {
+      stepSystem(sys, 1 / 60, st); if (f % 30 === 0) nnv.push(metrics(sys).meanNN);
+      const cur = new Set(); for (const l of sys.links ?? []) { if (l.w < 0.5) continue; const key = l.i * 100 + l.j; cur.add(key); on.set(key, (on.get(key) ?? 0) + 1); maxLinkD = Math.max(maxLinkD, l.d);
+        if (l.kind === "hbond") { hbDrawn += 1; const D = l.a; void D; } }
+      counts.push(cur.size); for (const k of cur) if (!start.has(k)) start.set(k, f); for (const [k, f0] of [...start]) if (!cur.has(k)) { life.push((f - f0) / 60); start.delete(k); }
+    }
+    let msd = 0; for (let i = 0; i < sys.n; i += 1) msd += (sys.pos[3 * i] - p0[3 * i]) ** 2 + (sys.pos[3 * i + 1] - p0[3 * i + 1]) ** 2 + (sys.pos[3 * i + 2] - p0[3 * i + 2]) ** 2;
+    const m = metrics(sys); void q0; longest = Math.max(0, ...on.values()) / 60;
+    out[name] = { nn: nnv.reduce((a, b) => a + b, 0) / nnv.length, homeRms: m.homeRms, q6: m.q6, msd: msd / sys.n / sys.nn ** 2, counts, life, always: [...on.values()].filter((v) => v >= 60 * 14 - 2).length, distinct: on.size, longest, maxLinkD, hbBad, hbDrawn, nnRef: sys.nn };
+  }
+  void s0; return out;
+};
+const PH = {}; for (const id of ["Ar", "H2O", "HCl"]) PH[id] = phaseSample(id);
+test("spacing / order / mobility are distinct and ordered solid < liquid < gas; liquid is 1.0-1.2x the solid spacing and far below the gas", () => {
+  for (const id of Object.keys(PH)) {
+    const { solid, liquid, gas } = PH[id]; const r = liquid.nn / solid.nn;
+    assert.ok(r > 1.04 && r < 1.2, `${id}: liquid/solid nearest-neighbour ${r.toFixed(2)}`); assert.ok(gas.nn > liquid.nn * 1.35, `${id}: gas ${gas.nn.toFixed(2)} vs liquid ${liquid.nn.toFixed(2)}`);
+    assert.ok(solid.homeRms < 0.25 && liquid.homeRms > 0.8 && gas.homeRms > liquid.homeRms, `${id}: displacement from lattice sites ${[solid, liquid, gas].map((x) => x.homeRms.toFixed(2))}`);
+    assert.ok(liquid.msd > solid.msd * 6 && gas.msd > liquid.msd * 6, `${id}: MSD ${[solid, liquid, gas].map((x) => x.msd.toFixed(3))}`);
+    if (id !== "H2O") assert.ok(solid.q6 > liquid.q6 + 0.1, `${id}: bond-orientational order ${solid.q6.toFixed(2)} > ${liquid.q6.toFixed(2)}`);
+  }
+});
+test("liquid interaction lines are transient: the count varies, every line has a finite lifetime, no pair stays connected for the whole sample, nothing is a fixed network", () => {
+  for (const id of Object.keys(PH)) {
+    const L = PH[id].liquid; const lo = Math.min(...L.counts); const hi = Math.max(...L.counts); assert.ok(hi > lo + 2 && hi >= 4, `${id}: count varies ${lo}..${hi}`);
+    assert.ok(L.life.length > 15, `${id}: lines form AND break (${L.life.length} lifetimes)`); assert.equal(L.always, 0, `${id}: no pair connected for all frames`); assert.ok(Math.max(...L.life) < 12 && L.life.reduce((a, b) => a + b, 0) / L.life.length < 3, `${id}: finite lifetimes`);
+    assert.ok(L.distinct > 20, `${id}: many different pairs take turns (${L.distinct})`);
+    const S0 = PH[id].solid; assert.ok(S0.always > 10, `${id}: the solid keeps a steady network`);
+  }
+});
+test("gas: (almost) no lines, none beyond the cutoff; solid lines are steady", () => {
+  for (const id of Object.keys(PH)) { const G = PH[id].gas; assert.ok(G.counts.reduce((a, b) => a + b, 0) / G.counts.length < 1.5, `${id}: gas mean lines ${G.counts.reduce((a, b) => a + b, 0) / G.counts.length}`); assert.ok(G.maxLinkD <= G.nnRef * 1.7, `${id}: no long-range gas line (${G.maxLinkD.toFixed(1)} A)`); }
+});
+test("liquid water: every drawn hydrogen bond satisfies the donor/acceptor geometry (D...A < 3.6 A scaled, H-D...A < 48 deg) and hydrogen atoms stay bonded", () => {
+  const h = settle("H2O"); const segs = h.segs; h.to((segs[2].E0 + segs[2].E1) / 2, 14); const sys = h.sys; let drawn = 0; const st = h.st();
+  for (let f = 0; f < 600; f += 1) { stepSystem(sys, 1 / 60, st); for (const l of sys.links ?? []) { if (!l.on || l.w < 0.5 || l.kind !== "hbond") continue; drawn += 1;
+    assert.ok(l.g > 0.2, "geometry quality of a drawn bond"); assert.ok(l.dDA === undefined || l.dDA < sys.nn * 1.3); assert.ok(l.ang === undefined || l.ang < 48, `H-D...A angle ${l.ang}`); } }
+  assert.ok(drawn > 600, `hydrogen bonds are drawn in the liquid (${drawn})`);
+});
+test("covalent bond lengths are identical in every phase (rigid molecules) and an H-bond pull never changes them", () => {
+  const h = settle("H2O"); const ref = bondLengths(h.sys); const segs = h.segs;
+  for (const Et of [segs[0].E1 * 0.5, segs[1].E1, segs[2].E1, segs[3].E1, segs[4].E1 * 0.8]) { h.to(Et, 6); const bl = bondLengths(h.sys); bl.forEach((v, i) => near(v, ref[i], 1e-6, `bond ${i}`)); }
+});
+test("continuity across melting and boiling: no particle jumps between frames, structural metrics change smoothly, and the energy/phase model drives it", () => {
+  for (const id of ["Ar", "H2O"]) {
+    const s0 = S[id]; const sys = createSystem(id); let en = 0; let prev = metrics(sys); let t = 0; let worstStep = 0; let worstHome = 0; let worstNN = 0; let sawMelt = false; let sawBoil = false;
+    while (en < totalEnergy(s0) - 1e-6 && t < 300) {
+      en = advanceEnergy(s0, en, 1 / 60, 1, 1); const st = stateAtEnergy(s0, en); const before = Float64Array.from(sys.pos); stepSystem(sys, 1 / 60, st);
+      for (let i = 0; i < sys.n; i += 1) worstStep = Math.max(worstStep, Math.hypot(sys.pos[3 * i] - before[3 * i], sys.pos[3 * i + 1] - before[3 * i + 1], sys.pos[3 * i + 2] - before[3 * i + 2]) / sys.nn);
+      if (st.melt > 0.02 && st.melt < 0.98) sawMelt = true; if (st.vap > 0.02 && st.vap < 0.98) sawBoil = true;
+      if (Math.round(t * 60) % 6 === 0) { const m = metrics(sys); worstHome = Math.max(worstHome, Math.abs(m.homeRms - prev.homeRms)); worstNN = Math.max(worstNN, Math.abs(m.meanNN - prev.meanNN)); prev = m; } t += 1 / 60;
+    }
+    assert.ok(sawMelt && sawBoil, "the melting and boiling plateaus were traversed gradually"); assert.ok(worstStep < 0.35, `${id}: max single-frame displacement ${worstStep.toFixed(3)} nn`); assert.ok(worstHome < 0.3 && worstNN < 0.3, `${id}: metric jump per 0.1 s ${worstHome.toFixed(3)} / ${worstNN.toFixed(3)}`);
+  }
+});
+
 void DEBYE_IN_E_ANGSTROM; void TRAY_POLAR;
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

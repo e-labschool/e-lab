@@ -7,11 +7,12 @@ import { atomPosition } from "../model/particles.js";
 import { displayRadii, ionColors } from "../../bonding-visualizer/model/lattice.js";
 
 // The Heat & Phase Change cube. Atoms are InstancedMeshes (one per element), covalent bonds one InstancedMesh of cylinders, the
-// "intermolecular attraction" lines one preallocated LineSegments. Nothing is created per frame. The particle dynamics themselves run
+// dotted interaction lines one preallocated bead InstancedMesh. Nothing is created per frame. The particle dynamics themselves run
 // in the React clock (see components/useHeatSim.js) so they also work without WebGL; this component only draws them.
 const CUBE_VIEW = 5.4; // scene units across one cube
 const ATOM_SCALE = 1.4; // cube atoms are drawn a little larger than in the two-molecule workspace (small objects in a big box)
-const MAX_LINES = 260;
+const MAX_BEADS = 1800; // dotted interaction lines are rows of small beads (one InstancedMesh, preallocated)
+const LINK_COLOR = { hbond: new THREE.Color("#5fd8ff"), dipole: new THREE.Color("#f2c36b"), dispersion: new THREE.Color("#b7c8ee"), ion: new THREE.Color("#f2c36b") };
 
 function CubeFrame({ L }) {
   const edges = useMemo(() => new THREE.EdgesGeometry(new THREE.BoxGeometry(L, L, L)), [L]);
@@ -36,13 +37,13 @@ function SystemView({ item, offsetX, showLines }) {
     const bonds = []; sys.mol.bonds.forEach(([a, b, order]) => { const offs = order === 3 ? [-1, 0, 1] : order === 2 ? [-0.5, 0.5] : [0]; offs.forEach((o) => bonds.push({ a, b, o, r: order === 1 ? 0.11 : 0.07 })); });
     return { kinds, bonds };
   }, [sys]);
-  const atomRefs = useRef([]); const bondRef = useRef(null); const lineRef = useRef(null);
+  const atomRefs = useRef([]); const bondRef = useRef(null); const beadRef = useRef(null);
   const sphere = useMemo(() => new THREE.SphereGeometry(1, 20, 14), []); const cyl = useMemo(() => new THREE.CylinderGeometry(1, 1, 1, 10, 1), []);
   const mats = useMemo(() => parts.kinds.map((k) => new THREE.MeshStandardMaterial({ color: k.color, roughness: 0.4, metalness: 0.04 })), [parts]);
   const bondMat = useMemo(() => new THREE.MeshStandardMaterial({ color: "#c7cedd", roughness: 0.5 }), []);
-  const lineGeo = useMemo(() => { const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(MAX_LINES * 6), 3).setUsage(THREE.DynamicDrawUsage)); g.setDrawRange(0, 0); return g; }, []);
-  const lineMat = useMemo(() => new THREE.LineBasicMaterial({ color: "#b7c8ee", transparent: true, opacity: 0.38, depthWrite: false }), []);
-  useEffect(() => () => { sphere.dispose(); cyl.dispose(); mats.forEach((m) => m.dispose()); bondMat.dispose(); lineGeo.dispose(); lineMat.dispose(); }, [sphere, cyl, mats, bondMat, lineGeo, lineMat]);
+  const beadGeo = useMemo(() => new THREE.SphereGeometry(1, 8, 6), []);
+  const beadMat = useMemo(() => new THREE.MeshBasicMaterial({ color: "#ffffff", transparent: true, opacity: 0.9, depthWrite: false, depthTest: false }), []);
+  useEffect(() => () => { sphere.dispose(); cyl.dispose(); mats.forEach((m) => m.dispose()); bondMat.dispose(); beadGeo.dispose(); beadMat.dispose(); }, [sphere, cyl, mats, bondMat, beadGeo, beadMat]);
   const tmp = useMemo(() => ({ m: new THREE.Matrix4(), q: new THREE.Quaternion(), p: new THREE.Vector3(), sc: new THREE.Vector3(), a: new THREE.Vector3(), b: new THREE.Vector3(), up: new THREE.Vector3(0, 1, 0), d: new THREE.Vector3() }), []);
   useFrame(() => {
     const out = [0, 0, 0];
@@ -63,16 +64,19 @@ function SystemView({ item, offsetX, showLines }) {
       }
       bm.count = c; bm.instanceMatrix.needsUpdate = true;
     }
-    // faint lines between neighbouring particles: "intermolecular attractions" (schematic). They fade as cohesion is released.
-    const lp = lineGeo.attributes.position.array; let nl = 0;
-    if (showLines) {
-      const rc = sys.nn * 1.32;
-      for (let i = 0; i < n && nl < MAX_LINES; i += 1) for (let j = i + 1; j < n && nl < MAX_LINES; j += 1) {
-        if (Math.min(sys.c[i], sys.c[j]) < 0.5) continue; const dx = sys.pos[3 * j] - sys.pos[3 * i]; const dy = sys.pos[3 * j + 1] - sys.pos[3 * i + 1]; const dz = sys.pos[3 * j + 2] - sys.pos[3 * i + 2];
-        if (dx * dx + dy * dy + dz * dz > rc * rc) continue; lp.set([sys.pos[3 * i], sys.pos[3 * i + 1], sys.pos[3 * i + 2], sys.pos[3 * j], sys.pos[3 * j + 1], sys.pos[3 * j + 2]], nl * 6); nl += 1;
+    // dotted interaction lines: the transient links of the particle model (see model/particles.js updateLinks). Each one is a row of beads whose
+    // size follows the link's fade, so lines grow in, flicker out and never pop.
+    const bd = beadRef.current;
+    if (bd) {
+      let nb = 0;
+      if (showLines && sys.links) for (const lk of sys.links) {
+        const dx = lk.b[0] - lk.a[0]; const dy = lk.b[1] - lk.a[1]; const dz = lk.b[2] - lk.a[2]; const l = Math.hypot(dx, dy, dz); if (l < 0.3 * sys.nn) continue;
+        const cnt = Math.max(3, Math.min(6, Math.round(l / (0.27 * sys.nn)))); const sz = sys.nn * (lk.kind === "hbond" ? 0.085 : 0.065) * lk.w * (0.65 + 0.35 * (1 - (lk.solid ?? 0)));
+        const col = LINK_COLOR[lk.kind] ?? LINK_COLOR.dispersion;
+        for (let k = 0; k < cnt && nb < MAX_BEADS; k += 1) { const u = (k + 0.5) / cnt; tmp.m.makeScale(sz, sz, sz).setPosition(lk.a[0] + dx * u, lk.a[1] + dy * u, lk.a[2] + dz * u); bd.setMatrixAt(nb, tmp.m); bd.setColorAt(nb, col); nb += 1; }
       }
+      bd.count = nb; bd.instanceMatrix.needsUpdate = true; if (bd.instanceColor) bd.instanceColor.needsUpdate = true;
     }
-    lineGeo.setDrawRange(0, nl * 2); lineGeo.attributes.position.needsUpdate = true; lineMat.opacity = 0.14 + 0.3 * (nl > 0 ? 1 : 0);
   });
   const counts = parts.kinds.map((k) => (sys.ionic ? n / 2 : k.atoms.length * n));
   return (
@@ -80,7 +84,7 @@ function SystemView({ item, offsetX, showLines }) {
       <CubeFrame L={L} />
       {parts.kinds.map((k, i) => (<instancedMesh key={k.key} ref={(m) => { atomRefs.current[i] = m; }} args={[sphere, mats[i], counts[i]]} frustumCulled={false} renderOrder={2} />))}
       {parts.bonds.length > 0 && <instancedMesh ref={bondRef} args={[cyl, bondMat, n * parts.bonds.length]} frustumCulled={false} renderOrder={2} />}
-      <lineSegments ref={lineRef} geometry={lineGeo} material={lineMat} frustumCulled={false} renderOrder={2} />
+      <instancedMesh ref={beadRef} args={[beadGeo, beadMat, MAX_BEADS]} frustumCulled={false} renderOrder={3} />
     </group>
   );
 }

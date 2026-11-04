@@ -246,7 +246,7 @@ function Workspace() {
             <span className="imf-cap">{sub.label} <small>{sub.kind === "molecular" ? "molecules, covalent bonds inside" : ""}</small></span>
             {compare && <span className="imf-cap imf-cap--ion">NaCl <small>ionic lattice (not molecules)</small></span>}
           </div>
-          <p className="imf-cube-key" data-testid="cube-key">Faint lines = intermolecular attractions between neighbouring particles (schematic). They fade only as the particles separate to a gas.</p>
+          <p className="imf-cube-key" data-testid="cube-key">Dotted lines = intermolecular interactions (hydrogen bonds in water, dipole or dispersion contacts elsewhere; schematic). Steady in a solid, forming and breaking in a liquid, gone in a gas apart from brief contacts.</p>
         </CubeStage>
         <div className="imf-bar imf-bar--heat" role="toolbar" aria-label="Heating controls" data-testid="heat-controls">
           <div className="imf-readout" aria-live="polite" data-testid="heat-readout">
@@ -396,7 +396,7 @@ function heatText(main, sub, compare, ion) {
   const t = {
     solid: `Solid: particles vibrate about fixed positions that hold the ordered arrangement; temperature rises as energy is added.${bonds}`,
     melting: `Melting at ${sub.Tm} K: the added energy loosens the ordered arrangement, so the temperature stays constant. The attractions between particles remain.${bonds}`,
-    liquid: `Liquid: particles move and rearrange but stay close together, still held by intermolecular attractions.${bonds}`,
+    liquid: `Liquid: particles are close but disordered, move past one another and tumble; interactions form and break all the time.${bonds}`,
     boiling: `Boiling at ${sub.Tb} K: the added energy separates particles from each other (overcoming the intermolecular attractions) at constant temperature.${bonds}`,
     gas: `Gas: particles are widely separated and move freely.${bonds}`,
   }[main.phase];

@@ -28,7 +28,7 @@ const F0 = { gain: 0, fixedDir: null, induced: false, attract: false, perm: fals
 const fx = (o) => ({ ...F0, ...o });
 
 // ---- A: London dispersion, H2 + H2 (upright, side by side) -------------------------------------------------------------------------
-const aFar = [pose([-3.5, 0, 0], Q90), pose([3.5, 0, 0], Q90)]; const aNear = [pose([-1.75, 0, 0], Q90), pose([1.75, 0, 0], Q90)];
+const aFar = [pose([-4.4, 0, 0], Q90), pose([4.4, 0, 0], Q90)]; const aMid = [pose([-2.0, 0, 0], Q90), pose([2.0, 0, 0], Q90)]; const aNear = [pose([-1.78, 0, 0], Q90), pose([1.78, 0, 0], Q90)];
 // ---- B: dipole-induced dipole, HCl + H2 -----------------------------------------------------------------------------------------------
 const bH = placeAtom("HCl", RZ180, 0, [-1.4, 0, 0]); // H end faces the H2 molecule
 const bCl = placeAtom("HCl", QID, 1, [-1.7, 0, 0]); // turned round: Cl end faces it
@@ -41,11 +41,11 @@ export const LESSONS = [
     id: "ldf", force: "ldf", label: "London Dispersion", pair: ["H2", "H2"], summary: "H₂ + H₂: temporary dipoles",
     note: "London dispersion comes from correlated fluctuations of electron density in neighbouring molecules. The electron clouds do not need to collide or repel each other.",
     steps: [
-      { id: "show", dur: 3.6, text: "Two hydrogen molecules, each two H atoms joined by a covalent bond (H–H).", poses: aFar, fx: fx({}) },
-      { id: "nonpolar", dur: 4, text: "Hydrogen molecules are nonpolar because they have no permanent molecular dipole.", poses: aFar, fx: fx({ cloud: 1 }) },
-      { id: "instant", dur: 4.2, text: "A temporary fluctuation in electron density produces an instantaneous dipole.", poses: aFar, fx: fx({ cloud: 1, gain: 1, fixedDir: [1, 0, 0], dyn: true }) },
-      { id: "induce", dur: 4.2, text: "The instantaneous dipole induces a dipole in the neighbouring molecule.", poses: aNear, fx: fx({ cloud: 1, gain: 1, fixedDir: [1, 0, 0], induced: true, dyn: true }) },
-      { id: "attract", dur: 4.6, text: "The temporary and induced dipoles attract one another through London dispersion forces.", poses: aNear, fx: fx({ cloud: 1, gain: 1, fixedDir: [1, 0, 0], induced: true, attract: true, dyn: true }) },
+      { id: "average", dur: 4, text: "H₂ is nonpolar and has no permanent dipole.", poses: aFar, fx: fx({ cloud: 1 }) },
+      { id: "instant", dur: 4.4, text: "A momentary electron-density fluctuation creates an instantaneous dipole.", poses: aMid, fx: fx({ cloud: 1, gain: 1, fixedDir: [1, 0, 0], dyn: true }) },
+      { id: "induce", dur: 4.4, text: "The instantaneous dipole induces a correlated dipole in the neighboring molecule.", poses: aMid, fx: fx({ cloud: 1, gain: 1, fixedDir: [1, 0, 0], induced: true, dyn: true }) },
+      { id: "attract", dur: 4.6, text: "The correlated temporary dipoles produce a London dispersion attraction.", poses: aNear, fx: fx({ cloud: 1, gain: 1, fixedDir: [1, 0, 0], induced: true, attract: true, dyn: true }) },
+      { id: "separate", dur: 5, text: "As the molecules separate, their dispersion interaction becomes weaker.", poses: aFar, fx: fx({ cloud: 1, gain: 1, fixedDir: [1, 0, 0], induced: true, attract: true, dyn: true }) },
     ],
   },
   {

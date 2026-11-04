@@ -1,0 +1,266 @@
+@import "tailwindcss";
+
+/* The app toggles dark mode via a `.dark` class on <html> (see
+   ThemeContext.jsx), not OS preference — so Tailwind's `dark:` utility
+   variant needs to be pointed at that class explicitly. Without this,
+   `dark:` utilities (used on the header logo's contrast backing plate)
+   would silently follow the OS theme instead of the in-app toggle. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  /* ---- Typography ---- */
+  --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  /* ---- Light-mode base palette ----
+     Page background is a deliberately perceptible pale blue-lavender
+     tint, not plain white — this is what makes elevated white panels
+     ("paper-raised") actually pop as a visible second layer, per the
+     brief's LIGHT BACKGROUND -> ELEVATED PANEL -> CARD -> BUTTON depth
+     system. All text-contrast ratios re-verified against this new
+     background before adopting it (ink 16.1:1, ink-soft 7.1:1,
+     ink-faint 4.6:1 — all still comfortably clear WCAG AA). */
+  --color-paper: #EEF1FB;
+  --color-paper-raised: #FFFFFF;
+  --color-ink: #12161C;
+  --color-ink-soft: #4A5160;
+  --color-ink-faint: #666D7A; /* darkened from #8A909C — was 3.07:1 vs paper, failing WCAG's 4.5:1 for the small caption/meta text this token is used for; now 4.98:1 */
+  --color-line: #DCE1F0;
+
+  /* ---- Brand accents (shared both modes) ---- */
+  --color-indigo: #3654D6;
+  --color-indigo-soft: #EAEDFB;
+  --color-amber: #C96A21;
+  --color-amber-soft: #FBF0E4;
+  --color-teal: #2B7A6E;
+  --color-teal-soft: #E7F3F0;
+  --color-violet: #7A4FB0;
+  --color-violet-soft: #F0EAF8;
+  --color-green: #4B7A3D;
+  --color-green-soft: #EDF3E9;
+  --color-coral: #B85C4A;
+  --color-coral-soft: #F8ECE9;
+
+  /* ---- Student Learn lesson title ----
+     Brand green #007036 in light mode: 5.52:1 against the page background,
+     comfortably clear. Verified numerically against #007036 alone in dark
+     mode first -- only 3.08:1 against the dark page background, barely
+     scraping WCAG's large-text minimum and well below this codebase's own
+     established bar for its other dark-mode accents (~7-9:1). The dark
+     value below is the SAME hue (148.9deg) at the SAME ~42% saturation
+     already used by --color-green's dark variant, just lightened enough
+     for 7.5:1 -- a genuine "dark-mode version of the brand colour", not an
+     unrelated substitute or a bright neon green. */
+  --color-lesson-title: #007036;
+
+  /* ---- Learn end-of-unit card ----
+     Warm pastel surface with intentionally stronger action buttons. */
+  --color-end-unit-bg: #FFF6D8;
+  --color-end-unit-border: #E7D7A3;
+  --color-end-unit-finish: #4F7A45;
+  --color-end-unit-finish-hover: #426A39;
+  --color-end-unit-secondary: #4B382B;
+  --color-end-unit-secondary-hover: #3D2D23;
+  --color-end-unit-next: #20242A;
+  --color-end-unit-next-hover: #111419;
+
+  /* ---- Functional roles (homepage + section accents) ----
+     student = indigo, teacher = amber, interactive/simulation = teal,
+     resources = violet, assess = green, warnings = coral. Same physical
+     colour tokens as above, named by role so consuming components read
+     intent rather than a raw hue. */
+  --color-role-student: var(--color-indigo);
+  --color-role-student-soft: var(--color-indigo-soft);
+  --color-role-teacher: var(--color-amber);
+  --color-role-teacher-soft: var(--color-amber-soft);
+  --color-role-interactive: var(--color-teal);
+  --color-role-interactive-soft: var(--color-teal-soft);
+  --color-role-resources: var(--color-violet);
+  --color-role-resources-soft: var(--color-violet-soft);
+  --color-role-assess: var(--color-green);
+  --color-role-assess-soft: var(--color-green-soft);
+
+  /* ---- Block colors (periodic table / categorization) ---- */
+  --color-block-s: #3654D6;
+  --color-block-p: #2B7A6E;
+  --color-block-d: #C96A21;
+  --color-block-f: #8B4FB8;
+}
+
+/* ---- Dark mode overrides ---- */
+.dark {
+  --color-paper: #0C0F14;
+  --color-paper-raised: #12161D;
+  --color-ink: #EDEEF0;
+  --color-ink-soft: #A6ACB8;
+  --color-ink-faint: #8189A0; /* lightened from #666D7A — was 3.69:1 vs dark paper, now 5.5:1 */
+  --color-line: #262B34;
+
+  --color-indigo: #6C86EE;
+  --color-indigo-soft: #1B2140;
+  --color-amber: #E2872F;
+  --color-amber-soft: #2E2113;
+  --color-teal: #4FB3A3;
+  --color-teal-soft: #142522;
+  --color-violet: #B389DC;
+  --color-violet-soft: #221B33;
+  --color-green: #86C46E;
+  --color-green-soft: #1B2416;
+  --color-coral: #E0917E;
+  --color-coral-soft: #2E1D18;
+
+  /* Same hue/saturation as the light-mode #007036 lesson-title token,
+     lightened for 7.5:1 contrast against the dark page background --
+     see the light-mode definition for the full contrast rationale. */
+  --color-lesson-title: #4AB57E;
+
+  /* Keep the end card warm but subdued in dark mode rather than bright. */
+  --color-end-unit-bg: #2A2618;
+  --color-end-unit-border: #554D2E;
+  --color-end-unit-finish: #6E9B61;
+  --color-end-unit-finish-hover: #80AC73;
+  --color-end-unit-secondary: #6B5140;
+  --color-end-unit-secondary-hover: #7B5E49;
+  --color-end-unit-next: #363B42;
+  --color-end-unit-next-hover: #444A52;
+
+  --color-block-s: #6C86EE;
+  --color-block-p: #4FB3A3;
+  --color-block-d: #E2872F;
+  --color-block-f: #B389DC;
+}
+
+html {
+  color-scheme: light;
+}
+html.dark {
+  color-scheme: dark;
+}
+
+body {
+  background-color: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+::selection {
+  background-color: var(--color-indigo-soft);
+  color: var(--color-indigo);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-indigo);
+  outline-offset: 2px;
+}
+
+/* The Fullscreen API's own backdrop (rendered behind whatever element is
+   fullscreened) defaults to opaque black in every browser, regardless of
+   page styling -- and requestFullscreen()'d elements themselves aren't
+   covered by ordinary page CSS unless :fullscreen is targeted explicitly.
+   Without this, entering Full Screen on a simulation would flash/show
+   browser black instead of e-Lab's own paper background, in both themes. */
+:fullscreen,
+::backdrop {
+  background-color: var(--color-paper);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* Q Builder paper export: only used by the print-style Paper/Markscheme
+   preview. Hides all normal site chrome and shows just the printable
+   document, full width, in fixed black-on-white document styling
+   regardless of the site's light/dark theme. Purely additive — no
+   existing selector above is touched. */
+@media print {
+  header, footer, .qbuilder-chrome {
+    display: none !important;
+  }
+  .qbuilder-print-area {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    color: #111 !important;
+    background: #fff !important;
+  }
+  body {
+    background: #fff !important;
+  }
+}
+
+/* Explicit light content surface used inside the dark app shell (question
+   cards, scientific previews, etc.). It resets semantic tokens locally so
+   descendants that use var(--color-ink/line/paper) stay readable instead of
+   inheriting dark-mode light text onto a fixed white background. */
+.light-surface {
+  --color-paper: #EEF1FB;
+  --color-paper-raised: #FFFFFF;
+  --color-ink: #12161C;
+  --color-ink-soft: #4A5160;
+  --color-ink-faint: #666D7A;
+  --color-line: #DCE1F0;
+  --color-indigo: #3654D6;
+  --color-indigo-soft: #EAEDFB;
+  --color-amber: #C96A21;
+  --color-amber-soft: #FBF0E4;
+  --color-teal: #2B7A6E;
+  --color-teal-soft: #E7F3F0;
+  --color-violet: #7A4FB0;
+  --color-violet-soft: #F0EAF8;
+  --color-coral: #B85C4A;
+  --color-coral-soft: #F8ECE9;
+  color-scheme: light;
+  color: #12161C;
+}
+
+/* Student/teacher display preferences. Scope deliberately excludes global chrome. */
+.elab-display-surface.elab-text-small { --elab-reading-scale: .94; }
+.elab-display-surface.elab-text-default { --elab-reading-scale: 1; }
+.elab-display-surface.elab-text-large { --elab-reading-scale: 1.10; }
+.elab-display-surface.elab-text-xl { --elab-reading-scale: 1.20; }
+.elab-display-surface :where(p, li, td, th, blockquote, .elab-reading-text) { font-size: calc(1em * var(--elab-reading-scale, 1)); }
+.elab-display-surface.elab-lines-compact :where(p, li, blockquote) { line-height: 1.4; }
+.elab-display-surface.elab-lines-normal :where(p, li, blockquote) { line-height: 1.6; }
+.elab-display-surface.elab-lines-relaxed :where(p, li, blockquote) { line-height: 1.85; }
+.elab-display-surface.elab-contrast-high { --color-ink-soft: var(--color-ink); --color-ink-faint: var(--color-ink-soft); }
+.elab-display-surface.elab-contrast-high :where(input, textarea, select, button) { outline-color: currentColor; }
+
+/* Standalone (display) equations -- emitted by src/lib/scientificContent.jsx
+   for a ⟦math:...⟧ marker alone on its line/block, and for \[ ... \].
+   Centred, spaced, and its own horizontal scroll container so long
+   equations never overflow the page. Inline equations are unaffected. */
+.sci-math-display {
+  display: block;
+  max-width: 100%;
+  margin: 0.75em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  text-align: center;
+  text-align-last: center;
+  font-family: var(--font-serif, ui-serif, Georgia, serif);
+  font-size: 1.05em;
+  line-height: 1.6;
+  -webkit-overflow-scrolling: touch;
+}
+.sci-math-display-inner {
+  display: inline-block;
+  white-space: nowrap;
+  text-align: center;
+}
+
+/* Shared Image Lightbox (src/components/image-viewer). Attributes are added
+   only inside an ImageLightboxProvider (student surfaces); these rules never
+   change box size, so floated / wrapped images keep their layout. */
+[data-zoomable-image] { cursor: zoom-in; }
+[data-zoomable-image]:focus-visible {
+  outline: 2px solid var(--color-indigo, #3654D6);
+  outline-offset: 2px;
+}
