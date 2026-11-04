@@ -1,42 +1,40 @@
-import { Pause, Play, RotateCcw, StepBack, StepForward } from "lucide-react";
+import { Pause, Play, RotateCcw } from "lucide-react";
 import { MiniSwitch } from "../../../components/simulation/SimulationDashboard.jsx";
 import { SPEEDS } from "../state/studioState.js";
+import { TRANSPORT } from "../state/stepMachine.js";
 import { useStudio, useStudioActions } from "../state/StudioContext.jsx";
 
-/** Play | Pause | Step Back | Step Forward | Reset | Speed. One bar for the whole lab: every animated activity listens to it. */
-export default function PlaybackBar({ note = true, disabledReason }) {
-  const playing = useStudio((s) => s.playing);
+/** Play / Pause | Reset | Speed. Only the controls that make sense for the active step are shown (state/stepMachine.js TRANSPORT). */
+export default function PlaybackBar() {
+  const paused = useStudio((s) => s.paused);
   const speed = useStudio((s) => s.speed);
-  const mode = useStudio((s) => s.mode);
+  const step = useStudio((s) => s.step);
   const a = useStudioActions();
-  const off = Boolean(disabledReason);
+  const t = TRANSPORT[step] ?? TRANSPORT[1];
   return (
-    <div className="ss-transport" role="group" aria-label="Playback controls" data-testid="playback-bar" title={disabledReason}>
-      <button type="button" className="sd-btn sd-btn--sm sd-btn--primary" onClick={() => a.setPlaying(true)} disabled={playing || off} data-testid="btn-play" aria-label="Play">
-        <Play size={14} aria-hidden="true" /> <span>Play</span>
-      </button>
-      <button type="button" className="sd-btn sd-btn--sm" onClick={() => a.setPlaying(false)} disabled={!playing || off} data-testid="btn-pause" aria-label="Pause">
-        <Pause size={14} aria-hidden="true" /> <span>Pause</span>
-      </button>
-      <button type="button" className="sd-btn sd-btn--sm" onClick={a.stepBack} disabled={off} data-testid="btn-step-back" aria-label="Step back to the previous event" title="Step back to the previous event (recomputed from the start, so it is exact)">
-        <StepBack size={14} aria-hidden="true" /> <span>Step Back</span>
-      </button>
-      <button type="button" className="sd-btn sd-btn--sm" onClick={a.stepForward} disabled={off} data-testid="btn-step-forward" aria-label="Step forward to the next event" title="Step forward to the next event">
-        <StepForward size={14} aria-hidden="true" /> <span>Step Forward</span>
-      </button>
-      <button type="button" className="sd-btn sd-btn--sm" onClick={a.resetPlayback} disabled={off} data-testid="btn-reset-playback" aria-label="Reset the animation to the start" title="Reset the animation to the start">
-        <RotateCcw size={14} aria-hidden="true" /> <span>Reset</span>
-      </button>
-      <span className="ss-speed-label" id="ss-speed-label">Speed</span>
-      <MiniSwitch
-        ariaLabel="Animation speed" testId="speed-switch" value={speed} onChange={a.setSpeed}
-        options={SPEEDS.map((v) => ({ id: v, label: `${v}×`, title: `${v} times the base animation speed` }))}
-      />
-      {note && (
-        <span className="ss-time-note" data-testid="time-note" title="Pulses last microseconds, a free induction decay lasts about a second and a spectrometer is switched on over minutes: each animation compresses time by a different, stated amount, so the speed setting is a teaching speed and not real time.">
-          Pedagogical time, not real time{mode === "teacher" ? " · pauses at key events" : ""}
-        </span>
+    <div className="ss-transport" role="group" aria-label="Animation controls" data-testid="playback-bar" data-paused={paused ? "1" : "0"}>
+      {t.play && (
+        <button type="button" className="sim-btn ss-tbtn" onClick={a.togglePaused} aria-pressed={paused} aria-label={paused ? "Play the animation" : "Pause the animation"} data-testid="btn-play-pause" title={paused ? "Play" : "Pause"}>
+          {paused ? <Play size={15} aria-hidden="true" /> : <Pause size={15} aria-hidden="true" />} <span>{paused ? "Play" : "Pause"}</span>
+        </button>
       )}
+      {t.reset && (
+        <button type="button" className="sim-btn ss-tbtn" onClick={a.resetPlayback} aria-label="Replay this step's animation from the start" data-testid="btn-reset-playback" title="Replay this step's animation from the start (keeps your molecule and field)">
+          <RotateCcw size={15} aria-hidden="true" /> <span>Replay</span>
+        </button>
+      )}
+      {t.speed && (
+        <>
+          <span className="ss-speed-label" id="ss-speed-label">Speed</span>
+          <MiniSwitch
+            ariaLabel="Animation speed" testId="speed-switch" value={speed} onChange={a.setSpeed}
+            options={SPEEDS.map((v) => ({ id: v, label: `${v}×`, title: `${v} times the base animation speed` }))}
+          />
+        </>
+      )}
+      <span className="ss-time-note" data-testid="time-note" title="Pulses last microseconds, a free induction decay lasts about a second: each animation compresses time by a different, stated amount, so the speed setting is a teaching speed and not real time.">
+        Teaching speed, not real time
+      </span>
     </div>
   );
 }

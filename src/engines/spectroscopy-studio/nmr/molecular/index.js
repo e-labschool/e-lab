@@ -1,6 +1,7 @@
-// Molecular side of the NMR simulation. Each component takes ONE prop, `studio` (see docs/NMR_MOLECULAR_MODEL.md for the contract).
-export { default as MolecularProcessStage } from "./components/MolecularProcessStage.jsx";
-export { default as SpectrumStage } from "./components/SpectrumStage.jsx";
-export { default as InterpretationStage } from "./components/InterpretationStage.jsx";
-export { default as SplittingLab } from "./components/SplittingLab.jsx";
+// Molecular side of the NMR simulation: the model (molecules, spectra, linking, spin states, molecule FID) and the reusable viewers that
+// step 6 of the single workspace is built from. See docs/NMR_MOLECULAR_MODEL.md.
+export { default as MoleculeViewer } from "./components/MoleculeViewer.jsx";
+export { default as SpectrumPlot } from "./components/SpectrumPlot.jsx";
+export { default as MoleculePicker } from "./components/MoleculePicker.jsx";
+export { default as ShieldingDiagram } from "./components/ShieldingDiagram.jsx";
 export { MOLECULES, getMolecule } from "./model/molecules.js";

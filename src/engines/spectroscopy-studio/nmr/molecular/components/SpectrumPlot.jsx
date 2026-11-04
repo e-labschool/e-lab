@@ -293,8 +293,8 @@ export default function SpectrumPlot({
                 <text x={X(t)} y={y1 + 19} textAnchor="middle" fontSize="11.5" fill="#dbe6ff" className="nm-svgtext">{t.toFixed(ticks.decimals)}</text></g>
             ))}
             {!hideLabels && <text x={(x0 + x1) / 2} y={y1 + 57} textAnchor="middle" fontSize="12" fontWeight="700" fill="#e8f0ff" className="nm-svgtext">δ (ppm)  ·  chemical shift relative to TMS</text>}
-            {!hideLabels && <text x={x0} y={y1 + 57} textAnchor="start" fontSize="10.5" fill={THEME.muted} className="nm-svgtext">◀ downfield · deshielded</text>}
-            {!hideLabels && <text x={x1} y={y1 + 57} textAnchor="end" fontSize="10.5" fill={THEME.muted} className="nm-svgtext">upfield · shielded ▶</text>}
+            {!hideLabels && w > 560 && <text x={x0} y={y1 + 57} textAnchor="start" fontSize="10.5" fill={THEME.muted} className="nm-svgtext">◀ downfield · deshielded</text>}
+            {!hideLabels && w > 560 && <text x={x1} y={y1 + 57} textAnchor="end" fontSize="10.5" fill={THEME.muted} className="nm-svgtext">upfield · shielded ▶</text>}
           </g>
           {/* chemical-shift chips (click -> shielding explanation) */}
           {!hideLabels && (
@@ -313,7 +313,7 @@ export default function SpectrumPlot({
           )}
           {/* assignment labels */}
           {labels.map((it) => {
-            const { s } = it; const sel = s.envId === selectedEnvId; const yy = Math.max(14, it.top - 22 - it.row * 19);
+            const { s } = it; const sel = s.envId === selectedEnvId; const yy = Math.max(14, it.top - 22 - (showSplitting && s.lines.length > 1 ? 24 : 0) - it.row * 19);
             const tw = it.wd;
             return (
               <g key={`lab-${s.envId}`} transform={`translate(${it.cx} ${yy})`} pointerEvents="none" data-testid={`label-${s.envId}`} opacity={selectedEnvId && !sel ? 0.8 : 1}>

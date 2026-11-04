@@ -7,7 +7,7 @@ export default function MoleculePicker({ value, onChange, compact = false, testI
   const id = useId(); const listId = `${id}-list`;
   const [open, setOpen] = useState(false); const [query, setQuery] = useState(""); const [active, setActive] = useState(0);
   const root = useRef(null); const input = useRef(null);
-  const current = MOLECULES.find((m) => m.id === value) ?? MOLECULES[0];
+  const current = MOLECULES.find((m) => m.id === value) ?? null; // null = nothing chosen yet
   const results = useMemo(() => searchMolecules(query), [query]);
   useEffect(() => {
     if (!open) return undefined;
@@ -27,14 +27,14 @@ export default function MoleculePicker({ value, onChange, compact = false, testI
       <div className="nm-picker-field">
         <Search size={14} aria-hidden="true" />
         <input id={`${id}-in`} ref={input} type="text" role="combobox" aria-expanded={open} aria-controls={listId} aria-autocomplete="list" autoComplete="off" spellCheck={false}
-          value={open ? query : `${current.name}  ${current.formula}`} placeholder="Search name or formula…" onFocus={() => { setOpen(true); setQuery(""); setActive(0); }}
+          value={open ? query : current ? `${current.name}  ${current.formula}` : ""} placeholder={current ? "Search name or formula…" : "Choose a molecule…"} onFocus={() => { setOpen(true); setQuery(""); setActive(0); }}
           onChange={(e) => { setQuery(e.target.value); setActive(0); setOpen(true); }} onKeyDown={onKey} data-testid="molecule-search" />
       </div>
       {open && (
         <ul id={listId} role="listbox" aria-label="Molecules" className="nm-picker-list" data-testid="molecule-list">
           {results.length === 0 && <li className="nm-picker-empty" role="presentation">No molecule matches “{query}”.</li>}
           {results.map((m, i) => (
-            <li key={m.id} role="option" aria-selected={m.id === current.id} className={`nm-picker-opt${i === active ? " is-active" : ""}${m.id === current.id ? " is-current" : ""}`}
+            <li key={m.id} role="option" aria-selected={m.id === current?.id} className={`nm-picker-opt${i === active ? " is-active" : ""}${m.id === current?.id ? " is-current" : ""}`}
               onMouseEnter={() => setActive(i)} onPointerDown={(e) => { e.preventDefault(); choose(m); }} onClick={() => choose(m)} data-testid={`molecule-option-${m.id}`}>
               <span className="nm-picker-name">{m.name}</span><span className="nm-picker-formula">{m.condensed}</span>
             </li>

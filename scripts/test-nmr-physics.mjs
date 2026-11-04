@@ -8,9 +8,7 @@ import * as B from "../src/engines/spectroscopy-studio/nmr/physics/blochSim.js";
 import * as F from "../src/engines/spectroscopy-studio/nmr/physics/fid.js";
 import * as T from "../src/engines/spectroscopy-studio/nmr/physics/fft.js";
 import * as I from "../src/engines/spectroscopy-studio/nmr/physics/instrumentModel.js";
-import * as E from "../src/engines/spectroscopy-studio/nmr/physics/excitation.js";
 import * as S from "../src/engines/spectroscopy-studio/nmr/physics/spinEnsemble.js";
-import * as M from "../src/engines/spectroscopy-studio/nmr/physics/fidModel.js";
 
 let passed = 0; let failed = 0;
 function test(name, fn) { try { fn(); console.log(`  ok   ${name}`); passed += 1; } catch (e) { console.log(`  FAIL ${name}\n       ${(e.stack || e.message).split("\n").slice(0, 5).join("\n       ")}`); failed += 1; } }
@@ -216,19 +214,6 @@ test("guided state follows the physics: sample in -> M0 builds up -> 90 degree p
   assert.ok(I.guidedState(3, 1).mxy < I.guidedState(3, 0).mxy); assert.equal(I.guidedState(4, 0.5).display, "fid"); assert.equal(I.guidedState(5, 0.5).display, "spec"); assert.equal(I.guidedState(3, 0.5).display, "none");
   assert.equal(I.guidedState(2, 0.5).tx, 1); assert.equal(I.guidedState(3, 0.5).rx, 1);
 });
-test("exploring each component gives its own process", () => {
-  assert.equal(I.exploreState("magnet", 1).field, 1); assert.ok(I.exploreState("transmitter", 1).tx === 1); assert.ok(I.exploreState("receiver", 1).rx === 1);
-  assert.ok(["fid", "spec"].includes(I.exploreState("processing", 1).display)); assert.equal(I.exploreState(null, 1).tx, 0);
-});
-test("excitation settings: default is 8 kHz off resonance with a 90 degree flip; the 90/180 demos set the exact pulse length", () => {
-  const rf = { rfMHz: C.larmorMHz(9.4) + 0.008, b1uT: 587.2, tpUs: 10, shortenRelax: false, frame: "rotating", t1: 1, t2: 0.5 };
-  const ex = E.deriveExcitation(9.4, rf); near(ex.offsetHz, 8000, 1e-3); near(ex.flipDeg, 90, 0.1); near(ex.nu1, 25000, 20);
-  near(E.tpForFlipUs(180, 587.2), 2 * E.tpForFlipUs(90, 587.2), 1e-9); near(E.tpForFlipUs(90, 587.2) * 1e-6, Math.PI / 2 / B.omega1FromB1(587.2e-6), 1e-15);
-  const demo = E.deriveExcitation(9.4, { ...rf, rfMHz: C.larmorMHz(9.4), shortenRelax: true }); assert.equal(demo.demoRelax, false); // on resonance: nothing to shorten
-  const off = E.deriveExcitation(9.4, { ...rf, shortenRelax: true }); assert.equal(off.demoRelax, true); assert.ok(off.sched.t2 < 0.01);
-  // changing B0 while the RF frequency is held: the old RF is now MHz off resonance
-  const moved = E.deriveExcitation(14, rf); assert.ok(Math.abs(moved.offsetHz) > 1e8);
-});
 test("spin ensemble: alpha count follows the polarisation, cone angle 54.74 degrees, zero net transverse moment, zero net at random start", () => {
   const ens = S.makeEnsemble(160); const st = S.assignStates(ens, 0.2); assert.equal(st.nAlpha, 96); assert.equal(st.nAlpha + st.nBeta, 160);
   near((S.CONE_ANGLE * 180) / Math.PI, 54.7356, 1e-3);
@@ -239,15 +224,6 @@ test("spin ensemble: alpha count follows the polarisation, cone angle 54.74 degr
   // real-scale polarisation changes no arrow at 160 arrows
   assert.equal(S.assignStates(ens, P.polarization(9.4)).nAlpha, 80);
   const a0 = S.slerp([1, 0, 0], [0, 1, 0], 0.5); near(Math.hypot(...a0), 1, 1e-12); near(a0[0], Math.SQRT1_2, 1e-12);
-});
-test("FID model: resonances are placed at (ppm - carrier) x operating frequency, so Hz separations scale with B0 while ppm stays", () => {
-  const f = { comps: [{ ppm: 1.2, amp: 3 }, { ppm: 3.6, amp: 2 }, { ppm: 5.3, amp: 1 }], t2starMs: 120, noisePct: 0, lbHz: 0 };
-  const a = M.buildFidModel(f, 400); const b = M.buildFidModel(f, 600);
-  near(a.comps[1].freqHz, (3.6 - 5) * 400, 1e-9); near(b.comps[1].freqHz, (3.6 - 5) * 600, 1e-9);
-  const peakPpm = (m, c) => { let k = 0; for (let i = 0; i < m.ppm.length; i += 1) if (Math.abs(m.ppm[i] - c) < Math.abs(m.ppm[k] - c)) k = i; let best = k; for (let i = k - 30; i <= k + 30; i += 1) if (m.spec.re[i] > m.spec.re[best]) best = i; return m.ppm[best]; };
-  for (const c of [1.2, 3.6, 5.3]) { near(peakPpm(a, c), c, 0.01); near(peakPpm(b, c), c, 0.01); }
-  const [w0, w1] = M.spectrumWindow(a, true); assert.ok(w0 < 1.2 && w1 > 5.3 && w1 - w0 < 20); assert.deepEqual(M.spectrumWindow(a, false), [-5, 15]);
-  near(a.fwhmHz, 1 / (Math.PI * 0.12), 1e-9);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

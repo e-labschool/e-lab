@@ -6,7 +6,7 @@ const StudioContext = createContext(null);
 
 /** Owns the store for the lifetime of the simulation, restores the persisted slice and mirrors changes back (debounced). */
 export function StudioProvider({ children, initial }) {
-  const [persisted, setPersisted] = useSimulationSessionState("studio-v1", () => pickPersisted(sanitize(initial ?? DEFAULTS)), isValidPersisted);
+  const [persisted, setPersisted] = useSimulationSessionState("studio-v2", () => pickPersisted(sanitize(initial ?? DEFAULTS)), isValidPersisted);
   const storeRef = useRef(null);
   if (storeRef.current === null) storeRef.current = createStudioStore({ ...(initial ?? {}), ...persisted });
   const store = storeRef.current;

@@ -5,7 +5,6 @@ import { equilibrium, stateAt, TWO_PI } from "./blochSim.js";
 export const STEP_SECONDS = 4;
 export const STEP_COUNT = 6;
 export const GUIDED_DURATION = STEP_SECONDS * STEP_COUNT;
-export const COMPONENT_IDS = ["magnet", "tube", "probe", "transmitter", "receiver", "processing"];
 
 export const STEPS = [
   { id: "insert", title: "Insert the sample", focus: "tube" },
@@ -42,22 +41,6 @@ export function guidedState(step, p, phase = 0) {
   } else if (step === 3) { s.field = 0.6; s.mz = 0.02 * p; s.mxy = Math.exp(-1.2 * p); s.az = Math.PI / 2 - TWO_PI * (1.5 + 0.7 * phase); s.rx = 1; }
   else if (step === 4) { s.field = 0.5; s.mz = 0.03; s.mxy = Math.exp(-1.2 - p); s.az = -TWO_PI * (0.7 * phase); s.rx = 1; s.fid = p; s.display = "fid"; }
   else { s.field = 0.5; s.mz = 0.04; s.mxy = Math.exp(-2.2); s.az = -TWO_PI * (0.7 * phase); s.rx = 0.4; s.fid = 1; s.ft = p; s.display = "spec"; }
-  return s;
-}
-
-/** Free exploration: the loop that illustrates the process of the selected component (phase = free-running display seconds). */
-export function exploreState(selected, phase) {
-  const s = guidedState(2, 0, phase); s.step = -1; s.insert = 1; s.field = 0.5; s.mz = 1; s.mxy = 0; s.tx = 0; s.rx = 0; s.display = "none"; s.az = 0;
-  const cyc = (phase % 6) / 6; // 6 s loop
-  if (selected === "magnet") { s.field = 1; }
-  else if (selected === "tube") { s.field = 0.6; s.mz = 0.8 + 0.2 * Math.sin(phase * 2); }
-  else if (selected === "probe") {
-    if (cyc < 0.5) { const p = cyc / 0.5; const m = stateAt(SCHED, p * TP90); s.tx = 1; s.txP = p; s.mz = m[2]; s.mxy = Math.hypot(m[0], m[1]); s.az = Math.PI / 2; }
-    else { const q = (cyc - 0.5) / 0.5; s.rx = 1; s.mz = 0.02; s.mxy = Math.exp(-1.5 * q); s.az = Math.PI / 2 - TWO_PI * (2 + 2 * q); }
-  } else if (selected === "transmitter") { s.tx = 1; s.txP = cyc; const m = stateAt(SCHED, cyc * TP90); s.mz = m[2]; s.mxy = Math.hypot(m[0], m[1]); s.az = Math.PI / 2; }
-  else if (selected === "receiver") { s.rx = 1; s.mz = 0.02; s.mxy = Math.exp(-1.5 * cyc); s.az = Math.PI / 2 - TWO_PI * (2 + 2 * cyc); }
-  else if (selected === "processing") { s.rx = 0.4; s.mz = 0.03; s.mxy = 0.1; if (cyc < 0.55) { s.display = "fid"; s.fid = cyc / 0.55; } else { s.display = "spec"; s.fid = 1; s.ft = (cyc - 0.55) / 0.45; } }
-  else { s.mz = 1; }
   return s;
 }
 

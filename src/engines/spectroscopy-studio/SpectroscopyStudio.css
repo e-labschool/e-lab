@@ -35,66 +35,189 @@
 [data-testid="spectroscopy-workspace"] .sd-subtitle { max-width: 26ch; }
 [data-testid="spectroscopy-workspace"] .sd-tabs--segmented { flex-wrap: wrap; }
 [data-testid="spectroscopy-workspace"] .sd-title-block { overflow: hidden; }
-[data-testid="spectroscopy-workspace"].sd-root:not([data-layout="stacked"]) .sd-col--controls { flex: 0 0 clamp(200px, 19%, 290px); }
-[data-testid="spectroscopy-workspace"].sd-root:not([data-layout="stacked"]) .sd-main[data-graph="shown"] .sd-col--graph { flex: 0 0 clamp(240px, 27%, 440px); }
 [data-testid="spectroscopy-workspace"] .sd-col--chamber { min-width: 0; }
-/* Molecular stages, Splitting Patterns and placeholders use the whole width: the controls column is only for the physics stages. */
-[data-testid="spectroscopy-workspace"]:has(.ss-chamber:not([data-kind="physics"])) .sd-col--controls { display: none; }
-[data-testid="spectroscopy-workspace"] .sd-col--graph { overflow: hidden; }
-[data-testid="spectroscopy-workspace"].sd-root[data-layout="stacked"] .sd-col--chamber { height: auto; min-height: 560px; }
-[data-testid="spectroscopy-workspace"].sd-root[data-layout="stacked"] .sd-col--controls { display: flex; }
-[data-testid="spectroscopy-workspace"].sd-root[data-layout="stacked"]:has(.ss-chamber:not([data-kind="physics"])) .sd-col--controls { display: none; }
+/* The whole workspace lives in the chamber column: the shared controls and graph columns are not used. */
+[data-testid="spectroscopy-workspace"] .sd-col--controls, [data-testid="spectroscopy-workspace"] .sd-col--graph { display: none; }
+[data-testid="spectroscopy-workspace"].sd-root[data-layout="stacked"] .sd-col--chamber { height: auto; min-height: 0; }
 [data-testid="spectroscopy-workspace"] .ss-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); border: 0; white-space: nowrap; }
 
-.ss-slot { min-height: 0; min-width: 0; display: flex; flex-direction: column; gap: 6px; height: 100%; overflow-x: hidden; overflow-y: auto; scrollbar-width: thin; }
-.ss-slot--graph { overflow-y: auto; }
-.ss-explain { min-width: 0; display: block; }
-.ss-explain .sd-explain-text, .ss-explain-text { margin: 0; font-size: var(--sd-fs); line-height: 1.35; overflow: visible; display: block; white-space: normal; }
-.ss-explain-text b { color: var(--ss-teal); }
 
-/* ---- Chamber, stepper, stage box ---------------------------------------- */
-.ss-chamber { display: flex; flex-direction: column; gap: var(--sd-gap); height: 100%; min-height: 0; min-width: 0; }
-.ss-stagebox { flex: 1 1 0; min-height: 0; min-width: 0; position: relative; display: flex; flex-direction: column; overflow: hidden; border-radius: 12px; }
-.ss-chamber[data-kind="physics"] .ss-stagebox { background: var(--ss-stage); border: 1px solid var(--ss-line); }
-.ss-chamber[data-kind="dev"] .ss-stagebox { background: var(--ss-panel); border: 1px solid var(--ss-line); }
 
-.ss-stepper { container-type: inline-size; }
-@container (max-width: 760px) { .ss-step-sub { display: none; } .ss-step-btn { padding: 4px 7px; gap: 5px; } .ss-step-label { font-size: var(--sd-fs); } }
-@container (max-width: 560px) { .ss-step:not(.is-current) .ss-step-label { display: none; } .ss-step:not(.is-current) { flex: 0 0 44px; } }
-.ss-stepper ol { display: flex; gap: 6px; margin: 0; padding: 0; list-style: none; }
-.ss-step { flex: 1 1 0; min-width: 0; position: relative; }
-.ss-step-btn {
-  width: 100%; display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 4px 10px; text-align: left; cursor: pointer;
-  border: 1.5px solid var(--ss-ctl); border-radius: 10px; background: var(--ss-panel-2); color: var(--ss-ink); font: inherit;
+/* ---- Shared button tokens on the navy surface (same values as the other dark explorers, so the button-contrast audit sees >= 3:1 boundaries) ---- */
+[data-testid="spectroscopy-workspace"] {
+  --sim-btn-fill: #1a3a78; --sim-btn-fill-hover: #27498f; --sim-btn-fill-active: #345aa8; --sim-btn-ink: #eef4ff;
+  --sim-btn-border: #7c9bdd; --sim-btn-border-hover: #d6e4ff; --sim-btn-accent: #2358d0; --sim-btn-accent-hover: #2d6af0; --sim-btn-accent-ink: #ffffff;
+  --sim-btn-focus: #ffd166; --sim-btn-focus-halo: #0b1230; --sim-btn-hover-tint: rgba(214, 228, 255, 0.1); --sim-btn-active-tint: rgba(0, 0, 0, 0.28);
+  --sim-btn-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
 }
-.ss-step-btn:hover { background: rgba(56, 189, 248, 0.2); }
-.ss-step.is-current .ss-step-btn { background: var(--ss-accent-solid); border-color: #5eead4; color: #fff; }
-.ss-step-n { flex: 0 0 auto; width: 22px; height: 22px; border-radius: 50%; display: inline-grid; place-items: center; font-weight: 800; font-size: 12px; border: 1.5px solid currentColor; }
-.ss-step-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.15; }
-.ss-step-label { font-weight: 700; font-size: calc(var(--sd-fs) + 0.5px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ss-step-sub { font-size: var(--sd-fs-sm); opacity: 0.85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ss-root-narrow .ss-step-sub { display: none; }
-[data-testid="spectroscopy-workspace"][data-w="md"] .ss-step-sub, [data-testid="spectroscopy-workspace"][data-layout="stacked"] .ss-step-sub { display: none; }
-[data-testid="spectroscopy-workspace"][data-layout="stacked"] .ss-step-label { font-size: 11px; white-space: normal; }
-[data-testid="spectroscopy-workspace"][data-layout="stacked"] .ss-step-btn { padding: 4px 6px; gap: 4px; min-height: 44px; }
-[data-testid="spectroscopy-workspace"][data-layout="stacked"] .ss-step-n { width: 18px; height: 18px; font-size: 11px; }
 
-/* ---- Transport ------------------------------------------------------------ */
-.ss-transport { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-width: 0; flex: 1 1 auto; }
-.ss-transport .sd-btn--sm { min-height: 30px; }
-.ss-speed-label { font-size: var(--sd-fs-sm); color: var(--ss-muted); margin-left: 6px; }
+/* ---- The workbench: stepper + the step body ---- */
+.ss-wb { display: flex; flex-direction: column; gap: 8px; width: 100%; height: 100%; min-height: 0; min-width: 0; container-type: inline-size; container-name: ssw; }
+.ss-wb.nm-root { padding: 0; background: none; font-size: var(--sd-fs); overflow: hidden; }
+[data-testid="spectroscopy-workspace"][data-layout="stacked"] .ss-wb, [data-testid="spectroscopy-workspace"][data-layout="stacked"] .ss-wb.nm-root { height: auto; overflow: visible; }
+.ss-stepbody { flex: 1 1 0; min-height: 0; min-width: 0; animation: ss-in 0.34s ease both; }
+[data-testid="spectroscopy-workspace"][data-layout="stacked"] .ss-stepbody { flex: none; }
+@keyframes ss-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes ss-fade { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .ss-stepbody { animation: none; } .ss-spec-fade, [data-integrated="1"] [data-testid="integration-trace"] { animation: none !important; } }
+
+.ss-stepnav { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; min-width: 0; }
+.ss-navbtn { min-height: 40px; padding: 0 12px; gap: 4px; font-weight: 800; flex: 0 0 auto; }
+.ss-steps { display: flex; gap: 6px; flex: 1 1 auto; min-width: 0; margin: 0; padding: 0; list-style: none; }
+.ss-pillwrap { flex: 1 1 0; min-width: 0; }
+.ss-pill { width: 100%; min-height: 40px; display: flex; align-items: center; justify-content: flex-start; gap: 8px; padding: 0 10px; text-align: left; }
+.ss-pill[aria-current="step"] { background: var(--sim-btn-accent); border-color: #5eead4; color: #fff; box-shadow: 0 0 0 2px rgba(94, 234, 212, 0.35); }
+.ss-pill-n { flex: 0 0 auto; width: 22px; height: 22px; border-radius: 50%; display: inline-grid; place-items: center; font-weight: 800; font-size: 12px; border: 1.5px solid currentColor; }
+.ss-pillwrap.is-done .ss-pill-n { background: rgba(94, 234, 212, 0.25); }
+.ss-pill-label { font-weight: 700; font-size: calc(var(--sd-fs) + 0.5px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@container ssw (max-width: 980px) { .ss-pillwrap:not(.is-current) .ss-pill-label { display: none; } .ss-pillwrap:not(.is-current) { flex: 0 0 46px; } .ss-pillwrap:not(.is-current) .ss-pill { padding: 0; justify-content: center; } }
+@container ssw (max-width: 560px) { .ss-navbtn span { display: none; } .ss-navbtn { padding: 0 8px; } .ss-pill-label { display: none !important; } .ss-pillwrap, .ss-pillwrap:not(.is-current) { flex: 1 1 0; } .ss-pill { justify-content: center; padding: 0 !important; } }
+
+/* ---- One layout for every step: large visual + control strip | explanation panel ---- */
+.ss-frame { display: grid; grid-template-columns: minmax(0, 1fr) clamp(300px, 33%, 450px); gap: 10px; height: 100%; min-height: 0; }
+.ss-vizcol { display: flex; flex-direction: column; gap: 8px; min-height: 0; min-width: 0; }
+.ss-viz { position: relative; flex: 1 1 0; min-height: 0; min-width: 0; border-radius: 12px; overflow: hidden; background: var(--ss-stage); border: 1px solid var(--ss-line); }
+.ss-strip { flex: 0 0 auto; padding: 8px 10px; border: 1px solid var(--ss-line); border-radius: 12px; background: var(--ss-panel); min-width: 0; }
+.ss-panel { display: flex; flex-direction: column; gap: 8px; min-height: 0; min-width: 0; overflow-y: auto; overflow-x: hidden; padding: 12px 14px; border: 1px solid var(--ss-line); border-radius: 12px; background: var(--ss-panel); font-size: clamp(14px, calc(var(--sd-fs) + 2px), 18px); line-height: 1.45; scrollbar-width: thin; }
+.ss-panel p { margin: 0; }
+.ss-pbody { display: flex; flex-direction: column; gap: 8px; }
+.ss-pbody b { color: var(--ss-ink); }
+.ss-kicker { font-size: var(--sd-fs-sm); text-transform: uppercase; letter-spacing: 0.08em; color: var(--ss-muted); font-weight: 700; }
+.ss-ptitle { margin: 0; font-size: clamp(18px, calc(var(--sd-fs) + 6px), 24px); line-height: 1.2; color: var(--ss-teal); }
+.ss-prompt { color: var(--ss-amber); font-weight: 700; }
+.ss-note { color: var(--ss-muted); font-size: 0.9em; }
+.ss-hint { margin: 2px 0 0; font-size: var(--sd-fs-sm); color: var(--ss-muted); }
+.ss-subtitle { color: var(--ss-muted); font-size: 0.92em; }
+[data-testid="spectroscopy-workspace"][data-layout="stacked"] .ss-frame { grid-template-columns: minmax(0, 1fr); height: auto; }
+[data-testid="spectroscopy-workspace"][data-layout="stacked"] .ss-viz { flex: none; height: clamp(300px, 78cqw, 560px); }
+[data-testid="spectroscopy-workspace"][data-layout="stacked"] .ss-viz.ss-viz--split { height: clamp(560px, 135cqw, 800px); }
+[data-testid="spectroscopy-workspace"][data-layout="stacked"] .ss-viz.ss-viz--mol { height: clamp(580px, 150cqw, 820px); }
+[data-testid="spectroscopy-workspace"][data-layout="stacked"] .ss-viz.ss-viz--stack { height: clamp(420px, 110cqw, 640px); }
+[data-testid="spectroscopy-workspace"][data-layout="stacked"] .ss-panel { overflow: visible; }
+
+/* ---- Controls ---- */
+.ss-controlrow { display: flex; align-items: center; gap: 10px 16px; flex-wrap: wrap; min-width: 0; }
+.ss-bigbtn { min-height: 46px; padding: 0 18px; gap: 8px; font-size: calc(var(--sd-fs) + 3px); font-weight: 800; flex: 0 0 auto; }
+.ss-chipbtn { min-height: 36px; padding: 0 12px; font-size: var(--sd-fs); font-weight: 700; gap: 6px; }
+.ss-btnrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ss-stripnote { color: var(--ss-muted); font-weight: 600; }
+.ss-bigslider { flex: 1 1 260px; min-width: 220px; display: flex; flex-direction: column; gap: 3px; }
+.ss-bigslider-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.ss-bigslider-label { font-weight: 800; font-size: calc(var(--sd-fs) + 2px); color: var(--ss-ink); }
+.ss-sym { color: var(--ss-muted); font-weight: 600; }
+.ss-bigslider-badge { font-weight: 800; font-size: calc(var(--sd-fs) + 2px); padding: 2px 10px; border-radius: 999px; background: color-mix(in srgb, var(--c) 30%, #0a1a40); border: 1.5px solid var(--c); color: #fff; font-variant-numeric: tabular-nums; }
+.ss-range { -webkit-appearance: none; appearance: none; width: 100%; height: 30px; background: transparent; margin: 0; cursor: pointer; }
+.ss-range::-webkit-slider-runnable-track { height: 10px; border-radius: 6px; background: linear-gradient(90deg, var(--c) var(--fill), #243f78 var(--fill)); border: 1px solid #7c9bdd; }
+.ss-range::-moz-range-track { height: 10px; border-radius: 6px; background: #243f78; border: 1px solid #7c9bdd; }
+.ss-range::-moz-range-progress { height: 10px; border-radius: 6px; background: var(--c); }
+.ss-range::-webkit-slider-thumb { -webkit-appearance: none; width: 26px; height: 26px; margin-top: -9px; border-radius: 50%; background: #fff; border: 4px solid var(--c); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.6); }
+.ss-range::-moz-range-thumb { width: 20px; height: 20px; border-radius: 50%; background: #fff; border: 4px solid var(--c); }
+.ss-range:focus-visible { outline: 2px solid var(--sim-btn-focus); outline-offset: 3px; border-radius: 6px; }
+.ss-ticks { position: relative; height: 16px; margin: 0 13px; font-size: var(--sd-fs-sm); color: var(--ss-muted); }
+.ss-ticks span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.ss-ticks span.is-first { transform: translateX(-13px); } .ss-ticks span.is-last { transform: translateX(calc(-100% + 13px)); }
+
+.ss-readouts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin: 0; }
+.ss-readout { padding: 5px 9px; border-radius: 9px; background: var(--ss-panel-2); border: 1px solid var(--ss-line); min-width: 0; }
+.ss-readout dt { font-size: var(--sd-fs-sm); color: var(--ss-muted); line-height: 1.2; }
+.ss-readout dd { margin: 0; font-weight: 800; font-size: 1.02em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.ss-readout--b0 dd { color: var(--ss-cyan); } .ss-readout--mag dd { color: var(--ss-mag); } .ss-readout--rf dd { color: var(--ss-orange); } .ss-readout--ok dd { color: var(--ss-ok); }
+
+.ss-teacher { margin-top: auto; border: 1.5px dashed var(--ss-violet); border-radius: 11px; background: rgba(167, 139, 250, 0.08); }
+.ss-teacher > summary { cursor: pointer; display: flex; align-items: center; gap: 6px; padding: 7px 10px; font-weight: 800; font-size: 0.95em; color: #e9e1ff; border-radius: 10px; list-style: none; }
+.ss-teacher > summary::-webkit-details-marker { display: none; }
+.ss-teacher > summary::after { content: "+"; margin-left: auto; font-weight: 800; }
+.ss-teacher[open] > summary::after { content: "–"; }
+.ss-teacher > summary:focus-visible { outline: 2px solid var(--sim-btn-focus); outline-offset: 2px; }
+.ss-teacher-body { padding: 0 10px 9px; font-size: 0.92em; line-height: 1.45; color: var(--ss-ink); }
+.ss-teacher-body p { margin: 5px 0; }
+
+/* ---- Badges, legends ---- */
+.ss-badge { margin: 0; padding: 6px 10px; border-radius: 9px; background: var(--ss-label-bg); border: 1px solid var(--ss-line); color: var(--ss-label-ink); font-size: var(--sd-fs); line-height: 1.35; }
+.ss-badge b { color: var(--ss-teal); }
+.ss-badge--warn { border-color: var(--ss-amber); } .ss-badge--warn b { color: var(--ss-amber); }
+.ss-badge--tl { position: absolute; top: 8px; left: 8px; max-width: min(78%, 520px); z-index: 3; pointer-events: none; }
+.ss-badge--tr { position: absolute; top: 8px; right: 12px; max-width: min(60%, 420px); z-index: 3; pointer-events: none; }
+.ss-legend { display: flex; flex-wrap: wrap; gap: 3px 12px; margin: 0; padding: 0; list-style: none; font-size: var(--sd-fs-sm); color: var(--ss-muted); }
+.ss-legend li { display: inline-flex; align-items: center; gap: 5px; }
+.ss-legend-bl { position: absolute; left: 8px; bottom: 8px; width: max-content; max-width: calc(100% - 16px); padding: 5px 8px; border-radius: 9px; background: var(--ss-label-bg); border: 1px solid var(--ss-line); z-index: 3; }
+.ss-dot { background: var(--c); }
+.ss-dot--ring { background: transparent; border: 3px solid var(--c); }
+
+/* ---- Visual areas ---- */
+.ss-three { position: absolute; inset: 0; } .ss-three canvas { display: block; }
+.ss-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); height: 100%; }
+.ss-half { position: relative; min-width: 0; min-height: 0; }
+.ss-half--levels { display: flex; align-items: center; justify-content: center; padding: 8px; border-left: 1px solid var(--ss-line); background: rgba(8, 20, 50, 0.35); }
+[data-testid="spectroscopy-workspace"][data-layout="stacked"] .ss-split { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
+[data-testid="spectroscopy-workspace"][data-layout="stacked"] .ss-half--levels { border-left: 0; border-top: 1px solid var(--ss-line); }
+.ss-levels { width: 100%; height: 100%; max-height: 100%; }
+.ss-levels .ss-svgtext { font-size: 14px; } .ss-levels .ss-svgtext--sm { font-size: 12.5px; }
+.ss-stack2 { position: absolute; inset: 0; display: flex; flex-direction: column; }
+.ss-top { flex: 0 0 38%; min-height: 0; display: flex; padding: 6px 10px 0; border-bottom: 1px solid var(--ss-line); }
+.ss-rfwaves { width: 100%; height: 100%; }
+.ss-rfwaves .ss-svgtext { font-size: 14px; } .ss-rfwaves .ss-svgtext--sm { font-size: 11.5px; }
+.ss-bottomgraph { position: relative; flex: 1 1 0; min-height: 0; }
+.ss-graphbox { position: absolute; inset: 0; }
+.ss-graphwrap { position: absolute; inset: 0; }
+.ss-layer { position: absolute; inset: 0; }
+.ss-layer svg { display: block; }
+.ss-graphbox .ss-tick, .ss-layer .ss-tick { font-size: 13px; } .ss-graphbox .ss-axis-label, .ss-layer .ss-axis-label { font-size: 13.5px; }
+.ss-instrbox { position: absolute; inset: 0; }
+.ss-oplabel { position: absolute; left: 12px; bottom: 8px; margin: 0; padding: 4px 10px; border-radius: 9px; background: var(--ss-label-bg); border: 1px solid var(--ss-line); font-size: var(--sd-fs); z-index: 3; }
+.ss-inset { position: absolute; right: 10px; top: 10px; z-index: 3; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; padding: 5px; border-radius: 10px; background: var(--ss-label-bg); border: 1px solid var(--ss-line); }
+.ss-inset-cap { font-size: 11px; color: var(--ss-muted); }
+.ss-mini { display: flex; gap: 6px; }
+.ss-pulseseq { width: 100%; max-height: 90px; }
+.ss-pulseseq .ss-svgtext { font-size: 13px; } .ss-pulseseq .ss-svgtext--sm { font-size: 11.5px; }
+.ss-opdots { display: flex; gap: 6px; flex: 1 1 auto; min-width: 0; margin: 0; padding: 0; list-style: none; flex-wrap: wrap; }
+.ss-opdot { min-height: 38px; gap: 6px; padding: 0 10px; font-weight: 700; }
+.ss-opdot[aria-current="step"] { background: var(--sim-btn-accent); border-color: #5eead4; color: #fff; }
+.ss-opdot-n { width: 20px; height: 20px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 11.5px; font-weight: 800; border: 1.5px solid currentColor; }
+.ss-opcount { color: var(--ss-muted); }
+.ss-controlrow--ops, .ss-controlrow--sub { justify-content: space-between; }
+@container ssw (max-width: 1100px) { .ss-opdot-l, .ss-subl { display: none; } .ss-opdot { padding: 0 8px; } }
+
+/* ---- Step 6 ---- */
+.ss-mol-split { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 8px; height: 100%; padding: 8px; }
+.ss-molbox, .ss-specbox { position: relative; min-width: 0; min-height: 0; }
+.ss-molbox .nm-viewer { position: absolute; inset: 0; height: 100%; min-height: 0; }
+.ss-specbox .nm-plot { position: absolute; inset: 0; height: 100%; min-height: 0; }
+[data-testid="spectroscopy-workspace"][data-layout="stacked"] .ss-mol-split { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
+.ss-specbox[data-integrated="1"] [data-testid="integration-trace"] { animation: ss-fade 1s ease both; }
+.ss-subnav { display: flex; gap: 6px; margin: 0; padding: 0; list-style: none; flex-wrap: wrap; }
+.ss-subbtn { min-height: 40px; gap: 6px; padding: 0 10px; font-weight: 700; }
+.ss-subbtn[aria-current="step"] { background: var(--sim-btn-accent); border-color: #5eead4; color: #fff; }
+.ss-subn { width: 20px; height: 20px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 12px; font-weight: 800; border: 1.5px solid currentColor; text-transform: lowercase; }
+.ss-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.ss-pickwrap { min-width: 200px; flex: 1 1 200px; }
+.ss-pickwrap .nm-picker { min-width: 0; width: 100%; }
+.ss-pickwrap--top { flex: 0 0 auto; position: relative; z-index: 30; }
+.ss-predict { margin: 0; padding: 8px 10px; border: 1.5px solid var(--ss-cyan); border-radius: 10px; background: rgba(56, 189, 248, 0.08); }
+.ss-predict legend { padding: 0 6px; font-weight: 800; }
+.ss-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.ss-chipbtn[aria-checked="true"], .ss-chipbtn[aria-pressed="true"] { background: var(--sim-btn-accent); border-color: #93c5fd; color: #fff; }
+.ss-fb { margin: 6px 0 0; } .ss-fb.is-ok b { color: var(--ss-ok); } .ss-fb.is-no b { color: var(--ss-warn); }
+.ss-spinstates { margin: 0; padding: 6px 10px; border: 1px solid var(--ss-line); border-radius: 10px; background: var(--ss-panel-2); font-size: 0.92em; }
+.ss-spinstates figcaption { margin-bottom: 6px; }
+.ss-ss-cols { display: flex; align-items: flex-end; justify-content: center; gap: 8px; flex-wrap: wrap; }
+.ss-ss-col { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 38px; }
+.ss-ss-combos { display: flex; flex-direction: column; gap: 2px; align-items: center; }
+.ss-ss-combo { font-family: ui-monospace, monospace; font-weight: 800; letter-spacing: 0.06em; padding: 0 5px; border-radius: 6px; background: rgba(8, 20, 50, 0.7); border: 1px solid var(--ss-line); font-size: 0.95em; line-height: 1.25; }
+.ss-ss-bar { width: 26px; border-radius: 4px 4px 0 0; background: var(--ss-teal); }
+.ss-ss-count { font-weight: 800; font-size: 1.1em; }
+.ss-dev { margin: auto; }
+.ss-wb > .ss-dev { height: 100%; justify-content: center; border: 1px solid var(--ss-line); border-radius: 12px; background: var(--ss-panel); }
+
+/* ---- Transport ---- */
+.ss-transport { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-width: 0; flex: 1 1 auto; }
+.ss-tbtn { min-height: 34px; padding: 0 12px; gap: 6px; font-weight: 700; }
+.ss-speed-label { font-size: var(--sd-fs); color: var(--ss-muted); margin-left: 4px; font-weight: 700; }
 .ss-time-note { font-size: var(--sd-fs-sm); color: var(--ss-muted); margin-left: auto; text-align: right; }
-[data-testid="spectroscopy-workspace"][data-w="md"] .ss-transport .sd-btn--sm span { display: none; }
 [data-testid="spectroscopy-workspace"][data-w="md"] .ss-time-note { display: none; }
+.ss-theme [data-testid="spectroscopy-workspace"] .sd-bottom-row { align-items: center; }
 
-/* ---- Placeholder ----------------------------------------------------------- */
-.ss-dev { margin: auto; max-width: 560px; padding: 24px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px; color: var(--ss-ink); }
-.ss-dev h3 { margin: 4px 0 0; font-size: 20px; }
-.ss-dev p { margin: 0; color: var(--ss-muted); }
-.ss-dev-badge { display: inline-block; padding: 2px 10px; border-radius: 999px; border: 1.5px solid var(--ss-amber); color: var(--ss-amber) !important; font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
-.ss-dev-note { font-size: 12.5px; }
-.ss-dev svg { color: var(--ss-amber); }
-
+/* ---- Segmented controls on the navy surface */
 /* ---- Dark surfaces for the shared segmented controls ----------------------- */
 [data-testid="spectroscopy-workspace"] .sd-tabs--segmented { background: var(--ss-panel-2); border: 1px solid var(--ss-line); }
 [data-testid="spectroscopy-workspace"] .sd-tabs--segmented .sd-tab { color: var(--ss-ink); padding: 2px 9px; font-size: calc(var(--sd-fs) - 0.5px); }
@@ -106,70 +229,18 @@
 [data-testid="spectroscopy-workspace"] .sd-switch button[aria-checked="true"] { background: var(--ss-accent-solid); color: #fff; }
 [data-testid="spectroscopy-workspace"] .sd-switch button:not([aria-checked="true"]):hover { background: rgba(56, 189, 248, 0.2); }
 
-/* ---- Physics stages: activities, groups, controls ------------------------- */
-.ss-activities { display: flex; gap: 4px; padding: 6px 8px 0; flex: 0 0 auto; flex-wrap: wrap; }
-.ss-activity { min-height: 30px; padding: 0 12px; border: 1.5px solid var(--ss-ctl); border-radius: 9px; background: var(--ss-panel-2); color: var(--ss-ink); font: inherit; font-weight: 700; font-size: var(--sd-fs); cursor: pointer; }
-.ss-activity:hover { background: rgba(56, 189, 248, 0.2); }
-.ss-activity[aria-selected="true"] { background: var(--ss-accent-solid); border-color: #5eead4; color: #fff; }
-.ss-activity-body { flex: 1 1 0; min-height: 0; min-width: 0; display: flex; padding: 8px; gap: 8px; position: relative; }
-.ss-viz-col { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 6px; }
-.ss-viz { position: relative; flex: 1 1 0; min-width: 0; min-height: 0; border-radius: 10px; overflow: hidden; }
+
+/* ---- Shared plot / svg classes */
 .ss-three { position: absolute; inset: 0; }
 .ss-three canvas { display: block; }
 .ss-nogl { margin: auto; max-width: 420px; text-align: center; padding: 16px; color: var(--ss-muted); }
 .ss-nogl p { margin: 4px 0; }
-.ss-field-split { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; gap: 8px; width: 100%; }
-.ss-viz--main { flex: 1.35 1 0; }
-.ss-field-side { flex: 1 1 0; min-width: 0; min-height: 0; overflow: auto; border: 1px solid var(--ss-line); border-radius: 10px; background: var(--ss-plot-bg); padding: 6px; }
-.ss-energy { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-.ss-energy > svg { flex: 1 1 0; min-height: 0; max-width: 100%; }
-.ss-energy-notes { flex: 0 0 auto; font-size: var(--sd-fs-sm); color: var(--ss-muted); }
-.ss-energy-notes p { margin: 2px 0; }
 .ss-tag { font-size: 12px; font-weight: 700; white-space: nowrap; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8); }
-.ss-badge-tl { position: absolute; top: 8px; left: 8px; max-width: min(52%, 420px); padding: 6px 9px; border-radius: 9px; background: var(--ss-label-bg); border: 1px solid var(--ss-line); color: var(--ss-label-ink); font-size: var(--sd-fs-sm); line-height: 1.3; display: flex; flex-direction: column; gap: 2px; }
-.ss-badge-tl b { color: var(--ss-teal); font-size: var(--sd-fs); }
-.ss-badge--warn { border-color: var(--ss-amber); }
-.ss-badge--warn b { color: var(--ss-amber); }
-.ss-hud { position: absolute; right: 8px; top: 8px; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; padding: 5px 9px; border-radius: 9px; background: var(--ss-label-bg); border: 1px solid var(--ss-line); font-size: var(--sd-fs); max-width: 44%; text-align: right; }
-.ss-hud b { color: var(--ss-mag); }
 .ss-legend { display: flex; flex-wrap: wrap; gap: 3px 12px; margin: 0; padding: 0; list-style: none; font-size: var(--sd-fs-sm); color: var(--ss-muted); }
 .ss-legend li { display: inline-flex; align-items: center; gap: 5px; }
-.ss-legend-bl { position: absolute; left: 8px; bottom: 8px; max-width: calc(100% - 16px); padding: 5px 8px; border-radius: 9px; background: var(--ss-label-bg); border: 1px solid var(--ss-line); }
-.ss-legend-inline { padding: 2px 6px; }
 .ss-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
 .ss-dot--arrow { border-radius: 2px 6px 6px 2px; width: 13px; height: 7px; }
 .ss-dot--bar { border-radius: 2px; width: 14px; height: 4px; }
-
-.ss-group { flex: 0 0 auto; padding: 7px 8px; border: 1px solid var(--ss-line); border-radius: 11px; background: var(--ss-panel); display: flex; flex-direction: column; gap: 6px; }
-.ss-group-head h3 { margin: 0; font-size: var(--sd-fs); font-weight: 800; color: var(--ss-teal); letter-spacing: 0.01em; }
-.ss-btnrow { display: flex; gap: 6px; flex-wrap: wrap; }
-.ss-btnrow .sd-btn { flex: 1 1 auto; }
-.ss-hint { margin: 0; font-size: var(--sd-fs-sm); color: var(--ss-muted); line-height: 1.35; }
-.ss-hint b { color: var(--ss-ink); }
-.ss-const { color: var(--ss-faint); }
-.ss-check { display: flex; gap: 7px; align-items: flex-start; font-size: var(--sd-fs); cursor: pointer; }
-.ss-check input { margin-top: 3px; accent-color: #2dd4bf; width: 15px; height: 15px; }
-.ss-check small { display: block; color: var(--ss-muted); font-size: var(--sd-fs-sm); }
-.ss-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; margin: 0; }
-.ss-stat { padding: 4px 7px; border-radius: 8px; background: var(--ss-panel-2); border: 1px solid var(--ss-line); min-width: 0; }
-.ss-stat dt { font-size: var(--sd-fs-sm); color: var(--ss-muted); line-height: 1.2; }
-.ss-stat dd { margin: 0; font-weight: 800; font-size: calc(var(--sd-fs) + 1px); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-.ss-stat dd small { font-weight: 600; color: var(--ss-muted); font-size: var(--sd-fs-sm); }
-.ss-stat--b0 dd { color: var(--ss-cyan); } .ss-stat--mag dd { color: var(--ss-mag); } .ss-stat--mxy dd { color: var(--ss-mxy); } .ss-stat--rf dd { color: var(--ss-rf); }
-.ss-stat--alpha dd { color: var(--ss-alpha); } .ss-stat--beta dd { color: var(--ss-beta); }
-.ss-teacher { flex: 0 0 auto; padding: 7px 9px; border-radius: 11px; border: 1.5px dashed var(--ss-violet); background: rgba(167, 139, 250, 0.1); font-size: var(--sd-fs-sm); line-height: 1.4; color: var(--ss-ink); }
-.ss-teacher h4 { margin: 0 0 3px; font-size: var(--sd-fs); color: var(--ss-violet); display: flex; gap: 5px; align-items: center; }
-.ss-teacher p { margin: 3px 0; }
-.ss-predict { flex: 0 0 auto; padding: 7px 9px; border-radius: 11px; border: 1.5px solid var(--ss-cyan); background: rgba(56, 189, 248, 0.08); font-size: var(--sd-fs); }
-.ss-predict-q { margin: 0 0 6px; font-weight: 700; line-height: 1.3; }
-.ss-predict-opts { display: flex; flex-direction: column; gap: 4px; }
-.ss-chip { text-align: left; min-height: 28px; padding: 3px 9px; border-radius: 8px; border: 1.5px solid var(--ss-ctl); background: var(--ss-panel-2); color: var(--ss-ink); font: inherit; font-size: var(--sd-fs); cursor: pointer; }
-.ss-chip:hover { background: rgba(56, 189, 248, 0.2); }
-.ss-chip[aria-checked="true"] { background: #1d4ed8; border-color: #93c5fd; color: #fff; }
-.ss-predict-fb { margin: 6px 0 0; line-height: 1.35; font-size: var(--sd-fs); }
-.ss-predict-fb.is-ok b { color: var(--ss-ok); } .ss-predict-fb.is-no b { color: var(--ss-warn); }
-.ss-link { background: none; border: 0; padding: 0; font: inherit; color: var(--ss-cyan); text-decoration: underline; cursor: pointer; }
-.ss-plotbox { position: relative; min-width: 0; }
 .ss-plot { display: block; max-width: 100%; }
 .ss-plot-bg { fill: var(--ss-plot-bg); }
 .ss-grid { stroke: var(--ss-grid); stroke-width: 1; }
@@ -180,31 +251,16 @@
 .ss-svgtext { fill: var(--ss-ink); font-size: 12px; }
 .ss-svgtext--sm { font-size: 10.5px; fill: var(--ss-muted); }
 .ss-svgtext--b { font-weight: 800; }
-.ss-rfstrip { flex: 0 0 auto; width: 100%; height: 54px; }
-.ss-box { fill: rgba(251, 146, 60, 0.18); stroke: var(--ss-rf); stroke-width: 1.5; } .ss-wire { stroke: var(--ss-rf); stroke-width: 2; }
-.ss-coil { fill: none; stroke: var(--ss-rf); stroke-width: 2; } .ss-tube { fill: rgba(125, 211, 252, 0.3); stroke: #7dd3fc; stroke-width: 1.2; }
 
-.ss-res { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 8px; width: 100%; }
-.ss-res-top { flex: 1.5 1 0; min-height: 0; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.ss-res-bottom { flex: 1 1 0; min-height: 0; display: flex; gap: 10px; min-width: 0; }
-.ss-res-plot2 { flex: 1.4 1 0; min-width: 0; min-height: 0; overflow: hidden; }
-.ss-res-facts { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 6px; overflow: auto; }
-.ss-viz-title { margin: 0; font-size: calc(var(--sd-fs) + 1.5px); font-weight: 800; color: var(--ss-ink); }
-.ss-clickplot { cursor: crosshair; min-height: 0; flex: 1 1 0; }
-.ss-meter { margin: auto; max-width: 440px; width: 100%; text-align: center; }
-.ss-meter-bar { height: 22px; border-radius: 11px; background: var(--ss-panel-2); border: 1px solid var(--ss-line); overflow: hidden; margin: 6px 0; }
-.ss-meter-bar > div { height: 100%; background: linear-gradient(90deg, #f472b6, #fcd34d); transition: width 0.15s; }
-.ss-orient { width: 100%; max-height: 260px; }
+/* ---- Placeholder */
+.ss-dev { margin: auto; max-width: 560px; padding: 24px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px; color: var(--ss-ink); }
+.ss-dev h3 { margin: 4px 0 0; font-size: 20px; }
+.ss-dev p { margin: 0; color: var(--ss-muted); }
+.ss-dev-badge { display: inline-block; padding: 2px 10px; border-radius: 999px; border: 1.5px solid var(--ss-amber); color: var(--ss-amber) !important; font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+.ss-dev-note { font-size: 12.5px; }
+.ss-dev svg { color: var(--ss-amber); }
 
-/* Slider rows, notes and switches of the shared dashboard on the navy surface */
-[data-testid="spectroscopy-workspace"] .sd-row { background: rgba(20, 40, 92, 0.7); border-color: var(--ss-line); border-left-color: var(--sd-color); color: var(--ss-ink); }
-[data-testid="spectroscopy-workspace"] .sd-row--active, [data-testid="spectroscopy-workspace"] .sd-row--edit { background: color-mix(in srgb, var(--sd-color) 16%, rgba(12, 27, 66, 0.9)); border-color: color-mix(in srgb, var(--sd-color) 45%, #0c1b42); border-left-color: var(--sd-color); }
-[data-testid="spectroscopy-workspace"] .sd-row-label { color: var(--ss-ink); }
-[data-testid="spectroscopy-workspace"] .sd-note { color: var(--ss-warn); }
-[data-testid="spectroscopy-workspace"] .sd-setting-text { color: var(--ss-ink); }
-[data-testid="spectroscopy-workspace"] .sd-setting input { accent-color: #2dd4bf; }
-[data-testid="spectroscopy-workspace"] .sd-badge { color: #fff; }
-
+/* ---- Instrument drawing */
 /* ---- Instrument and signal ------------------------------------------------ */
 .ss-instr-wrap { position: relative; flex: 1 1 0; min-width: 0; min-height: 0; border-radius: 10px; overflow: hidden; }
 .ss-instr { position: absolute; inset: 0; width: 100%; height: 100%; }
@@ -220,28 +276,7 @@
 .ss-box { fill: rgba(30, 52, 108, 0.7); stroke-width: 1.6; }
 .ss-box--tx { stroke: #fbbf24; } .ss-box--rx { stroke: #a78bfa; } .ss-box--pr { stroke: #f472b6; }
 .ss-display { fill: rgba(8, 20, 50, 0.8); stroke: #f472b6; stroke-width: 1.4; }
-.ss-hud--mini { top: auto; bottom: 30px; right: 10px; padding: 4px; }
-.ss-mini { display: flex; gap: 6px; }
-.ss-steplist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
-.ss-steplink { width: 100%; display: flex; gap: 8px; align-items: center; text-align: left; min-height: 28px; padding: 2px 8px; border: 1.5px solid var(--ss-ctl); border-radius: 8px; background: var(--ss-panel-2); color: var(--ss-ink); font: inherit; font-size: var(--sd-fs); cursor: pointer; }
-.ss-steplink:hover { background: rgba(56, 189, 248, 0.2); }
-.ss-steplink[aria-current="step"] { background: var(--ss-accent-solid); border-color: #5eead4; color: #fff; }
-.ss-steplink-n { width: 18px; height: 18px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 11px; font-weight: 800; border: 1.5px solid currentColor; flex: 0 0 auto; }
-.ss-complist { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
-.ss-compbtn { display: flex; align-items: center; gap: 6px; min-height: 28px; padding: 2px 8px; border: 1.5px solid var(--ss-ctl); border-left: 4px solid var(--c); border-radius: 8px; background: var(--ss-panel-2); color: var(--ss-ink); font: inherit; font-size: var(--sd-fs-sm); text-align: left; cursor: pointer; }
-.ss-compbtn:hover { background: rgba(56, 189, 248, 0.2); }
-.ss-compbtn[aria-pressed="true"] { background: var(--ss-accent-solid); border-color: #5eead4; border-left-color: var(--c); color: #fff; }
-.ss-swatch { display: none; }
-.ss-info { margin: 0; font-size: var(--sd-fs-sm); line-height: 1.4; }
-.ss-info b { color: var(--ss-teal); }
-.ss-group-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
 
-.ss-signal { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 6px; width: 100%; }
-.ss-signal-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex: 0 0 auto; }
-.ss-sample-note { font-size: var(--sd-fs-sm); color: var(--ss-muted); }
-.ss-signal-plot { flex: 1 1 0; min-height: 0; min-width: 0; border: 1px solid var(--ss-line); border-radius: 10px; overflow: hidden; background: var(--ss-plot-bg); }
-.ss-signal-foot { flex: 0 0 auto; }
-.ss-comp-list { margin: 0; padding: 0 0 0 16px; font-size: var(--sd-fs-sm); line-height: 1.5; }
 
 /* Boundary contrast for selected fills (>= 3:1 against the dark surround). */
 [data-testid="spectroscopy-workspace"] .sd-tabs--segmented .sd-tab[aria-selected="true"],
@@ -255,3 +290,8 @@
 [data-testid="spectroscopy-workspace"][data-layout="stacked"] .sd-header { grid-template-columns: minmax(0, 1fr); grid-template-areas: "title" "actions" "tabs"; }
 [data-testid="spectroscopy-workspace"][data-layout="stacked"] .sd-header-tabs { justify-self: stretch; width: 100%; min-width: 0; overflow-x: auto; }
 [data-testid="spectroscopy-workspace"][data-layout="stacked"] .sd-header-actions { justify-content: flex-start; }
+
+
+/* Focus ring for the segmented technique tabs: the shared ring colour is too faint on this dark panel in the light page theme. */
+[data-testid="spectroscopy-workspace"] .sd-tabs--segmented .sd-tab:focus-visible,
+.sd-root:has([data-testid="spectroscopy-workspace"]) .sd-tabs--segmented .sd-tab:focus-visible { outline: 2px solid #fff; outline-offset: -3px; }

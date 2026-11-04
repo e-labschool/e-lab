@@ -338,8 +338,8 @@ const resources = [
     title: "Spectroscopy Simulation Lab",
     resourceType: "simulation",
     categories: ["simulate","visualize","explore","teach"],
-    status: "in-development", // live | in-development | planned  (1H NMR and Splitting Patterns are built; MS, IR and combined structure determination are placeholders)
-    description: "A virtual NMR laboratory: examine the proton and its spin states, apply a field and a radiofrequency pulse (Bloch-equation model), explore the spectrometer, the free induction decay and the Fourier transform, then build and interpret proton NMR spectra of molecules. Mass spectrometry, infrared and combined structure determination are in development.",
+    status: "in-development", // live | in-development | planned  (1H NMR is built as one six-step workspace; MS, IR and combined structure determination are placeholders)
+    description: "A single guided 1H NMR workspace in six steps: the proton as a tiny magnet, energy levels in a field, a simplified continuous-wave resonance, an illustrative spectrometer, the FID and its Fourier transform, then nine molecules with equivalence, chemical shift, integration and splitting. Mass spec, IR and structure investigation are still placeholders.",
     conceptIds: [],
     component: () => import("../engines/spectroscopy-studio/SpectroscopyStudio.jsx"),
   },

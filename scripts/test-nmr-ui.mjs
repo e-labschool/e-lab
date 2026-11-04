@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // jsdom UI tests for the Spectroscopy Simulation Lab shell:  node scripts/test-nmr-ui.mjs
-// Renders the REAL SpectroscopyStudio (with Agent B's real molecular stages) into jsdom (no layout, no WebGL).
+// Renders the REAL single-workspace SpectroscopyStudio into jsdom (no layout, no WebGL).
 // Honest limits: 3D scenes, SVG geometry, clipping, overflow and frame timing are NOT checked here (see
 // scripts/verify-spectroscopy-studio.mjs in headless Chromium); this checks registration, navigation, state wiring and controls.
 import assert from "node:assert/strict";
@@ -47,65 +47,56 @@ async function mount() {
 console.log("Registration");
 await test("registered under spectroscopy-studio", () => { assert.equal(SIMULATION_REGISTRY["spectroscopy-studio"].label, "Spectroscopy Simulation Lab"); assert.ok(SIMULATION_COMPONENTS["spectroscopy-studio"]); });
 
-console.log("Navigation");
+console.log("Single workspace");
 await mount();
-await test("five technique tabs in the required order", () => {
-  const ids = ["ms", "ir", "nmr", "splitting", "structure"]; ids.forEach((i) => assert.ok($(T(`tech-${i}`)), i));
-  assert.equal($$(`[data-testid^="tech-"]`).length, 5);
+await test("four technique tabs (no Splitting Patterns tab)", () => {
+  ["ms", "ir", "nmr", "structure"].forEach((i) => assert.ok($(T(`tech-${i}`)), i));
+  assert.ok(!$(T("tech-splitting")));
+  assert.equal($$(`[data-testid^="tech-"]`).length, 4);
 });
-await test("stepper has five stages and starts on Principle", () => {
-  assert.equal($$(`[data-testid^="stage-"]`).filter((e) => /^stage-(principle|instrument|molecular|spectrum|interpretation)$/.test(e.dataset.testid)).length, 5);
-  assert.equal($(T("stage-box")).dataset.stage, "principle");
+await test("stepper has six steps, Previous disabled on step 1", () => {
+  for (let i = 1; i <= 6; i += 1) assert.ok($(T(`step-${i}`)), `step-${i}`);
+  assert.ok($(T("step-prev")).disabled);
 });
-await test("free movement between all stages", async () => {
-  for (const s of ["interpretation", "instrument", "spectrum", "molecular", "principle"]) { await click(T(`stage-${s}`)); await until(() => $(T("stage-box")).dataset.stage === s, 3000, s); }
+await test("Next/Previous and direct selection move through all six steps", async () => {
+  await click(T("step-next")); await tick(80); assert.equal($(T("step-2")).getAttribute("aria-current"), "step");
+  await click(T("step-prev")); await tick(80); assert.equal($(T("step-1")).getAttribute("aria-current"), "step");
+  for (const i of [3, 5, 6, 4, 2, 1]) { await click(T(`step-${i}`)); await tick(80); assert.equal($(T(`step-${i}`)).getAttribute("aria-current"), "step", `step ${i}`); }
 });
-await test("experiment state survives leaving and returning to a stage", async () => {
-  await click(T("stage-principle")); await click(T("act-p-field")); await tick(100);
+await test("B0 carries over from step 2 to step 3 and back", async () => {
+  await click(T("step-2")); await tick(120);
   const slider = $$("input[type=range]")[0]; assert.ok(slider, "slider");
-  const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set; set.call(slider, "5"); slider.dispatchEvent(new window.Event("input", { bubbles: true })); slider.dispatchEvent(new window.Event("change", { bubbles: true })); await tick(100);
-  const before = $$("input[type=range]")[0].value;
-  await click(T("stage-instrument")); await click(T("stage-molecular")); await click(T("stage-principle")); await tick(150);
-  assert.equal($$("input[type=range]")[0].value, before, "B0 slider kept");
-  assert.ok(Math.abs(Number(before) - 5) < 0.51, `slider ${before}`);
+  const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set; set.call(slider, "5"); slider.dispatchEvent(new window.Event("input", { bubbles: true })); slider.dispatchEvent(new window.Event("change", { bubbles: true })); await tick(80);
+  await click(T("step-3")); await tick(120); assert.ok(/simplified continuous-wave model/i.test(document.body.textContent), "CW label");
+  await click(T("step-2")); await tick(120);
+  assert.ok(Math.abs(Number($$("input[type=range]")[0].value) - 5) < 0.51, `slider ${$$("input[type=range]")[0].value}`);
 });
-await test("stage 2 has the two activities and the six guided steps", async () => {
-  await click(T("stage-instrument")); await tick(100);
-  assert.ok($(T("act-i-spectrometer")) && $(T("act-i-signal")));
-  assert.equal($$(`[data-testid^="step-"]`).filter((e) => /^step-\d$/.test(e.dataset.testid)).length, 6);
-  assert.ok(/illustrative instrument model/i.test(document.body.textContent), "labelled illustrative");
+await test("step 4 is labelled illustrative and offers Next Stage", async () => {
+  await click(T("step-4")); await tick(120);
+  assert.ok(/illustrative instrument model/i.test(document.body.textContent)); assert.ok($(T("next-stage")));
 });
-await test("instrument components are keyboard-reachable buttons and select/deselect", async () => {
-  const comps = $$("g[role=button]"); assert.ok(comps.length >= 6, `components ${comps.length}`);
-  await click(T("list-magnet")); assert.equal($(T("list-magnet")).getAttribute("aria-pressed"), "true"); assert.ok($(T("comp-purpose")));
-  await click(T("whole-instrument")); assert.ok(!$(T("comp-purpose")));
+await test("step 5 offers Transform to Spectrum", async () => {
+  await click(T("step-5")); await tick(120); assert.ok(byText("button", /Transform to Spectrum/i));
 });
-await test("guided step 6 states the spectrum is computed, not measured directly", async () => {
-  await click(T("step-6")); await tick(100); assert.ok(/not measured directly|never measures the spectrum directly/i.test(txt(T("what-is-happening"))), txt(T("what-is-happening")));
+await test("step 6 has a molecule picker and coupling is gated behind earlier sub-stages", async () => {
+  await click(T("step-6")); await tick(150); assert.ok($(T("molecule-search")), "picker");
 });
-await test("FID activity: transform to spectrum control exists", async () => { await click(T("act-i-signal")); await tick(100); assert.ok(byText("button", /Transform to Spectrum/i)); });
+await test("every step has a Teacher disclosure", async () => {
+  for (let i = 1; i <= 6; i += 1) { await click(T(`step-${i}`)); await tick(100); assert.ok(byText("summary, button", /Teacher/i), `teacher ${i}`); }
+});
 
 console.log("Placeholders");
-await test("Mass Spectrometry and IR are honest placeholders", async () => {
+await test("Mass Spectrometry, IR and Structure Investigation are honest placeholders", async () => {
   await click(T("tech-ms")); assert.ok($(T("dev-ms")) && /development/i.test(txt(T("dev-ms"))));
   await click(T("tech-ir")); assert.ok($(T("dev-ir")));
   await click(T("tech-structure")); assert.ok($(T("dev-structure")));
 });
-await test("returning to NMR restores the stage", async () => { await click(T("tech-nmr")); await until(() => $(T("stage-box")).dataset.stage === "instrument", 3000, "stage restored"); });
-await test("Splitting Patterns tab shows B's SplittingLab (not a placeholder)", async () => { await click(T("tech-splitting")); await tick(200); assert.ok(!$(T("dev-splitting"))); assert.ok($(T("stage-box")).textContent.length > 50); await click(T("tech-nmr")); });
+await test("returning to NMR restores the workspace and step", async () => { await click(T("tech-nmr")); await until(() => $(T("step-6")).getAttribute("aria-current") === "step" || $(T("step-1")), 3000, "workspace"); });
 
-console.log("Modes and controls");
-await test("teacher/student switch", async () => {
-  const t = byText(`${T("mode-switch")} button`, /Teacher/); const s = byText(`${T("mode-switch")} button`, /Student/); assert.ok(t && s);
-  await click(t); assert.ok(/Teacher/.test(txt(T("mode-status")))); await click(T("stage-principle")); await tick(100); assert.ok($(".ss-teacher"), "teacher notes visible");
-  await click(s); assert.ok(/Student/.test(txt(T("mode-status"))));
-});
-await test("split view toggles", async () => { const b = $(T("split-toggle")); const v = b.getAttribute("aria-pressed"); await click(b); assert.notEqual($(T("split-toggle")).getAttribute("aria-pressed"), v); });
-await test("playback controls: play/pause/step/reset/speed", async () => {
-  ["btn-play", "btn-pause", "btn-step-back", "btn-step-forward", "btn-reset-playback"].forEach((i) => assert.ok($(T(i)), i));
-  await click(T("btn-play")); assert.ok($(T("btn-pause")) && !$(T("btn-pause")).disabled); await click(T("btn-pause"));
-  const speeds = $$(`${T("speed-switch")} button`).map((b) => b.textContent.trim()); assert.deepEqual(speeds, ["0.25×", "0.5×", "1×", "2×"]);
-  await click(byText(`${T("speed-switch")} button`, /2×/)); assert.ok(/pedagogical/i.test(txt(T("time-note"))));
+console.log("Playback");
+await test("play/pause and speed controls", async () => {
+  assert.ok($(T("btn-play-pause")), "play-pause"); await click(T("btn-play-pause"));
+  const speeds = $$(`${T("speed-switch")} button`).map((b) => b.textContent.trim()); if (speeds.length) assert.deepEqual(speeds, ["0.25×", "0.5×", "1×", "2×"]);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

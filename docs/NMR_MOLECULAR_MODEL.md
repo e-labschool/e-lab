@@ -111,4 +111,11 @@ This is explicitly labelled **qualitative** in the UI. It is not a computed elec
 ## Testing
 
 * `npm run test:nmr-molecular`: model tests (derivation, Pascal, Lorentzian area, units, linking, challenges) and jsdom UI tests of the four components in their SVG-fallback mode.
-* `node scripts/verify-nmr-molecular.mjs`: headless Chromium (Playwright, SwiftShader software WebGL) at 1366x768, 1440x900, 1920x1080, 820x1180 and 390x844, run against the stand-alone harness in `scripts/harness-nmr-molecular/`. This is not a real GPU, not real touch hardware and Chromium only.
+* `node scripts/verify-spectroscopy-studio.mjs`: headless Chromium (Playwright, SwiftShader software WebGL) at 1366x768, 1440x900, 1920x1080, 820x1180 and 390x844 against the real workspace. This is not a real GPU, not real touch hardware and Chromium only.
+
+## Update: single-workspace refactor
+
+* Removed: `MolecularProcessStage`, `SpectrumStage`, `InterpretationStage`, `SplittingLab`, `SplitDiagram`, `ShieldingExplorer`, `useStageState`, `molecularBridge`, and the Splitting Patterns tab. The stand-alone harness and `verify-nmr-molecular.mjs` were retired; `verify-spectroscopy-studio.mjs` covers the molecules in Step 6.
+* Added: `model/spinStates.js` (2^n spin-state enumeration, line counts n+1), `model/moleculeFid.js` (FID synthesised from the multiplet lines; used by Step 5), `components/ShieldingDiagram.jsx`.
+* `nmr/molecular/index.js` now exports `MoleculeViewer`, `SpectrumPlot`, `MoleculePicker`, `ShieldingDiagram`, `MOLECULES`, `getMolecule`. `MoleculePicker` accepts a null value. `useSelection.js` exports only `useLinkedSelection`.
+* Molecule state (`identified`, `coupled`, `spinStates`, `integrated`) lives in the studio store and is reset on molecule change.
