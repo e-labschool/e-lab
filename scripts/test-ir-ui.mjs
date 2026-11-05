@@ -218,7 +218,7 @@ await test("the IR experiment survives a visit to NMR and back; NMR is untouched
 await test("Reset restores the IR defaults but keeps the stage; MS and Structure remain placeholders", async () => {
   await click(T("row-cdc")); await click(".sd-btn[aria-label*='Reset'], button[aria-label*='Reset' i]"); await tick(150);
   assert.equal($(T("groups-view")).getAttribute("data-group"), "cdo"); assert.equal($(T("step-7")).getAttribute("aria-current"), "step");
-  await click(T("tech-ms")); assert.ok($(T("dev-ms"))); await click(T("tech-structure")); assert.ok($(T("dev-structure"))); await click(T("tech-ir"));
+  await click(T("tech-ms")); assert.ok($(T("stage-box")).getAttribute("data-technique") === "ms" && !$(T("dev-ms"))); await click(T("tech-structure")); assert.ok($(T("dev-structure"))); await click(T("tech-ir"));
 });
 await test("playback bar: Play/Pause, Replay and speed are present for IR", async () => {
   assert.ok($(T("btn-play-pause")) && $(T("btn-reset-playback")) && $(T("speed-switch"))); await click(T("btn-play-pause")); assert.equal($(T("playback-bar")).getAttribute("data-paused"), "1"); await click(T("btn-play-pause")); assert.equal($(T("playback-bar")).getAttribute("data-paused"), "0");

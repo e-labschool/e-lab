@@ -12,7 +12,7 @@ import { STEPS, SUB_IDS, clampOp, clampStep, navigate } from "./stepMachine.js";
 export { STEPS, SUBSTAGES, OPS } from "./stepMachine.js";
 
 export const TECHNIQUES = [
-  { id: "ms", label: "Mass Spectrometry", developed: false },
+  { id: "ms", label: "Mass Spectrometry", developed: true },
   { id: "ir", label: "IR Spectroscopy", developed: true },
   { id: "nmr", label: "¹H NMR", developed: true },
   { id: "structure", label: "Structure Investigation", developed: false },

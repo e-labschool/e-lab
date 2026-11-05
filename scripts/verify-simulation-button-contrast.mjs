@@ -6,6 +6,7 @@
 //        VARIANTS=standalone,fullscreen,embedded   (default all; embedded = /interactives/<id>, only for engines that have a page there)
 //        STATES=0   audit the default state only (default: also hover / focus-visible / active, forced through CDP CSS.forcePseudoState)
 //        SHOTS=1    save a screenshot of each page/variant into <outDir>/shots (used for contact sheets)
+//        DEEP=ms,ir   spectroscopy-studio only: also audit EVERY stage of the named technique tabs (default: none; the tab loop above only sees each tab's first stage)
 //        CHROMIUM=/path/to/chrome
 // For every visible control (button, [role=button|tab|radio|switch|menuitem], select, summary) it computes WCAG ratios
 //   text   : label colour vs the control's effective fill (opacity + alpha composited, ancestors walked)        >= 4.5
@@ -285,6 +286,19 @@ async function runPage(browser, { sim, variant, theme, size: [W, H] }) {
       await auditPage(p, cdp, { ...ctx, tab: label }, seen);
     }
     if (n) await shot("__tabs");
+    // spectroscopy-studio: every stage of the chosen technique tabs (a stage shows different controls: chips, sliders, Replay, reveal buttons)
+    if (sim === "spectroscopy-studio" && process.env.DEEP) {
+      for (const tech of process.env.DEEP.split(",")) {
+        if (!(await p.locator(`[data-testid="tech-${tech}"]`).count())) continue;
+        await p.locator(`[data-testid="tech-${tech}"]`).click(); await sleep(500);
+        const stages = await p.locator('[data-testid="stage-stepper"] li').count();
+        for (let i = 1; i <= stages; i += 1) {
+          if (!(await p.locator(`[data-testid="step-${i}"]`).click({ timeout: 1500 }).then(() => true).catch(() => false))) continue;
+          await p.mouse.move(1, H - 2); await sleep(500);
+          await auditPage(p, cdp, { ...ctx, tab: `${tech} stage ${i}` }, seen);
+        }
+      }
+    }
   } catch (e) {
     warnings.push({ where: tag, control: "(page)", what: `audit aborted: ${String(e.message).split("\n")[0]}` });
   }

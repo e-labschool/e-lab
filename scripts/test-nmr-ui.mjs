@@ -160,7 +160,7 @@ await test("every step has a Teacher disclosure", async () => {
 
 console.log("Placeholders");
 await test("Mass Spectrometry and Structure Investigation are honest placeholders (IR is a live workspace, see test-ir-ui.mjs)", async () => {
-  await click(T("tech-ms")); assert.ok($(T("dev-ms")) && /development/i.test(txt(T("dev-ms"))));
+  await click(T("tech-ms")); assert.ok($(T("stage-box")) && $(T("stage-box")).getAttribute("data-technique") === "ms" && !$(T("dev-ms")));
   await click(T("tech-ir")); assert.ok(!$(T("dev-ir")) && $(T("stage-box")));
   await click(T("tech-structure")); assert.ok($(T("dev-structure")));
 });

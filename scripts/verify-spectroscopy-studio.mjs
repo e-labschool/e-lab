@@ -378,7 +378,8 @@ for (const [w, h] of SIZES) {
   await p.keyboard.press("Tab"); check(await p.evaluate(() => document.activeElement?.getAttribute("data-testid") === "step-5"), `${tag}: Tab order of the stepper`);
 
   // ---------- technique tabs, hide / show, persistence ----------
-  for (const t of ["ms", "structure"]) { await p.click(T(`tech-${t}`)); await sleep(500); await geom(`placeholder ${t}`); check((await p.locator(T(`dev-${t}`)).count()) === 1, `${tag}: ${t} placeholder`); }
+  { await p.click(T("tech-ms")); await sleep(600); check((await p.locator(T("dev-ms")).count()) === 0 && (await p.locator("[data-technique=ms]").count()) === 1, `${tag}: ms tab is a workbench`); }
+  for (const t of ["structure"]) { await p.click(T(`tech-${t}`)); await sleep(500); await geom(`placeholder ${t}`); check((await p.locator(T(`dev-${t}`)).count()) === 1, `${tag}: ${t} placeholder`); }
   await shot("tech-structure"); await p.click(T("tech-nmr")); await sleep(800);
   check((await attr(T("stage-box"), "data-stage")) === "step-4", `${tag}: step lost after switching technique tabs`);
   await p.evaluate(() => { Object.defineProperty(document, "hidden", { value: true, configurable: true }); document.dispatchEvent(new Event("visibilitychange")); }); await sleep(600);

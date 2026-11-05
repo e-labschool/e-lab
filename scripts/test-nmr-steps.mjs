@@ -78,7 +78,7 @@ test("store: Reset restarts the animations but keeps molecule and B0; the full r
   s.resetExperiment(); assert.equal(s.getState().moleculeId, null); assert.equal(s.getState().b0Tesla, C.B0_DEFAULT); assert.equal(s.getState().step, 5); assert.equal(s.getState().mode, "teacher");
 });
 test("technique tabs: Mass Spec | IR | NMR | Structure Investigation (no separate Splitting Patterns tab)", () => {
-  assert.deepEqual(ST.TECHNIQUES.map((t) => t.id), ["ms", "ir", "nmr", "structure"]); assert.deepEqual(ST.TECHNIQUES.map((t) => t.developed), [false, true, true, false]);
+  assert.deepEqual(ST.TECHNIQUES.map((t) => t.id), ["ms", "ir", "nmr", "structure"]); assert.deepEqual(ST.TECHNIQUES.map((t) => t.developed), [true, true, true, false]);
 });
 
 console.log("Field slider: dE, nu0 and the text agree");

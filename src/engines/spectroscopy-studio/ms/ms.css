@@ -1,0 +1,139 @@
+/* Mass Spectrometry workspace. Loaded after SpectroscopyStudio.css; same --ss-* tokens, same container-driven layout (the shell's data-layout="stacked"). */
+
+/* ---- scenes ---- */
+.ms-boxfill { position: absolute; inset: 0; display: flex; flex-direction: column; }
+.ms-boxfill > .ms-scene { position: relative; flex: 1 1 0; }
+.ms-vizcol { position: absolute; inset: 0; display: flex; flex-direction: column; min-height: 0; }
+.ms-vizmain { position: relative; flex: 1 1 0; min-height: 0; min-width: 0; }
+.ms-scene { position: absolute; inset: 0; min-width: 0; min-height: 0; overflow: hidden; }
+.ms-split .ms-scene, .ms-ev-spec .ms-scene { position: absolute; }
+.ms-scene > svg { display: block; }
+.ms-fill-svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.ms-methane, .ms-introview { position: absolute; inset: 0; }
+.ms-split { position: absolute; inset: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 6px; padding: 6px; }
+.ms-split-a, .ms-split-b { position: relative; min-width: 0; min-height: 0; overflow: hidden; border-radius: 10px; background: rgba(8, 20, 50, 0.35); }
+.ms-scenelabel { fill: var(--ss-ink); font-size: 13px; font-weight: 700; }
+.ms-scenelabel.is-title { font-size: 14px; font-weight: 800; fill: var(--ss-teal); }
+.ms-scenelabel.is-sm { font-size: 11.5px; font-weight: 600; fill: var(--ss-muted); }
+.ms-scenelabel.is-ion { fill: #fdba74; } .ms-scenelabel.is-volt { fill: var(--ss-amber); font-weight: 800; font-size: 14px; } .ms-scenelabel.is-ok { fill: var(--ss-ok); font-weight: 800; }
+.ms-glyph-label { fill: var(--ss-ink); font-size: 13px; font-weight: 700; text-anchor: middle; }
+.ms-partbox { fill: rgba(30, 52, 108, 0.55); stroke: var(--ss-ctl); stroke-width: 1.5; }
+.ms-partbox.is-chamber { fill: rgba(8, 20, 50, 0.45); stroke-dasharray: 6 5; } .ms-partbox.is-detector { fill: rgba(22, 163, 74, 0.25); stroke: #22c55e; }
+.ms-partlabel { fill: var(--ss-muted); font-size: 12px; font-weight: 700; } .ms-partlabel.is-on { fill: var(--ss-amber); }
+.ms-part.is-active .ms-partbox { stroke: var(--ss-amber); stroke-width: 2.5; }
+.ms-field { fill: rgba(56, 189, 248, 0.07); stroke: #38bdf8; stroke-width: 1.5; stroke-dasharray: 5 4; }
+.ms-tube { fill: rgba(8, 20, 50, 0.5); stroke: var(--ss-ctl); stroke-width: 1.5; }
+.ms-chain { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 2px; margin: 0; padding: 0; list-style: none; font-weight: 700; }
+.ms-chain li { display: inline-flex; align-items: center; gap: 5px; }
+.ms-chain-n { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--ss-panel-2); border: 1.5px solid var(--ss-ctl); font-size: 12px; }
+.ms-chain-arrow { margin: 0 4px; color: var(--ss-faint); }
+
+/* ---- equations ---- */
+.ms-eq { margin: 0; font-weight: 800; color: var(--ss-amber); letter-spacing: 0.02em; font-variant-numeric: tabular-nums; }
+.ms-eq span.is-dim { opacity: 0.55; } .ms-eq span.is-on { color: var(--ss-amber); }
+.ms-eq--over { position: relative; flex: 0 0 auto; align-self: center; margin: 2px 8px 8px; z-index: 3; padding: 4px 14px; border-radius: 10px; background: var(--ss-label-bg); border: 1px solid var(--ss-line); font-size: calc(var(--sd-fs) + 4px); max-width: calc(100% - 16px); text-align: center; pointer-events: none; }
+.ms-eq--block { text-align: center; padding: 6px 8px; border-radius: 10px; background: var(--ss-panel-2); border: 1px solid var(--ss-line); font-size: 1.12em; overflow-wrap: anywhere; }
+.ss-badge--tr { position: absolute; top: 8px; right: 8px; max-width: min(60%, 420px); z-index: 3; pointer-events: none; }
+
+/* ---- chips ---- */
+.ms-chipgroup { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.ms-chip { flex-direction: column; align-items: flex-start; justify-content: center; line-height: 1.15; padding-top: 3px; padding-bottom: 3px; }
+.ms-chip:not(:has(.ms-chip-sub)) { align-items: center; }
+.ms-chip[aria-checked="true"], .ms-chip[aria-pressed="true"] { background: var(--sim-btn-accent); border-color: #5eead4; color: #fff; box-shadow: 0 0 0 2px rgba(94, 234, 212, 0.35); }
+.ms-chip-sub { font-size: 11.5px; font-weight: 600; opacity: 0.9; }
+.ms-chip--sm { min-height: 34px; padding: 2px 10px; }
+.ms-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* ---- instrument ribbon ---- */
+.ms-ribbon { flex: 0 0 auto; padding: 5px 8px 3px; border-bottom: 1px solid var(--ss-line); background: rgba(8, 20, 50, 0.45); }
+.ms-ribbon ol { display: flex; align-items: stretch; gap: 0; margin: 0; padding: 0; list-style: none; }
+.ms-ribbon li { display: flex; align-items: center; flex: 1 1 0; min-width: 0; }
+.ms-ribbon-box { display: flex; flex-direction: column; flex: 1 1 0; min-width: 0; padding: 3px 5px; border-radius: 8px; border: 1px solid var(--ss-line); background: var(--ss-panel-2); line-height: 1.15; text-align: center; }
+.ms-ribbon-box b { font-size: 12px; color: var(--ss-muted); overflow-wrap: anywhere; } .ms-ribbon-box i { display: none; }
+.ms-ribbon li.is-active .ms-ribbon-box { border-color: var(--ss-amber); border-width: 2px; background: rgba(251, 191, 36, 0.14); }
+.ms-ribbon li.is-active .ms-ribbon-box b { color: var(--ss-amber); } 
+.ms-ribbon-arrow { flex: 0 0 auto; padding: 0 2px; color: var(--ss-faint); font-weight: 800; }
+.ms-ribbon-note { margin: 2px 0 0; font-size: 11px; color: var(--ss-faint); text-align: center; }
+
+/* ---- spectrum ---- */
+.ms-spec { display: block; }
+.ms-bar { fill: #38bdf8; } .ms-bar--M { fill: #fb923c; } .ms-bar--M2 { fill: #a78bfa; } .ms-bar--iso { fill: #a78bfa; } .ms-bar--frag { fill: #2dd4bf; } .ms-bar--plain { fill: #60a5fa; }
+.ms-peak { outline: none; } .ms-peak.is-click { cursor: pointer; }
+.ms-hit { fill: transparent; } .ms-peak.is-click:hover .ms-hit, .ms-peak.is-click:active .ms-hit { fill: rgba(125, 211, 252, 0.3); stroke: #7dd3fc; stroke-width: 1.5; }
+.ms-peak.is-click:hover .ms-bar, .ms-peak.is-click:active .ms-bar { stroke: #fff; stroke-width: 1.5; filter: brightness(1.3); } .ms-peak.is-sel .ms-hit { fill: rgba(94, 234, 212, 0.16); }
+.ms-peak:focus-visible .ms-hit { stroke: var(--ss-focus); stroke-width: 2.5; fill: rgba(255, 209, 102, 0.12); }
+.ms-peak.is-sel .ms-bar { stroke: #fff; stroke-width: 1.5; }
+.ms-peaklabel { fill: var(--ss-ink); font-weight: 800; paint-order: stroke; stroke: rgba(8, 20, 50, 0.85); stroke-width: 3px; font-variant-numeric: tabular-nums; pointer-events: none; }
+.ms-peaklabel.is-sel { fill: #5eead4; } .ms-peakion { font-weight: 600; fill: #fdba74; }
+.ms-peaktag { fill: var(--ss-amber); font-size: 12px; font-weight: 800; pointer-events: none; }
+.ms-picked { fill: none; stroke: var(--ss-amber); stroke-width: 2.5; stroke-dasharray: 4 3; pointer-events: none; }
+.ms-cursor { stroke: #5eead4; stroke-width: 1; stroke-dasharray: 3 4; opacity: 0.7; pointer-events: none; }
+
+/* ---- panel pieces ---- */
+.ms-pathbars { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.ms-pathbars li { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 0.8fr) auto; align-items: center; gap: 4px 8px; padding: 3px 8px; border-radius: 9px; border: 1px solid var(--ss-line); background: var(--ss-panel-2); font-size: 0.88em; }
+.ms-pathbars li.is-sel { border-color: #5eead4; }
+.ms-pb-bar { display: block; height: 8px; border-radius: 4px; background: rgba(8, 20, 50, 0.7); overflow: hidden; } .ms-pb-bar i { display: block; height: 100%; background: #fb923c; }
+.ms-pb-val { font-variant-numeric: tabular-nums; color: var(--ss-muted); white-space: nowrap; }
+.ms-outcome { padding: 6px 10px; border-radius: 10px; border: 1.5px solid var(--ss-line); background: var(--ss-panel-2); }
+.ms-outcome.is-ok { border-color: var(--ss-ok); } .ms-outcome.is-no { border-color: var(--ss-warn); }
+.ms-arrivals { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; margin: 0; padding: 0; list-style: none; }
+.ms-arrivals li { display: flex; flex-direction: column; padding: 3px 8px; border-radius: 9px; border: 2px solid var(--ss-line); background: var(--ss-panel-2); font-size: 0.9em; line-height: 1.2; opacity: 0.8; }
+.ms-arrivals li.is-done { opacity: 1; background: rgba(34, 197, 94, 0.14); }
+.ms-arrivals li span { color: var(--ss-muted); font-variant-numeric: tabular-nums; }
+.ms-contrast { font-size: 0.9em; color: var(--ss-muted); } .ms-contrast b { color: var(--ss-ink); }
+.ms-terms { display: flex; flex-direction: column; gap: 4px; margin: 0; }
+.ms-terms div { padding: 4px 9px; border-radius: 9px; background: var(--ss-panel-2); border: 1px solid var(--ss-line); }
+.ms-terms dt { font-weight: 800; color: var(--ss-teal); } .ms-terms dd { margin: 0; font-size: 0.93em; }
+.ms-peakinfo { padding: 6px 10px; border-radius: 10px; border: 1.5px solid var(--ss-cyan); background: rgba(56, 189, 248, 0.08); } .ms-peakinfo p { margin: 0 0 3px; }
+.ms-ionname { font-weight: 800; color: #fdba74; }
+.ms-table { width: 100%; border-collapse: collapse; font-size: 0.93em; }
+.ms-table th, .ms-table td { padding: 3px 6px; border-bottom: 1px solid var(--ss-line); text-align: left; vertical-align: top; font-variant-numeric: tabular-nums; }
+.ms-table thead th { color: var(--ss-muted); font-size: var(--sd-fs-sm); font-weight: 700; } .ms-table th[scope="row"] { font-weight: 700; white-space: nowrap; }
+.ms-table tr.is-sel td { background: rgba(94, 234, 212, 0.14); }
+.ms-ratio { font-weight: 600; } .ms-ratio b { color: var(--ss-amber); }
+.ms-prompt { color: var(--ss-amber); }
+.ms-hint { padding: 6px 10px; border-radius: 10px; border: 1px dashed var(--ss-cyan); background: rgba(56, 189, 248, 0.07); font-size: 0.93em; } .ms-hint ul { margin: 3px 0 0; padding-left: 18px; }
+.ms-results { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; font-size: 0.93em; }
+.ms-results li::before { content: "• "; } .ms-results .is-correct::before { content: "✓ "; color: var(--ss-ok); } .ms-results .is-wrong::before { content: "✗ "; color: var(--ss-warn); } .ms-results .is-partial::before { content: "◐ "; color: var(--ss-amber); }
+.ms-reveal { display: flex; flex-direction: column; gap: 8px; }
+.ms-evidence { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 6px; }
+.ms-ev { position: relative; min-width: 0; min-height: 0; padding: 6px 9px; border-radius: 10px; border: 1.5px solid var(--ss-line); background: rgba(8, 20, 50, 0.35); overflow: auto; font-size: 0.92em; scrollbar-width: thin; }
+.ms-ev.is-on { border-color: var(--ss-teal); } .ms-ev h3 { margin: 0 0 3px; font-size: 1em; color: var(--ss-teal); } .ms-ev ul { margin: 0; padding-left: 17px; } .ms-ev p { margin: 3px 0 0; }
+.ms-ev-spec { position: relative; height: clamp(110px, 38%, 200px); margin-bottom: 4px; }
+.ms-cands { display: flex; flex-wrap: wrap; gap: 5px; margin: 0; padding: 0; list-style: none; }
+.ms-cands li { padding: 2px 9px; border-radius: 999px; border: 1.5px solid var(--ss-ctl); font-weight: 700; font-size: 0.9em; } .ms-cands li span { font-weight: 600; color: var(--ss-muted); }
+.ms-cands li.is-on { border-color: #5eead4; background: rgba(94, 234, 212, 0.12); } .ms-cands li.is-off { text-decoration: line-through; opacity: 0.55; }
+
+/* ---- heights in the stacked layout (narrow containers) ---- */
+[data-testid="spectroscopy-workspace"][data-layout="stacked"] .ss-viz.ss-viz--ms { height: clamp(360px, 100cqw, 560px); }
+[data-testid="spectroscopy-workspace"][data-layout="stacked"] .ss-viz.ss-viz--ms-intro { height: clamp(360px, 100cqw, 560px); }
+[data-testid="spectroscopy-workspace"][data-layout="stacked"] .ss-viz.ss-viz--ms-inst { height: clamp(480px, 130cqw, 680px); }
+[data-testid="spectroscopy-workspace"][data-layout="stacked"] .ss-viz.ss-viz--ms-sector { height: clamp(440px, 115cqw, 640px); }
+[data-testid="spectroscopy-workspace"][data-layout="stacked"] .ss-viz.ss-viz--ms-tof { height: clamp(440px, 115cqw, 620px); }
+[data-testid="spectroscopy-workspace"][data-layout="stacked"] .ms-split { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
+[data-testid="spectroscopy-workspace"][data-layout="stacked"] .ms-evidence { grid-template-columns: minmax(0, 1fr); grid-auto-rows: auto; overflow: auto; }
+[data-testid="spectroscopy-workspace"][data-layout="stacked"] .ss-viz:has(.ms-evidence) { height: clamp(560px, 150cqw, 760px); }
+[data-testid="spectroscopy-workspace"][data-layout="stacked"] .ms-ev-spec { height: 180px; }
+@container ssw (max-width: 1100px) { .ms-evidence { grid-template-columns: minmax(0, 1fr); overflow: auto; } .ms-arrivals { grid-template-columns: minmax(0, 1fr); } }
+
+/* ---- narrow containers: badges flow above the scene, the ribbon wraps ---- */
+@container ssw (max-width: 620px) {
+  .ms-boxfill > .ss-badge--tl, .ms-boxfill > .ss-badge--tr { position: static; max-width: none; margin: 4px 6px 0; padding: 4px 8px; font-size: 12px; pointer-events: auto; }
+  .ms-ribbon ol { flex-wrap: wrap; gap: 4px; } .ms-ribbon li { flex: 1 1 30%; } .ms-ribbon-arrow { display: none; }
+  .ms-ribbon-box b { font-size: 11.5px; }
+}
+/* ---- thirteen stage pills ---- */
+.ss-steps[data-n="13"] .ss-pill-label { font-size: calc(var(--sd-fs) - 1px); }
+.ss-steps[data-n="13"] .ss-pill { padding: 0 6px; gap: 4px; }
+@container ssw (max-width: 1500px) { .ss-steps[data-n="13"] .ss-pillwrap:not(.is-current) .ss-pill-label { display: none; } .ss-steps[data-n="13"] .ss-pillwrap:not(.is-current) { flex: 0 0 40px; } .ss-steps[data-n="13"] .ss-pillwrap:not(.is-current) .ss-pill { padding: 0; justify-content: center; } }
+@container ssw (max-width: 620px) {
+  .ss-steps[data-n="13"] { gap: 2px; }
+  .ss-steps[data-n="13"] .ss-pillwrap, .ss-steps[data-n="13"] .ss-pillwrap:not(.is-current) { flex: 1 1 0; min-width: 0; }
+  .ss-steps[data-n="13"] .ss-pill { padding: 0; min-width: 0; justify-content: center; }
+  .ss-steps[data-n="13"] .ss-pill-n { width: 18px; height: 18px; font-size: 10px; }
+  .ss-steps[data-n="13"] .ss-pillwrap.is-current .ss-pill-n { box-shadow: 0 0 0 2px rgba(94, 234, 212, 0.5); }
+}
+@media (prefers-reduced-motion: reduce) { .ms-arrivals li, .ms-ev { transition: none; animation: none; } }
+
+.ms-peak.is-click:hover, .ms-peak.is-click:active { outline: 2px solid #7dd3fc; outline-offset: 1px; }
