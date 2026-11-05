@@ -6,16 +6,16 @@ import { TeacherDisclosure } from "./ui.jsx";
  * on the right with the title, the short explanation and the optional teacher disclosure. The shell turns this into a single column when
  * the dashboard is stacked (container-driven, never the window width).
  */
-export default function StepFrame({ step, viz, strip, children, teacher, vizTestId = "step-viz", vizClass = "" }) {
-  const info = STEPS[step - 1];
+export default function StepFrame({ step, viz, strip, children, teacher, vizTestId = "step-viz", vizClass = "", steps = STEPS, frameClass = "" }) {
+  const info = steps[step - 1];
   return (
-    <div className="ss-frame" data-testid={`step-view-${step}`} data-step={step}>
+    <div className={`ss-frame ${frameClass}`} data-testid={`step-view-${step}`} data-step={step}>
       <div className="ss-vizcol">
         <div className={`ss-viz ${vizClass}`} data-testid={vizTestId}>{viz}</div>
         {strip && <div className="ss-strip" data-testid="step-strip">{strip}</div>}
       </div>
       <aside className="ss-panel" aria-label={`Step ${step}: ${info.title}`} data-testid="step-panel">
-        <p className="ss-kicker">Step {step} of {STEPS.length}</p>
+        <p className="ss-kicker">Step {step} of {steps.length}</p>
         <h3 className="ss-ptitle" data-testid="step-title">{info.title}</h3>
         <div className="ss-pbody">{children}</div>
         <TeacherDisclosure>{teacher}</TeacherDisclosure>

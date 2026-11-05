@@ -16,15 +16,23 @@
 // to show WHY a frequency matching dE = h nu is needed (resonance).
 //
 // Illustrative widths (documented in the UI): a real small-molecule 1H line is about 1 Hz wide or narrower, a part in 10^9 of nu0, which
-// no slider could find. The model therefore uses an illustrative line width of CW_FWHM_HZ = 20 Hz (T2 about 16 ms) and a weak field
-// (s = CW_SATURATION), and the UI says so.
+// no slider could find. The model therefore uses an illustrative OBSERVED line width of CW_FWHM_HZ = 20 Hz and a moderate RF field
+// s = CW_SATURATION = 1 (so that the saturation of step 3 is visible), and the UI says so. The width is a property of the model, not a
+// threshold typed into the interface: the on / near / off classification below is computed from cwFwhm().
+//
+// Population consequence (the same equations, used by rfPopulation.js): Mz / M0 = 1 / (1 + s g) with g = 1 / (1 + Delta^2 T2^2), which is
+// the same as 1 - (s / (1 + s)) L(offset), where L is the absorption line shape plotted here (peak 1). So the steady-state depletion of
+// the alpha-beta population difference is proportional to the plotted response.
 import { TWO_PI } from "./blochSim.js";
 import { larmorHz, larmorMHz } from "./constants.js";
 
-export const CW_LABEL = "Simplified continuous-wave model (introductory)";
+export const CW_TITLE = "Simplified continuous-wave NMR resonance response";
+export const CW_CAVEAT = "An introductory frequency-sweep model. It is not the direct output of a modern pulsed Fourier-transform NMR experiment.";
+export const CW_X_LABEL = "RF frequency offset from resonance (Hz)";
+export const CW_Y_LABEL = "Relative excitation / absorption response";
 export const CW_FWHM_HZ = 20; // observed full width at half maximum (illustrative; real lines are ~1 Hz or narrower)
-export const CW_SATURATION = 0.05; // s = omega1^2 T1 T2 (weak field)
-export const CW_SPAN_HZ = 100; // the RF slider spans nu0 +- 100 Hz
+export const CW_SATURATION = 1; // s = omega1^2 T1 T2: a moderate RF field, chosen so that the saturation of step 3 is visible
+export const CW_SPAN_HZ = 100; // the RF slider spans nu0 +- 100 Hz = +- 5 line widths, so the whole Lorentzian (and its tails) is on the slider
 export const CW_DEFAULT_OFFSET_HZ = 40; // where the slider starts: off resonance, so the student has to find it
 export const CW_STEP_HZ = 1;
 
@@ -60,13 +68,26 @@ export function cwCurve(span = CW_SPAN_HZ, n = 401, p = CW) {
   for (let i = 0; i < n; i += 1) { x[i] = -span + (2 * span * i) / (n - 1); y[i] = cwAbsorption(x[i], p); }
   return { x, y };
 }
-/** True when the RF is within half a line width of resonance ("on resonance"). */
+/** Peak-normalised Lorentzian of full width `fwhm` (Hz): 1 / (1 + (2 x / fwhm)^2). cwAbsorption() equals this with fwhm = cwFwhm(). */
+export const cwLorentzian = (offsetHz, fwhmHz = cwFwhm()) => 1 / (1 + ((2 * offsetHz) / fwhmHz) ** 2);
+/** True when the RF is within half a line width of resonance ("on resonance": response >= 1/2, inside the shaded band of the graph). */
 export const cwOnResonance = (offsetHz, p = CW) => Math.abs(offsetHz) <= cwFwhm(p) / 2;
+/**
+ * Three-way classification derived from the line width (no typed-in frequencies):
+ *   "on"   |offset| <= FWHM / 2   response >= 1/2   "Resonance achieved"
+ *   "near" |offset| <= FWHM       response >= 1/5   partial match, partial response
+ *   "off"  otherwise                                "Off resonance"
+ * The displayed strength of every cue (arrow opacity, wave glow, ...) is the continuous response cwAbsorption(), not this label.
+ */
+export function cwRegion(offsetHz, p = CW) {
+  const a = Math.abs(offsetHz); const f = cwFwhm(p);
+  return a <= f / 2 ? "on" : a <= f ? "near" : "off";
+}
 
 // ---- the RF frequency slider (centred on the resonance of the current field) ----
 export const rfOffsetHz = (rfMHz, b0Tesla) => Math.round((rfMHz * 1e6 - larmorHz(b0Tesla)) * 1000) / 1000;
-/** Absolute RF frequency (MHz, 1 Hz resolution) for an offset from the resonance at B0. */
-export const rfFromOffset = (offsetHz, b0Tesla) => Math.round(larmorHz(b0Tesla) + offsetHz) / 1e6;
+/** Absolute RF frequency (MHz) for an offset from the resonance at B0. Not rounded, so the displayed MHz value and the offset always agree. */
+export const rfFromOffset = (offsetHz, b0Tesla) => (larmorHz(b0Tesla) + offsetHz) / 1e6;
 export const clampOffset = (offsetHz, span = CW_SPAN_HZ) => Math.min(span, Math.max(-span, offsetHz));
 /** Slider range in MHz around the resonance at B0. */
 export function rfRangeMHz(b0Tesla, span = CW_SPAN_HZ) {

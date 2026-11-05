@@ -1,91 +1,96 @@
-import { useMemo } from "react";
+import { useState } from "react";
 import StepFrame from "../../components/StepFrame.jsx";
-import LinePlot from "../../components/LinePlot.jsx";
-import { Badge, BigSlider, Readouts } from "../../components/ui.jsx";
+import { BigSlider, Readouts } from "../../components/ui.jsx";
 import { usePhase } from "../../components/useAnim.js";
-import { useSize } from "../../components/useSize.js";
-import { useStudio, useStudioActions } from "../../state/StudioContext.jsx";
-import { H_PLANCK, larmorMHz, sci } from "../physics/constants.js";
+import { useReducedMotion, useStudio, useStudioActions } from "../../state/StudioContext.jsx";
+import { H_PLANCK, larmorHz, larmorMHz, sci } from "../physics/constants.js";
 import { fieldReadouts } from "../physics/fieldModel.js";
-import { CW, CW_FWHM_HZ, CW_LABEL, CW_SPAN_HZ, cwAbsorption, cwCurve, cwFwhm, cwOnResonance, rfFromOffset, rfOffsetHz } from "../physics/cwResponse.js";
-import RfWaves from "./RfWaves.jsx";
+import { CW, CW_FWHM_HZ, CW_SPAN_HZ, cwAbsorption, cwFwhm, cwRegion, rfFromOffset, rfOffsetHz } from "../physics/cwResponse.js";
+import { displayPolarization, exaggerationFactor } from "../physics/populations.js";
+import { IRRADIATION_WINDOW_S, modelSecondsPerDisplaySecond, populationDifferenceDisplay, populationDifferenceSteady } from "../physics/rfPopulation.js";
+import ChainStrip from "./ChainStrip.jsx";
+import LevelsDiagram from "./LevelsDiagram.jsx";
+import ResponseGraph from "./ResponseGraph.jsx";
+import RfWave from "./RfWave.jsx";
+import { LARMOR_NOTE } from "./texts.js";
 
-const CURVE = cwCurve(CW_SPAN_HZ, 401);
 const signed = (x) => `${x > 0 ? "+" : x < 0 ? "−" : ""}${Math.abs(Math.round(x))}`;
+const fmtInt = (x) => Math.round(x).toLocaleString("en-US").replace(/,/g, " ");
 
-/** Step 3: an incoming RF wave and ONE slider for its frequency, centred on the resonance of the field chosen in step 2, with a live response graph. */
+/** Seconds of RF irradiation (animation time) at the current RF frequency: restarts from equilibrium whenever the frequency changes; a finite window; static (window end) with reduced motion. */
+function useIrradiation(off, phase, reduced) {
+  const [st, setSt] = useState({ off, at: phase });
+  let cur = st;
+  if (st.off !== off) { cur = { off, at: phase }; setSt(cur); }
+  return reduced ? IRRADIATION_WINDOW_S : Math.min(IRRADIATION_WINDOW_S, Math.max(0, phase - cur.at));
+}
+
+/**
+ * Step 3: ONE incoming RF wave travelling to a proton model, the alpha / beta energy-level diagram beside it, the chain
+ * applied field -> splitting -> matching RF energy -> resonance -> absorption, and ONE slider (the RF frequency) with the simplified CW response graph.
+ */
 export default function Step3Radio() {
   const a = useStudioActions();
   const b0 = useStudio((s) => s.b0Tesla);
   const rfMHz = useStudio((s) => s.rf.rfMHz);
+  const reduced = useReducedMotion();
   const phase = usePhase();
-  const [ref, size] = useSize();
   const r = fieldReadouts(b0);
-  const nu0 = larmorMHz(b0);
+  const nu0 = larmorMHz(b0); const nu0Hz = larmorHz(b0);
   const off = Math.round(rfOffsetHz(rfMHz, b0));
-  const on = cwOnResonance(off);
-  const abs = cwAbsorption(off);
+  const resp = cwAbsorption(off); const region = cwRegion(off); const on = region === "on";
   const fwhm = cwFwhm();
-  const abbrev = useMemo(() => (size.height < 250 || size.width < 380), [size]);
+  const t = useIrradiation(off, phase, reduced);
+  const d = populationDifferenceDisplay(off, t);
+  const dEnd = populationDifferenceSteady(off);
+  const pDisp = displayPolarization("teaching", b0);
 
-  const graph = (
-    <div className="ss-graphbox" ref={ref} data-testid="cw-graph-box">
-      <LinePlot
-        width={size.width} height={size.height} series={[{ x: CURVE.x, y: CURVE.y, color: "var(--ss-cyan)", width: 3, fillTo: 0 }]}
-        xDomain={[-CW_SPAN_HZ, CW_SPAN_HZ]} yDomain={[0, 1.12]} xLabel="RF frequency offset from resonance, ν_rf − ν₀ (Hz)" yLabel="Response (absorption)" xFormat={(v) => signed(v)} yFormat={(v) => (v === 0 ? "0" : v === 1 ? "max" : "")}
-        xTicks={[-100, -50, 0, 50, 100]} margin={{ l: 50, r: 26, t: 10, b: 44 }} yTicks={[0, 1]} ariaLabel={`Response of the nuclei to a continuous RF wave against its frequency: a peak at resonance. The RF is ${signed(off)} hertz from resonance, absorption ${Math.round(abs * 100)} percent of the maximum.`}
-        testId="cw-graph"
-        overlay={({ sx, sy, plot }) => (
-          <g data-testid="cw-overlay" data-offset={off} data-on-resonance={on ? "1" : "0"}>
-            <rect x={sx(-fwhm / 2)} width={sx(fwhm / 2) - sx(-fwhm / 2)} y={plot.t} height={plot.h} fill="var(--ss-amber)" opacity={on ? 0.28 : 0.1} data-testid="cw-resonance-band" />
-            <line x1={sx(0)} x2={sx(0)} y1={plot.t} y2={plot.t + plot.h} stroke="var(--ss-amber)" strokeWidth="2" strokeDasharray="6 4" />
-            <text x={sx(0) + 6} y={plot.t + 14} className="ss-svgtext ss-svgtext--b" fill="var(--ss-amber)">resonance: hν = ΔE</text>
-            <line x1={sx(off)} x2={sx(off)} y1={sy(abs)} y2={plot.t + plot.h} stroke="var(--ss-rf)" strokeWidth="2" opacity="0.9" />
-            <circle cx={sx(off)} cy={sy(abs)} r={on ? 9 : 7} fill="var(--ss-rf)" stroke="#fff" strokeWidth="2.5" data-testid="cw-dot" data-y={abs.toFixed(4)} />
-            {!abbrev && <text x={sx(off) + (off > 60 ? -12 : 12)} y={sy(abs) - 12} textAnchor={off > 60 ? "end" : "start"} className="ss-svgtext ss-svgtext--b" fill="var(--ss-rf)">{`${Math.round(abs * 100)} %`}</text>}
-          </g>
-        )}
-      />
-    </div>
-  );
   const viz = (
-    <div className="ss-stack2" data-testid="rf-view" data-offset={off} data-on-resonance={on ? "1" : "0"}>
-      <div className="ss-top"><RfWaves offsetHz={off} phase={phase} onResonance={on} absorption={abs} /></div>
-      <div className="ss-bottomgraph">
-        <Badge className="ss-badge--tr" testId="cw-label"><b>{CW_LABEL}</b></Badge>
-        {graph}
+    <div className="ss-rfview" data-testid="rf-view" data-offset={off} data-region={region} data-on-resonance={on ? "1" : "0"} data-response={resp.toFixed(3)}>
+      <ChainStrip region={region} />
+      <div className="ss-rf-wave"><RfWave response={resp} region={region} phase={phase} nu0Hz={nu0Hz} /></div>
+      <div className="ss-rf-levels" data-testid="energy-panel">
+        <LevelsDiagram b0={b0} p={1} polarization={pDisp} exaggerated rf={{ response: resp, region, offsetHz: off, d, phase }} />
       </div>
+      <div className="ss-rf-graph" data-testid="cw-graph-box"><ResponseGraph off={off} /></div>
     </div>
   );
   const strip = (
     <BigSlider
-      id="ss-rf" label="RF frequency" symbol="ν_rf" value={off} min={-CW_SPAN_HZ} max={CW_SPAN_HZ} step={1} onChange={(v) => a.patch("rf", { rfMHz: rfFromOffset(v, b0) })}
-      badge={`${rfMHz.toFixed(6)} MHz  (ν₀ ${signed(off)} Hz)`} valueText={`RF frequency ${rfMHz.toFixed(6)} megahertz, ${signed(off)} hertz from the resonance at ${nu0.toFixed(6)} megahertz`} color="#fb923c"
-      ticks={[{ at: 0, label: "ν₀ − 100 Hz" }, { at: 0.5, label: `ν₀ = ${nu0.toFixed(3)} MHz` }, { at: 1, label: "ν₀ + 100 Hz" }]} testId="rf-slider"
+      id="ss-rf" label="RF frequency" symbol="ν_RF" value={off} min={-CW_SPAN_HZ} max={CW_SPAN_HZ} step={1} onChange={(v) => a.patch("rf", { rfMHz: rfFromOffset(v, b0) })}
+      badge={`${rfMHz.toFixed(7)} MHz  (ν₀ ${signed(off)} Hz)`} valueText={`RF frequency ${rfMHz.toFixed(7)} megahertz, ${signed(off)} hertz from the resonance at ${nu0.toFixed(7)} megahertz`} color="#fb923c"
+      ticks={[{ at: 0, label: "ν₀ − 100 Hz" }, { at: 0.5, label: `ν₀ = ${nu0.toFixed(4)} MHz` }, { at: 1, label: "ν₀ + 100 Hz" }]} testId="rf-slider"
     />
   );
   const teacher = (
     <>
-      <p><b>How the curve is derived.</b> It is the steady state of the same Bloch equations used in the rest of the lab (rotating frame): M<sub>y</sub> = M₀ω₁T₂ / (1 + Δ²T₂² + ω₁²T₁T₂), a Lorentzian in Δ = 2π(ν₀ − ν_rf). Its full width at half maximum is (1/πT₂)√(1 + s) with s = ω₁²T₁T₂ ≪ 1 (a weak field, s = 0.05 here). The absorbed power is proportional to M<sub>y</sub>.</p>
-      <p><b>Widths are illustrative.</b> The width here is {CW_FWHM_HZ} Hz (T₂ ≈ {(1000 * CW.t2).toFixed(0)} ms) so the line can be found with a ±{CW_SPAN_HZ} Hz slider. Real ¹H lines in solution are about 1 Hz wide or narrower, one part in 10⁹ of ν₀.</p>
-      <p>Because a modern spectrometer excites with a short pulse, which contains a whole band of frequencies, it never needs to “find” each resonance. That is the idea of steps 4 and 5.</p>
+      <p><b>The response curve.</b> It is the steady state of the same Bloch equations used elsewhere in the lab (rotating frame): M<sub>y</sub> = M₀ω₁T₂ / (1 + Δ²T₂² + ω₁²T₁T₂), a Lorentzian in Δ = 2π(ν₀ − ν_RF) of full width at half maximum (1/πT₂)√(1 + s), s = ω₁²T₁T₂. The absorbed power is proportional to M<sub>y</sub>. The curve and the region labels are computed from this width: <i>on</i> = within ±FWHM/2 (response ≥ ½), <i>near</i> = within ±FWHM, otherwise <i>off</i>.</p>
+      <p><b>The population model.</b> The same equations give the α−β population difference D = M<sub>z</sub>/M₀ = 1 − s/(1 + s)·L(offset), where L is the plotted response, approached exponentially with τ = T₁(1 + s − sL)/(1 + s) when the RF is switched on. With s = {(CW.omega1 ** 2 * CW.t1 * CW.t2).toFixed(0)} the difference is at most halved on resonance and never reversed, so β moves <i>towards</i> equal populations, never beyond. The animation shows {IRRADIATION_WINDOW_S} s of irradiation from equilibrium (it restarts when the RF frequency changes); one animation second stands for {(1000 * modelSecondsPerDisplaySecond()).toFixed(1)} ms of model time.</p>
+      <p><b>Illustrative values.</b> The width is {CW_FWHM_HZ} Hz (T₂ ≈ T₁ ≈ {(1000 * CW.t2).toFixed(0)} ms) so that the line can be found with a ±{CW_SPAN_HZ} Hz slider; real ¹H lines in solution are about 1 Hz wide or narrower, one part in 10⁹ of ν₀. The RF is stronger (s = 1) than in a real CW experiment so that the saturation can be seen. The bars use the labelled exaggeration (about {fmtInt(exaggerationFactor())}×) because the real excess ({r.text.excess}) is too small to draw.</p>
+      <p><b>Not a pulsed experiment.</b> A modern spectrometer excites with a short pulse, which contains a whole band of frequencies, so it never needs to “find” each resonance. Steps 4 and 5 separate RF excitation, the FID and the Fourier transform.</p>
     </>
   );
   return (
-    <StepFrame step={3} viz={viz} strip={strip} teacher={teacher} vizClass="ss-viz--stack">
-      <p data-testid="what-is-happening" aria-live="polite">
-        {on
-          ? <>The RF wave is <b>in step</b> with the precessing nuclei: its photon energy matches the gap, <b>hν_rf = ΔE</b>, so the nuclei absorb energy and flip between α and β (ΔE = hν₀ = {sci(r.dEJ, 3)} J). The response is at its <b>maximum</b>.</>
-          : <>The RF frequency is {signed(off)} Hz away from ν₀. Its photon energy does not match the gap (<b>hν_rf ≠ ΔE</b>; the difference is only h × {signed(off)} Hz, small in joules but large compared with the narrow resonance), so the nuclei hardly respond: {Math.round(abs * 100)} % of the maximum.</>}
+    <StepFrame step={3} viz={viz} strip={strip} teacher={teacher} vizClass="ss-viz--rf">
+      <p className="ss-statehead" data-testid="resonance-state" data-region={region} aria-live="polite">
+        {on ? "Resonance achieved" : region === "near" ? "Near resonance" : "Off resonance"}
       </p>
-      <p className="ss-prompt">Slide the RF frequency until the response peaks.</p>
+      <p data-testid="what-is-happening">
+        {on
+          ? <>The photon energy matches the gap, <b>hν_RF = ΔE</b>, so the RF energy is <b>absorbed</b>: the response is {Math.round(resp * 100)} % of its maximum, and the excited-state (β) population rises towards equal populations, but not beyond.</>
+          : region === "near"
+            ? <>The RF is {signed(off)} Hz from ν₀, within one linewidth. hν_RF is almost, but not quite, ΔE, so only part of the energy is absorbed ({Math.round(resp * 100)} % of the maximum).</>
+            : <>The wave reaches the proton, but it is {signed(off)} Hz from ν₀, more than one linewidth ({fwhm.toFixed(0)} Hz). hν_RF ≠ ΔE (it differs by h × {signed(off)} Hz), so the levels stay as they are and there is little or no excitation ({Math.round(resp * 100)} %).</>}
+      </p>
+      <p data-testid="larmor-note"><b>Larmor frequency (ν₀).</b> {LARMOR_NOTE}</p>
+      <p className="ss-note" data-testid="ensemble-note"><b>One arrow is a teaching model of one nucleus.</b> A real sample is an ensemble: resonant RF changes the spin populations (N<sub>β</sub> rises towards, never beyond, N<sub>α</sub>) and creates coherent transverse magnetisation. RF excitation, the FID and the Fourier transform are separated in steps 4 and 5.</p>
       <Readouts items={[
-        { id: "nurf", label: "ν_rf", value: `${rfMHz.toFixed(6)} MHz`, tone: "rf" },
-        { id: "nu0", label: `ν₀ at ${r.text.b0}`, value: `${nu0.toFixed(6)} MHz`, tone: "b0" },
-        { id: "off", label: "ν_rf − ν₀", value: `${signed(off)} Hz`, tone: on ? "ok" : "rf" },
-        { id: "diff", label: "hν_rf − ΔE", value: off === 0 ? "0 J" : `${sci(H_PLANCK * off, 2)} J`, tone: on ? "ok" : "rf", title: "Tiny in absolute terms, but the resonance is only about 20 Hz wide" },
+        { id: "nurf", label: "ν_RF", value: `${rfMHz.toFixed(7)} MHz`, tone: "rf" },
+        { id: "nu0", label: `ν₀ = γB₀/2π at ${r.text.b0}`, value: `${nu0.toFixed(7)} MHz`, tone: "b0" },
+        { id: "off", label: "ν_RF − ν₀", value: `${signed(off)} Hz`, tone: on ? "ok" : "rf" },
+        { id: "diff", label: "hν_RF − ΔE", value: off === 0 ? "0 J" : `${sci(H_PLANCK * off, 2)} J`, tone: on ? "ok" : "rf", title: `Tiny in absolute terms, but the resonance is only about ${CW_FWHM_HZ} Hz wide` },
       ]} />
-      <p className="ss-note" data-testid="pulse-note"><b>Why a simplified model?</b> Modern spectrometers do not sweep one frequency. They use short RF <b>pulses</b> plus a <b>Fourier transform</b> (steps 4 and 5).</p>
+      <span className="ss-sr" data-testid="irradiation" data-t={t.toFixed(2)} data-d={d.toFixed(4)} data-d-final={dEnd.toFixed(4)}>{`RF on for ${t.toFixed(1)} s of animation; α−β difference ${Math.round(d * 100)} % of equilibrium`}</span>
     </StepFrame>
   );
 }

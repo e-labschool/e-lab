@@ -5,12 +5,12 @@ import { TRANSPORT } from "../state/stepMachine.js";
 import { useStudio, useStudioActions } from "../state/StudioContext.jsx";
 
 /** Play / Pause | Reset | Speed. Only the controls that make sense for the active step are shown (state/stepMachine.js TRANSPORT). */
-export default function PlaybackBar() {
+export default function PlaybackBar({ transport, note }) {
   const paused = useStudio((s) => s.paused);
   const speed = useStudio((s) => s.speed);
   const step = useStudio((s) => s.step);
   const a = useStudioActions();
-  const t = TRANSPORT[step] ?? TRANSPORT[1];
+  const t = transport ?? TRANSPORT[step] ?? TRANSPORT[1];
   return (
     <div className="ss-transport" role="group" aria-label="Animation controls" data-testid="playback-bar" data-paused={paused ? "1" : "0"}>
       {t.play && (
@@ -32,7 +32,7 @@ export default function PlaybackBar() {
           />
         </>
       )}
-      <span className="ss-time-note" data-testid="time-note" title="Pulses last microseconds, a free induction decay lasts about a second: each animation compresses time by a different, stated amount, so the speed setting is a teaching speed and not real time.">
+      <span className="ss-time-note" data-testid="time-note" title={note ?? "Pulses last microseconds, a free induction decay lasts about a second: each animation compresses time by a different, stated amount, so the speed setting is a teaching speed and not real time."}>
         Teaching speed, not real time
       </span>
     </div>

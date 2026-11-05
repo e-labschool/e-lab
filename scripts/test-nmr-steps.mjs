@@ -10,6 +10,10 @@ import * as P from "../src/engines/spectroscopy-studio/nmr/physics/populations.j
 import * as F from "../src/engines/spectroscopy-studio/nmr/physics/fieldModel.js";
 import * as CW from "../src/engines/spectroscopy-studio/nmr/physics/cwResponse.js";
 import * as B from "../src/engines/spectroscopy-studio/nmr/physics/blochSim.js";
+import * as RP from "../src/engines/spectroscopy-studio/nmr/physics/rfPopulation.js";
+import * as SE from "../src/engines/spectroscopy-studio/nmr/physics/spinEnsemble.js";
+import * as CH from "../src/engines/spectroscopy-studio/nmr/steps/chain.js";
+import * as TX from "../src/engines/spectroscopy-studio/nmr/steps/texts.js";
 import * as FID from "../src/engines/spectroscopy-studio/nmr/physics/fid.js";
 import * as SS from "../src/engines/spectroscopy-studio/nmr/molecular/model/spinStates.js";
 import * as MF from "../src/engines/spectroscopy-studio/nmr/molecular/model/moleculeFid.js";
@@ -74,7 +78,7 @@ test("store: Reset restarts the animations but keeps molecule and B0; the full r
   s.resetExperiment(); assert.equal(s.getState().moleculeId, null); assert.equal(s.getState().b0Tesla, C.B0_DEFAULT); assert.equal(s.getState().step, 5); assert.equal(s.getState().mode, "teacher");
 });
 test("technique tabs: Mass Spec | IR | NMR | Structure Investigation (no separate Splitting Patterns tab)", () => {
-  assert.deepEqual(ST.TECHNIQUES.map((t) => t.id), ["ms", "ir", "nmr", "structure"]); assert.deepEqual(ST.TECHNIQUES.map((t) => t.developed), [false, false, true, false]);
+  assert.deepEqual(ST.TECHNIQUES.map((t) => t.id), ["ms", "ir", "nmr", "structure"]); assert.deepEqual(ST.TECHNIQUES.map((t) => t.developed), [false, true, true, false]);
 });
 
 console.log("Field slider: dE, nu0 and the text agree");
@@ -104,8 +108,11 @@ test("the slider range is 1-14 T and the store clamps to it in 0.1 T steps", () 
 });
 
 console.log("Continuous-wave resonance response (simplified, introductory)");
-test("labelled model name, documented widths", () => {
-  assert.equal(CW.CW_LABEL, "Simplified continuous-wave model (introductory)"); assert.equal(CW.CW_FWHM_HZ, 20); assert.ok(CW.CW_SATURATION < 0.1, "weak field");
+test("labelled model name, axis labels, caveat and documented widths", () => {
+  assert.equal(CW.CW_TITLE, "Simplified continuous-wave NMR resonance response");
+  assert.equal(CW.CW_X_LABEL, "RF frequency offset from resonance (Hz)"); assert.equal(CW.CW_Y_LABEL, "Relative excitation / absorption response");
+  assert.match(CW.CW_CAVEAT, /introductory frequency-sweep model/); assert.match(CW.CW_CAVEAT, /not the direct output of a modern pulsed Fourier-transform NMR experiment/);
+  assert.equal(CW.CW_FWHM_HZ, 20); assert.equal(CW.CW_SATURATION, 1, "moderate RF (documented): the saturation of step 3 must be visible");
 });
 test("the response peaks exactly at resonance (value 1) and is symmetric", () => {
   assert.equal(CW.cwAbsorption(0), 1);
@@ -137,14 +144,125 @@ test("the analytic steady state agrees with the Bloch-equation integrator (long 
 test("the RF slider is centred on the resonance of the CURRENT field and follows B0", () => {
   for (const b0 of [1, 5.5, 9.4, 14]) {
     const r = CW.rfRangeMHz(b0); near((r.min + r.max) / 2, C.larmorMHz(b0), 1e-6); near(r.max - r.min, 2 * CW.CW_SPAN_HZ / 1e6, 2e-6); near(r.centre, C.larmorMHz(b0), 1e-12);
-    near(CW.rfOffsetHz(CW.rfFromOffset(33, b0), b0), 33, 0.51);
+    near(CW.rfOffsetHz(CW.rfFromOffset(33, b0), b0), 33, 1e-3, "the offset mapping is exact (no rounding of the absolute frequency)");
   }
   const s = ST.createStudioStore(); s.setB0(12.1); const off = CW.rfOffsetHz(s.getState().rf.rfMHz, s.getState().b0Tesla); near(off, CW.CW_DEFAULT_OFFSET_HZ, 0.51);
-  s.patch("rf", { rfMHz: CW.rfFromOffset(-70, 12.1) }); s.setB0(3.3); near(CW.rfOffsetHz(s.getState().rf.rfMHz, 3.3), -70, 1.01, "offset kept while it fits (two 1 Hz roundings)");
+  s.patch("rf", { rfMHz: CW.rfFromOffset(-70, 12.1) }); s.setB0(3.3); near(CW.rfOffsetHz(s.getState().rf.rfMHz, 3.3), -70, 1e-3, "offset kept while it fits");
+});
+test("the response graph IS a Lorentzian of finite width: cwAbsorption = 1/(1+(2x/FWHM)^2), peak 1 at 0 Hz, half height at +-FWHM/2, tails on the slider", () => {
+  for (const x of [-100, -37, -10, 0, 4, 10, 25, 100]) near(CW.cwAbsorption(x), CW.cwLorentzian(x), 1e-12, `at ${x} Hz`);
+  assert.equal(CW.cwLorentzian(0), 1); near(CW.cwLorentzian(CW.cwFwhm() / 2), 0.5, 1e-12);
+  const c = CW.cwCurve(CW.CW_SPAN_HZ, 401); const above = c.x.filter((_, i) => c.y[i] >= 0.5); near(above[above.length - 1] - above[0], CW.cwFwhm(), 0.6, "measured FWHM of the sampled curve");
+  assert.ok(CW.CW_SPAN_HZ >= 4 * CW.cwFwhm(), "the slider spans at least 4 linewidths each side, so the line shape and its tails are all reachable");
+  assert.ok(CW.cwAbsorption(1) > 0.99 && CW.cwAbsorption(1) < 1, "finite width: 1 Hz off resonance still responds");
+});
+test("offset mapping: slider offset <-> absolute MHz agree for every B0 (displayed to 7 decimals = 0.1 Hz)", () => {
+  for (const b0 of [1, 3.3, 9.4, 14]) for (const off of [-100, -40, -1, 0, 1, 33, 100]) {
+    const mhz = CW.rfFromOffset(off, b0); const shown = Number(mhz.toFixed(7)); const nu0Shown = Number(C.larmorMHz(b0).toFixed(7));
+    near((shown - nu0Shown) * 1e6, off, 0.21, `displayed MHz difference at ${off} Hz, B0 ${b0}`);
+    near(CW.rfOffsetHz(mhz, b0), off, 1e-3);
+  }
+  assert.equal(CW.rfFromOffset(0, 9.4), C.larmorMHz(9.4), "0 Hz is exactly the Larmor frequency");
+});
+test("on / near / off classification is derived from the linewidth (not typed in): on <= FWHM/2, near <= FWHM, off beyond", () => {
+  const f = CW.cwFwhm();
+  assert.equal(CW.cwRegion(0), "on"); assert.equal(CW.cwRegion(f / 2), "on"); assert.equal(CW.cwRegion(-f / 2 + 0.01), "on"); assert.equal(CW.cwRegion(f / 2 + 0.01), "near"); assert.equal(CW.cwRegion(-f), "near"); assert.equal(CW.cwRegion(f + 0.01), "off"); assert.equal(CW.cwRegion(100), "off"); assert.equal(CW.cwRegion(-40), "off");
+  const wide = CW.cwParams({ fwhmHz: 40 }); assert.equal(CW.cwRegion(15, wide), "on"); assert.equal(CW.cwRegion(15), "near"); assert.equal(CW.cwRegion(35, wide), "near"); assert.equal(CW.cwRegion(35), "off");
+  const rank = { on: 0, near: 1, off: 2 }; let prev = 0; for (let d = 0; d <= 100; d += 0.5) { const r = rank[CW.cwRegion(d)]; assert.ok(r >= prev, `region never gets closer to resonance as |offset| grows (${d})`); prev = r; }
+  near(CW.cwAbsorption(f / 2), 0.5, 1e-9); near(CW.cwAbsorption(f), 0.2, 1e-9);
 });
 test("on resonance <=> |offset| <= FWHM/2; at the resonance h nu_rf = dE", () => {
   assert.equal(CW.cwOnResonance(0), true); assert.equal(CW.cwOnResonance(9.9), true); assert.equal(CW.cwOnResonance(10.5), false);
   const b0 = 9.4; near(C.H_PLANCK * CW.rfFromOffset(0, b0) * 1e6, C.energyGapJ(b0), 1e-6 * C.energyGapJ(b0));
+});
+
+console.log("Step 3: absorbed-population model (simplified rate / saturation model)");
+const S1 = CW.CW_SATURATION;
+test("steady state equals the Bloch Mz and is 1 - s/(1+s) L(offset): at most halved on resonance, unchanged far off resonance", () => {
+  for (const off of [0, 5, 10, 20, 40, 100, -60]) {
+    near(RP.populationDifferenceSteady(off), CW.cwSteadyState(off).mz, 1e-12, `Mz at ${off} Hz`);
+    near(RP.populationDifferenceSteady(off), 1 - (S1 / (1 + S1)) * CW.cwAbsorption(off), 1e-12);
+  }
+  near(RP.populationDifferenceSteady(0), 1 / (1 + S1), 1e-12); assert.ok(RP.populationDifferenceSteady(0) > 0, "never driven to zero");
+  assert.ok(RP.populationDifferenceSteady(100) > 0.99, "far off resonance the populations hardly change");
+});
+test("bounds: 1/(1+s) <= D(t) <= 1 for every offset and time; the beta population never exceeds alpha (never beyond equalisation)", () => {
+  const P0 = P.polarization(9.4); const Pexa = P.displayPolarization("teaching", 9.4);
+  for (const off of [0, 3, 10, 25, 60, 100, -15]) for (const t of [0, 1e-4, 1e-3, 0.01, 0.1, 1, 100]) {
+    const d = RP.populationDifference(off, t); assert.ok(d <= 1 + 1e-12 && d >= 1 / (1 + S1) - 1e-12, `D(${off} Hz, ${t} s) = ${d}`);
+    for (const pol of [P0, Pexa]) { const f = RP.stateFractions(pol, d); near(f.alpha + f.beta, 1, 1e-12); assert.ok(f.beta <= f.alpha + 1e-15, "beta <= alpha"); assert.ok(f.beta >= (1 - pol) / 2 - 1e-15, "beta never below its equilibrium value"); }
+  }
+  near(RP.populationDifference(0, 0), 1, 1e-15, "starts at equilibrium");
+});
+test("monotonic: D falls with irradiation time (beta rises) and rises with |offset| (less excitation off resonance)", () => {
+  for (const off of [0, 8, 20, 50]) { let prev = 2; for (let t = 0; t <= 0.2; t += 0.002) { const d = RP.populationDifference(off, t); assert.ok(d <= prev + 1e-15, `time ${t}`); prev = d; } }
+  for (const t of [0.002, 0.01, 0.05, 1]) { let prev = 0; for (let off = 0; off <= 100; off += 1) { const d = RP.populationDifference(off, t); assert.ok(d >= prev - 1e-12, `offset ${off}, t ${t}`); prev = d; } }
+  const beta = (off, t) => RP.stateFractions(P.displayPolarization("teaching", 9.4), RP.populationDifference(off, t)).beta;
+  assert.ok(beta(0, 0.03) > beta(0, 0.003) && beta(0, 0.03) > beta(60, 0.03), "excited-state population rises during irradiation and more on resonance");
+  assert.ok(RP.equalisationProgress(RP.populationDifference(0, 1)) < 1);
+});
+test("exact exponential approach: composes (two half steps = one step), tau on resonance = T1/(1+s), tau far off = T1, converges to D_ss", () => {
+  for (const off of [0, 12, 70]) {
+    const a = RP.evolvePopulationDifference(RP.evolvePopulationDifference(1, off, 0.004), off, 0.006); near(a, RP.evolvePopulationDifference(1, off, 0.01), 1e-12); near(a, RP.populationDifference(off, 0.01), 1e-12);
+    near(RP.populationDifference(off, 1e3), RP.populationDifferenceSteady(off), 1e-12);
+  }
+  rel(RP.populationTau(0), CW.CW.t1 / (1 + S1), 1e-12); rel(RP.populationTau(1e6), CW.CW.t1, 1e-6);
+  const dss = RP.populationDifferenceSteady(0); near(RP.populationDifference(0, RP.populationTau(0)), dss + (1 - dss) / Math.E, 1e-12);
+});
+test("agrees with the Bloch integrator: the steady state is exact; the time course is the documented single-exponential rate-equation approximation of the Bloch transient", () => {
+  const p = CW.CW;
+  for (const off of [0, 10, 30]) {
+    for (const mult of [0.3, 1, 1.5, 2, 3, 4, 6, 12, 40]) {
+      const t = mult * p.t1;
+      const m = B.integrateRK4(B.equilibrium(1), t, { omega1: p.omega1, delta: B.deltaFromRfOffsetHz(off), t1: p.t1, t2: p.t2, m0: 1 }, 40000);
+      const model = RP.populationDifference(off, t);
+      // T1 = T2 here, so the full Bloch transient lags the rate model early on resonance (My needs about T2 to build up) and undershoots a little (damped Rabi oscillation)
+      assert.ok(Math.abs(m[2] - model) < 0.2, `|Bloch Mz - rate model| at ${off} Hz, ${mult} T1 = ${Math.abs(m[2] - model)}`);
+      if (mult >= 12) near(m[2], model, 0.01, `both settle on the same steady state (${off} Hz, ${mult} T1)`);
+    }
+  }
+});
+test("display clock: one animation second is a fixed number of model seconds, on resonance tau = IRRADIATION_TAU_DISPLAY_S of animation, the window is about 5 tau", () => {
+  const k = RP.modelSecondsPerDisplaySecond(); near(RP.populationTau(0) / k, RP.IRRADIATION_TAU_DISPLAY_S, 1e-9);
+  near(RP.populationDifferenceDisplay(0, RP.IRRADIATION_WINDOW_S), RP.populationDifferenceSteady(0), 0.01 * (1 - RP.populationDifferenceSteady(0)) + 1e-9);
+  near(RP.populationDifferenceDisplay(40, 0), 1, 1e-15);
+});
+
+console.log("Steps 1-3: precession cone, population ordering, ensemble geometry, chain and fixed texts");
+test("quantum cone: mu makes arccos(1/sqrt 3) = 54.74 deg with B0 for alpha (125.26 deg for beta); on the cone at every precession phase", () => {
+  near((SE.CONE_ANGLE * 180) / Math.PI, 54.7356, 1e-3); near(Math.cos(SE.CONE_ANGLE), (1 / 2) / (Math.sqrt(3) / 2), 1e-12, "cos(theta) = mu_z / |mu| = (1/2) / (sqrt(3)/2)");
+  const ens = SE.makeSpacedEnsemble(40, 3);
+  for (const ph of [0, 0.4, 1.9, 3.3, 6]) for (const i of [0, 7, 39]) {
+    const a = SE.arrowDirection(ens, i, true, { apply: 1, phase: ph }); const b = SE.arrowDirection(ens, i, false, { apply: 1, phase: ph });
+    near(Math.hypot(...a), 1, 1e-12); near(Math.acos(a[2]) * 180 / Math.PI, 54.7356, 1e-3); near(Math.acos(b[2]) * 180 / Math.PI, 125.2644, 1e-3); near(Math.hypot(a[0], a[1]), Math.sqrt(2 / 3), 1e-12, "tip on a circle of radius sin(theta)");
+  }
+});
+test("precession is distinct from spin: azimuth turns clockwise about B0 with the clock, at PRECESSION_REV_PER_S; the spin cue is faster", () => {
+  const ens = SE.makeSpacedEnsemble(8, 5); const az = (ph) => { const d = SE.arrowDirection(ens, 2, true, { apply: 1, phase: ph }); return Math.atan2(d[1], d[0]); };
+  const wrap = (x) => Math.atan2(Math.sin(x), Math.cos(x)); near(wrap(az(0.2) - az(0)), -0.2, 1e-9, "clockwise (gamma > 0)");
+  assert.ok(SE.SPIN_REV_PER_S > SE.PRECESSION_REV_PER_S && SE.PRECESSION_REV_PER_S > 0);
+  const d0 = SE.arrowDirection(ens, 1, true, { apply: 0, phase: 1 }); near(d0[0], ens.dir0[1][0], 1e-12); const start = [0, 1, 0]; assert.deepEqual(SE.arrowDirection(ens, 1, true, { apply: 0, start }), start);
+});
+test("population ordering: alpha (lower energy) > beta at every field; the real excess is tiny, the exaggeration is a labelled constant factor", () => {
+  for (const b0 of [1, 4.7, 9.4, 14]) { const q = P.populations(1e6, b0); assert.ok(q.alpha > q.beta && q.excess > 0, `B0 ${b0}`); near(q.alpha + q.beta, 1e6, 1e-6); assert.ok(P.polarization(b0) < 6e-5, "real excess is tiny"); assert.ok(C.energyGapJ(b0) > 0); }
+  const ens = SE.makeSpacedEnsemble(40, 3); const ex = SE.assignStates(ens, P.displayPolarization("teaching", 9.4)); assert.ok(ex.nAlpha > ex.nBeta, "exaggerated picture shows alpha > beta");
+  const real = SE.assignStates(ens, P.polarization(9.4)); assert.equal(real.nAlpha, real.nBeta, "real scale: the excess is far below one drawn nucleus, so the drawing cannot show it (labelled in the UI)");
+});
+test("spaced ensemble: deterministic, minimum separation honoured, inside the ball; tumbling directions are unit vectors and wander only a little", () => {
+  const a = SE.makeSpacedEnsemble(40, 9, { radius: 1.45, minDist: 0.72 }); const b = SE.makeSpacedEnsemble(40, 9, { radius: 1.45, minDist: 0.72 }); assert.deepEqual(a.pos, b.pos); assert.equal(a.n, 40);
+  let dmin = Infinity; for (let i = 0; i < a.n; i += 1) { assert.ok(Math.hypot(...a.pos[i]) <= 1.45 + 1e-9); for (let j = i + 1; j < a.n; j += 1) dmin = Math.min(dmin, Math.hypot(a.pos[i][0] - a.pos[j][0], a.pos[i][1] - a.pos[j][1], a.pos[i][2] - a.pos[j][2])); }
+  assert.ok(dmin >= a.minDist - 1e-9 && a.minDist > 0.5, `min distance ${dmin}`);
+  for (const t of [0, 2.5, 40]) { const d = SE.tumbleDirection(a, 4, t); near(Math.hypot(...d), 1, 1e-12); }
+  let net = [0, 0, 0]; for (let i = 0; i < a.n; i += 1) { const d = SE.tumbleDirection(a, i, 1); net = net.map((x, k) => x + d[k]); } assert.ok(Math.hypot(...net) / a.n < 0.3, "no preferred direction before B0");
+});
+test("chain Applied field -> Energy splitting -> Matching RF energy -> Resonance -> Absorption: current link follows the region", () => {
+  assert.deepEqual(CH.CHAIN.map((l) => l.id), ["field", "split", "match", "resonance", "absorb"]);
+  const states = (r) => CH.CHAIN.map((_, i) => CH.chainState(r, i));
+  assert.deepEqual(states("off"), ["done", "done", "current", "pending", "pending"]); assert.deepEqual(states("near"), ["done", "done", "current", "pending", "pending"]); assert.deepEqual(states("on"), ["done", "done", "done", "done", "current"]);
+});
+test("the fixed teaching texts are exact", () => {
+  assert.equal(TX.SPIN_CLARIFICATION, "Proton spin is a quantum property. The rotating sphere is a simplified conceptual representation, not a proton literally rotating like a planet.");
+  assert.equal(TX.LARMOR_NOTE, "The Larmor frequency is the precession frequency of a proton's magnetic moment in an external magnetic field. It also corresponds to the energy difference between the two nuclear spin states.");
 });
 
 console.log("Neighbouring spin states (why a signal splits)");

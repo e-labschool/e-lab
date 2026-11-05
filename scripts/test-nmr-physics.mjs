@@ -215,7 +215,7 @@ test("guided state follows the physics: sample in -> M0 builds up -> 90 degree p
   assert.equal(I.guidedState(2, 0.5).tx, 1); assert.equal(I.guidedState(3, 0.5).rx, 1);
 });
 test("spin ensemble: alpha count follows the polarisation, cone angle 54.74 degrees, zero net transverse moment, zero net at random start", () => {
-  const ens = S.makeEnsemble(160); const st = S.assignStates(ens, 0.2); assert.equal(st.nAlpha, 96); assert.equal(st.nAlpha + st.nBeta, 160);
+  const ens = S.makeSpacedEnsemble(160, 7, { radius: 1.5, minDist: 0.3 }); const st = S.assignStates(ens, 0.2); assert.equal(st.nAlpha, 96); assert.equal(st.nAlpha + st.nBeta, 160);
   near((S.CONE_ANGLE * 180) / Math.PI, 54.7356, 1e-3);
   const d = S.arrowDirection(ens, 3, true, { apply: 1, phase: 0.7, view: "scientific" }); near(Math.hypot(...d), 1, 1e-9); near(d[2], 1 / Math.sqrt(3), 1e-9);
   const net = S.netOfDrawn(ens, S.assignStates(ens, 0), { apply: 1, phase: 1.3, view: "scientific" }); assert.ok(Math.hypot(net[0], net[1]) < 0.02, `transverse ${net}`); near(net[2], 0, 1e-9);

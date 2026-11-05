@@ -13,7 +13,7 @@ export { STEPS, SUBSTAGES, OPS } from "./stepMachine.js";
 
 export const TECHNIQUES = [
   { id: "ms", label: "Mass Spectrometry", developed: false },
-  { id: "ir", label: "IR Spectroscopy", developed: false },
+  { id: "ir", label: "IR Spectroscopy", developed: true },
   { id: "nmr", label: "¹H NMR", developed: true },
   { id: "structure", label: "Structure Investigation", developed: false },
 ];

@@ -11,15 +11,32 @@ import { drawnAlphaCount } from "./populations.js";
 import { mulberry32 } from "./fid.js";
 
 export const CONE_ANGLE = Math.acos(1 / Math.sqrt(3)); // 54.7356 degrees: angle between mu and +z for m = +1/2
+/** Teaching-animation rates (display revolutions per second at speed 1): the sphere "spin" cue and the precession about B0. Precession is the slower, distinct motion. */
+export const SPIN_REV_PER_S = 0.85;
+export const PRECESSION_REV_PER_S = 0.4;
 
-/** Deterministic ensemble: positions in a ball, random initial directions, stable random order that decides which arrows are alpha. */
-export function makeEnsemble(n = 160, seed = 20240611) {
+/**
+ * Deterministic ensemble: positions in a ball with a minimum separation (dart throwing), random initial directions and a stable random order that
+ * decides which nuclei are alpha, so that the spheres, arrows and precession rings of neighbours do not pile up. If the ball is too small for n points the separation is relaxed.
+ */
+export function makeSpacedEnsemble(n = 56, seed = 20240611, { radius = 1.5, minDist = 0.6 } = {}) {
   const rng = mulberry32(seed);
   const unit = () => { const z = 2 * rng() - 1; const t = 2 * Math.PI * rng(); const r = Math.sqrt(1 - z * z); return [r * Math.cos(t), r * Math.sin(t), z]; };
-  const pos = []; const dir0 = []; const order = Array.from({ length: n }, (_, i) => i);
-  for (let i = 0; i < n; i += 1) { const u = unit(); const rad = 1.3 * Math.cbrt(rng()); pos.push([u[0] * rad, u[1] * rad, u[2] * rad]); dir0.push(unit()); }
+  const pos = []; let d = minDist; let tries = 0;
+  while (pos.length < n) {
+    const u = unit(); const rad = radius * Math.cbrt(rng()); const c = [u[0] * rad, u[1] * rad, u[2] * rad];
+    if (pos.every((q) => Math.hypot(q[0] - c[0], q[1] - c[1], q[2] - c[2]) >= d)) { pos.push(c); tries = 0; } else { tries += 1; if (tries > 3000) { d *= 0.95; tries = 0; } }
+  }
+  const dir0 = Array.from({ length: n }, unit); const order = Array.from({ length: n }, (_, i) => i);
   for (let i = n - 1; i > 0; i -= 1) { const j = Math.floor(rng() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
-  return { n, pos, dir0, order, rank: Object.fromEntries(order.map((idx, r) => [idx, r])) };
+  return { n, pos, dir0, order, rank: Object.fromEntries(order.map((idx, r) => [idx, r])), minDist: d };
+}
+
+/** Slowly changing random direction of nucleus i before the field is applied (no preferred orientation): its own initial direction plus a bounded wander. */
+export function tumbleDirection(ens, i, t) {
+  const d0 = ens.dir0[i];
+  const a = 0.35 + ((i * 37) % 11) * 0.05; const b = 0.3 + ((i * 53) % 13) * 0.04; const c = 0.4 + ((i * 29) % 7) * 0.06; const ph = i * 1.7;
+  return norm3([d0[0] + 0.5 * Math.sin(t * a + ph), d0[1] + 0.5 * Math.sin(t * b + ph * 1.3), d0[2] + 0.5 * Math.sin(t * c + ph * 0.7)]);
 }
 
 /** Which arrows are alpha for a displayed polarisation: the first `nAlpha` in the stable random order. */
@@ -49,8 +66,9 @@ export function slerp(a, b, t) {
  *  apply: 0..1 progress of switching the field on (0 = field off: initial random direction)
  *  phase: precession angle (radians) common to all nuclei (each nucleus keeps its own random azimuth offset)
  *  view:  "scientific" (precessing cone) | "simplified" (up / down)
+ *  start: optional direction to leave from while the field is switched on (default: the nucleus's initial random direction)
  */
-export function arrowDirection(ens, i, isAlpha, { apply = 1, phase = 0, view = "scientific" } = {}) {
+export function arrowDirection(ens, i, isAlpha, { apply = 1, phase = 0, view = "scientific", start } = {}) {
   let target;
   if (view === "simplified") target = [0, 0, isAlpha ? 1 : -1];
   else {
@@ -60,7 +78,8 @@ export function arrowDirection(ens, i, isAlpha, { apply = 1, phase = 0, view = "
     target = [Math.sin(th) * Math.cos(az), Math.sin(th) * Math.sin(az), Math.cos(th)];
   }
   const e = apply * apply * (3 - 2 * apply);
-  return e >= 1 ? target : e <= 0 ? ens.dir0[i] : slerp(ens.dir0[i], target, e);
+  const from = start ?? ens.dir0[i];
+  return e >= 1 ? target : e <= 0 ? from : slerp(from, target, e);
 }
 
 /** Net moment of the drawn ensemble divided by n, as a vector (x,y,z) for unit-length arrows. */

@@ -338,8 +338,8 @@ const resources = [
     title: "Spectroscopy Simulation Lab",
     resourceType: "simulation",
     categories: ["simulate","visualize","explore","teach"],
-    status: "in-development", // live | in-development | planned  (1H NMR is built as one six-step workspace; MS, IR and combined structure determination are placeholders)
-    description: "A single guided 1H NMR workspace in six steps: the proton as a tiny magnet, energy levels in a field, a simplified continuous-wave resonance, an illustrative spectrometer, the FID and its Fourier transform, then nine molecules with equivalence, chemical shift, integration and splitting. Mass spec, IR and structure investigation are still placeholders.",
+    status: "in-development", // live | in-development | planned  (1H NMR is a six-step workspace and IR a nine-stage workspace; MS and combined structure determination are placeholders, so the lab stays in-development)
+    description: "A single guided 1H NMR workspace in six steps: the proton as a tiny magnet, energy levels in a field, a simplified continuous-wave resonance, an illustrative spectrometer, the FID and its Fourier transform, then nine molecules with equivalence, chemical shift, integration and splitting. A second tab covers infrared spectroscopy in nine stages: molecular vibrations and normal modes, IR activity and absorption, an FTIR spectrometer, building a spectrum, functional-group ranges, guided interpretation and an unknown-compound challenge. Mass spec and structure investigation are still placeholders.",
     conceptIds: [],
     component: () => import("../engines/spectroscopy-studio/SpectroscopyStudio.jsx"),
   },

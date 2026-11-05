@@ -13,6 +13,9 @@ import Step3Radio from "./nmr/steps/Step3Radio.jsx";
 import Step4Instrument from "./nmr/steps/Step4Instrument.jsx";
 import Step5Spectrum from "./nmr/steps/Step5Spectrum.jsx";
 import Step6Molecules from "./nmr/steps/Step6Molecules.jsx";
+import IrWorkbench, { IrPlayback } from "./ir/IrWorkbench.jsx";
+import { IrProvider, useIrActions, useIr } from "./ir/state/IrContext.jsx";
+import { IR_STAGES } from "./ir/state/irState.js";
 import "./SpectroscopyStudio.css";
 
 // Spectroscopy Simulation Lab -- ONE persistent NMR workspace. Architecture and models: docs/NMR_SPECTROSCOPY_STUDIO.md.
@@ -28,7 +31,6 @@ export const SPECTROSCOPY_THEME = "dark";
 
 const DEV_BLURB = {
   ms: "Mass spectrometry will show how ions are separated by mass-to-charge ratio and how fragmentation patterns are read.",
-  ir: "Infrared spectroscopy will show how bond vibrations absorb infrared radiation and how absorption bands are assigned.",
   structure: "Structure Investigation will combine evidence from several techniques to determine an unknown structure. The molecule workspace for ¹H NMR (step 6 of ¹H NMR) is the part that already exists.",
 };
 const TECH_TABS = TECHNIQUES.map((t) => ({ id: t.id, label: t.label, title: t.developed ? t.label : `${t.label} (in development)`, testId: `tech-${t.id}` }));
@@ -39,6 +41,7 @@ function Workbench() {
   const technique = useStudio((s) => s.technique);
   const step = useStudio((s) => s.step);
   const tech = TECHNIQUES.find((t) => t.id === technique) ?? TECHNIQUES[2];
+  if (technique === "ir") return <IrWorkbench />;
   if (!tech.developed) {
     return (
       <div className="ss-wb" data-testid="stage-box" data-stage={tech.id}>
@@ -66,12 +69,14 @@ function Workspace() {
   const step = useStudio((s) => s.step);
   const mode = useStudio((s) => s.mode);
   const tech = TECHNIQUES.find((t) => t.id === technique) ?? TECHNIQUES[2];
-  const subtitle = tech.developed ? `¹H NMR · step ${step} of ${STEPS.length}` : tech.label;
+  const irActions = useIrActions(); const irStage = useIr((x) => x.stage);
+  const subtitle = technique === "ir" ? `IR Spectroscopy · stage ${irStage} of ${IR_STAGES.length}` : tech.developed ? `¹H NMR · step ${step} of ${STEPS.length}` : tech.label;
+  const onReset = technique === "ir" ? () => { irActions.reset(); a.resetPlayback(); } : a.resetExperiment;
   return (
     <div className="ss-theme" data-ss-theme={SPECTROSCOPY_THEME}>
       <SimulationDashboard
         title="Spectroscopy Simulation Lab" subtitle={subtitle} role="region" ariaLabel="Spectroscopy Simulation Lab" testId="spectroscopy-workspace" id="ss-root"
-        onReset={a.resetExperiment} graphShown={false}
+        onReset={onReset} graphShown={false}
         tabs={<DashboardTabs ariaLabel="Spectroscopy techniques" idPrefix="ss-tech" value={technique} onChange={a.setTechnique} segmented tabs={TECH_TABS} testId="technique-tabs" />}
         headerExtra={(
           <MiniSwitch
@@ -80,7 +85,7 @@ function Workspace() {
           />
         )}
         chamber={<Workbench />}
-        live={tech.developed ? <PlaybackBar /> : null}
+        live={technique === "ir" ? <IrPlayback /> : tech.developed ? <PlaybackBar /> : null}
       />
       <p className="ss-sr" role="status" data-testid="mode-status">{mode === "teacher" ? "Teacher mode" : "Student mode"}</p>
     </div>
@@ -89,9 +94,11 @@ function Workspace() {
 
 export default function SpectroscopyStudio({ compact = false, standalone = false }) {
   return (
-    <InteractiveFrame title="Spectroscopy Simulation Lab" subtitle="Proton NMR from the nucleus to the spectrum" compact={compact} standalone={standalone} dashboard>
+    <InteractiveFrame title="Spectroscopy Simulation Lab" subtitle="Proton NMR and infrared spectroscopy, step by step" compact={compact} standalone={standalone} dashboard>
       <StudioProvider>
-        <Workspace />
+        <IrProvider>
+          <Workspace />
+        </IrProvider>
       </StudioProvider>
     </InteractiveFrame>
   );

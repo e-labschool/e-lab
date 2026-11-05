@@ -49,7 +49,7 @@ function pathFor(xs, ys, sx, sy, x0, x1, px) {
 
 /**
  * props: width, height (px), series [{x, y, color, width, dash, fillTo, opacity, label}], xDomain, yDomain, xLabel, yLabel, reverseX,
- * markers [{x, label, color, dash}], cursorX, xTicks, yTicks, ariaLabel, desc, overlay({sx, sy, plot}), margin
+ * markers [{x, label, color, dash}], cursorX, xTicks, yTicks, ariaLabel, desc, overlay({sx, sy, plot}), margin; yLabel may be an array of lines
  */
 export default function LinePlot({
   width, height, series, xDomain, yDomain, xLabel, yLabel, reverseX = false, markers = [], cursorX, xTicks, yTicks,
@@ -100,7 +100,9 @@ export default function LinePlot({
         </g>
       ))}
       {xLabel && <text x={m.l + pw / 2} y={H - 3} textAnchor="middle" className="ss-axis-label">{xLabel}</text>}
-      {yLabel && <text transform={`translate(11 ${m.t + ph / 2}) rotate(-90)`} textAnchor="middle" className="ss-axis-label">{yLabel}</text>}
+      {yLabel && (Array.isArray(yLabel)
+        ? <text transform={`translate(11 ${m.t + ph / 2}) rotate(-90)`} textAnchor="middle" className="ss-axis-label">{yLabel.map((line, i) => <tspan key={i} x="0" dy={i === 0 ? 0 : "1.25em"}>{i < yLabel.length - 1 ? `${line} ` : line}</tspan>)}</text>
+        : <text transform={`translate(11 ${m.t + ph / 2}) rotate(-90)`} textAnchor="middle" className="ss-axis-label">{yLabel}</text>)}
     </svg>
   );
 }

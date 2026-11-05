@@ -8,7 +8,7 @@ export default function DevelopmentPlaceholder({ technique, blurb, action }) {
       <h3>{technique.label}</h3>
       <p className="ss-dev-badge">In development</p>
       <p>{blurb}</p>
-      <p className="ss-dev-note">No simulation, data or spectra are shown here yet. The ¹H NMR section of this lab (six steps, from the nucleus to a molecule's spectrum) is complete.</p>
+      <p className="ss-dev-note">No simulation, data or spectra are shown here yet. The ¹H NMR section (six steps) and the IR spectroscopy section (nine stages) of this lab are complete.</p>
       {action}
     </div>
   );

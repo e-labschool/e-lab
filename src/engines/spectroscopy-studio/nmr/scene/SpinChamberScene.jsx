@@ -1,61 +1,35 @@
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { useFrame } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import Arrow3D from "../../components/Arrow3D.jsx";
 import Tag from "./Tag.jsx";
-import { arrowDirection, assignStates, makeEnsemble } from "../physics/spinEnsemble.js";
+import ProtonInstances from "./ProtonInstances.jsx";
+import { makeClock } from "./sceneClock.js";
+import { useFitZoom } from "./useFitZoom.js";
+import { makeSpacedEnsemble } from "../physics/spinEnsemble.js";
 
-const Y = new THREE.Vector3(0, 1, 0);
-const COLORS = { alpha: new THREE.Color("#2dd4bf"), beta: new THREE.Color("#a78bfa"), free: new THREE.Color("#c7d2ea"), sel: new THREE.Color("#ffffff") };
-export const ENSEMBLE = makeEnsemble(160);
-const LEN = 0.42;
+export const ENSEMBLE = makeSpacedEnsemble(40, 20240611, { radius: 1.45, minDist: 0.72 });
+const CHAMBER_R = 1.8;
 
 /**
- * The chamber of nuclei. All animation runs inside the frame loop on refs (no React render per frame):
- *   apply (0..1, field switched on), phase source (precession, display clock), view, shown polarisation, M0 arrow length.
- * `live` is a mutable object { apply, phase, view, polarization, spin } updated by the parent every tick; `selected` is the inspected nucleus.
+ * Step 2: the chamber of proton models. Before B0 the moments point in random directions (and wander slowly); once B0 (+z) is applied
+ * each moment moves onto the quantum cone of its state (alpha: 54.7 degrees from B0, beta: 125.3 degrees) and precesses about B0, which is a distinct,
+ * slower motion than the turning of the sphere surface. The precession rings show the circle the arrow tip travels on.
+ *   live.current = { apply, grow: 1, states, paused, reduced, speed, m0Length }
+ * Conceptual picture: the sphere is a teaching aid, not a rotating ball (see the panel).
  */
-export default function SpinChamberScene({ live, selected, onSelect, showArrows = true, labels = true }) {
-  const shaft = useRef(); const head = useRef();
-  const ens = ENSEMBLE;
-  const dummy = useMemo(() => new THREE.Object3D(), []);
-  const q = useMemo(() => new THREE.Quaternion(), []);
+export default function SpinChamberScene({ live, labels = true }) {
+  const clock = useMemo(() => makeClock(), []);
+  const { compact } = useFitZoom(0.85);
   const [fieldOpacity, setFieldOpacity] = useState(0);
   const [m0Len, setM0Len] = useState(0);
-  const lastKey = useRef("");
-
-  useLayoutEffect(() => {
-    for (let i = 0; i < ens.n; i += 1) { shaft.current?.setColorAt(i, COLORS.free); head.current?.setColorAt(i, COLORS.free); }
-    if (shaft.current?.instanceColor) shaft.current.instanceColor.needsUpdate = true;
-    if (head.current?.instanceColor) head.current.instanceColor.needsUpdate = true;
-  }, [ens]);
+  const field = useRef();
 
   useFrame(() => {
-    const s = shaft.current; const h = head.current; if (!s || !h) return;
-    const { apply, phase, view, polarization } = live.current;
-    const st = assignStates(ens, polarization);
-    const key = `${apply > 0.02}|${view}|${polarization}|${selected}|${st.nAlpha}`;
-    for (let i = 0; i < ens.n; i += 1) {
-      const d = arrowDirection(ens, i, st.alpha[i], { apply, phase, view });
-      q.setFromUnitVectors(Y, dummy.position.set(d[0], d[1], d[2]));
-      const p = ens.pos[i]; const isSel = i === selected; const sc = isSel ? 1.5 : 1;
-      // shaft: from the arrow tail, 0.7 of the length;  head: the last 0.3
-      dummy.quaternion.copy(q); dummy.scale.set(sc, sc, sc);
-      dummy.position.set(p[0] + d[0] * LEN * 0.35, p[1] + d[1] * LEN * 0.35, p[2] + d[2] * LEN * 0.35); dummy.updateMatrix(); s.setMatrixAt(i, dummy.matrix);
-      dummy.position.set(p[0] + d[0] * LEN * 0.85, p[1] + d[1] * LEN * 0.85, p[2] + d[2] * LEN * 0.85); dummy.updateMatrix(); h.setMatrixAt(i, dummy.matrix);
-    }
-    s.instanceMatrix.needsUpdate = true; h.instanceMatrix.needsUpdate = true;
-    if (key !== lastKey.current) { // recolour only when the assignment changes
-      lastKey.current = key;
-      for (let i = 0; i < ens.n; i += 1) {
-        const c = i === selected ? COLORS.sel : apply > 0.02 ? (st.alpha[i] ? COLORS.alpha : COLORS.beta) : COLORS.free;
-        s.setColorAt(i, c); h.setColorAt(i, c);
-      }
-      if (s.instanceColor) s.instanceColor.needsUpdate = true; if (h.instanceColor) h.instanceColor.needsUpdate = true;
-    }
-    const fo = Math.min(1, apply * 1.4); if (Math.abs(fo - fieldOpacity) > 0.02) setFieldOpacity(fo);
-    const len = live.current.m0Length * Math.min(1, Math.max(0, (apply - 0.5) * 2));
+    const L = live.current;
+    const fo = Math.min(1, L.apply * 1.4); if (Math.abs(fo - fieldOpacity) > 0.02) setFieldOpacity(fo);
+    const len = L.m0Length * Math.min(1, Math.max(0, (L.apply - 0.5) * 2));
     if (Math.abs(len - m0Len) > 0.01) setM0Len(len < 0.012 ? 0 : len);
   });
 
@@ -65,28 +39,23 @@ export default function SpinChamberScene({ live, selected, onSelect, showArrows 
       <ambientLight intensity={0.9} />
       <directionalLight position={[3, -4, 5]} intensity={1.1} />
       <mesh>
-        <sphereGeometry args={[1.62, 40, 28]} />
-        <meshStandardMaterial color="#60a5fa" transparent opacity={0.06} depthWrite={false} side={THREE.DoubleSide} />
+        <sphereGeometry args={[CHAMBER_R, 40, 28]} />
+        <meshStandardMaterial color="#60a5fa" transparent opacity={0.05} depthWrite={false} side={THREE.DoubleSide} />
       </mesh>
       <mesh>
-        <sphereGeometry args={[1.62, 24, 16]} />
-        <meshBasicMaterial color="#7aa2f7" wireframe transparent opacity={0.1} />
+        <sphereGeometry args={[CHAMBER_R, 24, 16]} />
+        <meshBasicMaterial color="#7aa2f7" wireframe transparent opacity={0.08} />
       </mesh>
-      {showArrows && (
-        <>
-          <instancedMesh ref={shaft} args={[undefined, undefined, ens.n]} frustumCulled={false} onClick={(e) => { e.stopPropagation(); onSelect?.(e.instanceId); }}>
-            <cylinderGeometry args={[0.018, 0.018, LEN * 0.7, 6]} /><meshStandardMaterial roughness={0.5} emissiveIntensity={0.3} />
-          </instancedMesh>
-          <instancedMesh ref={head} args={[undefined, undefined, ens.n]} frustumCulled={false} onClick={(e) => { e.stopPropagation(); onSelect?.(e.instanceId); }}>
-            <coneGeometry args={[0.055, LEN * 0.3, 10]} /><meshStandardMaterial roughness={0.5} emissiveIntensity={0.3} />
-          </instancedMesh>
-        </>
-      )}
-      <group visible={fieldOpacity > 0.02}>
-        {[[-2.4, 0.9], [2.4, 0.9], [0, 2.7], [-1.7, 2.2], [1.7, 2.2], [-2.5, -0.7], [2.5, -0.7]].map(([x, y], i) => (
-          <Arrow3D key={i} from={[x, y, -1.7]} dir={z} length={3.4} color="#38bdf8" radius={0.012} head={0.2} headRadius={0.05} opacity={0.38 * fieldOpacity} depthTest={false} />
+      <ProtonInstances ens={ENSEMBLE} live={live} clock={clock} radius={0.14} arrowLen={0.5} publishInfo />
+      <group ref={field} visible={fieldOpacity > 0.02}>
+        {/* the applied field: one bold, labelled arrow beside the sample and a few faint field lines through it */}
+        <Arrow3D from={[-2.05, 0, -1.7]} dir={z} length={3.4} color="#38bdf8" radius={0.045} head={0.3} headRadius={0.13} opacity={fieldOpacity} />
+        {[[-1.1, 0.9], [1.1, 0.9], [0, -1.1], [1.2, -0.7]].map(([x, y], i) => (
+          <Arrow3D key={i} from={[x, y, -2.0]} dir={z} length={4.0} color="#38bdf8" radius={0.009} head={0.16} headRadius={0.04} opacity={0.22 * fieldOpacity} depthTest={false} />
         ))}
-        {labels && <Tag position={[2.5, -0.7, 1.95]} color="#7dd3fc">B₀ (static field)</Tag>}
+        {labels && <Tag position={[-2.05, 0, 1.95]} color="#7dd3fc">{compact ? "B₀" : "B₀ (applied field)"}</Tag>}
+        {labels && fieldOpacity > 0.9 && <Tag position={[1.3, 0, 2.0]} color="#5eead4">{compact ? "α" : "α: along B₀ (lower E)"}</Tag>}
+        {labels && fieldOpacity > 0.9 && <Tag position={[0.3, 0, -2.1]} color="#c4b5fd">{compact ? "β" : "β: moment against B₀ (higher energy)"}</Tag>}
       </group>
       {m0Len > 0 && <Arrow3D from={[0, 0, -m0Len / 2]} dir={z} length={m0Len} color="#fcd34d" radius={0.06} head={0.28} headRadius={0.16} depthTest={false} />}
       {m0Len > 0 && labels && <Tag position={[0.35, 0, m0Len / 2 + 0.3]} color="#fde68a">M₀ (net)</Tag>}
