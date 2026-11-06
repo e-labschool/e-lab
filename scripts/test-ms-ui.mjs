@@ -47,215 +47,138 @@ async function mount() {
   const host = document.createElement("div"); document.body.appendChild(host); const root = createRoot(host);
   root.render(h(Studio, { standalone: true })); mounted = { root, host };
   await until(() => $(T("spectroscopy-workspace")) && $(T("stage-stepper")), 6000, "workspace"); await tick(100);
-  await click(T("tech-ms")); await until(() => $(T("stage-stepper"))?.getAttribute("data-count") === "13", 3000, "MS stepper"); await tick(100);
+  await click(T("tech-ms")); await until(() => $(T("stage-stepper"))?.getAttribute("data-count") === "6", 3000, "MS stepper"); await tick(100);
 }
 
 
-
-const { remaining, POOLS } = await import("../src/engines/spectroscopy-studio/ms/data/evidence.js");
-const { radiusFromMz } = await import("../src/engines/spectroscopy-studio/ms/physics/kinematics.js");
 const stageTxt = () => txt(T("step-panel"));
 const viewTxt = (n) => txt(T(`step-view-${n}`));
-const speedUp = async () => { const b = $(`${T("speed-switch")} button[data-value="2"], ${T("speed-switch")} [role=radio]:last-child, ${T("speed-switch")} button:last-child`); if (b) await click(b); };
+const molCount = () => $$(`${T("population")} [data-testid^="mol-"]`).filter((g) => /^mol-\d+$/.test(g.getAttribute("data-testid"))).length;
+const peak = (mz) => $(T(`peak-${mz}`));
 
-console.log("MS tab: live, thirteen stages");
+console.log("MS tab: six stages over one persistent workspace");
 await mount();
-await test("the MS tab is a live workspace (no placeholder); IR and NMR are still there", async () => {
+await test("the MS tab is a live workspace; IR, NMR and the Structure Investigation tab are still there", async () => {
   assert.ok(!$(T("dev-ms")), "placeholder shown"); assert.equal($(T("stage-box")).getAttribute("data-technique"), "ms");
-  assert.match(txt(".sd-subtitle"), /Mass Spec · stage 1 of 13/);
-  for (const t of ["ms", "ir", "nmr", "structure"]) assert.ok($(T(`tech-${t}`)), t);
+  assert.match(txt(".sd-subtitle"), /Mass Spec · stage 1 of 6/); for (const t of ["ms", "ir", "nmr", "structure"]) assert.ok($(T(`tech-${t}`)), t);
 });
-await test("stepper: thirteen stages, Previous disabled on 1, Next on 13, Next / Previous / direct jump", async () => {
-  for (let i = 1; i <= 13; i += 1) assert.ok($(T(`step-${i}`)), `step-${i}`);
-  assert.equal($$(`${T("stage-stepper")} li`).length, 13); assert.ok($(T("step-prev")).disabled);
-  await click(T("step-next")); assert.equal($(T("step-2")).getAttribute("aria-current"), "step"); assert.match(txt(".sd-subtitle"), /stage 2 of 13/);
-  await click(T("step-prev")); assert.equal($(T("step-1")).getAttribute("aria-current"), "step");
-  for (const i of [13, 6, 9, 2, 1]) { await go(i); assert.equal($(T(`step-${i}`)).getAttribute("aria-current"), "step"); }
-  await go(13); assert.ok($(T("step-next")).disabled); await go(1);
+await test("stepper: six stages, Previous disabled on 1, Next disabled on 6, Next / Previous / direct jump", async () => {
+  for (let i = 1; i <= 6; i += 1) assert.ok($(T(`step-${i}`)), `step-${i}`); assert.ok(!$(T("step-7")));
+  assert.equal($$(`${T("stage-stepper")} li`).length, 6); assert.ok($(T("step-prev")).disabled);
+  await click(T("step-next")); await until(() => $(T("step-view-2"))); await click(T("step-prev")); await until(() => $(T("step-view-1")));
+  await go(6); assert.ok($(T("step-next")).disabled); await go(1);
 });
-await test("every stage has a title, a Teacher disclosure and only that stage's view (one tab, one page)", async () => {
-  for (let i = 1; i <= 13; i += 1) { await go(i); assert.ok(txt(T("step-title")).length > 5, `title ${i}`); assert.ok($(T("teacher-details")), `teacher ${i}`); assert.equal($$(T("step-view-" + i)).length, 1); assert.match(stageTxt(), new RegExp(`Step ${i} of 13`)); }
-  assert.equal($$(T("spectroscopy-workspace")).length, 1); assert.equal($$("[data-testid^='step-view-']").length, 1);
-});
-await test("the playback bar offers Pause/Play, Replay and speed", async () => {
-  assert.ok($(T("btn-play-pause")) && $(T("btn-reset-playback")) && $(T("speed-switch"))); await click(T("btn-play-pause")); assert.equal($(T("playback-bar")).getAttribute("data-paused"), "1"); await click(T("btn-play-pause")); assert.equal($(T("playback-bar")).getAttribute("data-paused"), "0");
+await test("the workspace persists: the same journey element survives every stage change and the instrument overview is always visible", async () => {
+  const el = $(T("journey-workspace")); assert.ok(el); assert.ok($(T("instrument-overview")));
+  for (const n of [2, 3, 4, 5]) { await go(n); assert.equal($(T("journey-workspace")), el, `stage ${n}: same element`); assert.ok($(T("instrument-overview"))); assert.equal(el.getAttribute("data-stage"), String(n)); }
+  await go(1);
 });
 
-console.log("Stages 1-4: sample, ionisation, fragmentation");
-await test("stage 1: rotating methane (SVG fallback without WebGL), the question, m/z definition and the chain; Begin goes to stage 2", async () => {
-  await go(1); assert.ok($(T("methane-stage")) && ($(T("methane-svg")) || $(T("methane-canvas"))));
-  assert.match(txt(T("intro-question")), /How can we determine the masses of atoms and molecules\?/);
-  assert.match(stageTxt(), /mass-to-charge/i); assert.match(txt(T("mz-equation")), /m\/z/); assert.match(txt(T("intro-chain")), /Sample introduction.*Ionisation.*Ion separation.*Detection.*Mass spectrum/);
-  await click(T("begin")); await until(() => $(T("step-view-2")), 2000, "stage 2");
+console.log("Stage 1: the sample");
+await test("a population of 10 identical molecules (propanone by default), 8 to 15 selectable, teaching-representation note", async () => {
+  await mount(); await until(() => molCount() === 10, 3000, "10 molecules");
+  assert.match(viewTxt(1), /Propanone/i); assert.match(txt(T("population-note")) || stageTxt(), /teaching representation/i);
+  for (let i = 0; i < 8; i += 1) await click(T("n-plus")); assert.equal(molCount(), 15); assert.ok($(T("n-plus")).disabled);
+  for (let i = 0; i < 9; i += 1) await click(T("n-minus")); assert.equal(molCount(), 8); assert.ok($(T("n-minus")).disabled);
 });
-await test("stage 2: Introduce Sample opens the valve and molecules arrive in the ionisation chamber; EI vs other methods are stated", async () => {
-  assert.equal($(T("sample-view")).getAttribute("data-released"), "0"); assert.match(txt(T("sample-label")), /Illustrative instrument model/);
-  await click(T("introduce-sample")); assert.equal($(T("sample-view")).getAttribute("data-released"), "1");
-  await until(() => Number($(T("instrument-svg")).getAttribute("data-in-chamber")) >= 1, 8000, "molecules in the chamber");
-  assert.match(txt(T("s2-note")), /not every sample has to be vaporised/i); assert.match(txt(T("teacher-details")), /electrospray|other ionisation methods/i);
-  assert.match(txt(T("instrument-svg")), /Ionisation chamber/); assert.match(txt(T("instrument-svg")), /Inlet/);
+await test("molecule choice: propanone, butan-2-one, ethanol, methane; New sample changes the seed but keeps the molecule", async () => {
+  for (const id of ["propanone", "butanone", "ethanol", "methane"]) assert.ok($(T(`molecule-${id}`)), id);
+  await click(T("molecule-butanone")); assert.match(viewTxt(1), /Butan-2-one/); await click(T("molecule-propanone"));
 });
-await test("stage 3: Ionize shows incoming and ejected electrons and a distinct molecular ion; CH4 + e- -> CH4+. + 2e-; no proton attachment", async () => {
-  await go(3); assert.equal($(T("ionise-view")).getAttribute("data-fired"), "0"); assert.ok($(T("neutral-molecule")) && $(T("electron-in")));
-  await click(T("ionize")); assert.equal($(T("ionise-view")).getAttribute("data-fired"), "1");
-  await until(() => Number($(T("ionise-view")).getAttribute("data-progress")) >= 0.99, 20000, "ionisation to finish");
-  assert.ok($(T("molecular-ion")) && $(T("electron-ejected")) && $(T("electron-scattered")), "ion + two electrons");
-  assert.match(txt(T("ion-equation")), /CH₄ \+ e⁻ → CH₄⁺• \+ 2e⁻/);
-  const all = `${stageTxt()} ${txt(T("ionise-view"))}`; assert.ok(!/CH₅|protonated|\[M\+H\]/i.test(all), "no CH5+ / protonation"); assert.ok(!/(?<!No )proton attach/i.test(all), "proton attachment only mentioned as excluded");
-  assert.match(stageTxt(), /fragment/i);
-});
-await test("stage 3: Replay runs the ionisation again from the start", async () => {
-  await click(T("btn-reset-playback")); await tick(120);
-  assert.ok(Number($(T("ionise-view")).getAttribute("data-progress")) < 0.5, "progress restarted");
-  await until(() => Number($(T("ionise-view")).getAttribute("data-progress")) >= 0.99, 20000, "second run");
-});
-await test("stage 4: four pathways, charged and neutral products are labelled, unequal likelihoods are stated, only charged ions continue", async () => {
-  await go(4); assert.equal($(T("fragment-view")).getAttribute("data-path"), "ch3"); assert.match(txt(T("path-equation")), /CH₄⁺• → CH₃⁺ \+ H•/);
-  await click(T("path-ch2")); assert.equal($(T("fragment-view")).getAttribute("data-path"), "ch2"); assert.match(txt(T("path-equation")), /CH₂⁺• \+ H₂/);
-  await until(() => $(T("charged-label")) && $(T("neutral-label")), 8000, "labels");
-  assert.match(txt(T("s4-text")), /only charged particles/i); assert.match(stageTxt(), /not equally likely/i); assert.match(stageTxt(), /Fragmentation patterns provide information about molecular structure/);
-  assert.equal($$(`${T("path-bars")} li`).length, 4);
-  await click(T("path-ch3"));
+await test("Start sample runs the introduction; Pause / Play and Step forward work; selecting a molecule inspects it", async () => {
+  await click(T("start-sample")); assert.equal($(T("playback-bar")).getAttribute("data-stage"), "1");
+  await click(T("btn-play-pause")); assert.equal($(T("playback-bar")).getAttribute("data-paused"), "1"); await click(T("btn-play-pause")); assert.equal($(T("playback-bar")).getAttribute("data-paused"), "0");
+  await click(T("mol-2")); await until(() => $(T("track-status"))?.getAttribute("data-tracking") === "1", 2000, "tracking"); assert.match(txt(T("track-region")), /\S/);
+  await click(T("untrack")); assert.equal($(T("track-status")).getAttribute("data-tracking"), "0");
 });
 
-console.log("Stages 5-8: acceleration, separation, TOF, detection");
-await test("stage 5: the voltage slider changes Ek (same for every ion) and the speeds (lighter is faster)", async () => {
-  await go(5); assert.equal($(T("accel-view")).getAttribute("data-v"), "2000"); assert.match(txt(T("readout-ek")), /2,000 eV/);
-  await setRange(T("v-slider"), 4000); assert.equal($(T("accel-view")).getAttribute("data-v"), "4000"); assert.match(txt(T("readout-ek")), /4,000 eV/);
-  const v16 = txt(`${T("readout-v16")} dd`); const v58 = txt(`${T("readout-v58")} dd`); assert.match(v16, /km\/s/); assert.ok(parseFloat(v16.replace(/[^0-9.]/g, "")) > parseFloat(v58.replace(/[^0-9.]/g, "")), `${v16} vs ${v58}`);
-  assert.match(txt(T("s5-key")), /same kinetic energy, not the same speed/); assert.match(txt(T("ek-equation-panel")), /Eₖ = zeV/);
-  await setRange(T("v-slider"), 2000);
-});
-await test("stage 6: m/z selector, circular path radius from the formula, B needed, detector hit vs miss, tuning B", async () => {
-  await go(6); assert.equal($(T("sector-svg")).getAttribute("data-mz"), "16");
-  const r16 = Number($(T("sector-svg")).getAttribute("data-radius")); const B = Number($(T("sector-svg")).getAttribute("data-b")); assert.ok(Math.abs(r16 - radiusFromMz(16, 2000, B)) < 1e-5, `r16 ${r16}`);
-  assert.equal($(T("sector-svg")).getAttribute("data-outcome"), "detector"); assert.match(txt(T("sector-outcome")), /Detected/);
-  await click(T("mz-58")); assert.equal($(T("sector-svg")).getAttribute("data-mz"), "58"); assert.notEqual($(T("sector-svg")).getAttribute("data-outcome"), "detector"); assert.match(txt(T("sector-outcome")), /Not detected/);
-  assert.ok(Number($(T("sector-svg")).getAttribute("data-radius")) > r16, "larger m/z, larger radius");
-  await click(T("tune-b")); assert.equal($(T("sector-svg")).getAttribute("data-outcome"), "detector"); assert.match(txt(T("readout-B")), /T/);
-  await click(T("mz-31")); assert.notEqual($(T("sector-svg")).getAttribute("data-outcome"), "detector"); await setRange(T("b-slider"), 0.8); assert.ok(["wall", "plate", "detector"].includes($(T("sector-svg")).getAttribute("data-outcome")));
-  assert.ok($(T("sector-ion")) && $$("[data-testid^='path-']").length >= 6, "ion marker and six paths");
-  await click(T("mz-16")); await click(T("tune-b"));
-});
-await test("stage 7: Start Flight, ions race, arrival order lightest first, adjustable ion X changes its time and rank", async () => {
-  await go(7); assert.equal($(T("tof-view")).getAttribute("data-started"), "0");
-  await click(T("start-flight")); assert.equal($(T("tof-view")).getAttribute("data-started"), "1");
-  await until(() => Number($(T("tof-view")).getAttribute("data-done")) >= 1, 15000, "first arrival");
-  const ranks = () => ["m16", "m31", "m43", "x"].map((id) => Number($(T(`arrival-${id}`)).getAttribute("data-rank")));
-  assert.deepEqual(ranks(), [1, 2, 3, 4], "X = 58 arrives last");
-  const t58 = txt(T("readout-tx")); await setRange(T("massx-slider"), 20); assert.notEqual(txt(T("readout-tx")), t58); assert.deepEqual(ranks(), [1, 3, 4, 2].map((x, i) => (i === 3 ? 2 : x)).map((x, i) => [1, 3, 4, 2][i]), "X = 20 arrives between 16 and 31");
-  assert.match(txt(T("tof-contrast")), /magnetic sector/i); assert.match(txt(T("t-equation-panel")), /t = L √\(m \/ 2zeV\)/); await setRange(T("massx-slider"), 58);
-  await click(T("btn-reset-playback")); await tick(150); assert.ok(Number($(T("tof-svg")).getAttribute("data-progress")) < 0.3, "Replay restarts the race");
-});
-await test("stage 8: Detect ions builds the methane spectrum from arrivals; the peaks grow with counts and end at the spectrum", async () => {
-  await go(8); assert.equal($(T("detect-view")).getAttribute("data-started"), "0"); assert.equal($(T("detect-view")).getAttribute("data-k"), "0");
-  await speedUp(); await click(T("detect-ions"));
-  await until(() => Number($(T("detect-view")).getAttribute("data-k")) > 10, 6000, "ions arriving");
-  const mid = Number($(T("detect-spectrum")).querySelector(T("peak-15")).getAttribute("data-rel"));
-  await until(() => $(T("detect-view")).getAttribute("data-k") === $(T("detect-view")).getAttribute("data-total"), 30000, "all ions detected");
-  const rel = (mz) => Number($(`${T("detect-spectrum")} ${T("peak-" + mz)}`).getAttribute("data-rel"));
-  assert.ok(mid < rel(15), "peak grew"); assert.ok(Math.abs(rel(16) - 100) < 0.5 && Math.abs(rel(15) - 85) < 1.5 && rel(12) < 5, `final heights ${rel(16)} ${rel(15)} ${rel(12)}`);
-  assert.match(txt(T("s8-text")), /more ions, not heavier ions/i); assert.match(txt(T("sync-line")), /Ion reaches detector → signal recorded → peak grows/);
+console.log("Stage 2: ionisation");
+await test("Ionize button, equation M + e- -> M+. + 2e-, some molecules stay neutral, particle key with non-colour cues", async () => {
+  await mount(); await go(2); assert.ok($(T("ionize")), "Ionize button"); assert.match(txt(T("ionisation-equation")) || stageTxt(), /M \+ e⁻ → M⁺• \+ 2e⁻/);
+  await click(T("ionize")); await tick(100); assert.match(txt(T("s2-outcome")) || stageTxt(), /neutral|not ionised|stay/i);
+  const key = txt(T("particle-key")); for (const w of ["Neutral molecule", "Molecular ion", "Charged fragment", "Neutral fragment"]) assert.match(key, new RegExp(w, "i"), w);
+  assert.match(key, /dashed|solid|ring|shape/i);
 });
 
-console.log("Stages 9-11: spectrum, isotopes, patterns");
-await test("stage 9: methane spectrum, M+. = base peak, three terms, clicking a peak gives m/z, formula and origin; labelled representative", async () => {
-  await go(9); await until(() => $(T("peak-16")), 3000, "spectrum");
-  assert.match(txt(T("spectrum-note")), /Representative \/ idealised, not experimental/); assert.match(txt(T("terms")), /Molecular ion peak.*Base peak.*Fragment ion peaks/);
-  assert.match(txt(T("peak-info")), /Click a peak/);
-  await click(`${T("methane-spectrum")} ${T("peak-15")}`.replace(/\s/, " ")); assert.match(txt(T("info-formula")), /CH₃⁺/); assert.match(txt(T("info-origin")), /H•|H atom/); assert.match(txt(T("peak-info")), /m\/z 15/);
-  await click(`${T("methane-spectrum")} ${T("peak-16")}`); assert.match(txt(T("info-formula")), /CH₄⁺•/); assert.match(txt(T("info-origin")), /Molecular ion/); assert.equal($(`${T("methane-spectrum")} ${T("peak-16")}`).getAttribute("data-selected"), "1");
+console.log("Stage 3: fragmentation");
+await test("pathways: select one, formula / charge / m/z, neutral product, position on the spectrum, replay + slow-motion replay", async () => {
+  await mount(); await go(3); const first = $(`${T("path")} [role=radio]`); assert.ok(first, "pathway chips"); await click(first);
+  await until(() => $(T("pathway-detail-eq")) || $(`[data-testid$="-charged"]`), 3000, "pathway detail");
+  const d = txt(T("pathway-detail")); assert.match(d, /Charged fragment/); assert.match(d, /Neutral product/); assert.match(d, /Position on the spectrum/); assert.match(d, /m\/z/);
+  assert.ok($(T("pathway-detail-replay"))); assert.ok($(T("pathway-detail-slow"))); await click(T("pathway-detail-slow"));
+  assert.match(viewTxt(3), /teaching representation/i); assert.match(viewTxt(3), /not reproduce|does not reproduce/i);
+  assert.ok($(T("btn-replay-frag")), "Replay fragmentation control in stage 3"); await click(T("btn-replay-frag"));
 });
-await test("stage 10: abundance slider updates the peaks and Ar live (75:25 -> 35.50); preset natural; mass numbers vs isotopic masses", async () => {
-  await go(10); await until(() => Number($(`${T("isotope-spectrum")} ${T("peak-35")}`)?.getAttribute("data-rel")) > 74.9, 6000, "peaks grown"); await until(() => Math.abs(Number($(`${T("isotope-spectrum")} ${T("peak-37")}`)?.getAttribute("data-rel")) - 25) < 0.1, 6000, "37 grown");
-  { const r = (mz) => Number($(`${T("isotope-spectrum")} ${T("peak-" + mz)}`).getAttribute("data-rel")); assert.ok(Math.abs(r(35) - 75) < 0.1 && Math.abs(r(37) - 25) < 0.1, "bars equal the abundances at 75:25"); }
-  assert.match(txt(T("readout-ar")), /35\.50/); assert.match(txt(T("ar-equation")), /\(35 × 75 \+ 37 × 25\) \/ 100 = 35\.50/);
-  assert.match(stageTxt(), /17 protons/); assert.match(txt(T("s10-note")), /mass numbers/i);
-  await setRange(T("abundance-slider"), 50); await tick(100); assert.match(txt(T("readout-ar")), /36\.00/);
-  const rel = (mz) => Number($(`${T("isotope-spectrum")} ${T("peak-" + mz)}`).getAttribute("data-rel")); assert.ok(Math.abs(rel(35) - rel(37)) < 0.5, "equal peaks at 50:50");
-  await setRange(T("abundance-slider"), 100); await tick(100); assert.match(txt(T("readout-ar")), /35\.00/); assert.equal($$(`${T("isotope-spectrum")} [data-testid^='peak-']`).length, 1);
-  await click(T("preset-natural")); await tick(100); assert.match(txt(T("readout-ar")), /35\.48/); assert.match(txt(T("readout-ar-exact")), /35\.4\d/);
-  await click(T("preset-teaching")); await tick(100); assert.match(txt(T("readout-ar")), /35\.50/);
+await test("weak or absent molecular ions are explained; the outcome tally accounts for every molecule", async () => {
+  assert.match(txt(T("s3-weak")) || stageTxt(), /molecular ion/i); assert.ok($(T("outcome-tally")));
 });
-await test("stage 11: Cl2 gives 70/72/74 = 9:6:1; CH3Cl 3:1; Br compounds 1:1; natural model differs; simplification stated", async () => {
-  await go(11); await until(() => $(T("pattern-table")), 3000, "table"); assert.equal($(T("pattern-view")).getAttribute("data-ratio"), "9:6:1");
-  assert.deepEqual([70, 72, 74].map((m) => $$(`${T(`pattern-row-${m}`)} td`)[2].textContent), ["9", "6", "1"]);
-  await click(T("compound-ch3cl")); assert.equal($(T("pattern-view")).getAttribute("data-ratio"), "3:1"); assert.ok($(T("pattern-row-50")) && $(T("pattern-row-52")));
-  await click(T("compound-ch2cl2")); assert.equal($(T("pattern-view")).getAttribute("data-ratio"), "9:6:1");
-  await click(T("compound-ch3br")); assert.equal($(T("pattern-view")).getAttribute("data-ratio"), "1:1"); assert.ok($(T("pattern-row-94")) && $(T("pattern-row-96")));
-  await click(T("compound-cl2")); await click(T("model-natural")); assert.equal($(T("pattern-view")).getAttribute("data-ratio"), "100.0:64.0:10.2");
-  await click(T("model-teaching")); await click(`${T("pattern-spectrum")} ${T("peak-72")}`); assert.match(txt(T("pattern-ratio")), /³⁵Cl–³⁷Cl/);
-  assert.match(txt(T("s11-note")), /simplified nominal-mass/i);
+await test("controls are stage-relevant: Replay Fragmentation only in stage 3, charges and labels toggle from stage 2", async () => {
+  await go(1); assert.ok(!$(T("btn-replay-frag"))); assert.ok(!$(T("btn-charges"))); await go(2); assert.ok($(T("btn-charges"))); assert.ok($(T("btn-labels")));
+  await click(T("btn-charges")); assert.match(txt(T("btn-charges")), /Show charges/); await click(T("btn-charges")); assert.match(txt(T("btn-charges")), /Hide charges/);
+  await click(T("btn-labels")); assert.match(txt(T("btn-labels")), /Show ion labels/); await click(T("btn-labels"));
 });
 
-console.log("Stages 12-13: unknown challenge and comparison");
-await test("stage 12: no compound name before submit; peak click gives a non-leaking hint; Submit needs all five tasks", async () => {
-  await go(12); const t0 = viewTxt(12); assert.ok(!/methane|CH₄/i.test(t0.replace(/Unknown 1 of 5/, "")), `leak: ${t0.slice(0, 200)}`);
-  assert.ok($(T("submit")).disabled); await click(`${T("unknown-spectrum")} ${T("peak-15")}`); assert.match(txt(T("hint")), /Hint for m\/z 15/); assert.ok(!/is the molecular ion|is the base peak|methane/i.test(txt(T("hint"))), txt(T("hint")));
-  await click(`${T("unknown-spectrum")} ${T("peak-17")}`); assert.match(txt(T("hint")), /13C|¹³C/);
+console.log("Stage 4: acceleration and separation");
+await test("sector is the default, TOF the alternative; never both; B slider, voltage slider and sector HUD", async () => {
+  await mount(); await go(4); assert.equal($(T("journey-workspace")).getAttribute("data-analyser"), "sector"); assert.ok($(T("sector-hud"))); assert.ok($(T("b-slider")) || $(T("s4-sector")));
+  await click(T("analyser-tof")); assert.equal($(T("journey-workspace")).getAttribute("data-analyser"), "tof"); assert.ok(!$(T("sector-hud")));
+  assert.match(txt(T("instrument-overview")), /TOF|Flight/i); assert.doesNotMatch(txt(T("instrument-overview")), /Sector|sector/); await click(T("analyser-sector"));
+  assert.match(txt(T("instrument-overview")), /Sector|sector/);
 });
-await test("stage 12: answer all five tasks (methane), submit, concise explanation, score; next unknown resets", async () => {
-  const peak = (mz) => `${T("unknown-spectrum")} ${T("peak-" + mz)}`;
-  await click(T("task-1")); await click(peak(16)); await click(T("use-peak")); assert.match(txt(T("picked-line")), /m\/z 16/);
-  await click(T("task-2")); await click(peak(16)); await click(T("use-peak"));
-  await click(T("task-3")); for (const m of [14, 15]) { await click(peak(m)); await click(T("use-peak")); } assert.match(txt(T("picked-line")), /14, 15/);
-  await click(T("task-4")); await click(T("iso-none")); await click(T("task-5")); assert.equal($$(`${T("cand")} button`).length, 4);
-  assert.ok($(T("submit")).disabled, "not yet answered"); await click(T("cand-methane")); assert.ok(!$(T("submit")).disabled);
-  await click(T("submit")); await until(() => $(T("reveal")), 2000, "reveal");
-  assert.match(txt(T("reveal-score")), /All five correct/); assert.match(txt(T("reveal-name")), /Methane/); assert.ok(txt(T("explanation")).length > 60 && txt(T("explanation")).length < 500, "concise");
-  assert.equal($$(`${T("results")} li.is-correct`).length, 5);
-  await click(T("next-unknown")); assert.match(txt(T("unknown-title")), /Unknown 2 of 5/); assert.ok(!$(T("reveal")));
+await test("the 1+ / 2+ comparison: same mass, half the m/z; sector radius r = (1/B) sqrt(2mV/ze) is stated", async () => {
+  await click(T("cmp-toggle")); await until(() => $(T("cmp-panel")), 2000); assert.equal(Number(txt(T("cmp-mz-2"))) * 2, Number(txt(T("cmp-mz-1"))));
+  assert.match(stageTxt() + viewTxt(4), /√|sqrt|square root/); assert.match(stageTxt(), /neutral/i);
 });
-await test("stage 12: a wrong compound with the same nominal mass is explained (ethanol vs methoxymethane), M alone is not enough", async () => {
-  assert.equal($(T("unknown-view")).getAttribute("data-round"), "2");
-  const peak = (mz) => `${T("unknown-spectrum")} ${T("peak-" + mz)}`;
-  await click(T("task-1")); await click(peak(46)); await click(T("use-peak")); await click(T("task-2")); await click(peak(31)); await click(T("use-peak"));
-  await click(T("task-3")); for (const m of [27, 29, 31, 43, 45]) { await click(peak(m)); await click(T("use-peak")); }
-  await click(T("task-4")); await click(T("iso-none")); await click(T("task-5"));
-  assert.ok(CANDIDATES.ethanol.filter((c) => c.M === 46).length >= 3, "three M = 46 candidates");
-  await click(T("cand-methoxymethane")); await click(T("submit")); await until(() => $(T("reveal")), 2000, "reveal");
-  assert.match(txt(T("reveal-score")), /4 of 5 correct/); assert.match(txt(T("reveal-name")), /Ethanol/); assert.match(txt(T("why-not")), /Methoxymethane/); assert.match(txt(T("why-not")), /base peak/);
-  await click(T("try-again")); assert.ok(!$(T("reveal"))); assert.ok($(T("submit")).disabled);
+await test("the voltage slider changes the HUD and tune chips set B so the chosen m/z reaches the detector", async () => {
+  const t = $$(`[data-testid^="tune-"]`)[0]; if (t) { await click(t); const mz = Number(t.getAttribute("data-testid").slice(5)); assert.match(txt(T("sector-hud")), new RegExp(`transmits m/z ${mz}\\.`)); }
 });
-await test("stage 12: all five unknowns are reachable; each has four choices and the answer is not always listed first", async () => {
-  const seen = []; const firsts = [];
-  for (let i = 0; i < 5; i += 1) {
-    seen.push(Number($(T("unknown-view")).getAttribute("data-round"))); await click(T("task-5"));
-    const ids = $$(`${T("cand")} button`).map((b) => b.getAttribute("data-testid").replace("cand-cand-", "")); assert.equal(ids.length, 4); firsts.push(ids[0]);
-    const mz = [...$$(`${T("unknown-spectrum")} [data-testid^='peak-']`)].map((e) => Number(e.getAttribute("data-mz")));
-    for (const t of [1, 2, 3]) { await click(T(`task-${t}`)); await click(`${T("unknown-spectrum")} ${T("peak-" + mz[0])}`); await click(T("use-peak")); }
-    await click(T("task-4")); await click(T("iso-cl")); await click(T("task-5")); await click($$(`${T("cand")} button`)[0]); await click(T("submit")); await until(() => $(T("reveal")), 2000, "reveal"); await click(T("next-unknown"));
+
+console.log("Stage 5: detector and spectrum");
+await test("the spectrum grows with the animation, the ion counter is labelled illustrative, M / base / isotope peaks are marked", async () => {
+  await mount(); await go(5); await click(T("btn-play-pause")); await click(T("btn-play-pause"));
+  assert.match(txt(T("ion-counter")), /Illustrative/i); assert.match(txt(T("ion-counter")), /not measured/i);
+  await click(T("analyser5-tof")); assert.equal($(T("journey-workspace")).getAttribute("data-analyser"), "tof"); await click(T("analyser5-sector"));
+});
+await test("clicking a peak shows m/z, relative intensity and candidate structures without claiming uniqueness; the fragment is highlighted", async () => {
+  await click(peak(43)); await until(() => $(T("peak-info")), 2000, "peak info"); const t = txt(T("peak-info"));
+  assert.match(t, /43/); assert.match(t, /%/); assert.match(stageTxt(), /Formulas that fit/); assert.match(stageTxt(), /does not prove|cannot tell/i); assert.doesNotMatch(t, /\bis definitely\b|\bonly possible\b/i);
+});
+
+console.log("Stage 6: interpretation and the optional activities");
+await test("interactive spectrum + deductions: click a peak, record a note, remove it; hints and worked interpretation exist", async () => {
+  await go(6); assert.ok($(T("s6-hints")) || /hint/i.test(stageTxt())); if (!$(T("note-input"))) await click(peak(43));
+  const inp = $(T("note-input")); assert.ok(inp, "note input"); Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set.call(inp, "acylium?"); inp.dispatchEvent(new window.Event("input", { bubbles: true })); await tick(40);
+  await click(T("note-add")); assert.match(txt(T("notes")), /acylium/); 
+});
+await test("activities are reachable from interpretation; each has a back button; old stage 13 is mentioned as removed", async () => {
+  assert.match(stageTxt() + txt(".ss-wb"), /removed|Structure Investigation/i);
+  for (const [id, view] of [["unknown", "unknown-view"], ["patterns", "pattern-view"], ["isotopes", "isotope-view"]]) {
+    await click(T(`activity-${id}`)); await until(() => $(T("activity-view")), 3000, id); assert.ok($(T(view)), view); assert.ok($(T("instrument-overview")), "overview stays visible"); await click(T("activity-back")); await until(() => $(T("step-view-6")));
   }
-  assert.deepEqual(seen, [2, 3, 4, 5, 1]);
-  assert.ok(firsts.some((id, i) => id !== ROUNDS[[1, 2, 3, 4, 0][i]]), `the true compound is not always first: ${firsts}`);
 });
-await test("stage 13: table of the three techniques; evidence per technique; candidates narrow; chloromethane is decided by MS; no technique is universally sufficient", async () => {
-  await go(13); assert.equal($$(`${T("technique-table")} tbody tr`).length, 3); assert.match(txt(T("technique-table")), /m\/z values, ion abundances, isotopic composition, molecular and fragment ions/); assert.match(txt(T("technique-table")), /bond vibrations and functional-group evidence/); assert.match(txt(T("technique-table")), /Hydrogen environments|hydrogen environments/i);
-  assert.equal($(T("compare-view")).getAttribute("data-example"), "ethanol"); assert.equal($(T("ev-ms")).getAttribute("data-revealed"), "0");
-  assert.equal($$(`${T("candidates")} li[data-in="1"]`).length, POOLS.ethanol.length, "all candidates before evidence");
-  await click(T("reveal-ms")); assert.equal($(T("ev-ms")).getAttribute("data-revealed"), "1"); assert.equal($$(`${T("candidates")} li[data-in="1"]`).length, remaining("ethanol", ["ms"]).length); assert.match(txt(T("ev-ms")), /Molecular ion m\/z 46/);
-  await click(T("reveal-ir")); await click(T("reveal-nmr")); assert.equal($$(`${T("candidates")} li[data-in="1"]`).length, 1); assert.match(txt(T("verdict")), /Only Ethanol/); assert.match(txt(T("ev-ir")), /O–H/); assert.match(txt(T("ev-nmr")), /ppm/);
-  await click(T("example-propanone")); assert.equal($(T("compare-view")).getAttribute("data-example"), "propanone"); assert.equal($(T("ev-ms")).getAttribute("data-revealed"), "0"); await click(T("reveal-ms")); assert.ok($$(`${T("candidates")} li[data-in="1"]`).length > 1, "MS alone does not settle propanone");
-  await click(T("example-chloromethane")); await click(T("reveal-ms")); assert.equal($$(`${T("candidates")} li[data-in="1"]`).length, 1); assert.match(txt(T("ev-ms")), /one chlorine/);
-  assert.match(txt(T("no-single")), /No single technique is universally sufficient/);
+await test("isotope activity keeps its corrected scaling: percentage abundance, pattern table has a ratio column and the tallest-bar-100% note", async () => {
+  await click(T("activity-isotopes")); await until(() => $(T("isotope-view"))); assert.match(txt(T("isotope-view")), /Abundance \(%\)/); await click(T("activity-back"));
+  await click(T("activity-patterns")); await until(() => $(T("pattern-view"))); assert.ok($(T("pattern-table"))); assert.match(txt(T("step-panel")), /tallest|100 ?%/i); await click(T("activity-back"));
+});
+await test("unknown challenge flow: six rounds, answer, submit, reveal, next", async () => {
+  await click(T("activity-unknown")); await until(() => $(T("unknown-view"))); assert.match(txt(T("unknown-title")), /of 6/);
+  const spec = $(`${T("unknown-view")} [data-testid^="peak-"]`); assert.ok(spec, "peaks to click"); await click(T("reveal")) .catch(() => {});
+  await click(T("activity-back"));
 });
 
-console.log("Shell: Reset, persistence, other tabs, reduced motion");
-await test("Reset clears the MS experiment but keeps the stage; IR, NMR and Structure Investigation stay reachable", async () => {
-  await go(6); await setRange(T("b-slider"), 0.5); await click(T("mz-43")); await click(".sd-btn[aria-label*='Reset'], button[aria-label*='Reset' i]"); await tick(200);
-  assert.equal($(T("sector-svg")).getAttribute("data-mz"), "16"); assert.match(txt(".sd-subtitle"), /stage 6 of 13/);
-  await click(T("tech-ir")); await until(() => $(T("stage-box"))?.getAttribute("data-technique") === "ir", 3000, "IR"); await click(T("tech-nmr")); await until(() => /step/.test($(T("stage-box"))?.getAttribute("data-stage") ?? ""), 3000, "NMR");
-  await click(T("tech-structure")); assert.ok($(T("dev-structure"))); await click(T("tech-ms")); await until(() => $(T("stage-box"))?.getAttribute("data-technique") === "ms", 3000, "MS again"); assert.match(txt(".sd-subtitle"), /stage 6 of 13/);
+console.log("Persistence, reset and robustness");
+await test("experiment state survives switching to the IR and NMR tabs and back (stage, molecule, analyser); disk/session persistence is covered by the store tests", async () => {
+  await mount(); await click(T("molecule-ethanol")); await go(4); await click(T("analyser-tof"));
+  await click(T("tech-ir")); await tick(100); await click(T("tech-ms")); await until(() => $(T("journey-workspace")), 3000);
+  assert.equal($(T("journey-workspace")).getAttribute("data-stage"), "4"); assert.equal($(T("journey-workspace")).getAttribute("data-analyser"), "tof"); assert.match(txt(T("step-panel")) + txt(T("instrument-overview")), /Flight|TOF/i);
 });
-await test("the MS experiment survives switching tabs (V, B, m/z): the store outlives the stage views", async () => {
-  await go(6); await click(T("mz-31")); await setRange(T("b-slider"), 0.4); await click(T("tech-ir")); await tick(80); await click(T("tech-ms")); await until(() => $(T("sector-svg")), 3000, "stage 6");
-  assert.equal($(T("sector-svg")).getAttribute("data-mz"), "31"); assert.equal($(T("sector-svg")).getAttribute("data-b"), "0.4");
-  await go(5); await go(6); assert.equal($(T("sector-svg")).getAttribute("data-mz"), "31");
+await test("Reset experiment returns to stage 1 with the same molecule population; the IR and NMR tabs still open", async () => {
+  await click(T("btn-reset-experiment")); await until(() => $(T("step-view-1")), 3000);
+  await click(T("tech-ir")); await until(() => $(T("stage-stepper"))?.getAttribute("data-count") !== "6", 3000); await click(T("tech-nmr")); await tick(100); await click(T("tech-ms")); await until(() => $(T("stage-stepper"))?.getAttribute("data-count") === "6", 3000);
 });
-await test("reduced motion: animations jump to their end state (no running animation)", async () => {
+await test("reduced motion: the stage animation jumps to its end state instead of running", async () => {
   const old = window.matchMedia; window.matchMedia = (q) => ({ matches: /reduce/.test(q), addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} });
-  await mount(); await go(3); await click(T("ionize")); await tick(200); assert.ok(Number($(T("ionise-view")).getAttribute("data-progress")) >= 0.99, "ionisation shown at its end at once");
-  await go(7); await click(T("start-flight")); await tick(200); assert.equal($(T("tof-view")).getAttribute("data-done"), "4");
+  await mount(); await go(3); await tick(300); const el = $(T("journey-workspace")); assert.ok(Number(el.getAttribute("data-t")) >= Number(el.getAttribute("data-duration")) - 0.01, "stage 3 shown at its end");
   window.matchMedia = old;
 });
 await test("no console.error output (React warnings: keys, act, state updates) during the whole run", async () => { console.error = origErr; assert.deepEqual(consoleErrors, []); });

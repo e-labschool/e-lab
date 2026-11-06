@@ -15,7 +15,7 @@
     "test:state-persistence": "node scripts/test-state-persistence.mjs",
     "verify:rich-text": "node scripts/verify-rich-text-editor.mjs",
     "verify:state": "node scripts/verify-state-persistence.mjs",
-    "test": "npm run test:disaster-recovery && npm run test:scientific-rendering && npm run test:rich-text-selection && npm run test:rich-text-ops && npm run test:state-persistence && npm run test:ideal-gas && npm run test:gas-laws && npm run test:gas-laws-ui && npm run test:dashboard-layout && npm run test:image-viewer && npm run test:bonding && npm run test:vsepr && npm run test:hybridisation && npm run test:imf && npm run test:nmr-physics && npm run test:nmr-ui && npm run test:nmr-molecular && npm run test:nmr-steps && npm run test:ir && npm run test:ms && npm run test:simulation-shell && npm run test:build-atom && npm run test:heating-cooling",
+    "test": "npm run test:disaster-recovery && npm run test:scientific-rendering && npm run test:rich-text-selection && npm run test:rich-text-ops && npm run test:state-persistence && npm run test:ideal-gas && npm run test:gas-laws && npm run test:gas-laws-ui && npm run test:dashboard-layout && npm run test:image-viewer && npm run test:bonding && npm run test:vsepr && npm run test:hybridisation && npm run test:imf && npm run test:nmr-physics && npm run test:nmr-ui && npm run test:nmr-molecular && npm run test:nmr-steps && npm run test:ir && npm run test:ms && npm run test:simulation-shell && npm run test:build-atom && npm run test:electron-config && npm run test:heating-cooling",
     "test:ideal-gas": "node scripts/test-ideal-gas-model.mjs",
     "test:gas-laws": "node scripts/test-gas-laws-model.mjs",
     "test:gas-laws-ui": "node scripts/test-gas-laws-ui.mjs",
@@ -38,7 +38,9 @@
     "test:simulation-shell": "node scripts/test-simulation-shell.mjs",
     "audit:simulations": "node scripts/audit-simulations.mjs",
     "test:build-atom": "node scripts/test-build-atom-controls.mjs",
+    "test:electron-config": "node scripts/test-electron-config.mjs",
     "test:heating-cooling": "node scripts/test-heating-cooling-curve.mjs",
+    "verify:build-atom-shells": "node scripts/verify-build-atom-shells.mjs",
     "verify:build-atom-heating": "node scripts/verify-build-atom-heating.mjs",
     "verify:button-contrast": "node scripts/verify-simulation-button-contrast.mjs"
   },

@@ -3,6 +3,7 @@
 export const ATOM_STYLE = {
   C: { r: 0.42, light: "#d7deef", dark: "#58648a" },
   H: { r: 0.27, light: "#ffffff", dark: "#9aaccd" },
+  O: { r: 0.4, light: "#fecaca", dark: "#dc2626" },
   Cl: { r: 0.62, light: "#b9f5cf", dark: "#1f9d55" },
   Br: { r: 0.72, light: "#ffc9a0", dark: "#9a3412" },
 };

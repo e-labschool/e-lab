@@ -50,12 +50,50 @@ default nuclide", and the same in `handleSelectElement`) was removed. `applyChan
   V-50, Ge-76, Se-82, Kr-78). Z = 1-20 rows predate this work (NUBASE2020 via Wikipedia "List of nuclides"); Z = 21-36
   were added from the CIAAW list. The **stable list per element is complete**, which is what makes "not a stable
   nuclide" a statement of fact; the radioactive list is a teaching set, not every known nuclide.
-- Electron shells (display only, `lib/electronShells.js`): 1-20 unchanged; 21-36 show the neutral-atom pattern
-  for that many electrons (2,8,9,2 ... 2,8,18,8; Cr and Cu use 4s¹). It is by electron *count*, so it is right for
-  neutral atoms but not for transition-metal cations (Fe²⁺ really keeps 14 in the third shell). 37-40 electrons
-  pile into the fourth shell. Not a filling rule.
+- Electron shells, arrangement and configuration: see the next section (`lib/electronConfiguration.js`).
 - Nucleus drawing (`lib/nucleusScaling.js`): unchanged up to calcium-40; heavier nuclei are packed tighter with
   smaller spheres so the nucleus (up to 96 nucleons) never touches the first shell.
+
+## Electron shells, arrangement and configuration (`lib/electronConfiguration.js`, pure)
+
+**Single source of truth.** For N electrons the module builds the ground-state configuration of the neutral atom with
+Z = N (aufbau / Madelung order 1s 2s 2p 3s 3p 4s 3d 4p 5s 4d, exceptions **Cr** 3d5 4s1 and **Cu** 3d10 4s1, the only
+two in 1-40), writes it in n-order (`1s2 2s2 2p6 3s2 3p6 3d5 4s2`) and **derives the per-shell arrangement by summing
+subshells per n** (`2,8,13,2`). Arrangement and configuration therefore cannot disagree. Shell maxima are the real
+2n^2 (2, 8, 18, 32, 50). `electronShells.shellDistribution()` is now a thin wrapper over it (it used to be a separate
+display table with capacities 2,8,8,2).
+
+**Audit of the previous `shellDistribution` (electrons 1-40):** 1-36 already gave the correct ground-state arrangement
+(including Mn 25 = 2,8,13,2, Cr 2,8,13,1, Cu 2,8,18,1, K 2,8,8,1, Ca 2,8,8,2, Sc 2,8,9,2, Zn 2,8,18,2, Ga 2,8,18,3,
+Kr 2,8,18,8; no shell exceeded 2n^2), so the manganese drawing in the screenshot was right: 25 electrons on four rings
+2/8/13/2. What was missing was any numbers to show it. **37-40 were wrong**: they piled everything into shell 4
+(2,8,18,9 ... 2,8,18,12; shell 4 is capped at 32, so legal, but not the ground state and with no 5th shell). Now
+37 = 2,8,18,8,1; 38 = 2,8,18,8,2; 39 = 2,8,18,9,2; 40 = 2,8,18,10,2. Ions kept the by-count pattern (see below).
+
+**What an ion shows.** The panel (and the drawing) always show the ground state *for the number of electrons drawn*, never
+for the proton count: Na+ (11 p, 10 e) = 2,8 (neon's), Cl- = 2,8,8, O2- = 2,8. That is exactly right for main-group ions.
+For ions of Sc-Zn it is only a count-based display (Fe2+ with 24 electrons shows chromium's 2,8,13,1; real Fe2+ is 2,8,14
+because 4s electrons are lost first), so those ions get a small note under the panel. The panel also says "Ion, net
+charge +2" whenever protons != electrons (and protons > 0), and "No electrons" for 0 electrons.
+
+**Panel (`components/ShellPanel.jsx`)** sits directly below the atom stage (same column; in the stacked layout between the
+stage and the controls). It lists each shell present as `n=3: 13/18 partial` (count / 2n^2); a shell at capacity has a
+solid heavier border and "✓ full", a partial one a dashed border and "partial" (state is text + border style, not
+colour alone), then Arrangement, Configuration and the noble-gas Shorthand (`[Ar] 3d5 4s2`; none for 1-2 electrons). It is
+flex-wrap only (container driven, no scaling) and updates from the same state as the drawing (manual +/-, periodic-table
+pick, Auto-balance, Start From Empty, Reset to Carbon-12, challenge mode).
+
+**Drawing.** Up to 36 electrons: the same four rings as before (radii 100/132/164/196). **Deviation from "max 4 rings":**
+37-40 electrons (anions only, since protons cap at 36) genuinely have a 5th shell, and drawing 2,8,18,9+ on four rings
+would contradict the panel, so for those counts only the rings are spaced 100/127/154/181/208 (still inside the viewBox).
+Electron animations are unchanged.
+
+## Identity card layout (container-driven)
+
+`NuclearNotation` is now a 3-column grid `[A over Z] [symbol] [charge]` sized by its content (the old version positioned
+the numbers absolutely *outside* its own box, so a charge such as "2+" spilled onto the table). `IdentityPanel` puts the
+notation and the table in a `flex-wrap` row; the table needs at least 11rem, so in a narrow card it wraps *under* the
+notation instead of overlapping it. No scaling.
 
 ## Layout (container-driven, `BuildAtomSimulation.jsx`)
 
@@ -93,6 +131,13 @@ Auto-balance off.
   button: counts after each +/- (protons only -> only protons ...), checkbox behaviour, every control visible and
   uncovered (`elementFromPoint`), stage ~65 % wide, no overlap with the controls, atom drawing inside its stage,
   stage re-measured after entering / leaving fullscreen, Kr-84 at Z = 36, no console errors.
+- `npm run test:electron-config` (`scripts/test-electron-config.mjs`): hand-written table for 1-40 electrons vs the
+  module (arrangement and full configuration), maxima, sums, arrangement-from-configuration round trip, only Cr/Cu differ
+  from plain aufbau, shorthand, ion/none descriptions, ring radii and marker spacing, plus jsdom tests of the live panel.
+- `npm run verify:build-atom-shells` (`scripts/verify-build-atom-shells.mjs`): headless Chromium, light and dark, new-tab
+  view and real fullscreen at several sizes: identity-card pieces never overlap (charges +2, -3, +10, -10), shell panel is
+  below the stage and overlaps nothing, periodic-table picks H/C/Na/Mn/Cr/Cu/Kr give the right arrangement, markers per ring
+  in the SVG match it, manual electron +/- updates it, 0 and 40 electrons.
 - Not verified: embedded-in-a-Learn-lesson for this engine (no `/interactives/` page exists for it; the same
   workspace code runs, with the embedded height rule above), real GPU, touch hardware, Firefox / Safari, a headed
   browser's fullscreen on a real monitor.

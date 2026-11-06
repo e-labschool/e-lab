@@ -25,9 +25,12 @@ export default function IdentityPanel({ derived, highlightA, highlightZ, highlig
 
   return (
     <div className="flex flex-col gap-2 rounded-xl border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-3" data-testid="atom-identity">
-      <div className="flex items-center gap-3">
-        <div className="flex shrink-0 justify-center pl-8"><NuclearNotation derived={derived} highlightA={highlightA} highlightZ={highlightZ} highlightCharge={highlightCharge} /></div>
-        <dl className="grid min-w-0 flex-1 grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 text-xs">
+      {/* Container-driven: flex-wrap. The notation block keeps its own content width; the table
+          needs at least 11rem, so when the card is too narrow for both the table wraps UNDER the
+          notation (centred) instead of the two overlapping. No scaling involved. */}
+      <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2" data-testid="atom-identity-top">
+        <NuclearNotation derived={derived} highlightA={highlightA} highlightZ={highlightZ} highlightCharge={highlightCharge} />
+        <dl className="grid min-w-[11rem] flex-1 grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 text-xs" data-testid="atom-identity-table">
           <dt className="text-[var(--color-ink-faint)]">Element</dt>
           <dd className="text-right font-semibold text-[var(--color-ink)]" data-testid="atom-element">{element.name}</dd>
           <dt className="text-[var(--color-ink-faint)]">Atomic number, Z</dt>

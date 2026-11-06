@@ -105,35 +105,93 @@
 .ms-cands li { padding: 2px 9px; border-radius: 999px; border: 1.5px solid var(--ss-ctl); font-weight: 700; font-size: 0.9em; } .ms-cands li span { font-weight: 600; color: var(--ss-muted); }
 .ms-cands li.is-on { border-color: #5eead4; background: rgba(94, 234, 212, 0.12); } .ms-cands li.is-off { text-decoration: line-through; opacity: 0.55; }
 
-/* ---- heights in the stacked layout (narrow containers) ---- */
-[data-testid="spectroscopy-workspace"][data-layout="stacked"] .ss-viz.ss-viz--ms { height: clamp(360px, 100cqw, 560px); }
-[data-testid="spectroscopy-workspace"][data-layout="stacked"] .ss-viz.ss-viz--ms-intro { height: clamp(360px, 100cqw, 560px); }
-[data-testid="spectroscopy-workspace"][data-layout="stacked"] .ss-viz.ss-viz--ms-inst { height: clamp(480px, 130cqw, 680px); }
-[data-testid="spectroscopy-workspace"][data-layout="stacked"] .ss-viz.ss-viz--ms-sector { height: clamp(440px, 115cqw, 640px); }
-[data-testid="spectroscopy-workspace"][data-layout="stacked"] .ss-viz.ss-viz--ms-tof { height: clamp(440px, 115cqw, 620px); }
+/* ---- the persistent journey workspace ---- */
+.ss-viz--journey { position: relative; }
+.ms-journey { position: absolute; inset: 0; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.ms-overview { flex: 0 0 auto; }
+.ms-short { display: none; } .ms-long { display: inline; }
+.ms-ribbon-box i.ms-trackdot { display: block; font-style: normal; font-size: 11px; font-weight: 800; color: var(--ss-teal); }
+.ms-ribbon li.is-tracked .ms-ribbon-box { box-shadow: 0 0 0 2px rgba(94, 234, 212, 0.55); }
+.ms-ribbon-box { transition: border-color .2s, background .2s; }
+.ms-trackbar { flex: 0 0 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 4px 10px; border-bottom: 1px solid var(--ss-line); background: rgba(8, 20, 50, 0.3); font-size: 0.9em; min-width: 0; }
+.ms-track-chip { font-weight: 800; color: var(--ss-teal); } .ms-track-region b { color: var(--ss-amber); } .ms-track-text { color: var(--ss-muted); min-width: 0; flex: 1 1 200px; }
+.ms-follow { display: inline-flex; gap: 4px; }
+.ms-jmain { position: relative; flex: 1 1 0; min-height: 0; min-width: 0; }
+.ms-jscene { position: absolute; inset: 0; min-width: 0; min-height: 0; overflow: hidden; }
+.ms-journey-svg { display: block; width: 100%; height: 100%; }
+.ms-jspec { position: relative; flex: 0 0 auto; min-height: 96px; border-top: 1px solid var(--ss-line); min-width: 0; }
+.ms-jspec > .ms-scene { position: absolute; inset: 0; }
+.ms-hud { top: 8px; right: 8px; }
+.ms-specnote, .ms-counter { position: absolute; left: 8px; right: 8px; bottom: 2px; margin: 0; font-size: 11.5px; color: var(--ss-muted); pointer-events: none; text-align: left; }
+.ms-counter { top: 2px; bottom: auto; right: auto; max-width: 70%; background: var(--ss-label-bg); padding: 2px 8px; border-radius: 8px; color: var(--ss-ink); } .ms-counter span { color: var(--ss-muted); }
+.ms-specnote { top: 3px; bottom: auto; left: auto; right: 8px; max-width: 62%; text-align: right; background: var(--ss-label-bg); padding: 1px 8px; border-radius: 8px; }
+
+/* molecules, regions and instrument parts inside the scene */
+.ms-mol.is-click { cursor: pointer; } .ms-hit-mol { fill: transparent; }
+.ms-mol.is-click:hover .ms-hit-mol { fill: rgba(125, 211, 252, 0.2); stroke: #7dd3fc; stroke-width: 1.5; }
+.ms-mol-label { fill: var(--ss-ink); font-size: 12px; font-weight: 700; text-anchor: middle; paint-order: stroke; stroke: rgba(8, 20, 50, 0.85); stroke-width: 3px; pointer-events: none; }
+.ms-track-ring { fill: none; stroke: var(--ss-teal); stroke-width: 3; stroke-dasharray: 2 5; stroke-linecap: round; pointer-events: none; }
+.ms-region { opacity: 0.45; transition: opacity .3s; } .ms-region.is-active { opacity: 1; }
+.ms-zone { fill: rgba(8, 20, 50, 0.35); stroke: var(--ss-ctl); stroke-width: 1.5; stroke-dasharray: 6 5; }
+.ms-pipe { fill: none; stroke: var(--ss-ctl); stroke-width: 2; } .ms-valve { fill: var(--ss-panel-2); stroke: var(--ss-ctl); stroke-width: 2; }
+.ms-ebeam { stroke: #67e8f9; stroke-width: 2; stroke-dasharray: 6 6; fill: none; } .ms-filament { fill: none; stroke: #fbbf24; stroke-width: 2.5; } .ms-trap { fill: rgba(251, 191, 36, 0.25); stroke: #fbbf24; stroke-width: 1.5; }
+.ms-plate { fill: var(--ss-amber); stroke: none; opacity: 0.85; } .ms-efield { stroke: #fbbf24; stroke-width: 1.2; opacity: 0.55; fill: none; }
+.ms-focusarc { fill: none; stroke-width: 2.5; stroke-linecap: round; }
+.ms-detbox { fill: rgba(22, 163, 74, 0.25); stroke: #22c55e; stroke-width: 2; } .ms-detslit { stroke: #22c55e; stroke-width: 3; }
+.ms-region.is-active .ms-partbox { stroke: var(--ss-amber); }
+
+/* key, detail, stepper, notes */
+.ms-key { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 10px; font-size: 0.9em; }
+.ms-key li { display: flex; align-items: center; gap: 6px; min-width: 0; } .ms-keysvg { flex: 0 0 auto; }
+.ms-pathdetail, .ms-inspect, .ms-cmpbox { padding: 7px 10px; border-radius: 10px; border: 1.5px solid var(--ss-line); background: var(--ss-panel-2); min-width: 0; }
+.ms-pathdetail { border-color: #5eead4; } .ms-pd-title { margin: 0 0 4px; font-weight: 800; }
+.ms-pd-svgwrap { position: relative; width: 100%; height: clamp(110px, 24vh, 190px); } .ms-pd-svg { display: block; width: 100%; height: 100%; }
+.ms-pd-eq { margin: 4px 0; } .ms-pd-btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; } .ms-pd-slow { opacity: .9; }
+.ms-pd-list, .ms-pd-cands, .ms-evidence-list, .ms-hintlist, .ms-outcomes { margin: 0; padding-left: 18px; } .ms-pd-text, .ms-pd-why { margin: 4px 0; }
+.ms-inspect-dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; } .ms-inspect-dl dd { margin: 0; } .ms-inspect-svg { width: 100%; max-height: 120px; }
+.ms-more { font-size: 0.93em; } .ms-more > summary { cursor: pointer; font-weight: 700; }
+.ms-stepper { display: inline-flex; align-items: center; gap: 6px; } .ms-tunechips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ms-cmp { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.ms-notes { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; } .ms-noterow { display: flex; gap: 6px; align-items: center; padding: 3px 8px; border: 1px solid var(--ss-line); border-radius: 9px; background: var(--ss-panel-2); }
+.ms-noteinput { width: 100%; min-height: 40px; padding: 6px 10px; border-radius: 10px; border: 1.5px solid var(--ss-ctl); background: var(--ss-panel-2); color: var(--ss-ink); font: inherit; } .ms-notelabel { font-weight: 700; }
+.ms-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -1px; } .ms-dotshape { display: inline-block; vertical-align: middle; }
+.ms-backbtn { align-self: flex-start; } .ss-warn { color: var(--ss-warn); font-weight: 700; } .ms-s4strip { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+/* the activity page: overview on top, the activity frame below */
+.ms-actwrap { display: flex; flex-direction: column; gap: 6px; height: 100%; min-height: 0; min-width: 0; }
+.ms-actwrap > .ms-overview { border: 1px solid var(--ss-line); border-radius: 12px; }
+.ms-actbody { flex: 1 1 0; min-height: 0; min-width: 0; }
+
+/* ---- stacked (narrow containers): the workspace has a fixed, generous height; page scrolls ---- */
+[data-testid="spectroscopy-workspace"][data-layout="stacked"] .ss-viz.ss-viz--journey { height: clamp(520px, 150cqw, 780px); }
+[data-testid="spectroscopy-workspace"][data-layout="stacked"] .ss-viz.ss-viz--ms-act { height: clamp(380px, 110cqw, 620px); }
+[data-testid="spectroscopy-workspace"][data-layout="stacked"] .ms-actwrap, [data-testid="spectroscopy-workspace"][data-layout="stacked"] .ms-actbody { height: auto; }
 [data-testid="spectroscopy-workspace"][data-layout="stacked"] .ms-split { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
 [data-testid="spectroscopy-workspace"][data-layout="stacked"] .ms-evidence { grid-template-columns: minmax(0, 1fr); grid-auto-rows: auto; overflow: auto; }
 [data-testid="spectroscopy-workspace"][data-layout="stacked"] .ss-viz:has(.ms-evidence) { height: clamp(560px, 150cqw, 760px); }
 [data-testid="spectroscopy-workspace"][data-layout="stacked"] .ms-ev-spec { height: 180px; }
 @container ssw (max-width: 1100px) { .ms-evidence { grid-template-columns: minmax(0, 1fr); overflow: auto; } .ms-arrivals { grid-template-columns: minmax(0, 1fr); } }
-
-/* ---- narrow containers: badges flow above the scene, the ribbon wraps ---- */
+@container ssw (max-width: 900px) { .ms-long { display: none; } .ms-short { display: inline; } }
 @container ssw (max-width: 620px) {
-  .ms-boxfill > .ss-badge--tl, .ms-boxfill > .ss-badge--tr { position: static; max-width: none; margin: 4px 6px 0; padding: 4px 8px; font-size: 12px; pointer-events: auto; }
-  .ms-ribbon ol { flex-wrap: wrap; gap: 4px; } .ms-ribbon li { flex: 1 1 30%; } .ms-ribbon-arrow { display: none; }
-  .ms-ribbon-box b { font-size: 11.5px; }
+  .ms-ribbon ol { gap: 1px; } .ms-ribbon-arrow { display: none; } .ms-ribbon-box { padding: 2px 2px; } .ms-ribbon-box b { font-size: 10.5px; }
+  .ms-key { grid-template-columns: minmax(0, 1fr); } .ms-trackbar { font-size: 12px; padding: 3px 6px; }
+  .ms-specnote { font-size: 10.5px; max-width: 70%; line-height: 1.2; } .ms-counter { font-size: 10.5px; max-width: 80%; }
 }
-/* ---- thirteen stage pills ---- */
-.ss-steps[data-n="13"] .ss-pill-label { font-size: calc(var(--sd-fs) - 1px); }
-.ss-steps[data-n="13"] .ss-pill { padding: 0 6px; gap: 4px; }
-@container ssw (max-width: 1500px) { .ss-steps[data-n="13"] .ss-pillwrap:not(.is-current) .ss-pill-label { display: none; } .ss-steps[data-n="13"] .ss-pillwrap:not(.is-current) { flex: 0 0 40px; } .ss-steps[data-n="13"] .ss-pillwrap:not(.is-current) .ss-pill { padding: 0; justify-content: center; } }
+/* ---- six stage pills ---- */
 @container ssw (max-width: 620px) {
-  .ss-steps[data-n="13"] { gap: 2px; }
-  .ss-steps[data-n="13"] .ss-pillwrap, .ss-steps[data-n="13"] .ss-pillwrap:not(.is-current) { flex: 1 1 0; min-width: 0; }
-  .ss-steps[data-n="13"] .ss-pill { padding: 0; min-width: 0; justify-content: center; }
-  .ss-steps[data-n="13"] .ss-pill-n { width: 18px; height: 18px; font-size: 10px; }
-  .ss-steps[data-n="13"] .ss-pillwrap.is-current .ss-pill-n { box-shadow: 0 0 0 2px rgba(94, 234, 212, 0.5); }
+  .ss-steps[data-n="6"] { gap: 2px; }
+  .ss-steps[data-n="6"] .ss-pillwrap:not(.is-current) .ss-pill-label { display: none; }
+  .ss-steps[data-n="6"] .ss-pillwrap, .ss-steps[data-n="6"] .ss-pillwrap:not(.is-current) { flex: 1 1 0; min-width: 0; }
+  .ss-steps[data-n="6"] .ss-pillwrap.is-current { flex: 3 1 0; }
+  .ss-steps[data-n="6"] .ss-pill { padding: 0 4px; min-width: 0; justify-content: center; }
 }
 @media (prefers-reduced-motion: reduce) { .ms-arrivals li, .ms-ev { transition: none; animation: none; } }
 
 .ms-peak.is-click:hover, .ms-peak.is-click:active { outline: 2px solid #7dd3fc; outline-offset: 1px; }
+
+/* hover / press feedback on the molecules in the picture, and no colour transition on the selected chip (so the contrast is never measured mid-fade) */
+.ms-mol.is-click:hover, .ms-mol.is-click:focus-visible { filter: brightness(1.25) drop-shadow(0 0 4px #7dd3fc); }
+.ms-mol.is-click:active { filter: brightness(1.45) drop-shadow(0 0 6px #fff); }
+.ms-chip[aria-checked="true"], .ms-chip[aria-pressed="true"] { transition: none; }
+.ms-mol.is-click:hover, .ms-mol.is-click:focus-visible { font-weight: 800; outline: 2px solid #7dd3fc; outline-offset: 2px; }
+.ms-mol.is-click:active { font-weight: 800; outline: 3px solid #fff; outline-offset: 2px; }

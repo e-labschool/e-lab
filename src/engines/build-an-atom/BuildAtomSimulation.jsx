@@ -14,6 +14,7 @@ import ConceptStrip from "./components/ConceptStrip.jsx";
 import MiniPeriodicTable from "./components/MiniPeriodicTable.jsx";
 import IsotopeComparison from "./components/IsotopeComparison.jsx";
 import ChallengeMode from "./components/ChallengeMode.jsx";
+import ShellPanel from "./components/ShellPanel.jsx";
 
 // Container width (px) of the simulation's own box at which the side-by-side
 // layout (atom ~66 % | controls ~34 %) replaces the stacked one. Container
@@ -147,6 +148,9 @@ function BuildAtomWorkspace(props) {
     </div>
   );
 
+  // Shell counts / arrangement / configuration for the ELECTRON count drawn in the stage.
+  const shellPanel = <ShellPanel protons={atom.protons} electrons={atom.electrons} />;
+
   const identity = (
     <div className="flex flex-col gap-2">
       <p className="text-center text-[10px] font-bold uppercase tracking-wide text-[var(--color-ink-faint)]">What Did You Build?</p>
@@ -175,7 +179,10 @@ function BuildAtomWorkspace(props) {
       <div ref={rootRef} className={rootCls} style={{ maxWidth: isViewport ? undefined : 1500, ...rootStyle }} data-testid="atom-workspace" data-layout="wide">
         {toolbar}
         <div className="grid min-h-0 flex-1 gap-3" style={{ gridTemplateColumns: "minmax(0, 66fr) minmax(300px, 34fr)" }}>
-          <div className="min-h-0 min-w-0">{atomStage}</div>
+          <div className="flex min-h-0 min-w-0 flex-col gap-2" data-testid="atom-column">
+            <div className="min-h-[200px] min-w-0 flex-1">{atomStage}</div>
+            {shellPanel}
+          </div>
           <div className="min-h-0 min-w-0 overflow-y-auto overflow-x-hidden pr-1" data-testid="atom-side">
             <div className="sticky top-0 z-10 bg-[var(--color-paper)] pb-2">{buildControls}</div>
             <div className="flex flex-col gap-3">
@@ -191,10 +198,11 @@ function BuildAtomWorkspace(props) {
   // STACKED. Fullscreen / new tab: stage takes ~40 % of the height, the panels
   // scroll in the rest. Embedded: a square-ish stage, then everything flows.
   return (
-    <div ref={rootRef} className={rootCls} data-testid="atom-workspace" data-layout="stacked">
+    <div ref={rootRef} className={rootCls + (isViewport ? " overflow-y-auto overflow-x-hidden" : "")} data-testid="atom-workspace" data-layout="stacked">
       {toolbar}
-      <div className={isViewport ? "shrink-0" : "shrink-0"} style={{ height: isViewport ? "clamp(200px, 40%, 420px)" : `clamp(240px, ${Math.round(width * 0.9)}px, 420px)` }}>{atomStage}</div>
-      <div className={"flex min-h-0 flex-col gap-3 " + (isViewport ? "flex-1 overflow-y-auto overflow-x-hidden pr-1" : "")} data-testid="atom-side">
+      <div className={isViewport ? "shrink-0" : "shrink-0"} style={{ height: isViewport ? "clamp(190px, 34%, 420px)" : `clamp(240px, ${Math.round(width * 0.9)}px, 420px)` }}>{atomStage}</div>
+      {shellPanel}
+      <div className={"flex flex-col gap-3 " + (isViewport ? "min-h-[220px] flex-1 overflow-y-auto overflow-x-hidden pr-1" : "min-h-0")} data-testid="atom-side">
         {buildControls}
         {identity}
         {secondary}

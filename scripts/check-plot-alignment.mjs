@@ -9,25 +9,29 @@ for (let i = 0; i < 120; i += 1) { try { if ((await fetch(base)).ok) break; } ca
 const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium-1243/chrome-linux64/chrome", args: ["--no-sandbox", "--use-gl=swiftshader", "--enable-unsafe-swiftshader"] });
 const p = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
 await p.goto(`${base}/simulation/spectroscopy-studio`); await p.waitForSelector('[data-testid="spectroscopy-workspace"]'); await new Promise((r) => setTimeout(r, 1500));
-await p.click('[data-testid="tech-ms"]'); await p.waitForSelector('[data-testid="stage-stepper"][data-count="13"]');
+await p.click('[data-testid="tech-ms"]'); await p.waitForSelector('[data-testid="stage-stepper"][data-count="6"]');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const measure = () => p.evaluate(() => [...document.querySelectorAll("svg.ms-spec")].map((svg) => {
-  const bg = svg.querySelector("rect.ss-plot-bg").getBoundingClientRect(); const ticks = [...svg.querySelectorAll("text.ss-tick")].map((t) => t.textContent);
+  const bg = svg.querySelector("rect.ss-plot-bg").getBoundingClientRect();
   const yl = [...svg.querySelectorAll("text.ss-axis-label")].map((t) => t.textContent);
   return { id: svg.dataset.testid, yl: yl[1], bars: [...svg.querySelectorAll("g.ms-peak")].map((g) => { const r = g.querySelector("rect.ms-bar").getBoundingClientRect(); return { mz: +g.dataset.mz, rel: +g.dataset.rel, px: (r.height / bg.height) * 100 }; }) };
 }));
 let bad = 0; const rows = [];
 const report = (stage, tag, ms) => ms.forEach((m) => m.bars.forEach((b) => { const ok = Math.abs(b.px - b.rel) < 1.0; if (!ok) bad += 1; rows.push(`${ok ? "ok  " : "BAD "} stage ${stage} ${tag} ${m.id} [${m.yl}] m/z ${b.mz}: data ${b.rel.toFixed(1)}  drawn ${b.px.toFixed(1)}`); }));
-for (let s = 1; s <= 13; s += 1) {
-  await p.click(`[data-testid="step-${s}"]`); await sleep(5500);
-  if (s === 9 || s === 12 || s === 13 || s === 8) { /* some need actions */ }
-  const m = await measure(); if (m.length) report(s, "", m);
-  if (s === 10) {
-    for (const v of [75, 24.24, 10, 1]) { await p.locator('[data-testid="abundance-slider"]').first().evaluate((el, val) => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(el, String(val)); el.dispatchEvent(new Event("input", { bubbles: true })); el.dispatchEvent(new Event("change", { bubbles: true })); }, v); await sleep(3500); const mm = await measure(); report(s, `slider ${v}`, mm); const b = mm[0].bars.map((x) => `${x.mz}:${x.px.toFixed(1)}`).join(" "); rows.push(`     slider ${v} => drawn heights ${b}`); }
+const setRange = (sel, v) => p.locator(sel).first().evaluate((el, val) => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(el, String(val)); el.dispatchEvent(new Event("input", { bubbles: true })); el.dispatchEvent(new Event("change", { bubbles: true })); }, v);
+for (let s = 1; s <= 6; s += 1) {
+  await p.click(`[data-testid="step-${s}"]`); await sleep(1200);
+  if (s === 5) { for (const t of [3000, 6000, 8000]) { await sleep(t); report(s, "building", await measure()); } await sleep(8000); report(s, "final", await measure()); await p.click('[data-testid="analyser5-tof"]'); await sleep(22000); report(s, "tof final", await measure()); await p.click('[data-testid="analyser5-sector"]'); }
+  else report(s, "", await measure());
+  if (s === 6) {
+    await p.click('[data-testid="activity-unknown"]'); await sleep(800); report(s, "unknown", await measure());
+    await p.click('[data-testid="activity-back"]'); await sleep(500);
+    await p.click('[data-testid="activity-isotopes"]'); await sleep(800); report(s, "isotopes", await measure());
+    for (const v of [75, 24.24, 10, 1]) { await setRange('[data-testid="abundance-slider"]', v); await sleep(400); report(s, `isotopes ${v}%`, await measure()); }
+    await p.click('[data-testid="activity-back"]'); await sleep(500);
+    await p.click('[data-testid="activity-patterns"]'); await sleep(800);
+    for (const c of await p.locator('[data-testid^="compound-"]').all()) { await c.click(); await sleep(900); report(s, "patterns", await measure()); }
   }
-  if (s === 8) { await p.click('[data-testid="detect-ions"]'); await sleep(7000); report(s, "mid-detect", await measure()); await sleep(9000); const mm = await measure(); report(s, "after detect", mm); rows.push("     final detect heights " + mm[0].bars.map((x) => `${x.mz}:${x.px.toFixed(1)}`).join(" ")); }
-  if (s === 13) { await p.click('[data-testid="reveal-ms"]').catch(() => {}); await sleep(1500); const mm = await measure(); report(s, "evidence", mm); }
-  if (s === 11) { for (const c of await p.locator('[data-testid^="compound-"]').all()) { await c.click(); await sleep(4500); report(s, "compound", await measure()); } }
 }
 console.log(rows.join("\n")); console.log(`\nbars checked ${rows.filter((r) => /^(ok|BAD)/.test(r)).length}, mismatches ${bad}`);
-await browser.close(); srv.kill();
+await browser.close(); srv.kill(); process.exit(bad ? 1 : 0);

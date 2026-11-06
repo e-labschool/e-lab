@@ -1,4 +1,5 @@
 import { niceTicks } from "../../components/LinePlot.jsx";
+import { shapePath } from "./shapes.js";
 
 /** Heights for a build-up animation: peak i grows during its own slice of progress p (0..1), in order of m/z. */
 export function staggerHeights(peaks, p) {
@@ -19,7 +20,7 @@ const roleOf = (pk) => (pk.role === "M" ? "M" : pk.role === "M+2" ? "M2" : pk.ro
  */
 export default function MsSpectrum({
   width, height, peaks, heights = null, xRange = null, colorBy = "role", labels = "mz", marks = false, selected = null, onSelect = null, picked = [],
-  ariaLabel, testId = "ms-spectrum", colors = null, yLabel = "Relative intensity (%)", compact = false, baseMz = null, mMz = null, yMax = 100,
+  ariaLabel, testId = "ms-spectrum", colors = null, shapes = null, yLabel = "Relative intensity (%)", compact = false, baseMz = null, mMz = null, yMax = 100,
 }) {
   const narrow = width < 460 || compact;
   const m = { l: narrow ? 36 : 48, r: 12, t: marks ? 30 : 18, b: narrow ? 30 : 38 };
@@ -51,7 +52,8 @@ export default function MsSpectrum({
         const h = heights ? heights[pk.mz] ?? 0 : pk.rel; const x = sx(pk.mz); const y = sy(h);
         const isSel = sel.includes(pk.mz); const isPicked = picked.includes(pk.mz); const role = colorBy === "role" ? roleOf(pk) : "plain";
         const tag = marks && h > 0.5 ? (pk.mz === mTag && pk.mz === baseTag ? "M⁺• = base peak" : pk.mz === mTag ? "M⁺•" : pk.mz === baseTag ? "base peak" : null) : null;
-        const labelY = Math.max(m.t + 11, y - 5);
+        const shp = shapes?.[pk.mz] && h > 0.5 ? shapes[pk.mz] : null;
+        const labelY = Math.max(m.t + 11, y - 5 - (shp ? 11 : 0));
         return (
           <g key={pk.mz} className={`ms-peak${isSel ? " is-sel" : ""}${onSelect ? " is-click" : ""}`} data-testid={`peak-${pk.mz}`} data-mz={pk.mz} data-rel={h.toFixed(2)} data-role={role} data-selected={isSel ? "1" : "0"}
             role={onSelect ? "button" : undefined} tabIndex={onSelect ? 0 : undefined} aria-label={onSelect ? `Peak at m/z ${pk.mz}, ${Math.round(pk.rel)} percent` : undefined} aria-pressed={onSelect ? isSel : undefined}
@@ -64,6 +66,7 @@ export default function MsSpectrum({
                 {showIon && pk.label ? <><tspan fontWeight="800">{pk.mz}</tspan><tspan dx="3" className="ms-peakion">{pk.label}</tspan></> : pk.mz}
               </text>
             )}
+            {shp && <path d={shapePath(shp, x, labelY + 8, 4.2)} fill={colors?.[pk.mz] ?? "#fff"} stroke="#0a1330" strokeWidth="0.8" data-testid={`shape-${pk.mz}`} data-shape={shp} />}
             {tag && <text x={x} y={Math.max(m.t - 12, labelY - fs - 3)} textAnchor="middle" className="ms-peaktag">{tag}</text>}
           </g>
         );

@@ -1,4 +1,4 @@
-// Representative electron-ionisation (EI, about 70 eV) mass spectra of five small molecules. PURE DATA + a small builder.
+// Representative electron-ionisation (EI, about 70 eV) mass spectra of six small molecules (butan-2-one was added with the six-stage redesign; same provenance). PURE DATA + a small builder.
 //
 // !!! These are REPRESENTATIVE / IDEALISED spectra, NOT experimental data, and they are labelled that way on screen. !!!
 // PROVENANCE. The NIST WebBook (webbook.nist.gov) could not be fetched in this build (blocked), and no numerical table could be retrieved from the web either. The
@@ -138,6 +138,22 @@ const BROMOMETHANE = finish({
   explain: "The two almost equal peaks at m/z 94 and 96 (about 1 : 1, two bromine isotopes 2 u apart) are the molecular ion with one bromine, so M = 94 (⁷⁹Br). The same 1 : 1 pairs appear at 93/95 (CH₂Br⁺) and 79/81 (Br⁺); m/z 15 (CH₃⁺) is single. The base peak is the 94 member of the pair by a whisker.",
 });
 
-export const SPECTRA = { methane: METHANE, ethanol: ETHANOL, propanone: PROPANONE, chloromethane: CHLOROMETHANE, bromomethane: BROMOMETHANE };
-export const SPECTRUM_IDS = ["methane", "ethanol", "propanone", "chloromethane", "bromomethane"];
+const BUT_M = P(72, 25, "CH3COCH2CH3", "C4H8O", "Molecular ion CH₃COCH₂CH₃⁺•, a medium peak: like other ketones, butan-2-one gives a clear molecular ion.", { charge: "+•", role: "M" });
+const BUTANONE = finish({
+  id: "butanone", name: "Butan-2-one", formula: "C₄H₈O", comp: "C4H8O", nominalM: 72, isotopePattern: "none", cls: "ketone",
+  peaks: [
+    P(15, 10, "CH3", "CH3", "α-cleavage on the other side of the C=O with the charge on the methyl group: CH₃COCH₂CH₃⁺• → CH₃⁺ + •COCH₂CH₃ (the neutral radical is not detected).", { lost: { text: "•COC₂H₅", mass: 57 } }),
+    P(27, 10, "C2H3", "C2H3", "A second step: the ethyl cation C₂H₅⁺ (m/z 29) loses H₂ to give C₂H₃⁺ (the same step as in ethanol).", { lost: { text: "H₂", mass: 2 } }),
+    P(29, 25, "C2H5", "C2H5", "α-cleavage with the charge on the ethyl group: CH₃COCH₂CH₃⁺• → C₂H₅⁺ + CH₃CO• (the neutral acetyl radical is not detected).", { lost: { text: "CH₃CO•", mass: 43 } }),
+    P(43, 100, "CH3CO", "C2H3O", "Base peak: α-cleavage next to the C=O that loses the larger alkyl radical, CH₃COCH₂CH₃⁺• → CH₃C≡O⁺ + •CH₂CH₃. The acylium ion CH₃CO⁺ is very stable.", { lost: { text: "•C₂H₅", mass: 29 } }),
+    P(57, 7, "C2H5CO", "C3H5O", "α-cleavage that loses the methyl group on the carbonyl carbon: CH₃COCH₂CH₃⁺• → CH₃CH₂C≡O⁺ + •CH₃. A small peak.", { lost: { text: "•CH₃", mass: 15 } }),
+    BUT_M,
+    m1(BUT_M),
+  ],
+  significant: [15, 27, 29, 43],
+  explain: "M⁺• is m/z 72 (25 %). The base peak is m/z 43, CH₃CO⁺ (loss of •C₂H₅, 29 u), not the molecular ion. m/z 57 is C₂H₅CO⁺ (loss of •CH₃), m/z 29 is C₂H₅⁺ and m/z 15 is CH₃⁺. Butan-2-one has no γ-hydrogen (a hydrogen three bonds from the carbonyl carbon is needed), so it cannot undergo the McLafferty rearrangement.",
+});
+
+export const SPECTRA = { methane: METHANE, ethanol: ETHANOL, propanone: PROPANONE, butanone: BUTANONE, chloromethane: CHLOROMETHANE, bromomethane: BROMOMETHANE };
+export const SPECTRUM_IDS = ["methane", "ethanol", "propanone", "butanone", "chloromethane", "bromomethane"];
 export const getSpectrum = (id) => SPECTRA[id] ?? SPECTRA.methane;

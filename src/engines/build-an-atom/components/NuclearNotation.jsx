@@ -10,34 +10,31 @@ export default function NuclearNotation({ derived, highlightA, highlightZ, highl
   const chargeStr = formatCharge(netCharge);
   const symbol = element ? element.symbol : "?";
 
+  // A 3-column grid sized by its own content: [A over Z] [symbol] [charge]. Every
+  // label is IN the grid (nothing is positioned outside the box any more), so the
+  // block's width always includes the numbers and a 2-3 character charge such as
+  // "10+", and neighbours in a flex-wrap row can never be overlapped by it.
   return (
-    <div className="relative inline-flex items-center justify-center" style={{ minWidth: 110, minHeight: 90 }} aria-label={element ? `Nuclide notation: mass number ${massNumber}, ${element.symbol}, atomic number ${atomicNumber}${chargeStr ? `, charge ${chargeStr}` : ""}` : "No element yet"}>
-      <span
-        className="text-6xl font-bold leading-none text-[var(--color-ink)]"
-        style={{ fontFamily: "var(--font-display, inherit)" }}
-      >
+    <div
+      className="inline-grid shrink-0 grid-cols-[auto_auto_auto] items-stretch gap-x-1.5"
+      style={{ minHeight: 90 }}
+      data-testid="atom-notation"
+      aria-label={element ? `Nuclide notation: mass number ${massNumber}, ${element.symbol}, atomic number ${atomicNumber}${chargeStr ? `, charge ${chargeStr}` : ""}` : "No element yet"}
+    >
+      <div className="flex min-w-[2ch] flex-col justify-between py-1 text-right text-xl font-bold leading-none">
+        <span className={highlightA ? "atom-notation-pulse" : ""} style={{ color: "var(--color-violet)" }} data-testid="atom-notation-A">{element ? massNumber : "\u2014"}</span>
+        <span className={highlightZ ? "atom-notation-pulse" : ""} style={{ color: "var(--color-teal)" }} data-testid="atom-notation-Z">{element ? atomicNumber : "\u2014"}</span>
+      </div>
+      <span className="self-center text-6xl font-bold leading-none text-[var(--color-ink)]" style={{ fontFamily: "var(--font-display, inherit)" }} data-testid="atom-notation-symbol">
         {symbol}
       </span>
-      <span
-        className={`absolute left-0 top-1 -translate-x-full text-xl font-bold leading-none ${highlightA ? "atom-notation-pulse" : ""}`}
-        style={{ color: "var(--color-violet)" }}
-      >
-        {element ? massNumber : "\u2014"}
-      </span>
-      <span
-        className={`absolute bottom-1 left-0 -translate-x-full text-xl font-bold leading-none ${highlightZ ? "atom-notation-pulse" : ""}`}
-        style={{ color: "var(--color-teal)" }}
-      >
-        {element ? atomicNumber : "\u2014"}
-      </span>
-      {chargeStr && (
-        <span
-          className={`absolute right-0 top-1 translate-x-full text-xl font-bold leading-none ${highlightCharge ? "atom-notation-pulse" : ""}`}
-          style={{ color: netCharge > 0 ? "var(--color-amber)" : "var(--color-indigo)" }}
-        >
-          {chargeStr}
-        </span>
-      )}
+      <div className="min-w-[3ch] py-1 text-left text-xl font-bold leading-none">
+        {chargeStr && (
+          <span className={highlightCharge ? "atom-notation-pulse" : ""} style={{ color: netCharge > 0 ? "var(--color-amber)" : "var(--color-indigo)" }} data-testid="atom-notation-charge">
+            {chargeStr}
+          </span>
+        )}
+      </div>
       <style>{`
         @keyframes atom-notation-pulse-kf { 0%, 100% { filter: none; } 50% { filter: drop-shadow(0 0 5px currentColor); } }
         .atom-notation-pulse { animation: atom-notation-pulse-kf 600ms ease-in-out 1; }

@@ -8,7 +8,7 @@ export function GlyphDefs({ id }) {
   return (
     <defs>
       {Object.entries(ATOM_STYLE).map(([el, s]) => g(el, s.light, s.dark))}
-      {g("ionC", "#ffe2c2", "#e8590c")}{g("ionH", "#fff1e0", "#f59f5a")}{g("ionCl", "#ffe2c2", "#d9480f")}{g("ionBr", "#ffe2c2", "#b4410c")}
+      {g("ionO", "#ffe2c2", "#c2410c")}{g("ionC", "#ffe2c2", "#e8590c")}{g("ionH", "#fff1e0", "#f59f5a")}{g("ionCl", "#ffe2c2", "#d9480f")}{g("ionBr", "#ffe2c2", "#b4410c")}
       {g("e", "#e0f6ff", "#0ea5e9")}
     </defs>
   );

@@ -45,6 +45,12 @@ export const CANDIDATES = {
     C("butane", "Butane", "C₄H₁₀", 58, "none", [43, 29, 41, 27, 58], [27, 29, 41, 43, 58], "Also M = 58 and a strong 43, but an alkane would give a family of peaks at 41, 29 and 27; the spectrum here is much simpler and has a 15 peak."),
     C("ethanal", "Ethanal", "C₂H₄O", 44, "none", [29, 44, 43], [15, 29, 43, 44], "Ethanal has M = 44, which is below the heaviest main peak (58) seen here."),
   ],
+  butanone: [
+    C("butanone", "Butan-2-one", "C₄H₈O", 72, "none", [43, 72, 29], [15, 27, 29, 43, 57, 72], ""),
+    C("butanal", "Butanal", "C₄H₈O", 72, "none", [44, 43, 41, 29, 72], [27, 29, 41, 43, 44, 72], "Same formula and M = 72, but an aldehyde with a γ-hydrogen gives a strong rearrangement ion at 44 (and 41, 29), and its tallest peak is not 43."),
+    C("pentane", "Pentane", "C₅H₁₂", 72, "none", [43, 42, 41, 57, 29, 27], [27, 29, 41, 42, 43, 57, 72], "Also M = 72 and a strong 43, but an alkane gives a whole family of peaks (41, 42, 29, 27) and a weak molecular ion; this spectrum is much simpler."),
+    C("pentan-2-one", "Pentan-2-one", "C₅H₁₀O", 86, "none", [43, 58, 86], [43, 58, 71, 86], "Also a methyl ketone with base peak 43, but its molecular ion is at 86 and it gives a strong 58; the heaviest main peak here is 72."),
+  ],
   chloromethane: [
     C("chloromethane", "Chloromethane", "CH₃Cl", 50, "cl", [50, 52, 15], [15, 35, 37, 49, 50, 51, 52], ""),
     C("bromomethane", "Bromomethane", "CH₃Br", 94, "br", [94, 96, 15], [15, 79, 81, 93, 94, 95, 96], "A bromine compound gives a 1 : 1 pair; the pair here is about 3 : 1 and its mass is 50, not 94."),

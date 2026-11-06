@@ -163,12 +163,15 @@ test("derived quantities and isotope naming", () => {
   assert.equal(C.isotopeIdentity(0, 3), null);
   assert.equal(deriveAtom({ protons: 8, neutrons: 8, electrons: 8 }).element.symbol, "O");
 });
-test("electron shells: 1-20 unchanged, 21-36 neutral-atom pattern, always sums to the count", () => {
+test("electron shells: ground-state arrangement for 1-40 electrons, sums to the count (full audit in test-electron-config.mjs)", () => {
   assert.deepEqual(shellDistribution(11), [2, 8, 1]);
   assert.deepEqual(shellDistribution(20), [2, 8, 8, 2]);
   assert.deepEqual(shellDistribution(26), [2, 8, 14, 2]);
   for (let e = 0; e <= 40; e++) assert.equal(shellDistribution(e).reduce((a, b) => a + b, 0), e);
-  for (let e = 0; e <= 40; e++) assert.ok(shellDistribution(e).length <= 4, `at most 4 shells (e=${e})`);
+  assert.deepEqual(shellDistribution(25), [2, 8, 13, 2]);
+  assert.deepEqual(shellDistribution(37), [2, 8, 18, 8, 1]);
+  for (let e = 0; e <= 36; e++) assert.ok(shellDistribution(e).length <= 4, `at most 4 shells up to 36 electrons (e=${e})`);
+  for (let e = 37; e <= 40; e++) assert.equal(shellDistribution(e).length, 5, `37-40 electrons really have a 5th shell (e=${e})`);
 });
 test("nucleus scaling: unchanged up to calcium-40, shrinks for heavy nuclei so it clears the first shell (r=100)", () => {
   assert.equal(nucleusScaling(6, 6).scale, 1.3);

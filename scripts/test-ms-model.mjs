@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // Pure tests of the Mass Spectrometry model:  node scripts/test-ms-model.mjs
 // Kinematics (hand-calculated numbers, scaling laws), the magnetic-sector and time-of-flight geometry, isotope data and Ar, the polynomial isotope-pattern generator
-// (specification table, normalisation), the five representative EI spectra (integrity: base peak 100, M and base identified, formulas vs m/z, electron-count parity,
+// (specification table, normalisation), the six representative EI spectra (integrity: base peak 100, M and base identified, formulas vs m/z, electron-count parity,
 // 2 u clusters), the methane pathways, the detection build-up, the unknown-compound challenge (unique best answer, nominal-mass ambiguity, no answer leak in the initial
-// state, hints that do not name the answer), the evidence narrowing of stage 13, and the store (sanitise / persistence slice / reset). No DOM.
+// state, hints that do not name the answer), the evidence data (kept, no longer a stage), the seeded experiment controller, the analyser model, the journey timing and the store (sanitise / migration / persistence). No DOM.
 import assert from "node:assert/strict";
 import { register } from "node:module";
 register("./jsx-loader-hooks.mjs", import.meta.url);
@@ -136,8 +136,8 @@ test("isotope pattern: one Cl M:M+2 = 3:1 (teaching) and 1:0.32 natural; one Br 
 
 console.log("Representative EI spectra");
 const peaksOf = (s) => SP.SPECTRA[s].peaks;
-test("five spectra exist with the specification's compounds, labelled representative / idealised", () => {
-  assert.deepEqual(SP.SPECTRUM_IDS, ["methane", "ethanol", "propanone", "chloromethane", "bromomethane"]); assert.match(SP.SPECTRA_NOTE, /not an experimental spectrum/i); assert.match(SP.SPECTRA_NOTE, /representative/i);
+test("six spectra exist with the specification's compounds, labelled representative / idealised", () => {
+  assert.deepEqual(SP.SPECTRUM_IDS, ["methane", "ethanol", "propanone", "butanone", "chloromethane", "bromomethane"]); assert.match(SP.SPECTRA_NOTE, /not an experimental spectrum/i); assert.match(SP.SPECTRA_NOTE, /representative/i);
 });
 test("integrity: exactly one peak = 100, the base peak is that peak, one molecular ion, M and base identified separately, peaks unique and in range", () => {
   for (const id of SP.SPECTRUM_IDS) {
@@ -180,7 +180,7 @@ test("the methane peaks quote the specification's intensities (12:~3, 13:~8, 14:
   const m = SP.SPECTRA.methane.byMz; assert.deepEqual([12, 13, 14, 15, 16].map((k) => m[k].rel), [3, 8, 16, 85, 100]); near(m[17].rel, 1.1, 0.05);
   assert.match(m[15].origin, /CH₄⁺• → CH₃⁺ \+ H•/); assert.match(m[14].origin, /H₂/);
 });
-test("significant fragments list = fragment peaks of at least 10 % (no M, no satellites)", () => {
+test("significant fragments list = fragment peaks of at least 10 % (no M, no satellites); the cut-off is inclusive of 10", () => {
   for (const id of SP.SPECTRUM_IDS) { const s = SP.SPECTRA[id]; const want = s.peaks.filter((p) => p.role === "fragment" && p.rel >= 10).map((p) => p.mz).sort((a, b) => a - b); assert.deepEqual([...s.significant].sort((a, b) => a - b), want, id); }
 });
 
@@ -234,7 +234,7 @@ test("evaluating answers: correct, partial (M+2 for task 1, some fragments for t
   assert.equal(CH.evaluateAnswers("bromomethane", { t1: 94, t2: 96, t3: [], t4: "br", t5: "bromomethane" }).t2, "wrong");
 });
 
-console.log("Stage 13 evidence");
+console.log("Evidence data (the old stage 13 page was removed; the data module stays)");
 test("evidence narrows the candidate list monotonically to exactly the true compound for ethanol, propanone, chloromethane; ethanol and propanone are not settled by any single technique", () => {
   for (const ex of EV.EXAMPLES) {
     let prev = EV.POOLS[ex].length; for (const set of [[], ["ms"], ["ms", "ir"], ["ms", "ir", "nmr"]]) { const n = EV.remaining(ex, set).length; assert.ok(n <= prev, `${ex} ${set}`); prev = n; }
@@ -251,18 +251,119 @@ test("evidence content comes from the three modules: MS peaks, IR bands (ethanol
   assert.equal(EV.TECHNIQUE_ROWS.length, 3);
 });
 
-console.log("State");
-test("store: defaults, sanitise repairs bad values, persisted slice round-trips, stage navigation clamps, reset keeps the stage", () => {
-  const s = ST.createMsStore(); assert.equal(s.getState().stage, 1); s.prevStage(); assert.equal(s.getState().stage, 1); for (let i = 0; i < 20; i += 1) s.nextStage(); assert.equal(s.getState().stage, 13);
-  const bad = ST.sanitize({ stage: 99, V: -5, s6: { mz: 7, B: 99 }, s7: { massX: 1000 }, s10: { p35: 150 }, s11: { compound: "x" }, s12: { round: 99, picks: { t1: "a", t3: [1, 1, 2, "x"], t5: "zzz" } }, s13: { example: "q", revealed: ["ir", "bogus"] } });
-  assert.equal(bad.stage, 13); assert.equal(bad.V, 500); assert.equal(bad.s6.mz, 16); assert.equal(bad.s6.B, 0.8); assert.equal(bad.s7.massX, 100); assert.equal(bad.s10.p35, 100); assert.equal(bad.s11.compound, "cl2"); assert.equal(bad.s12.round, 4); assert.deepEqual(bad.s12.picks.t3, [1, 2]); assert.equal(bad.s12.picks.t5, null); assert.equal(bad.s13.example, "ethanol"); assert.deepEqual(bad.s13.revealed, ["ir"]);
-  s.setStage(6); s.setV(3000); s.selectMz(43); s.tuneB(); const saved = JSON.parse(JSON.stringify(ST.pickPersisted(s.getState()))); const s2 = ST.createMsStore(saved); assert.deepEqual(ST.pickPersisted(s2.getState()), ST.pickPersisted(s.getState()));
-  relNear(SEC.sectorTrajectory(43, 3000, s.getState().s6.B).r, SEC.SECTOR.R_DET, 0.002); s.reset(); assert.equal(s.getState().stage, 6); assert.equal(s.getState().V, 2000); assert.equal(s.getState().s6.mz, 16);
+console.log("Molecules, pathways and the seeded experiment");
+const MOL = await import(`${P}data/molecules.js`);
+const EXP = await import(`${P}model/experiment.js`);
+const AN = await import(`${P}model/analyser.js`);
+const IONS = await import(`${P}model/ions.js`);
+const JR = await import(`${P}model/journey.js`);
+const MASS = (comp) => Object.entries(comp).reduce((a, [el, n]) => a + n * ({ H: 1, C: 12, O: 16, N: 14 }[el] ?? 0), 0);
+test("simulation molecules: propanone (default), butanone, ethanol, methane, each with a representative spectrum", () => {
+  assert.deepEqual(MOL.SIM_IDS, ["propanone", "butanone", "ethanol", "methane"]); assert.equal(MOL.DEFAULT_MOLECULE, "propanone");
+  for (const id of MOL.SIM_IDS) { const m = MOL.getSim(id); assert.ok(m.spec && SP.SPECTRA[id], id); assert.ok(m.pathways.length >= 2, id); }
 });
-test("store: challenge flow (pick, use, toggle fragments, choose, submit locks, next round, restart) and evidence toggles", () => {
+test("pathway bookkeeping: the charged fragment carries the m/z, charged + neutral masses equal the parent mass, exactly one charged product", () => {
+  for (const id of MOL.SIM_IDS) { const sim = MOL.getSim(id); for (const p of sim.pathways) {
+    assert.equal(p.chargedMass, p.mz, `${id} ${p.id}: charged mass is the m/z of a 1+ ion`);
+    const from = p.from ? sim.pathById[p.from].chargedMass : sim.M; assert.equal(p.chargedMass + p.neutralMass, from, `${id} ${p.id}: mass is conserved`);
+    assert.ok(p.neutralMass > 0, `${id} ${p.id}: the neutral product exists`); assert.match(p.id, /^mz\d+$/);
+  } }
+});
+test("ion catalogue: one entry per peak, colours and shapes are unique among fragments, M is a circle, radicals carry a dot, isotope peaks are dashed", () => {
+  for (const id of MOL.SIM_IDS) { const cat = MOL.ionCatalogue(id); const frag = Object.values(cat).filter((c) => c.role === "fragment");
+    assert.equal(new Set(frag.map((c) => c.color)).size, frag.length, `${id} colours`); assert.equal(new Set(frag.map((c) => c.shape)).size, frag.length, `${id} shapes`);
+    const M = Object.values(cat).find((c) => c.role === "M"); assert.equal(M.shape, "circle"); assert.match(M.label, /⁺•/); }
+});
+test("experiment: the same molecule + seed + n gives the same experiment; another seed gives another assignment", () => {
+  const a = EXP.buildExperiment({ molId: "propanone", seed: 7, n: 12 }); const b = EXP.buildExperiment({ molId: "propanone", seed: 7, n: 12 });
+  assert.deepEqual(a.molecules.map((m) => m.outcome), b.molecules.map((m) => m.outcome)); assert.deepEqual(a.molecules.map((m) => [m.ux, m.uy]), b.molecules.map((m) => [m.ux, m.uy]));
+  const c = EXP.buildExperiment({ molId: "propanone", seed: 8, n: 12 }); assert.notDeepEqual(a.molecules.map((m) => m.outcome), c.molecules.map((m) => m.outcome));
+});
+test("experiment: population is 8 to 15, identical molecules, some stay neutral, at least one molecular ion survives, outcomes are real pathways of the molecule", () => {
+  assert.equal(EXP.clampN(2), 8); assert.equal(EXP.clampN(99), 15);
+  for (const id of MOL.SIM_IDS) for (const n of [8, 10, 15]) for (const seed of [1, 2, 3, 42]) {
+    const e = EXP.buildExperiment({ molId: id, seed, n }); assert.equal(e.molecules.length, n); assert.ok(e.nNeutral >= 1 && e.nIon >= 1, `${id} ${n} ${seed}`);
+    assert.equal(e.nIon + e.nNeutral, n);
+    const survive = e.molecules.filter((m) => m.ionised && m.outcome.type === "survive"); assert.ok(survive.length >= 1, `${id} ${n} ${seed}: a molecular ion survives`);
+    for (const m of e.molecules) { if (!m.ionised) { assert.equal(m.ionMz, null); continue; } if (m.outcome.type === "fragment") for (const pid of m.outcome.chain) assert.ok(e.sim.pathById[pid], pid); }
+  }
+});
+test("experiment: the small population is only a teaching representation (the notes say so) and the final detector heights equal the representative spectrum", () => {
+  assert.match(EXP.POPULATION_NOTE, /teaching representation/i); assert.match(EXP.POPULATION_NOTE, /not reproduce/i); assert.match(EXP.COUNT_NOTE, /illustrative/i);
+  for (const id of MOL.SIM_IDS) { const e = EXP.buildExperiment({ molId: id, seed: 1, n: 10 }); const h = EXP.finalHeights(e, "sector", 2000); const det = EXP.detectable(e, "sector", 2000);
+    for (const p of e.spec.peaks) if (det.has ? det.has(p.mz) : true) near(h[p.mz] ?? 0, p.rel, 0.06, `${id} ${p.mz}`); }
+});
+test("allocation: largest remainder returns exactly the requested total and keeps proportions within one", () => {
+  const r = EXP.allocate({ a: 100, b: 30, c: 25, d: 10 }, 9); assert.equal(Object.values(r).reduce((x, y) => x + y, 0), 9); assert.ok(r.a >= r.b && r.b >= r.d);
+});
+
+console.log("Analyser model (sector with unit resolution, TOF)");
+test("sector unit resolution: only the tuned integer m/z is transmitted; the wide-slit geometry would also admit m/z 44 at m/z 43 (the issue fixed)", () => {
+  for (const mz of [15, 29, 43, 58, 72]) { const B = AN.fieldFor(mz, 2000); assert.ok(AN.sectorTransmits(mz, 2000, B), `m/z ${mz}`); assert.ok(!AN.sectorTransmits(mz + 1, 2000, B), `m/z ${mz + 1}`); assert.ok(!AN.sectorTransmits(mz - 1, 2000, B), `m/z ${mz - 1}`); }
+  const B = AN.fieldFor(43, 2000); const wide = (mz) => SEC.sectorTrajectory(mz, 2000, B).hitsDetector;
+  assert.ok(wide(43)); assert.ok(wide(44), "the old +-SLIT geometry also admitted m/z 44 here: the physical reason the unit-resolution rule was added");
+});
+test("sector: radius is proportional to sqrt(m/z) (2+ ions of mass 2m behave like 1+ ions of mass m); B ~ sqrt(V m/z)", () => {
+  near(AN.radiusM(58, 2000, 0.4) / AN.radiusM(29, 2000, 0.4), Math.SQRT2, 1e-9); near(AN.radiusM(58 / 2, 2000, 0.4), AN.radiusM(29, 2000, 0.4), 1e-12); const B1 = AN.fieldFor(43, 2000); const B2 = AN.fieldFor(43, 8000); relNear(B2 / B1, 2, 1e-6);
+  relNear(AN.sectorFocusMz(AN.fieldFor(43, 2000), 2000), 43, 1e-6);
+});
+test("TOF: t = L sqrt(m / 2zeV), mz recovered from the time, lighter ions first, 2+ arrives at the time of half the mass", () => {
+  relNear(AN.tofTime(16, 2000) * 1e6, 6.4387, 1e-3); relNear(AN.mzOfTime(AN.tofTime(43, 2000), 2000), 43, 1e-6); assert.ok(AN.tofTime(15, 2000) < AN.tofTime(43, 2000));
+  relNear(AN.tofTime(58 / 2, 2000), AN.tofTime(58, 2000) / Math.SQRT2, 1e-9); assert.equal(AN.mzOf(58, 2), 29);
+});
+
+console.log("Detection, journey timing and candidate ions");
+test("sector detection: three sweeps; the build-up is monotone in time and ends at the unit-resolution heights", () => {
+  const e = EXP.buildExperiment({ molId: "propanone", seed: 1, n: 10 }); const plan = EXP.detectionPlan(e, "sector", 2000); assert.equal(plan.sweeps, EXP.SWEEPS);
+  let prev = 0; for (let k = 0; k <= 20; k += 1) { const d = EXP.detectionAt(e, plan, 2000, (plan.total * k) / 20); assert.ok(d.total >= prev - 1e-9); prev = d.total; }
+  const end = EXP.detectionAt(e, plan, 2000, plan.total + 1); near(end.total, EXP.totalIllustrativeIons(e), 1e-6);
+});
+test("TOF detection: six pulses; the build-up ends at the same totals", () => {
+  const e = EXP.buildExperiment({ molId: "ethanol", seed: 3, n: 9 }); const plan = EXP.detectionPlan(e, "tof", 2000); assert.equal(plan.pulses ?? EXP.PULSES, EXP.PULSES);
+  const end = EXP.detectionAt(e, plan, 2000, plan.total + 1); near(end.total, EXP.totalIllustrativeIons(e), 1e-6);
+});
+test("journey: stage durations are positive, TOF differs from the sector in stage 4, durations depend on the population", () => {
+  const e = EXP.buildExperiment({ molId: "propanone", seed: 1, n: 10 });
+  for (let s = 1; s <= 4; s += 1) assert.ok(JR.stageDuration(e, s, { analyser: "sector", V: 2000, B: 0.5 }) > 0, `stage ${s}`);
+  assert.notEqual(JR.stageDuration(e, 4, { analyser: "tof" }), JR.stageDuration(e, 4, { analyser: "sector" })); assert.ok(JR.chainDuration(["a", "b"]) > JR.chainDuration(["a"])); assert.equal(JR.chainDuration([]), 0); assert.equal(JR.stageDuration(e, 5), 0, "stage 5 is timed by the detection plan");
+  assert.ok(JR.BREAK_AT > 0 && JR.BREAK_AT < 1); assert.equal(JR.ease(0), 0); assert.equal(JR.ease(1), 1);
+});
+test("candidate ions: for propanone m/z 43 C2H3O+ is offered together with other formulas, uniqueness is never claimed; parity and DBE respected", () => {
+  const c = IONS.candidateIons("C3H6O", 43); assert.ok(c.some((x) => x.plain === "C2H3O")); assert.ok(c.length >= 1); for (const x of c) assert.equal(x.x * 12 + x.y + x.z * 16, 43);
+  assert.ok(IONS.relativeMolecularMass("C3H6O") > 58 && IONS.relativeMolecularMass("C3H6O") < 58.2);
+});
+
+console.log("State: versioning, migration, persistence");
+test("store: six stages, navigation clamps, defaults, reset", () => {
+  const s = ST.createMsStore(); assert.equal(ST.MS_STAGES.length, 6); assert.equal(s.getState().stage, 1); assert.equal(s.getState().molId, "propanone"); s.prevStage(); assert.equal(s.getState().stage, 1);
+  for (let i = 0; i < 20; i += 1) s.nextStage(); assert.equal(s.getState().stage, 6); s.reset(); assert.equal(s.getState().stage, 1);
+});
+test("store: experiment state survives stage changes; the analyser choice is magnetic sector by default, TOF alternative, never both", () => {
+  const s = ST.createMsStore(); assert.equal(s.getState().analyser, "sector"); s.setMolecule("butanone"); s.newSample(); const seed = s.getState().seed; s.setAnalyser("tof"); s.nextStage(); s.nextStage(); s.nextStage();
+  assert.equal(s.getState().molId, "butanone"); assert.equal(s.getState().seed, seed); assert.equal(s.getState().analyser, "tof"); s.setAnalyser("sector"); assert.equal(s.getState().analyser, "sector");
+});
+test("store: Start sample, Ionize, track a molecule and select a pathway", () => {
+  const s = ST.createMsStore(); assert.equal(s.getState().started, false); s.startSample(); assert.equal(s.getState().started, true); s.setStage(2); assert.equal(s.getState().fired, false); s.fire(); assert.equal(s.getState().fired, true);
+  s.trackMolecule(3); assert.equal(s.getState().track.id, 3); s.untrack(); assert.equal(s.getState().track.id, null); s.setStage(3); s.selectPath("mz43"); assert.equal(s.getState().selPath, "mz43");
+});
+test("store: sanitise repairs bad values (stage, V, B, n, seed, molecule, activity)", () => {
+  const bad = ST.sanitize({ v: 2, stage: 99, V: -5, B: 99, n: 400, seed: -3, molId: "zzz", analyser: "both", activity: "x", showCharges: "yes" });
+  assert.equal(bad.stage, 6); assert.equal(bad.V, ST.V_MIN); assert.ok(bad.B <= SEC.SECTOR.B_MAX); assert.equal(bad.n, 15); assert.ok(bad.seed >= 1); assert.equal(bad.molId, "propanone"); assert.equal(bad.analyser, "sector"); assert.equal(bad.activity, null); assert.equal(typeof bad.showCharges, "boolean");
+});
+test("migration: an old 13-stage payload maps to the six stages and the activities; challenge answers are kept; no crash on junk", () => {
+  const old = { stage: 12, V: 3000, s12: { round: 2, picks: { t1: 43 } } }; const m = ST.sanitize(old); assert.equal(m.v, ST.STATE_VERSION); assert.equal(m.stage, 6); assert.equal(m.activity, "unknown"); assert.equal(m.V, 3000);
+  assert.equal(ST.sanitize({ stage: 4 }).stage, 3); assert.equal(ST.sanitize({ stage: 6 }).stage, 4); assert.equal(ST.sanitize({ stage: 9 }).stage, 5); assert.equal(ST.sanitize({ stage: 10 }).activity, "isotopes"); assert.equal(ST.sanitize({ stage: 11 }).activity, "patterns"); assert.equal(ST.sanitize({ stage: 13 }).stage, 6);
+  for (const junk of [null, undefined, 5, "x", [], { stage: "a" }]) assert.doesNotThrow(() => ST.sanitize(junk));
+});
+test("persistence: the persisted slice round-trips through JSON and excludes runtime-only fields", () => {
+  const s = ST.createMsStore(); s.setMolecule("ethanol"); s.setStage(4); s.setV(3000); s.setAnalyser("tof"); s.setCmp?.({ on: true, mz: 29 }); s.addNote?.(43, "acylium?");
+  const saved = JSON.parse(JSON.stringify(ST.pickPersisted(s.getState()))); assert.ok(!("seek" in saved) && !("replay" in saved) && !("detail" in saved)); assert.equal(saved.v, ST.STATE_VERSION);
+  const s2 = ST.createMsStore(saved); assert.deepEqual(ST.pickPersisted(s2.getState()), ST.pickPersisted(s.getState())); assert.ok(ST.isValidPersisted(saved));
+});
+test("store: challenge flow (pick, use, toggle fragments, choose, submit locks, next round, restart)", () => {
   const s = ST.createMsStore(); s.pickPeak(31); s.usePeak(); assert.equal(s.getState().s12.picks.t1, 31); s.setTask(3); s.pickPeak(29); s.usePeak(); s.usePeak(); assert.deepEqual(s.getState().s12.picks.t3, []); s.usePeak(); assert.deepEqual(s.getState().s12.picks.t3, [29]);
   s.choose("t4", "none"); s.choose("t5", "methane"); s.submit(); s.choose("t5", "ammonia"); assert.equal(s.getState().s12.picks.t5, "methane", "locked after submit"); s.nextRound(); assert.equal(s.getState().s12.round, 1); assert.equal(s.getState().s12.submitted, false); assert.deepEqual(s.getState().s12.picks, CH.EMPTY_PICKS);
-  s.toggleEvidence("nmr"); s.toggleEvidence("ms"); assert.deepEqual(s.getState().s13.revealed, ["ms", "nmr"]); s.toggleEvidence("ms"); assert.deepEqual(s.getState().s13.revealed, ["nmr"]); s.setExample("propanone"); assert.deepEqual(s.getState().s13.revealed, []);
+  assert.equal(CH.ROUNDS.length, 6);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

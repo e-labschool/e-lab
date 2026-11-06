@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import Particle from "./Particle.jsx";
 import { buildNucleusLayout } from "../lib/nucleusLayout.js";
 import { shellDistribution } from "../lib/electronShells.js";
+import { shellRadii } from "../lib/shellRadii.js";
 import { useReducedMotion } from "../lib/useReducedMotion.js";
 import { nucleusScaling } from "../lib/nucleusScaling.js";
 
@@ -15,8 +16,7 @@ import { nucleusScaling } from "../lib/nucleusScaling.js";
 // Oxygen-18 clear by even more (54 and 44 units respectively).
 // Shell radii enlarged specifically to keep the first shell clear of the
 // largest nucleus this simulation reasonably needs to render (see above).
-const SHELL_RADII = [100, 132, 164, 196];
-const SHELL_ROTATION_MS = [16000, 24000, 32000, 40000];
+const SHELL_ROTATION_MS = [16000, 24000, 32000, 40000, 48000];
 const ELECTRON_SPHERE_SIZE = 19; // ~13% smaller than the previous 22
 const SPIN_RING_MS = 2600; // fast relative to any orbit period, so it visually reads as "spin" not "orbit"
 
@@ -51,18 +51,19 @@ export default function AtomVisualizer({ protons, neutrons, electrons, highlight
   );
 
   const shells = useMemo(() => shellDistribution(electrons), [electrons]);
+  const radii = shellRadii(shells.length);
 
   return (
     <div
       className="absolute inset-0"
       data-testid="atom-visualizer"
       role="img"
-      aria-label={`Atom model with ${protons} protons, ${neutrons} neutrons, and ${electrons} electrons, distributed as ${shells.join(", ")} electrons per shell`}
+      aria-label={`Atom model with ${protons} protons, ${neutrons} neutrons, and ${electrons} electrons, with the electron arrangement ${shells.join(",") || "none"}`}
     >
       <svg viewBox="-230 -230 460 460" preserveAspectRatio="xMidYMid meet" className="block h-full w-full" data-testid="atom-svg">
         <title>Electron motion and spin are represented visually. Electrons do not literally orbit or spin like small spheres.</title>
         {shells.map((_, shellIndex) => (
-          <circle key={`guide-${shellIndex}`} cx="0" cy="0" r={SHELL_RADII[Math.min(shellIndex, SHELL_RADII.length - 1)] + (shellIndex >= SHELL_RADII.length ? (shellIndex - SHELL_RADII.length + 1) * 32 : 0)} fill="none" stroke="var(--color-indigo)" strokeWidth="0.6" strokeDasharray="2 4" opacity="0.35" />
+          <circle key={`guide-${shellIndex}`} cx="0" cy="0" r={radii[shellIndex]} fill="none" stroke="var(--color-indigo)" strokeWidth="0.6" strokeDasharray="2 4" opacity="0.35" />
         ))}
 
         {/* each shell is ONE rotating group containing all its
@@ -72,9 +73,9 @@ export default function AtomVisualizer({ protons, neutrons, electrons, highlight
             visual device for distinguishing shells here -- the
             per-electron spin ring below is). */}
         {shells.map((countOnShell, shellIndex) => {
-          const radius = SHELL_RADII[Math.min(shellIndex, SHELL_RADII.length - 1)] + (shellIndex >= SHELL_RADII.length ? (shellIndex - SHELL_RADII.length + 1) * 32 : 0);
+          const radius = radii[shellIndex];
           const angles = evenAngles(countOnShell);
-          const duration = SHELL_ROTATION_MS[Math.min(shellIndex, SHELL_ROTATION_MS.length - 1)];
+          const duration = SHELL_ROTATION_MS[shellIndex];
           return (
             <g
               key={`shell-${shellIndex}`}

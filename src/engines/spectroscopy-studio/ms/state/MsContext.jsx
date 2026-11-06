@@ -25,4 +25,10 @@ export function useMs(selector = (s) => s) {
   const store = useMsStore(); const sel = useRef(selector); sel.current = selector;
   return useSyncExternalStore(store.subscribe, () => sel.current(store.getState()), () => sel.current(store.getState()));
 }
+/** Several values at once: the selector may build a new object; it is only treated as changed when one of its fields changed (shallow compare). */
+export function useMsShallow(selector) {
+  const store = useMsStore(); const sel = useRef(selector); sel.current = selector; const last = useRef(null);
+  const get = () => { const v = sel.current(store.getState()); const l = last.current; if (l && Object.keys(v).length === Object.keys(l).length && Object.keys(v).every((k) => Object.is(v[k], l[k]))) return l; last.current = v; return v; };
+  return useSyncExternalStore(store.subscribe, get, get);
+}
 export const useMsActions = useMsStore;
