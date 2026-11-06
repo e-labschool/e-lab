@@ -40,10 +40,12 @@ import "./simulation-controls.css";
 // read `useSimulationPresentation()` and lay itself out to genuinely fit
 // (Ionization Energy Explorer is the reference implementation) never
 // triggers that fallback at normal desktop/laptop sizes.
-export default function InteractiveFrame({ title, subtitle, children, compact = false, standalone = false, dashboard = false }) {
+export default function InteractiveFrame({ title, subtitle, children, compact = false, standalone = false, dashboard = false, simulationId: simulationIdProp = null }) {
   const frameRef = useRef(null);
   const { isFullscreen } = useFullscreen(frameRef);
-  const simulationId = getSimulationIdForTitle(title);
+  // An engine whose on-screen title differs from its registry label passes `simulationId` explicitly; otherwise it is
+  // resolved from the title. Either way "Open in New Tab" always has its target.
+  const simulationId = simulationIdProp ?? getSimulationIdForTitle(title);
   const isViewport = isFullscreen || standalone;
   const showFullHeader = !compact || isViewport;
   const mode = isFullscreen ? "fullscreen" : standalone ? "standalone" : "embedded";
@@ -68,7 +70,7 @@ export default function InteractiveFrame({ title, subtitle, children, compact = 
 
   return (
     <SimulationPresentationProvider
-      value={{ mode, isEmbedded: !isViewport, isViewport, isFullscreen, isStandalone: mode === "standalone" }}
+      value={{ mode, isEmbedded: !isViewport, isViewport, isFullscreen, isStandalone: mode === "standalone", frameRef, simulationId }}
     >
       <div
         ref={frameRef}

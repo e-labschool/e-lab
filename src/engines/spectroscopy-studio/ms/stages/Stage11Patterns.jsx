@@ -55,7 +55,7 @@ export default function Stage11Patterns() {
     )}>
       <p data-testid="s11-text">One molecule has <b>one</b> combination of isotopes. The sample contains all combinations, so the molecular ion shows a <b>cluster</b> of peaks.</p>
       <table className="ms-table" data-testid="pattern-table">
-        <thead><tr><th scope="col">Combination</th><th scope="col">m/z</th><th scope="col">{ints ? "Relative intensity" : "Relative intensity (%)"}</th></tr></thead>
+        <thead><tr><th scope="col">Combination</th><th scope="col">m/z</th><th scope="col">{ints ? "Ratio (whole numbers)" : "Relative intensity (%)"}</th></tr></thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.nominal} className={r.nominal === sel ? "is-sel" : ""} data-testid={`pattern-row-${r.nominal}`}>
@@ -65,6 +65,7 @@ export default function Stage11Patterns() {
         </tbody>
       </table>
       <p className="ms-ratio" data-testid="pattern-ratio">Pattern: <b>{ratioText}</b>{selRow ? ` · m/z ${selRow.nominal}: ${comboLabel(el, selRow.combo)}` : ""}</p>
+      {ints && <p className="ss-note" data-testid="s11-scale">The graph scales the tallest peak to 100 %, so a {ints.join(" : ")} ratio is drawn as bars of {pat.peaks.map((q) => Math.round(q.rel)).join(", ")} %. The ratio, not the bar height in %, is the abundance ratio.</p>}
       <p className="ss-note" data-testid="s11-note">Simplified nominal-mass patterns: fragmentation and other isotopes (¹³C) add extra small peaks. {el === "Br" ? "One Br gives M : M+2 ≈ 1 : 1." : n === 1 ? "One Cl gives M : M+2 ≈ 3 : 1." : "Compare with the one-chlorine pattern of CH₃Cl (3 : 1)."}</p>
     </MsFrame>
   );

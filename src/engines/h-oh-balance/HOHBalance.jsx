@@ -112,14 +112,14 @@ export default function HOHBalance({ compact = false, standalone = false }) {
 
   const body = (
     <div
-      className="mx-auto flex w-full flex-col gap-4 rounded-xl border p-5 sm:p-6"
+      className="@container mx-auto flex w-full flex-col gap-4 rounded-xl border p-5 sm:p-6"
       style={{ maxWidth: 1000, borderColor: PALETTE.border, background: PALETTE.bg }}
     >
       <p className="text-center text-sm font-semibold" style={{ color: PALETTE.textPrimary }}>
         H⁺&ndash;OH⁻ Balance in Water at 25&deg;C
       </p>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(220px,0.9fr)_minmax(300px,1.3fr)_minmax(200px,0.8fr)] md:gap-5">
+      <div className="grid grid-cols-1 gap-4 @[48rem]:grid-cols-[minmax(220px,0.9fr)_minmax(300px,1.3fr)_minmax(200px,0.8fr)] @[48rem]:gap-5">
         <div className="flex items-center justify-center">
           <DropperBeaker
             fallingReagent={fallingReagent}
@@ -145,8 +145,6 @@ export default function HOHBalance({ compact = false, standalone = false }) {
       <StatusStrip statusText={statusText} />
     </div>
   );
-
-  if (compact) return body;
 
   return (
     <InteractiveFrame title="H+ - OH- Balance in Water" subtitle="Add HCl or NaOH and watch [H+], [OH-] and pH move together." compact={compact} standalone={standalone}>

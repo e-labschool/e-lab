@@ -150,6 +150,9 @@
 .vx-seg-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .vx-seg-btn[aria-checked="true"], .vx-seg-btn[aria-selected="true"] { background: var(--vx-accent-soft); border-color: var(--vx-accent); color: var(--vx-ink); box-shadow: inset 0 0 0 1px var(--vx-accent); }
 .vx-seg--big .vx-seg-btn { min-height: 34px; padding: 0 clamp(10px, 2.2vw, 22px); }
+/* the Electron-domain / Molecular geometry switch is wider than a 354 px viewer column on tablets: let it shrink and wrap instead of being clipped */
+.vx-seg--big { max-width: 100%; min-width: 0; }
+.vx-seg--big .vx-seg-btn { min-width: 0; flex: 1 1 auto; white-space: normal; text-align: center; line-height: 1.15; }
 .vx-seg--small { align-self: stretch; border-radius: 9px; display: grid; grid-template-columns: 1fr 1fr; }
 .vx-seg--small .vx-seg-btn { border-radius: 7px; min-height: 26px; padding: 0 6px; font-size: var(--sd-fs); }
 

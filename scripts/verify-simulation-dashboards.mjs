@@ -194,7 +194,7 @@ for (const [w, h] of process.env.GL_ONLY ? JSON.parse(process.env.GL_ONLY) : [..
   const p = await b.newPage({ viewport: { width: 1440, height: 900 } });
   await p.goto(`${base}/simulation/gas-laws-explorer`);
   await p.waitForSelector('[data-testid="workspace"]'); await p.waitForTimeout(600);
-  await p.click('[aria-label="Enter full screen"]'); await p.waitForTimeout(900);
+  await p.click('[aria-label="Fullscreen"]'); await p.waitForTimeout(900);
   const fs_ = await p.evaluate(() => !!document.fullscreenElement);
   if (!fs_) console.log("note: headless Chromium did not enter fullscreen (requestFullscreen refused); fullscreen path not exercised");
   else await glChecks(p, "gl-fullscreen-1440x900", { checkDrag: false });

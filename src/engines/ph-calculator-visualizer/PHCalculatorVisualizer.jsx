@@ -71,8 +71,6 @@ export default function PHCalculatorVisualizer({ compact = false, standalone = f
     </div>
   );
 
-  if (compact) return body;
-
   return (
     <InteractiveFrame title="pH Calculator & Visualizer" subtitle="Drag the marker to link [H3O+] and pH." compact={compact} standalone={standalone}>
       {body}

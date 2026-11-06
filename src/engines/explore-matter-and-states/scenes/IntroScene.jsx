@@ -59,7 +59,7 @@ export default function IntroScene({ selectedExample, onSelectExample }) {
 
       {selected && !isMatter && (
         <p className="text-xs text-[var(--color-ink-faint)]">
-          {selected.label} is included here for contrast \u2014 its own visual test is in the next section.
+          {selected.label} is included here for contrast — its own visual test is in the next section.
         </p>
       )}
     </div>

@@ -43,12 +43,11 @@ export default function ElectronConfigurationExplorer({ compact = false, standal
     </div>
   );
 
-  if (compact) return body;
-
   return (
     <InteractiveFrame
       title="Electron Configuration Explorer"
       subtitle="Ground-state configurations for all 118 elements"
+      compact={compact}
       standalone={standalone}
     >
       {body}

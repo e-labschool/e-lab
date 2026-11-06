@@ -45,7 +45,7 @@ export default function MsSpectrum({
       {xt.map((v) => <g key={`tx${v}`}><line x1={sx(v)} x2={sx(v)} y1={m.t + ph} y2={m.t + ph + 4} className="ss-axis" /><text x={sx(v)} y={m.t + ph + 17} textAnchor="middle" className="ss-tick">{v}</text></g>)}
       <rect x={m.l} y={m.t} width={pw} height={ph} fill="none" className="ss-axis" />
       <text x={m.l + pw / 2} y={H - 3} textAnchor="middle" className="ss-axis-label">m/z</text>
-      <text transform={`translate(11 ${m.t + ph / 2}) rotate(-90)`} textAnchor="middle" className="ss-axis-label">{narrow ? "Relative intensity (%)" : yLabel}</text>
+      <text transform={`translate(11 ${m.t + ph / 2}) rotate(-90)`} textAnchor="middle" className="ss-axis-label">{yLabel}</text>
       {sel.length > 0 && sel.filter((v) => peaks.some((p) => p.mz === v)).map((v) => <line key={`cur${v}`} x1={sx(v)} x2={sx(v)} y1={m.t} y2={m.t + ph} className="ms-cursor" />)}
       {sorted.map((pk) => {
         const h = heights ? heights[pk.mz] ?? 0 : pk.rel; const x = sx(pk.mz); const y = sy(h);

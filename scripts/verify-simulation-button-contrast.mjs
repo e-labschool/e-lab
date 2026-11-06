@@ -265,7 +265,7 @@ async function runPage(browser, { sim, variant, theme, size: [W, H] }) {
     await p.goto(url, { waitUntil: "load" });
     await p.waitForSelector("button", { timeout: 30000 }); await sleep(1300);
     if (variant === "fullscreen") {
-      const fsBtn = p.locator('button[aria-label="Enter full screen"]').first();
+      const fsBtn = p.locator('button[aria-label="Fullscreen"]').first();
       if (!(await fsBtn.count())) { warnings.push({ where: tag, control: "Full Screen", what: "no Enter full screen button found" }); await context.close(); return; }
       await fsBtn.click(); await sleep(900);
       await p.mouse.move(1, H - 2);   // park the real pointer: it would otherwise leave the control under it in a real :hover state

@@ -13,15 +13,15 @@ const f2 = (x) => x.toFixed(2);
 export default function Stage10Isotopes() {
   const a = useMsActions(); const p35v = useMs((s) => s.s10.p35);
   const grow = useTransition({ id: "ms-s10", target: 1, seconds: 3, from: 0 });
-  const s = chlorineSample(p35v); const top = Math.max(s.p35, s.p37, 1e-9);
+  const s = chlorineSample(p35v);
   const peaks = [];
-  if (s.p35 > 0) peaks.push({ mz: 35, rel: (100 * s.p35) / top, label: "³⁵Cl⁺", role: "fragment" });
-  if (s.p37 > 0) peaks.push({ mz: 37, rel: (100 * s.p37) / top, label: "³⁷Cl⁺", role: "fragment" });
+  if (s.p35 > 0) peaks.push({ mz: 35, rel: s.p35, label: "³⁵Cl⁺", role: "fragment" });
+  if (s.p37 > 0) peaks.push({ mz: 37, rel: s.p37, label: "³⁷Cl⁺", role: "fragment" });
   const heights = Object.fromEntries(peaks.map((p) => [p.mz, p.rel * grow]));
   const viz = (
     <div className="ms-split" data-testid="isotope-view" data-p35={p35v} data-ar={s.arMassNumbers.toFixed(3)}>
       <div className="ms-split-a"><Scene>{({ w, h }) => <IsotopeScene w={w} h={h} p35={p35v} />}</Scene></div>
-      <div className="ms-split-b"><Scene>{({ w, h }) => <MsSpectrum width={w} height={h} peaks={peaks.length ? peaks : [{ mz: 35, rel: 0, label: "", role: "fragment" }]} heights={heights} xRange={[33, 39]} labels="ion" colors={{ 35: COL35, 37: COL37 }} colorBy="plain" compact ariaLabel="Mass spectrum of Cl+ ions of a chlorine sample" testId="isotope-spectrum" />}</Scene></div>
+      <div className="ms-split-b"><Scene>{({ w, h }) => <MsSpectrum width={w} height={h} peaks={peaks.length ? peaks : [{ mz: 35, rel: 0, label: "", role: "fragment" }]} heights={heights} xRange={[33, 39]} labels="ion" colors={{ 35: COL35, 37: COL37 }} colorBy="plain" compact yLabel="Abundance (%)" ariaLabel="Mass spectrum of Cl+ ions of a chlorine sample" testId="isotope-spectrum" />}</Scene></div>
     </div>
   );
   const strip = (

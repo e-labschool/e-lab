@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { RotateCcw } from "lucide-react";
 import InteractiveFrame from "../../components/interactive-shell/InteractiveFrame.jsx";
 import { useSimulationPresentation } from "../../components/interactive-shell/SimulationPresentation.js";
@@ -120,6 +120,22 @@ function IonizationEnergyWorkspace(props) {
     suppliedEnergy, setSuppliedEnergy, handleSupply, canSupply, feedback, removalOrder,
   } = props;
   const { isViewport } = useSimulationPresentation();
+  // Viewport (fullscreen / new tab) layout is chosen from the workspace's OWN measured box, never from the window:
+  //   fit    wide and tall enough (>= 768 x 600): 3 columns + graph band that exactly fill the box
+  //   scroll wide but short (e.g. 125 % / 150 % zoom on a laptop): same 3 columns at natural height, the frame scrolls
+  //   stack  narrow (phone, narrow window): one column, the frame scrolls
+  // so the graph band can never sit on top of the energy controls and the atom is never squeezed to zero width.
+  const boxRef = useRef(null);
+  const [fitMode, setFitMode] = useState("fit");
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return undefined;
+    const measure = () => setFitMode(el.clientWidth < 768 ? "stack" : el.clientHeight < 600 ? "scroll" : "fit");
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [isViewport]);
 
   const elementSelector = (
     <div>
@@ -208,13 +224,14 @@ function IonizationEnergyWorkspace(props) {
   // unbounded height, per the brief) -- both rows use `minmax(0, ...)` so
   // they can actually SHRINK instead of overflowing.
   return (
-    <div className="grid h-full min-h-0 grid-rows-[minmax(0,1fr)_minmax(150px,220px)] gap-2">
-      <div className="grid min-h-0 grid-cols-[190px_minmax(0,1fr)_260px] grid-rows-[minmax(0,1fr)] gap-2">
+    <div ref={boxRef} className="h-full min-h-0">
+    <div className={fitMode === "fit" ? "grid h-full min-h-0 grid-rows-[minmax(0,1fr)_minmax(150px,220px)] gap-2" : "grid grid-cols-1 gap-2"}>
+      <div className={fitMode === "fit" ? "grid min-h-0 grid-cols-[190px_minmax(0,1fr)_260px] grid-rows-[minmax(0,1fr)] gap-2" : fitMode === "scroll" ? "grid grid-cols-[190px_minmax(0,1fr)_260px] items-start gap-2" : "grid grid-cols-1 gap-2"}>
         {/* LEFT: element selector (auto) / IE table (flexible, internal
             scroll) / reset (auto) -- reset can never be pushed off-screen
             because it's its own `auto` grid row, not just "last in a
             column that might overflow". */}
-        <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] gap-2">
+        <div className={fitMode === "fit" ? "grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] gap-2" : "grid gap-2"}>
           {elementSelector}
           <IonizationDataTable element={element} values={values} currentStep={atomState.electronsRemoved + 1} />
           {resetButton}
@@ -225,22 +242,23 @@ function IonizationEnergyWorkspace(props) {
             this panel's width AND height (min of the two), so a wide-but-
             short viewport panel can never blow the atom up past what the
             available height allows -- see AtomVisualization.jsx. */}
-        <div className="flex min-h-0 flex-col rounded-md border border-[#1c2740] bg-[#070b14] p-2.5">
+        <div className={"flex flex-col rounded-md border border-[#1c2740] bg-[#070b14] p-2.5 " + (fitMode === "fit" ? "min-h-0" : fitMode === "scroll" ? "h-[360px]" : "aspect-square min-h-[300px]")}>
           {atomPanel}
         </div>
 
         {/* RIGHT: energy controls (auto) / configuration + orbital
             diagram (flexible, internally scrollable only if a genuinely
             oversized orbital diagram demands it). */}
-        <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-2">
+        <div className={fitMode === "fit" ? "grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-2" : "grid gap-2"}>
           {energyControl}
           {configPanel}
         </div>
       </div>
 
       {/* BOTTOM: compact landscape graph band -- a bounded fraction of
-          the workspace height, never full intrinsic height. */}
-      <div className="min-h-0">{graph}</div>
+          the workspace height in fit mode, a fixed readable height otherwise. */}
+      <div className={fitMode === "fit" ? "min-h-0" : "min-h-[260px]"}>{graph}</div>
+    </div>
     </div>
   );
 }

@@ -112,7 +112,7 @@ export default function ChocolateWrappingRate({ compact = false, standalone = fa
   const maxValueForSeries = seriesId === "chocolates" ? initialChocolates : seriesId === "wrappers" ? initialWrappers : initialWrappers;
 
   return (
-    <InteractiveFrame title="Chocolate Wrapping \u2014 Understanding Rate" compact={compact} standalone={standalone}>
+    <InteractiveFrame title={"Chocolate Wrapping \u2014 Understanding Rate"} compact={compact} standalone={standalone}>
       <div className="mx-auto w-full" style={{ maxWidth: 1020 }}>
         <p className="text-center text-sm text-[var(--color-ink-soft)]">
           {"Choose a wrapping rule and watch how chocolates and wrappers are used to make wrapped packs. Notice how the rate changes with time."}
@@ -171,7 +171,7 @@ export default function ChocolateWrappingRate({ compact = false, standalone = fa
         </div>
 
         {/* ONE continuous work-table -- no separate bordered cards per stage */}
-        <div className="mt-4 flex items-center justify-between gap-2 rounded-xl bg-[var(--color-paper-raised)] px-4 py-4 sm:gap-4">
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-x-2 gap-y-4 rounded-xl bg-[var(--color-paper-raised)] px-4 py-4 sm:gap-x-4">
           <SupplyPile count={state.chocolates} Icon={ChocolateIcon} label="Chocolates" total={initialChocolates} />
           <span className="text-lg font-bold text-[var(--color-ink-faint)]" aria-hidden="true">+</span>
           <SupplyPile count={state.wrappers} Icon={WrapperIcon} label="Wrappers" total={initialWrappers} />
@@ -250,7 +250,7 @@ function SupplyPile({ count, total, Icon, label }) {
   const rendered = Math.min(count, MAX_RENDERED_PIECES);
   const overflow = count - rendered;
   return (
-    <div className="flex flex-1 flex-col items-center">
+    <div className="flex min-w-[7rem] flex-1 basis-[7rem] flex-col items-center">
       <div className="flex min-h-[26px] flex-wrap justify-center gap-0.5" role="img" aria-label={`${count} ${label.toLowerCase()}`}>
         {Array.from({ length: rendered }).map((_, i) => (
           <Icon key={i} size={18} />

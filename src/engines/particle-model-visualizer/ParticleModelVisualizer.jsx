@@ -61,13 +61,13 @@ export default function ParticleModelVisualizer({ compact = false, standalone = 
     </div>
   );
 
-  if (compact) return body;
-
   return (
     <InteractiveFrame
       title="Particle Model of Solids, Liquids & Gases"
       subtitle="Switch state to see how particle arrangement, movement and properties change together."
+      compact={compact}
       standalone={standalone}
+      simulationId="particle-model-visualizer"
     >
       {body}
     </InteractiveFrame>

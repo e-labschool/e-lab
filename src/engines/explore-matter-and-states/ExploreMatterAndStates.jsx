@@ -156,8 +156,6 @@ export default function ExploreMatterAndStates({ compact = false, standalone = f
     </div>
   );
 
-  if (compact) return body;
-
   return (
     <InteractiveFrame title="Explore Matter & States" subtitle="Teacher-led visual exploration" compact={compact} standalone={standalone}>
       {body}

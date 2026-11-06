@@ -35,6 +35,8 @@ const actionButtonCls = "sim-toolbar-btn";
 export default function SimulationActions({ targetRef, simulationId, iconOnly = false }) {
   const labelCls = iconOnly ? "hidden" : "hidden sm:inline";
   const { isFullscreen, isSupported, toggle } = useFullscreen(targetRef);
+  // `isSupported` is true in every browser: without the element Fullscreen API useFullscreen falls back to a CSS
+  // fullscreen (see useFullscreen.js), so the control is never hidden.
 
   return (
     <div className="flex shrink-0 items-center gap-1.5">
@@ -42,9 +44,10 @@ export default function SimulationActions({ targetRef, simulationId, iconOnly = 
         <button
           type="button"
           onClick={() => openSimulationInNewTab(simulationId)}
-          aria-label="Open simulation in new tab"
-          title="Open in new tab"
+          aria-label="Open in New Tab"
+          title="Open in New Tab"
           className={actionButtonCls}
+          data-testid="sim-new-tab"
         >
           <ExternalLink size={14} aria-hidden="true" />
           <span className={labelCls}>Open in New Tab</span>
@@ -54,12 +57,13 @@ export default function SimulationActions({ targetRef, simulationId, iconOnly = 
         <button
           type="button"
           onClick={toggle}
-          aria-label={isFullscreen ? "Exit full screen" : "Enter full screen"}
-          title={isFullscreen ? "Exit full screen" : "Full screen"}
+          aria-label={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+          title={isFullscreen ? "Exit fullscreen (Esc)" : "Fullscreen"}
+          data-testid="sim-fullscreen"
           className={actionButtonCls}
         >
           {isFullscreen ? <Minimize size={14} aria-hidden="true" /> : <Maximize size={14} aria-hidden="true" />}
-          <span className={labelCls}>{isFullscreen ? "Exit Full Screen" : "Full Screen"}</span>
+          <span className={labelCls}>{isFullscreen ? "Exit Fullscreen" : "Fullscreen"}</span>
         </button>
       )}
     </div>

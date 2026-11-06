@@ -1213,3 +1213,15 @@
       0.01ms !important;
   }
 }
+
+/* Shell viewport mode (fullscreen / new tab): the shared frame already shows the title row, and the panel uses the
+   whole box instead of the centred embedded card. */
+.titration-sim.is-viewport {
+  max-width: none;
+  min-height: 100%;
+  border-radius: 0;
+  border-width: 0;
+}
+.titration-sim.is-viewport .titration-title h2 {
+  display: none;
+}

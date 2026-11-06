@@ -167,7 +167,8 @@ await test("stage 9: methane spectrum, M+. = base peak, three terms, clicking a 
   await click(`${T("methane-spectrum")} ${T("peak-16")}`); assert.match(txt(T("info-formula")), /CH₄⁺•/); assert.match(txt(T("info-origin")), /Molecular ion/); assert.equal($(`${T("methane-spectrum")} ${T("peak-16")}`).getAttribute("data-selected"), "1");
 });
 await test("stage 10: abundance slider updates the peaks and Ar live (75:25 -> 35.50); preset natural; mass numbers vs isotopic masses", async () => {
-  await go(10); await until(() => Number($(`${T("isotope-spectrum")} ${T("peak-35")}`)?.getAttribute("data-rel")) > 90, 6000, "peaks grown");
+  await go(10); await until(() => Number($(`${T("isotope-spectrum")} ${T("peak-35")}`)?.getAttribute("data-rel")) > 74.9, 6000, "peaks grown"); await until(() => Math.abs(Number($(`${T("isotope-spectrum")} ${T("peak-37")}`)?.getAttribute("data-rel")) - 25) < 0.1, 6000, "37 grown");
+  { const r = (mz) => Number($(`${T("isotope-spectrum")} ${T("peak-" + mz)}`).getAttribute("data-rel")); assert.ok(Math.abs(r(35) - 75) < 0.1 && Math.abs(r(37) - 25) < 0.1, "bars equal the abundances at 75:25"); }
   assert.match(txt(T("readout-ar")), /35\.50/); assert.match(txt(T("ar-equation")), /\(35 × 75 \+ 37 × 25\) \/ 100 = 35\.50/);
   assert.match(stageTxt(), /17 protons/); assert.match(txt(T("s10-note")), /mass numbers/i);
   await setRange(T("abundance-slider"), 50); await tick(100); assert.match(txt(T("readout-ar")), /36\.00/);

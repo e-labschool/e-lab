@@ -3,6 +3,7 @@ import Particle from "./Particle.jsx";
 import { buildNucleusLayout } from "../lib/nucleusLayout.js";
 import { shellDistribution } from "../lib/electronShells.js";
 import { useReducedMotion } from "../lib/useReducedMotion.js";
+import { nucleusScaling } from "../lib/nucleusScaling.js";
 
 // Nucleus positions come UNCHANGED from the already-verified, previously
 // bug-fixed buildNucleusLayout() -- never touched here. Only a scale
@@ -12,9 +13,6 @@ import { useReducedMotion } from "../lib/useReducedMotion.js";
 // case) has its outer edge at ~74 units from centre, comfortably clear
 // of the first shell at radius 100 (a ~26-unit gap) -- Carbon-12 and
 // Oxygen-18 clear by even more (54 and 44 units respectively).
-const NUCLEUS_SCALE = 1.3;
-const NUCLEON_SPHERE_SIZE = 26; // ~13% smaller than the previous 30
-
 // Shell radii enlarged specifically to keep the first shell clear of the
 // largest nucleus this simulation reasonably needs to render (see above).
 const SHELL_RADII = [100, 132, 164, 196];
@@ -38,33 +36,30 @@ function spinFor(index, count) {
   return index < count / 2 ? "cw" : "ccw";
 }
 
-// `fillHeight`: purely a sizing switch, no scientific/geometric change.
-// Default (embedded Learn-page layout) sizes from WIDTH only, exactly as
-// before. When true (viewport/fullscreen/standalone mode, where the
-// parent stage has a real bounded height via CSS Grid `minmax(0,1fr)`),
-// the square instead sizes from `min(availableWidth, availableHeight)` --
-// `h-full` lets the aspect-ratio box grow to the parent's full height,
-// `max-w-full` caps it back down if that would overflow the column's
-// width, so the SVG (whose own viewBox already scales everything
-// proportionally) always fits both dimensions without ever exceeding
-// either one. No transform/zoom scaling involved.
-export default function AtomVisualizer({ protons, neutrons, electrons, highlightZ, highlightA, highlightCharge, nucleusWarning, fillHeight = false }) {
+// SIZING: the visualiser fills whatever box its parent gives it (the parent
+// must be `position: relative` with a definite size) and the SVG's own
+// viewBox (preserveAspectRatio "meet") scales the whole atom uniformly to the
+// smaller of that box's width and height -- so it always fits and can never
+// grow past its area onto the controls. No transform/zoom scaling involved.
+export default function AtomVisualizer({ protons, neutrons, electrons, highlightZ, highlightA, highlightCharge, nucleusWarning }) {
   const reducedMotion = useReducedMotion();
 
+  const { scale: nucleusScale, sphere: nucleonSize } = useMemo(() => nucleusScaling(protons, neutrons), [protons, neutrons]);
   const nucleusItems = useMemo(
-    () => buildNucleusLayout(protons, neutrons).map((item) => ({ ...item, x: item.x * NUCLEUS_SCALE, y: item.y * NUCLEUS_SCALE })),
-    [protons, neutrons]
+    () => buildNucleusLayout(protons, neutrons).map((item) => ({ ...item, x: item.x * nucleusScale, y: item.y * nucleusScale })),
+    [protons, neutrons, nucleusScale]
   );
 
   const shells = useMemo(() => shellDistribution(electrons), [electrons]);
 
   return (
     <div
-      className={"relative mx-auto aspect-square " + (fillHeight ? "h-full max-h-full w-auto max-w-full" : "w-full max-w-[620px]")}
+      className="absolute inset-0"
+      data-testid="atom-visualizer"
       role="img"
       aria-label={`Atom model with ${protons} protons, ${neutrons} neutrons, and ${electrons} electrons, distributed as ${shells.join(", ")} electrons per shell`}
     >
-      <svg viewBox="-230 -230 460 460" className="h-full w-full overflow-visible">
+      <svg viewBox="-230 -230 460 460" preserveAspectRatio="xMidYMid meet" className="block h-full w-full" data-testid="atom-svg">
         <title>Electron motion and spin are represented visually. Electrons do not literally orbit or spin like small spheres.</title>
         {shells.map((_, shellIndex) => (
           <circle key={`guide-${shellIndex}`} cx="0" cy="0" r={SHELL_RADII[Math.min(shellIndex, SHELL_RADII.length - 1)] + (shellIndex >= SHELL_RADII.length ? (shellIndex - SHELL_RADII.length + 1) * 32 : 0)} fill="none" stroke="var(--color-indigo)" strokeWidth="0.6" strokeDasharray="2 4" opacity="0.35" />
@@ -122,8 +117,8 @@ export default function AtomVisualizer({ protons, neutrons, electrons, highlight
         {/* nucleus */}
         <g className={[highlightZ || highlightA ? "atom-highlight-pulse" : "", nucleusWarning ? (reducedMotion ? "atom-boundary-highlight" : "atom-nucleus-wobble") : ""].filter(Boolean).join(" ") || undefined}>
           {nucleusItems.map((item) => (
-            <foreignObject key={item.key} x={item.x - NUCLEON_SPHERE_SIZE / 2} y={item.y - NUCLEON_SPHERE_SIZE / 2} width={NUCLEON_SPHERE_SIZE} height={NUCLEON_SPHERE_SIZE}>
-              <Particle type={item.type} size={NUCLEON_SPHERE_SIZE} showSymbol />
+            <foreignObject key={item.key} x={item.x - nucleonSize / 2} y={item.y - nucleonSize / 2} width={nucleonSize} height={nucleonSize}>
+              <Particle type={item.type} size={nucleonSize} showSymbol={nucleonSize >= 16} />
             </foreignObject>
           ))}
         </g>

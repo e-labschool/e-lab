@@ -27,7 +27,8 @@
   max-height: 100%;
   overflow: hidden;
 }
-.sd-frame:fullscreen {
+.sd-frame:fullscreen,
+.sd-frame[data-elab-fullscreen="css"] {
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
   width: 100vw;
@@ -42,7 +43,8 @@
   min-width: 0;
 }
 .sd-frame--viewport > .sd-frame-body,
-.sd-frame:fullscreen > .sd-frame-body {
+.sd-frame:fullscreen > .sd-frame-body,
+.sd-frame[data-elab-fullscreen="css"] > .sd-frame-body {
   overflow: hidden;
 }
 .sd-frame-foot {
@@ -52,7 +54,8 @@
   line-height: 1.2;
 }
 .sd-frame--viewport > .sd-frame-foot,
-.sd-frame:fullscreen > .sd-frame-foot {
+.sd-frame:fullscreen > .sd-frame-foot,
+.sd-frame[data-elab-fullscreen="css"] > .sd-frame-foot {
   padding-bottom: 1px;
 }
 

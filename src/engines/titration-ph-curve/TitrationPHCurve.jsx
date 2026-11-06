@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import InteractiveFrame from "../../components/interactive-shell/InteractiveFrame.jsx";
+import { useSimulationPresentation } from "../../components/interactive-shell/SimulationPresentation.js";
 import "./TitrationPHCurve.css";
 import { COPYRIGHT_TEXT_COMPACT } from "../../data/copyright.js";
 
@@ -415,7 +417,8 @@ function formatPH(value) {
   return value.toFixed(2);
 }
 
-export default function TitrationPHCurve() {
+function TitrationPHCurveBody() {
+  const { isViewport } = useSimulationPresentation();
   const [flaskReagent, setFlaskReagent] =
     useState("NaOH");
 
@@ -921,7 +924,7 @@ export default function TitrationPHCurve() {
       : "liquid-base";
 
   return (
-    <section className="titration-sim sim-surface-dark">
+    <section className={"titration-sim sim-surface-dark" + (isViewport ? " is-viewport" : "")}>
       <header className="titration-title">
         <div>
           <h2>
@@ -1730,5 +1733,16 @@ export default function TitrationPHCurve() {
 
       <p className="titration-copyright">{COPYRIGHT_TEXT_COMPACT}</p>
     </section>
+  );
+}
+
+// Wrapped in the shared simulation shell so this engine gets the same Fullscreen / Open in New Tab controls, CSS
+// fullscreen fallback and standalone/fullscreen viewport box as every other simulation. The shell's own title row is used
+// in fullscreen / new-tab mode (the engine hides its duplicate heading then, see `.is-viewport` in the stylesheet).
+export default function TitrationPHCurve({ compact = false, standalone = false }) {
+  return (
+    <InteractiveFrame title="pH Curve & Titration Visualizer" subtitle={"A numerical acid/base equilibrium solver \u2014 build real titration curves for strong and weak monoprotic systems"} compact={compact} standalone={standalone}>
+      <TitrationPHCurveBody />
+    </InteractiveFrame>
   );
 }

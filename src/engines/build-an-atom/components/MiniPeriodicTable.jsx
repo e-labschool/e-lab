@@ -19,7 +19,7 @@ function cellPosition(el) {
   return { gridColumn: el.group, gridRow: el.period };
 }
 
-export default function MiniPeriodicTable({ currentAtomicNumber, onSelectElement }) {
+export default function MiniPeriodicTable({ currentAtomicNumber, onSelectElement, maxAtomicNumber = 118 }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -39,15 +39,18 @@ export default function MiniPeriodicTable({ currentAtomicNumber, onSelectElement
           <div className="grid min-w-[640px] gap-1" style={{ gridTemplateColumns: "repeat(18, minmax(0, 1fr))" }} role="grid" aria-label="Periodic table — click an element to set the proton count">
             {allElements.map((el) => {
               const isCurrent = el.atomicNumber === currentAtomicNumber;
+              const outOfRange = el.atomicNumber > maxAtomicNumber;
               return (
                 <button
                   key={el.atomicNumber}
                   type="button"
                   onClick={() => onSelectElement(el.atomicNumber)}
+                  disabled={outOfRange}
+                  title={outOfRange ? `Beyond this simulation's range (Z \u2264 ${maxAtomicNumber})` : undefined}
                   style={{ ...cellPosition(el), backgroundColor: isCurrent ? BLOCK_COLOR[el.block] : "var(--color-paper)", borderColor: isCurrent ? BLOCK_COLOR[el.block] : "var(--color-line)" }}
                   aria-pressed={isCurrent}
                   aria-label={`${el.name}, atomic number ${el.atomicNumber}`}
-                  className={`flex aspect-square flex-col items-center justify-center rounded-md border text-[9px] transition-transform hover:z-10 hover:scale-110 ${isCurrent ? "text-white shadow-sm" : "text-[var(--color-ink)]"}`}
+                  className={`flex aspect-square flex-col items-center justify-center rounded-md border text-[9px] transition-transform hover:z-10 hover:scale-110 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:scale-100 ${isCurrent ? "text-white shadow-sm" : "text-[var(--color-ink)]"}`}
                 >
                   <span className="leading-none opacity-70">{el.atomicNumber}</span>
                   <span className="text-[12px] font-bold leading-tight">{el.symbol}</span>

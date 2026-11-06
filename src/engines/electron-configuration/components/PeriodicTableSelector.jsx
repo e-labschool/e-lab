@@ -39,8 +39,11 @@ export default function PeriodicTableSelector({ selectedAtomicNumber, onSelect, 
         </div>
       </div>
 
+      {/* The scroller is this wrapper, not the grid: a grid that is both overflow-x:auto and min-width kept its full
+          width and made the whole page scroll sideways on a phone. Now only the table scrolls, inside its own box. */}
+      <div className="max-w-full overflow-x-auto">
       <div
-        className={`grid gap-1 overflow-x-auto ${compact ? "min-w-[560px]" : "min-w-[720px]"}`}
+        className={`grid gap-1 ${compact ? "min-w-[560px]" : "min-w-[720px]"}`}
         style={{ gridTemplateColumns: "repeat(18, minmax(0, 1fr))" }}
         role="grid"
         aria-label="Periodic table element selector"
@@ -73,6 +76,7 @@ export default function PeriodicTableSelector({ selectedAtomicNumber, onSelect, 
             </button>
           );
         })}
+      </div>
       </div>
     </div>
   );

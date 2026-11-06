@@ -214,3 +214,26 @@
   background-color: var(--sim-btn-accent);
   color: var(--sim-btn-accent-ink);
 }
+
+/* ---- CSS fullscreen fallback (useFullscreen.js) ---------------------------------------------------------------
+   Used when the element Fullscreen API is unavailable or refused (iPhone Safari, sandboxed iframes). The frame gets
+   data-elab-fullscreen="css": it covers the viewport above the sticky app bars and the page behind it stops scrolling.
+   Same box as `:fullscreen` (the Tailwind [&:fullscreen]: variants in InteractiveFrame and .sd-frame:fullscreen). */
+html.elab-css-fullscreen,
+html.elab-css-fullscreen body {
+  overflow: hidden;
+}
+.elab-sim[data-elab-fullscreen="css"] {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  width: 100vw;
+  height: 100dvh;
+  max-height: 100dvh;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+  background: var(--color-paper);
+}

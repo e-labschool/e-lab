@@ -1,4 +1,6 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import InteractiveFrame from "../../components/interactive-shell/InteractiveFrame.jsx";
+import { useSimulationPresentation } from "../../components/interactive-shell/SimulationPresentation.js";
 import "./EquivalencePoint.css";
 import { COPYRIGHT_TEXT_COMPACT } from "../../data/copyright.js";
 
@@ -118,7 +120,21 @@ function SphereGroup({ type, count }) {
   );
 }
 
-export default function EquivalencePoint() {
+function EquivalencePointBody() {
+  const { isViewport } = useSimulationPresentation();
+  // The beam, pans and burettes are fixed-geometry artwork (570 px beam, about 720 px with the pans). Measure the stage (not the window) and scale the
+  // artwork down only as far as needed to keep it fully visible, so it never clips in the Learn column, fullscreen or a phone.
+  const stageRef = useRef(null);
+  const [stageScale, setStageScale] = useState(1);
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return undefined;
+    const measure = () => setStageScale(Math.max(0.42, Math.min(1, (el.clientWidth - 12) / 720)));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const [acidVolumeMl, setAcidVolumeMl] = useState(0);
   const [baseVolumeMl, setBaseVolumeMl] = useState(INITIAL_BASE_VOLUME_ML);
   const [acidDropKey, setAcidDropKey] = useState(0);
@@ -218,7 +234,7 @@ export default function EquivalencePoint() {
   }
 
   return (
-    <section className="equivalence-simulation sim-surface-dark">
+    <section className={"equivalence-simulation sim-surface-dark" + (isViewport ? " is-viewport" : "")}>
       <div className="equivalence-header">
         <div>
           <h2>Equivalence Point</h2>
@@ -231,7 +247,7 @@ export default function EquivalencePoint() {
         </div>
       </div>
 
-      <div className="simulation-stage">
+      <div className="simulation-stage" ref={stageRef} style={{ "--eq-scale": stageScale }}>
         <div className={`status-card ${statusClass}`}>
           <strong>{statusTitle}</strong>
           {status === "base" && !isEquivalent && <span>BASIC</span>}
@@ -359,5 +375,16 @@ export default function EquivalencePoint() {
 
       <p className="equivalence-copyright">{COPYRIGHT_TEXT_COMPACT}</p>
     </section>
+  );
+}
+
+// Wrapped in the shared simulation shell so this engine gets the same Fullscreen / Open in New Tab controls, CSS
+// fullscreen fallback and standalone/fullscreen viewport box as every other simulation. The shell's own title row is used
+// in fullscreen / new-tab mode (the engine hides its duplicate heading then, see `.is-viewport` in the stylesheet).
+export default function EquivalencePoint({ compact = false, standalone = false }) {
+  return (
+    <InteractiveFrame title="Equivalence Point" subtitle={"A beam-balance analogy for stoichiometric neutralization"} compact={compact} standalone={standalone}>
+      <EquivalencePointBody />
+    </InteractiveFrame>
   );
 }

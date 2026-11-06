@@ -1,4 +1,4 @@
-import { Suspense } from "react";
+import { Suspense, useEffect } from "react";
 import { Link, useParams } from "react-router-dom";
 import { SIMULATION_REGISTRY } from "../data/simulationRegistry.js";
 import { SIMULATION_COMPONENTS } from "../data/simulationEngineComponents.js";
@@ -32,6 +32,14 @@ export default function SimulationStandalonePage() {
   const { simulationId } = useParams();
   const meta = SIMULATION_REGISTRY[simulationId];
   const Sim = SIMULATION_COMPONENTS[simulationId];
+
+  // A dedicated tab should say what it is (tab strip, history, bookmarks).
+  useEffect(() => {
+    if (!meta) return undefined;
+    const previous = document.title;
+    document.title = `${meta.label} \u00b7 e-Lab`;
+    return () => { document.title = previous; };
+  }, [meta]);
 
   if (!meta || !Sim) {
     return (

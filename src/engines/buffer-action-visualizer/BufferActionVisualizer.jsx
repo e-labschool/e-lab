@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import InteractiveFrame from "../../components/interactive-shell/InteractiveFrame.jsx";
+import { useSimulationPresentation } from "../../components/interactive-shell/SimulationPresentation.js";
 import "./BufferActionVisualizer.css";
 import { COPYRIGHT_TEXT_COMPACT } from "../../data/copyright.js";
 import BeakerGlass from "./components/BeakerGlass.jsx";
@@ -77,7 +79,8 @@ function reconcileBufferParticleCounts(particles, targetCounts) {
   return next;
 }
 
-export default function BufferActionVisualizer() {
+function BufferActionVisualizerBody() {
+  const { isViewport } = useSimulationPresentation();
   const [systemId, setSystemId] = useState("acid");
   const [chem, setChem] = useState(() => createInitialState("acid"));
   const [additionSize, setAdditionSize] = useState("Small amount");
@@ -202,7 +205,7 @@ export default function BufferActionVisualizer() {
   })();
 
   return (
-    <section className="buffer-sim sim-surface-dark">
+    <section className={"buffer-sim sim-surface-dark" + (isViewport ? " is-viewport" : "")}>
       <header className="buffer-header">
         <h2>Buffer Action Visualizer</h2>
       </header>
@@ -273,5 +276,16 @@ export default function BufferActionVisualizer() {
 
       <p className="buffer-copyright">{COPYRIGHT_TEXT_COMPACT}</p>
     </section>
+  );
+}
+
+// Wrapped in the shared simulation shell so this engine gets the same Fullscreen / Open in New Tab controls, CSS
+// fullscreen fallback and standalone/fullscreen viewport box as every other simulation. The shell's own title row is used
+// in fullscreen / new-tab mode (the engine hides its duplicate heading then, see `.is-viewport` in the stylesheet).
+export default function BufferActionVisualizer({ compact = false, standalone = false }) {
+  return (
+    <InteractiveFrame title="Buffer Action Visualizer" subtitle={"See why a CH\u2083COOH/CH\u2083COO\u207B buffer resists pH change, and what happens when its capacity runs out"} compact={compact} standalone={standalone}>
+      <BufferActionVisualizerBody />
+    </InteractiveFrame>
   );
 }

@@ -227,3 +227,15 @@
 @media (prefers-reduced-motion: reduce) {
   .buffer-controls button, .mini-dropper-drop { transition: none; animation: none; }
 }
+
+/* Shell viewport mode (fullscreen / new tab): the shared frame already shows the title row, and the panel uses the
+   whole box instead of the centred embedded card. */
+.buffer-sim.is-viewport {
+  max-width: none;
+  min-height: 100%;
+  border-radius: 0;
+  border-width: 0;
+}
+.buffer-sim.is-viewport .buffer-header h2 {
+  display: none;
+}

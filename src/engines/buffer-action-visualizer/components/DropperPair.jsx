@@ -5,8 +5,8 @@
 export default function DropperPair({ activeDrop }) {
   return (
     <div className="dropper-pair">
-      <MiniDropper color="#c23b3b" label="H\u207A" dropping={activeDrop === "H"} />
-      <MiniDropper color="#2f4bc4" label="OH\u207B" dropping={activeDrop === "OH"} />
+      <MiniDropper color="#c23b3b" label={"H\u207A"} dropping={activeDrop === "H"} />
+      <MiniDropper color="#2f4bc4" label={"OH\u207B"} dropping={activeDrop === "OH"} />
     </div>
   );
 }

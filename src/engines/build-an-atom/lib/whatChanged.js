@@ -2,7 +2,25 @@
 // new derived atom states plus which particle type/direction just
 // changed -- never a generic templated message, so it can never say
 // something inconsistent with what's actually displayed elsewhere.
-export function describeChange(changedType, delta, prevDerived, nextDerived) {
+export function describeChange(changedType, delta, prevDerived, nextDerived, extraLines = []) {
+  const out = describeBase(changedType, delta, prevDerived, nextDerived);
+  return extraLines.length ? { ...out, lines: [...out.lines, ...extraLines] } : out;
+}
+
+const chargeStr = (n) => (n > 0 ? `+${n}` : String(n));
+
+/** Lines naming every count that Auto-balance changed besides the one the student pressed
+ * (empty when Auto-balance is off, because then nothing else ever changes). */
+export function autoBalanceLines(changedType, prev, next) {
+  const lines = [];
+  const changedKey = { proton: "protons", neutron: "neutrons", electron: "electrons" }[changedType];
+  for (const key of ["neutrons", "electrons"]) {
+    if (key !== changedKey && prev[key] !== next[key]) lines.push(`Auto-balance also changed ${key}: ${prev[key]} \u2192 ${next[key]}`);
+  }
+  return lines;
+}
+
+function describeBase(changedType, delta, prevDerived, nextDerived) {
   const sign = delta > 0 ? "+1" : "\u22121";
 
   if (changedType === "proton") {
@@ -14,6 +32,7 @@ export function describeChange(changedType, delta, prevDerived, nextDerived) {
         elementChanged
           ? `The element has changed: ${prevDerived.element?.name ?? "(no element)"} \u2192 ${nextDerived.element?.name ?? "(no element)"}`
           : `The element is still ${nextDerived.element?.name ?? "(no element)"}.`,
+        ...(prevDerived.netCharge !== nextDerived.netCharge ? [`Net charge: ${chargeStr(prevDerived.netCharge)} \u2192 ${chargeStr(nextDerived.netCharge)}`] : []),
       ],
       resultLine: nextDerived.nuclideName ? `You have built ${nextDerived.nuclideName}.` : null,
       accentColor: "var(--color-teal)",

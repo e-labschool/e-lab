@@ -205,7 +205,7 @@ for (const [w, h] of SIZES) {
   check(/35\.50/.test(await text(T("readout-ar"))), `${tag}: Ar at 75:25`);
   { const a = await grab(VIZ); await setRange(T("abundance-slider"), 40); await sleep(500); check((await diff(a, await grab(VIZ))) > 0.003, `${tag}: the abundance slider changes nothing`); }
   check(/36\.20/.test(await text(T("readout-ar"))), `${tag}: Ar at 40:60 should be 36.20 (${await text(T("readout-ar"))})`);
-  { const r = await p.evaluate(() => ["35", "37"].map((m) => Number(document.querySelector(`[data-testid="isotope-spectrum"] [data-testid="peak-${m}"]`).dataset.rel))); check(Math.abs(r[0] - 66.67) < 0.2 && Math.abs(r[1] - 100) < 0.2, `${tag}: peaks at 40:60 ${r}`); }
+  { const r = await p.evaluate(() => ["35", "37"].map((m) => Number(document.querySelector(`[data-testid="isotope-spectrum"] [data-testid="peak-${m}"]`).dataset.rel))); check(Math.abs(r[0] - 40) < 0.2 && Math.abs(r[1] - 60) < 0.2, `${tag}: peaks at 40:60 ${r}`); }
   await shot("s10-40"); await click(T("preset-natural"), 400); check(/35\.48/.test(await text(T("readout-ar"))), `${tag}: Ar natural`); await click(T("preset-teaching"), 300);
 
   // ---------- stage 11: patterns ----------

@@ -18,6 +18,8 @@ const MAGNIFIER_LENS_RADIUS = 32;
 export default function ReactionVessel({ temperature, active = true, onCloseEncounter, onInspect, magnifierOn = false, onMagnifierUpdate }) {
   const [particles, setParticles] = useState(() => createParticleField(PARTICLES_PER_KIND, BOUNDS, temperature));
   const [lensPos, setLensPos] = useState(null);
+  const particlesRef = useRef(particles);
+  particlesRef.current = particles;
   const rafRef = useRef(null);
   const lastTimeRef = useRef(null);
 
@@ -30,14 +32,14 @@ export default function ReactionVessel({ temperature, active = true, onCloseEnco
     function tick(now) {
       const dt = lastTimeRef.current == null ? 0 : Math.min(0.05, (now - lastTimeRef.current) / 1000);
       lastTimeRef.current = now;
-      setParticles((prev) => {
-        const stepped = stepParticles(prev, BOUNDS, dt);
-        if (onCloseEncounter) {
-          const found = findCloseEncounter(stepped);
-          if (found) onCloseEncounter(found);
-        }
-        return stepped;
-      });
+      // Step outside the state updater: onCloseEncounter sets the PARENT's state, which React forbids from inside an updater.
+      const stepped = stepParticles(particlesRef.current, BOUNDS, dt);
+      particlesRef.current = stepped;
+      setParticles(stepped);
+      if (onCloseEncounter) {
+        const found = findCloseEncounter(stepped);
+        if (found) onCloseEncounter(found);
+      }
       rafRef.current = requestAnimationFrame(tick);
     }
     rafRef.current = requestAnimationFrame(tick);

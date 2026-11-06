@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { Search } from "lucide-react";
 import InteractiveFrame from "../../components/interactive-shell/InteractiveFrame.jsx";
 import ReactionVessel from "./components/ReactionVessel.jsx";
@@ -56,19 +56,19 @@ export default function CollisionTheoryVisualizer({ compact = false, standalone 
   const [magnifierData, setMagnifierData] = useState({ particles: [], center: null });
   const handleMagnifierUpdate = useCallback((data) => setMagnifierData(data), []);
   function handleToggleMagnifier() {
-    setMagnifierOn((v) => {
-      const next = !v;
-      // Turning the magnifier off (or back on) should never leave a
-      // stale "viewing a replay from magnifier mode" state behind --
-      // otherwise re-enabling it later could incorrectly force-show an
-      // old captured replay instead of the live mirror.
-      if (!next) {
-        setViewingReplay(false);
-        setPendingEncounter(null);
-        setEncounter(null);
-      }
-      return next;
-    });
+    const next = !magnifierOn;
+    setMagnifierOn(next);
+    // Turning the magnifier off (or back on) should never leave a
+    // stale "viewing a replay from magnifier mode" state behind --
+    // otherwise re-enabling it later could incorrectly force-show an
+    // old captured replay instead of the live mirror.
+    // (These setters are called here, not inside the setMagnifierOn updater: React forbids setting other
+    // components' state from within an updater, and logs "Cannot update a component while rendering".)
+    if (!next) {
+      setViewingReplay(false);
+      setPendingEncounter(null);
+      commitEncounter(null);
+    }
   }
 
   // Collision tab -- real captured/inspected encounters from the vessel,
@@ -83,6 +83,10 @@ export default function CollisionTheoryVisualizer({ compact = false, standalone 
   // [View Collision], then [Return to Live View] to go back, per the
   // LIVE BEAKER -> MAGNIFY -> CAPTURE -> REPLAY -> RETURN workflow.
   const [encounter, setEncounter] = useState(null);
+  // The latest committed encounter, readable synchronously by the vessel's close-encounter callback (it fires from the
+  // animation loop, possibly twice in one tick) without calling setState inside another setState's updater.
+  const encounterRef = useRef(null);
+  function commitEncounter(value) { encounterRef.current = value; setEncounter(value); }
   const [encounterSeq, setEncounterSeq] = useState(0);
   const [pendingEncounter, setPendingEncounter] = useState(null);
   const [viewingReplay, setViewingReplay] = useState(false);
@@ -92,28 +96,28 @@ export default function CollisionTheoryVisualizer({ compact = false, standalone 
         setPendingEncounter((prev) => prev ?? toEncounterShape(found));
         return;
       }
-      setEncounter((prev) => {
-        if (prev) return prev;
-        setEncounterSeq((n) => n + 1);
-        return toEncounterShape(found);
-      });
+      if (encounterRef.current) return;
+      commitEncounter(toEncounterShape(found));
+      setEncounterSeq((n) => n + 1);
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- commitEncounter only touches a ref and a state setter
     [magnifierOn]
   );
   const handleInspect = useCallback((found) => {
-    setEncounter(toEncounterShape(found));
+    commitEncounter(toEncounterShape(found));
     setEncounterSeq((n) => n + 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   function handleViewPendingCollision() {
     if (!pendingEncounter) return;
-    setEncounter(pendingEncounter);
+    commitEncounter(pendingEncounter);
     setEncounterSeq((n) => n + 1);
     setViewingReplay(true);
   }
   function handleReturnToLiveView() {
     setViewingReplay(false);
     setPendingEncounter(null);
-    setEncounter(null);
+    commitEncounter(null);
   }
 
   // Activation Energy tab -- two curated cases.
@@ -182,7 +186,7 @@ export default function CollisionTheoryVisualizer({ compact = false, standalone 
                   )}
                 </div>
               ) : (
-                <EmptyMagnifiedView text="Watching the vessel for an A\u2013B encounter\u2026" />
+                <EmptyMagnifiedView text={"Watching the vessel for an A\u2013B encounter\u2026"} />
               )
             }
             belowMain={

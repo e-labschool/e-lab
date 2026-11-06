@@ -17,7 +17,7 @@ export default function MacroMicroScene() {
 
   return (
     <div className="flex flex-col gap-6">
-      <SceneQuestion eyebrow="Macro \u2194 particle">Explain observable properties using particle-level reasoning.</SceneQuestion>
+      <SceneQuestion eyebrow={"Macro \u2194 particle"}>Explain observable properties using particle-level reasoning.</SceneQuestion>
 
       <div className="flex flex-wrap gap-2">
         {QUESTIONS.map((q) => (

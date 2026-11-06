@@ -2,8 +2,9 @@ import { useState, useCallback, useRef } from "react";
 import InteractiveFrame from "../../components/interactive-shell/InteractiveFrame.jsx";
 import { useSimulationPresentation } from "../../components/interactive-shell/SimulationPresentation.js";
 import { deriveAtom, CARBON_12, EMPTY_ATOM } from "./lib/atomState.js";
-import { describeChange } from "./lib/whatChanged.js";
-import { defaultNeutronsFor, classifyNuclide } from "./data/nuclides.js";
+import { describeChange, autoBalanceLines } from "./lib/whatChanged.js";
+import { applyChange, setProtons, toggleAutoBalance, nuclideStatus, LIMITS } from "./lib/atomControls.js";
+import { useSize } from "./lib/useSize.js";
 import AtomVisualizer from "./components/AtomVisualizer.jsx";
 import ParticleControls from "./components/ParticleControls.jsx";
 import FlyingParticle from "./components/FlyingParticle.jsx";
@@ -14,121 +15,106 @@ import MiniPeriodicTable from "./components/MiniPeriodicTable.jsx";
 import IsotopeComparison from "./components/IsotopeComparison.jsx";
 import ChallengeMode from "./components/ChallengeMode.jsx";
 
-const MIN_COUNT = 0;
-const MAX_COUNT = 30;
+// Container width (px) of the simulation's own box at which the side-by-side
+// layout (atom ~66 % | controls ~34 %) replaces the stacked one. Container
+// driven (ResizeObserver), never window driven.
+export const WIDE_MIN_WIDTH = 860;
 
-// Presentation (embedded / fullscreen / standalone) is no longer owned
-// here at all -- it comes entirely from the shared InteractiveFrame /
-// useSimulationPresentation() architecture, exactly like every other
-// engine. This component only ever holds the SCIENTIFIC state (the atom
-// being built) and hands it to a workspace that reads `isViewport` to
-// choose between the comfortable embedded layout and the compact
-// one-viewport layout -- never its own fullscreen/expanded state.
+// Presentation (embedded / fullscreen / standalone) comes from the shared
+// InteractiveFrame. This component holds only the SCIENTIFIC state: the three
+// particle counts and the Auto-balance flag (unchecked by default).
 export default function BuildAtomSimulation({ compact = false, standalone = false }) {
   const [atom, setAtom] = useState(CARBON_12);
+  const [autoBalance, setAutoBalance] = useState(false);
   const [lastChange, setLastChange] = useState(null);
   const [flights, setFlights] = useState([]);
   const flightIdRef = useRef(0);
 
   const derived = deriveAtom(atom);
 
-  // Every particle button always changes its count by exactly +/-1 and
-  // always commits -- the curated nuclide dataset is used ONLY for
-  // classifying the result (stable / radioactive / not included), never
-  // as a boundary that blocks construction. The only limits are the
-  // practical floor/ceiling (can't go below 0 or above MAX_COUNT).
-  const handleChange = useCallback((type, delta) => {
-    setAtom((prev) => {
-      const key = type === "proton" ? "protons" : type === "neutron" ? "neutrons" : "electrons";
-      const nextValue = Math.max(MIN_COUNT, Math.min(MAX_COUNT, prev[key] + delta));
-      if (nextValue === prev[key]) return prev;
-      let next = { ...prev, [key]: nextValue };
-      // Changing protons changes the element -- if the new element has
-      // curated nuclide coverage, snap neutrons to its default nuclide
-      // so the student lands on a recognizable starting isotope rather
-      // than an arbitrary neutron count carried over from the previous
-      // element. Electron count is preserved, matching the existing
-      // ion/charge rules. This does NOT apply to neutron changes, which
-      // always move by exactly 1 regardless of curated coverage.
-      if (type === "proton") {
-        const defaultN = defaultNeutronsFor(nextValue);
-        if (defaultN !== null) next = { ...next, neutrons: defaultN };
-      }
-      setLastChange({ type, delta: nextValue - prev[key], prevDerived: deriveAtom(prev), nextDerived: deriveAtom(next) });
-      flightIdRef.current += 1;
-      setFlights((f) => [...f, { id: flightIdRef.current, type, direction: delta > 0 ? "add" : "remove" }]);
-      return next;
-    });
+  const record = useCallback((type, prev, next, extra = []) => {
+    const key = type === "proton" ? "protons" : type === "neutron" ? "neutrons" : "electrons";
+    setLastChange({ type, delta: next[key] - prev[key], prevDerived: deriveAtom(prev), nextDerived: deriveAtom(next), extra });
   }, []);
+
+  // Each +/- press goes through applyChange(): with Auto-balance OFF it changes
+  // exactly one count by exactly one (no hidden neutron / electron / isotope
+  // change); see lib/atomControls.js for the full contract.
+  const handleChange = useCallback((type, delta) => {
+    const next = applyChange(atom, type, delta, { autoBalance });
+    if (next === atom) return;
+    setAtom(next);
+    record(type, atom, next, autoBalance ? autoBalanceLines(type, atom, next) : []);
+    flightIdRef.current += 1;
+    const id = flightIdRef.current;
+    setFlights((f) => [...f, { id, type, direction: delta > 0 ? "add" : "remove" }]);
+  }, [atom, autoBalance, record]);
 
   const removeFlight = useCallback((id) => setFlights((f) => f.filter((flight) => flight.id !== id)), []);
 
   function handleSelectElement(atomicNumber) {
-    setAtom((prev) => {
-      if (prev.protons === atomicNumber) return prev;
-      const defaultN = defaultNeutronsFor(atomicNumber);
-      const next = { ...prev, protons: atomicNumber, neutrons: defaultN !== null ? defaultN : prev.neutrons };
-      setLastChange({ type: "proton", delta: atomicNumber - prev.protons, prevDerived: deriveAtom(prev), nextDerived: deriveAtom(next) });
-      return next;
-    });
+    const next = setProtons(atom, atomicNumber, { autoBalance });
+    if (next === atom) return;
+    setAtom(next);
+    record("proton", atom, next, autoBalance ? autoBalanceLines("proton", atom, next) : []);
   }
 
-  function handleStartEmpty() {
-    setAtom(EMPTY_ATOM);
-    setLastChange(null);
-    setFlights([]);
-  }
-  function handleResetCarbon() {
-    setAtom(CARBON_12);
-    setLastChange(null);
-    setFlights([]);
+  function handleToggleAutoBalance(on) {
+    setAutoBalance(on);
+    const next = toggleAutoBalance(atom, on);
+    if (next !== atom) { setAtom(next); setLastChange(null); }
   }
 
-  const change = lastChange ? describeChange(lastChange.type, lastChange.delta, lastChange.prevDerived, lastChange.nextDerived) : null;
+  function handleStartEmpty() { setAtom(EMPTY_ATOM); setLastChange(null); setFlights([]); }
+  function handleResetCarbon() { setAtom(CARBON_12); setLastChange(null); setFlights([]); }
+
+  const change = lastChange ? describeChange(lastChange.type, lastChange.delta, lastChange.prevDerived, lastChange.nextDerived, lastChange.extra) : null;
   const highlightType = lastChange?.type;
-  // Pure classification for display -- "stable" | "radioactive" |
-  // "not-included" -- never a boundary on what can be built.
-  const nuclideClassification = classifyNuclide(atom.protons, atom.neutrons);
+  const stability = nuclideStatus(atom.protons, atom.neutrons).status;
 
   return (
     <InteractiveFrame title="Build an Atom" subtitle="Change the particles and discover what makes an atom what it is." compact={compact} standalone={standalone}>
       <BuildAtomWorkspace
         atom={atom}
         derived={derived}
+        autoBalance={autoBalance}
         flights={flights}
         removeFlight={removeFlight}
         handleChange={handleChange}
+        handleToggleAutoBalance={handleToggleAutoBalance}
         handleSelectElement={handleSelectElement}
         handleStartEmpty={handleStartEmpty}
         handleResetCarbon={handleResetCarbon}
         change={change}
         highlightType={highlightType}
-        nuclideClassification={nuclideClassification}
+        unstable={stability === "radioactive" || stability === "not-stable"}
       />
     </InteractiveFrame>
   );
 }
 
-// Split out so the two layouts (embedded vs. viewport/fullscreen/
-// standalone) each read as one clear JSX tree -- no state or scientific
-// logic lives here, it's 100% presentation over the exact same props
-// BuildAtomSimulation always computed. Mirrors the split already used by
-// IonizationEnergyExplorer.jsx, the reference implementation.
+// Presentation only. One container-driven layout for embedded, fullscreen and
+// new-tab:
+//   wide (container >= 860 px): atom stage ~66 % | side panel ~34 %. The side
+//     panel scrolls INSIDE itself; the particle controls are pinned at its top
+//     so they are always visible. The stage fills its own grid cell, so it can
+//     never reach the controls.
+//   stacked (narrower): atom stage on top, panels below (in fullscreen / new
+//     tab the panels scroll inside their own region; embedded they flow).
 function BuildAtomWorkspace(props) {
-  const {
-    atom, derived, flights, removeFlight, handleChange, handleSelectElement,
-    handleStartEmpty, handleResetCarbon, change, highlightType, nuclideClassification,
-  } = props;
+  const { atom, derived, autoBalance, flights, removeFlight, handleChange, handleToggleAutoBalance, handleSelectElement, handleStartEmpty, handleResetCarbon, change, highlightType, unstable } = props;
   const { isViewport } = useSimulationPresentation();
+  const [rootRef, { width }] = useSize();
+  const wide = width === 0 || width >= WIDE_MIN_WIDTH;
 
   const toolbar = (
     <div className="flex flex-wrap items-center justify-between gap-2">
       <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">{"S1.2 • The Nuclear Atom"}</p>
       <div className="flex flex-wrap gap-2">
-        <button type="button" onClick={handleStartEmpty} className="rounded-md border border-[var(--color-line)] px-2.5 py-1 text-xs font-medium text-[var(--color-ink-soft)] hover:bg-[var(--color-line)]/30">
+        <button type="button" onClick={handleStartEmpty} className="rounded-md border border-[var(--color-line)] px-2.5 py-1 text-xs font-medium text-[var(--color-ink-soft)] hover:bg-[var(--color-line)]/30" data-testid="atom-start-empty">
           Start From Empty
         </button>
-        <button type="button" onClick={handleResetCarbon} className="rounded-md border border-[var(--color-line)] px-2.5 py-1 text-xs font-medium text-[var(--color-ink-soft)] hover:bg-[var(--color-line)]/30">
+        <button type="button" onClick={handleResetCarbon} className="rounded-md border border-[var(--color-line)] px-2.5 py-1 text-xs font-medium text-[var(--color-ink-soft)] hover:bg-[var(--color-line)]/30" data-testid="atom-reset-carbon">
           Reset to Carbon-12
         </button>
       </div>
@@ -136,26 +122,25 @@ function BuildAtomWorkspace(props) {
   );
 
   const buildControls = (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-2" data-testid="atom-build-controls">
       <p className="text-center text-[10px] font-bold uppercase tracking-wide text-[var(--color-ink-faint)]">Build It</p>
-      <ParticleControls protons={atom.protons} neutrons={atom.neutrons} electrons={atom.electrons} onChange={handleChange} />
+      <ParticleControls atom={atom} autoBalance={autoBalance} onToggleAutoBalance={handleToggleAutoBalance} onChange={handleChange} />
     </div>
   );
 
-  const atomStage = (fillHeight) => (
-    <div className="relative overflow-hidden rounded-xl p-3" style={{ background: "radial-gradient(ellipse at center, #1B2440 0%, #0D1224 75%)", ...(fillHeight ? { height: "100%" } : { minHeight: "340px" }) }}>
-      <div className="flex h-full items-center justify-center">
-        <AtomVisualizer
-          protons={atom.protons}
-          neutrons={atom.neutrons}
-          electrons={atom.electrons}
-          highlightZ={highlightType === "proton"}
-          highlightA={highlightType === "neutron"}
-          highlightCharge={highlightType === "electron"}
-          nucleusWarning={nuclideClassification === "radioactive"}
-          fillHeight={fillHeight}
-        />
-      </div>
+  // The stage is a positioned box with a definite size from the layout; the
+  // visualiser is absolutely positioned inside it and scales to fit.
+  const atomStage = (
+    <div className="relative h-full min-h-0 w-full min-w-0 overflow-hidden rounded-xl" style={{ background: "radial-gradient(ellipse at center, #1B2440 0%, #0D1224 75%)" }} data-testid="atom-stage">
+      <AtomVisualizer
+        protons={atom.protons}
+        neutrons={atom.neutrons}
+        electrons={atom.electrons}
+        highlightZ={highlightType === "proton"}
+        highlightA={highlightType === "neutron"}
+        highlightCharge={highlightType === "electron"}
+        nucleusWarning={unstable}
+      />
       {flights.map((flight) => (
         <FlyingParticle key={flight.id} flight={flight} onComplete={() => removeFlight(flight.id)} />
       ))}
@@ -165,78 +150,54 @@ function BuildAtomWorkspace(props) {
   const identity = (
     <div className="flex flex-col gap-2">
       <p className="text-center text-[10px] font-bold uppercase tracking-wide text-[var(--color-ink-faint)]">What Did You Build?</p>
-      <IdentityPanel derived={derived} nuclideClassification={nuclideClassification} highlightZ={highlightType === "proton"} highlightA={highlightType === "neutron"} highlightCharge={highlightType === "electron"} />
+      <IdentityPanel derived={derived} highlightZ={highlightType === "proton"} highlightA={highlightType === "neutron"} highlightCharge={highlightType === "electron"} />
       <IsotopeComparison protons={atom.protons} electrons={atom.electrons} />
     </div>
   );
 
-  // These two blocks are laid out differently depending on how WIDE the
-  // column they land in actually is: the embedded layout gives them the
-  // full ~1180px page width (so a two-up split earns its keep), while
-  // viewport mode places them inside a narrow (~220-260px) sidebar
-  // column. Tailwind's `lg:` is a VIEWPORT-width breakpoint, not a
-  // container-width one, so reusing the embedded two-column split inside
-  // a narrow sidebar at a wide desktop viewport would still try to lay
-  // out two columns in ~220px and collide -- `twoUp` picks the version
-  // that actually matches the space available.
-  const periodicTableAndChallenge = (twoUp) => (
-    <div className={twoUp ? "grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)]" : "flex flex-col gap-3"}>
-      <MiniPeriodicTable currentAtomicNumber={atom.protons} onSelectElement={handleSelectElement} />
+  const secondary = (
+    <div className="flex flex-col gap-3">
       <ChallengeMode atom={atom} derived={derived} />
-    </div>
-  );
-
-  const whatChangedAndConcepts = (twoUp) => (
-    <div className={twoUp ? "grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,2fr)]" : "flex flex-col gap-3"}>
+      <MiniPeriodicTable currentAtomicNumber={atom.protons} maxAtomicNumber={LIMITS.protons} onSelectElement={handleSelectElement} />
       <div>
         <p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-[var(--color-ink-faint)]">What Changed?</p>
         <WhatChanged change={change} />
       </div>
-      <ConceptStrip highlightedType={highlightType} stacked={!twoUp} />
+      <ConceptStrip highlightedType={highlightType} stacked />
     </div>
   );
 
-  if (!isViewport) {
-    // EMBEDDED (normal Learn-page flow): unchanged from before this fix --
-    // ordinary content-driven height, everything stacked vertically, page
-    // may scroll like any other Learn content.
+  const rootStyle = isViewport ? undefined : wide ? { height: "clamp(560px, calc(100dvh - 8rem), 800px)" } : undefined;
+  const rootCls = "mx-auto flex w-full min-w-0 flex-col gap-2 " + (isViewport ? "h-full min-h-0" : "");
+
+  if (wide) {
     return (
-      <div className="mx-auto w-full" style={{ maxWidth: 1180 }}>
+      <div ref={rootRef} className={rootCls} style={{ maxWidth: isViewport ? undefined : 1500, ...rootStyle }} data-testid="atom-workspace" data-layout="wide">
         {toolbar}
-        <div className="mt-3">{periodicTableAndChallenge(true)}</div>
-        <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,230px)_minmax(0,1fr)_minmax(0,260px)]">
-          <div className="order-2 lg:order-1">{buildControls}</div>
-          <div className="order-1 lg:order-2">{atomStage(false)}</div>
-          <div className="order-3">{identity}</div>
+        <div className="grid min-h-0 flex-1 gap-3" style={{ gridTemplateColumns: "minmax(0, 66fr) minmax(300px, 34fr)" }}>
+          <div className="min-h-0 min-w-0">{atomStage}</div>
+          <div className="min-h-0 min-w-0 overflow-y-auto overflow-x-hidden pr-1" data-testid="atom-side">
+            <div className="sticky top-0 z-10 bg-[var(--color-paper)] pb-2">{buildControls}</div>
+            <div className="flex flex-col gap-3">
+              {identity}
+              {secondary}
+            </div>
+          </div>
         </div>
-        <div className="mt-3">{whatChangedAndConcepts(true)}</div>
       </div>
     );
   }
 
-  // VIEWPORT MODE (fullscreen or standalone): the whole simulation must
-  // fit in the height InteractiveFrame's content row hands us. CORE
-  // interaction -- particle controls, the atom itself, and the identity
-  // read-out -- is always fully visible, never scrolled to reach. Only
-  // the SECONDARY teaching aids (periodic table + challenge on the left,
-  // "what changed" + concept strip on the right) sit in a `minmax(0,1fr)`
-  // row with its own contained `overflow-y-auto`, exactly the kind of
-  // "long optional panel" internal scrolling the brief allows.
+  // STACKED. Fullscreen / new tab: stage takes ~40 % of the height, the panels
+  // scroll in the rest. Embedded: a square-ish stage, then everything flows.
   return (
-    <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-2">
+    <div ref={rootRef} className={rootCls} data-testid="atom-workspace" data-layout="stacked">
       {toolbar}
-      <div className="grid min-h-0 grid-cols-1 gap-2 lg:grid-cols-[220px_minmax(0,1fr)_260px]">
-        <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-2">
-          {buildControls}
-          <div className="min-h-0 overflow-y-auto pr-0.5">{periodicTableAndChallenge(false)}</div>
-        </div>
-
-        <div className="min-h-0">{atomStage(true)}</div>
-
-        <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-2">
-          {identity}
-          <div className="min-h-0 overflow-y-auto pr-0.5">{whatChangedAndConcepts(false)}</div>
-        </div>
+      <div className={isViewport ? "shrink-0" : "shrink-0"} style={{ height: isViewport ? "clamp(200px, 40%, 420px)" : `clamp(240px, ${Math.round(width * 0.9)}px, 420px)` }}>{atomStage}</div>
+      <div className={"flex min-h-0 flex-col gap-3 " + (isViewport ? "flex-1 overflow-y-auto overflow-x-hidden pr-1" : "")} data-testid="atom-side">
+        {buildControls}
+        {identity}
+        {secondary}
       </div>
     </div>
   );

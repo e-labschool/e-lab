@@ -105,7 +105,7 @@ export default function VolumeTestScene({ example, forceToken }) {
 
       {tested && example.volumeMethod === "gas" && (
         <p className="max-w-md text-sm text-[var(--color-ink-soft)]">
-          A container holding a gas is not empty \u2014 the gas itself occupies that space.
+          A container holding a gas is not empty — the gas itself occupies that space.
         </p>
       )}
     </div>

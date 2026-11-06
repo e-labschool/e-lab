@@ -130,3 +130,22 @@ layer are sampled from real screenshot pixels. It lists every violation with the
 `button-contrast-rows.json` (all controls with ratios) and exits 1 when there are violations. Env: `SIMS=`, `SIZES=`,
 `THEMES=`, `VARIANTS=`, `STATES=0`, `SHOTS=1`. Limits: headless Chromium + SwiftShader only (no real GPU, no screen
 reader, no real touch), one level of tabs, at most 70 distinct controls per page view.
+
+
+## Fullscreen and Open in New Tab (shared shell, every simulation)
+
+Every registered simulation renders inside `InteractiveFrame`, which supplies one pair of controls (`SimulationActions`):
+**Open in New Tab** (`/simulation/:id`, opens with `noopener,noreferrer`) and **Fullscreen** / **Exit fullscreen** (tooltip and
+accessible name; `data-testid="sim-new-tab"` / `"sim-fullscreen"`). Rules:
+
+- An engine must render exactly one `<InteractiveFrame ... compact={compact} standalone={standalone}>` in its entry file and must
+  never skip it when `compact` (the old `if (compact) return body;` pattern removed the controls from Learn lessons). If the on-screen
+  title differs from the registry label, pass `simulationId="..."` (JSX attribute strings do not process `\u2014`; use `{"..."}`).
+  `npm run test:simulation-shell` fails for any registered simulation that breaks this.
+- `useFullscreen` uses the browser Fullscreen API when available and a **CSS fullscreen fallback** (`data-elab-fullscreen="css"`,
+  fixed, `inset: 0`, z-index 2000, page scroll locked, Escape exits) where it is not (iPhone Safari, rejected request). The frame stays
+  mounted, so state is kept either way. Because the fallback does not resize the window, engines must re-measure from their container
+  (`ResizeObserver`), never only from `window`.
+- An engine with its own header (the dashboard engines and the three self-contained titration engines) reads
+  `useSimulationPresentation()` (`isViewport`, `frameRef`, `simulationId`) instead of adding a second pair of buttons.
+- Audit everything with `npm run audit:simulations` (see `docs/SIMULATION_AUDIT_REPORT.md`).
