@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useSearchParams, useNavigate, Link } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { useSearchParams, useNavigate, useLocation, Link } from "react-router-dom";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { useAuth } from "../context/AuthContext.jsx";
 import { useSettings } from "../context/SettingsContext.jsx";
@@ -8,17 +8,20 @@ import Wordmark from "../components/layout/Wordmark.jsx";
 import CopyrightNotice from "../components/layout/CopyrightNotice.jsx";
 import Button from "../components/ui/Button.jsx";
 import CountrySelect from "../components/ui/CountrySelect.jsx";
+import SignupConfirmation from "../components/auth/SignupConfirmation.jsx";
+import { classifySignUp, savePending, loadPending, clearPending } from "../lib/signupFlow.js";
 
 const inputClasses =
   "w-full rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] px-3 py-2.5 text-sm text-[var(--color-ink)] placeholder:text-[var(--color-ink-faint)] focus:border-[var(--color-indigo)] focus:outline-none focus:ring-2 focus:ring-[var(--color-indigo)]/30";
 const labelClasses = "mb-1.5 block text-xs font-medium text-[var(--color-ink-soft)]";
 
-function PasswordInput({ id, value, onChange, autoComplete, placeholder }) {
+function PasswordInput({ id, value, onChange, autoComplete, placeholder, inputRef }) {
   const [visible, setVisible] = useState(false);
   return (
     <div className="relative">
       <input
         id={id}
+        ref={inputRef}
         type={visible ? "text" : "password"}
         required
         minLength={8}
@@ -49,6 +52,42 @@ export default function AuthPage() {
   const role = searchParams.get("role") === "teacher" ? "teacher" : "student";
   const next = searchParams.get("next");
   const [tab, setTab] = useState(searchParams.get("tab") === "create-account" ? "create-account" : "sign-in");
+  const { user, loadingSession, fetchProfile } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  // Set after a sign-up that needs email confirmation; survives a refresh of
+  // this tab (sessionStorage) so the user is not dropped back on a blank form.
+  const [pending, setPending] = useState(() => loadPending());
+  const [prefillEmail, setPrefillEmail] = useState("");
+
+  // Landing here from the confirmation link (?confirmed=1). Supabase's
+  // detectSessionInUrl may already have signed the user in from the link's
+  // token; if so, carry on to their dashboard exactly like a normal sign-in.
+  const confirmed = searchParams.get("confirmed") === "1";
+  const linkProblem = /error_code=(otp_expired|access_denied)|error=access_denied/.test(location.hash)
+    ? "That confirmation link has expired or was already used. Try logging in - if your email is confirmed it will work."
+    : null;
+  useEffect(() => {
+    if (!confirmed || loadingSession || !user) return;
+    let cancelled = false;
+    fetchProfile(user.id).then((p) => {
+      if (!cancelled) navigate(`/${p?.role || role}`, { replace: true });
+    });
+    return () => { cancelled = true; };
+  }, [confirmed, loadingSession, user, fetchProfile, navigate, role]);
+
+  function handleSignedUpPending(email) {
+    const p = { email, sentAt: Date.now() };
+    savePending(p);
+    setPending(p);
+  }
+  function leaveConfirmation(nextTab, email = "") {
+    clearPending();
+    setPending(null);
+    setPrefillEmail(email);
+    setTab(nextTab);
+    // Drop ?confirmed=1 etc. is unnecessary here; keep role/next as they are.
+  }
 
   function switchRole(nextRole) {
     setSearchParams((prev) => {
@@ -56,6 +95,25 @@ export default function AuthPage() {
       params.set("role", nextRole);
       return params;
     });
+  }
+
+  if (pending) {
+    return (
+      <>
+        <Container className="flex min-h-[calc(100vh-4rem)] items-center justify-center py-12">
+          <div className="w-full max-w-md rounded-lg border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-6 shadow-sm sm:p-8">
+            <div className="mb-5 flex justify-center"><Wordmark /></div>
+            <SignupConfirmation
+              email={pending.email}
+              sentAt={pending.sentAt}
+              onBackToLogin={() => leaveConfirmation("sign-in", pending.email)}
+              onWrongEmail={() => leaveConfirmation("create-account")}
+            />
+          </div>
+        </Container>
+        <CopyrightNotice />
+      </>
+    );
   }
 
   return (
@@ -100,9 +158,16 @@ export default function AuthPage() {
 
         <div className="mt-6">
           {tab === "sign-in" ? (
-            <SignInForm role={role} next={next} onSwitchTab={() => setTab("create-account")} />
+            <SignInForm
+              role={role}
+              next={next}
+              initialEmail={prefillEmail}
+              notice={confirmed ? (user ? "Email confirmed. Taking you to your dashboard..." : "Email confirmed - you can log in now.") : null}
+              linkProblem={linkProblem}
+              onSwitchTab={() => setTab("create-account")}
+            />
           ) : (
-            <CreateAccountForm role={role} />
+            <CreateAccountForm role={role} onSignedUpPending={handleSignedUpPending} />
           )}
         </div>
       </div>
@@ -112,11 +177,15 @@ export default function AuthPage() {
   );
 }
 
-function SignInForm({ role, next, onSwitchTab }) {
+function SignInForm({ role, next, onSwitchTab, initialEmail = "", notice = null, linkProblem = null }) {
   const { signIn, fetchProfile } = useAuth();
   const navigate = useNavigate();
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState("");
+  const passwordRef = useRef(null);
+  // Arriving from "Back to login" with the email already filled in: the next
+  // thing to type is the password.
+  useEffect(() => { if (initialEmail) passwordRef.current?.focus(); }, [initialEmail]);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -142,13 +211,15 @@ function SignInForm({ role, next, onSwitchTab }) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+      {notice && <p role="status" data-testid="signin-notice" className="rounded-md bg-[var(--color-teal-soft)] px-3 py-2 text-xs font-medium text-[var(--color-teal)]">{notice}</p>}
+      {linkProblem && <p role="alert" className="text-xs text-[var(--color-coral)]">{linkProblem}</p>}
       <div>
         <label className={labelClasses} htmlFor="signin-email">Email <span className="text-[var(--color-coral)]">*</span></label>
         <input id="signin-email" type="email" required autoComplete="email" className={inputClasses} value={email} onChange={(e) => setEmail(e.target.value)} />
       </div>
       <div>
         <label className={labelClasses} htmlFor="signin-password">Password <span className="text-[var(--color-coral)]">*</span></label>
-        <PasswordInput id="signin-password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
+        <PasswordInput id="signin-password" inputRef={passwordRef} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
       </div>
       {error && <p role="alert" className="text-xs text-[var(--color-coral)]">{error}</p>}
       <Button type="submit" className="w-full" disabled={loading}>
@@ -164,7 +235,7 @@ function SignInForm({ role, next, onSwitchTab }) {
   );
 }
 
-function CreateAccountForm({ role }) {
+function CreateAccountForm({ role, onSignedUpPending }) {
   const { signUp, fetchProfile, isConfigured } = useAuth();
   const { settings } = useSettings();
   const registrationOpen = role === "teacher" ? settings.allow_teacher_registration : settings.allow_student_registration;
@@ -175,7 +246,6 @@ function CreateAccountForm({ role }) {
   });
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [checkEmail, setCheckEmail] = useState(false);
 
   function set(key, value) {
     setFields((prev) => ({ ...prev, [key]: value }));
@@ -203,9 +273,10 @@ function CreateAccountForm({ role }) {
         grade_or_class: fields.classGrade,
       };
 
-      const { session, user } = await signUp({ email: fields.email, password: fields.password, metadata });
+      const data = await signUp({ email: fields.email.trim(), password: fields.password, metadata });
+      const { user } = data;
 
-      if (session) {
+      if (classifySignUp(data) === "signed-in") {
         // Email confirmation is off for this project — a session exists
         // immediately, and the trigger has already created the profile
         // row as part of the same signUp transaction.
@@ -214,12 +285,14 @@ function CreateAccountForm({ role }) {
         return;
       }
 
-      // Email confirmation is required: no session yet, so there's
-      // nothing more to do here — the trigger still fires (it's attached
-      // to auth.users, not to session creation), so the profile row will
-      // already exist by the time this user verifies their email and
-      // signs in.
-      setCheckEmail(true);
+      // No session: either email confirmation is required (new user) or the
+      // address is already registered (Supabase returns an obfuscated user
+      // with empty `identities` instead of an error). Both deliberately show
+      // the SAME "Check your email" screen, so it never reveals whether an
+      // address has an account. The trigger still fires for new users
+      // (attached to auth.users), so the profile row exists by the time they
+      // confirm and log in.
+      onSignedUpPending(fields.email.trim());
     } catch (err) {
       setError(err.message || "Something went wrong creating your account.");
     } finally {
@@ -236,14 +309,6 @@ function CreateAccountForm({ role }) {
       <p className="text-sm text-[var(--color-ink-soft)]">
         {role === "teacher" ? "Teacher" : "Student"} registration is currently unavailable. Please check back later, or sign in if you already have an account.
       </p>
-    );
-  }
-
-  if (checkEmail) {
-    return (
-      <div className="space-y-3 text-sm text-[var(--color-ink-soft)]" role="status">
-        <p>Account created successfully. Please check your email and confirm your email address before signing in.</p>
-      </div>
     );
   }
 

@@ -15,7 +15,7 @@ export const TECHNIQUES = [
   { id: "ms", label: "Mass Spectrometry", developed: true },
   { id: "ir", label: "IR Spectroscopy", developed: true },
   { id: "nmr", label: "¹H NMR", developed: true },
-  { id: "structure", label: "Structure Investigation", developed: false },
+  { id: "structure", label: "Structure Investigation", developed: true },
 ];
 export const SPEEDS = [0.25, 0.5, 1, 2];
 /** The molecule offered when step 6 is opened and none has been chosen yet. */

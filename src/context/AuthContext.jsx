@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState, useCallback } from "react";
 import { supabase, isSupabaseConfigured } from "../lib/supabaseClient.js";
 import { sameJson, mergeSameUserSession } from "../lib/authSessionMerge.js";
+import { confirmationRedirectUrl } from "../lib/signupFlow.js";
 
 const AuthContext = createContext(null);
 
@@ -105,10 +106,25 @@ export function AuthProvider({ children }) {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: metadata },
+      // emailRedirectTo: where the confirmation link returns to. Only honoured
+      // if it is in the Supabase "Redirect URLs" allow-list; otherwise Supabase
+      // silently uses the Site URL (the pre-existing behaviour).
+      options: { data: metadata, emailRedirectTo: confirmationRedirectUrl(window.location.origin) },
     });
     if (error) throw error;
     return data;
+  }
+
+  // Re-sends the sign-up confirmation email (used by the "check your email"
+  // screen). Same redirect target as signUp.
+  async function resendConfirmation(email) {
+    if (!supabase) throw new Error("Resending is unavailable: e-Lab is not yet connected to Supabase.");
+    const { error } = await supabase.auth.resend({
+      type: "signup",
+      email,
+      options: { emailRedirectTo: confirmationRedirectUrl(window.location.origin) },
+    });
+    if (error) throw error;
   }
 
   async function signIn({ email, password }) {
@@ -182,6 +198,7 @@ export function AuthProvider({ children }) {
     loadingProfile,
     authError,
     signUp,
+    resendConfirmation,
     signIn,
     signOut,
     sendPasswordReset,

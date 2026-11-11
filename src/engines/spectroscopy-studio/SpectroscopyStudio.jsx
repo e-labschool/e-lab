@@ -19,6 +19,9 @@ import { IR_STAGES } from "./ir/state/irState.js";
 import MsWorkbench, { MsPlayback } from "./ms/MsWorkbench.jsx";
 import { MsProvider, useMsActions, useMs } from "./ms/state/MsContext.jsx";
 import { MS_STAGES } from "./ms/state/msState.js";
+import StructureWorkbench from "./structure/components/StructureWorkbench.jsx";
+import { StructureProvider, useStructure, useStructureActions } from "./structure/state/StructureContext.jsx";
+import { STAGES as STRUCTURE_STAGES } from "./structure/state/structureState.js";
 import "./SpectroscopyStudio.css";
 
 // Spectroscopy Simulation Lab -- ONE persistent NMR workspace. Architecture and models: docs/NMR_SPECTROSCOPY_STUDIO.md.
@@ -26,15 +29,15 @@ import "./SpectroscopyStudio.css";
 //     Its controls and graph columns are not used: the whole workspace lives in the chamber so that each step owns its large visual.
 //   * ONE store (state/studioState.js) holds the experiment. Steps unmount, the experiment does not: the molecule, B0 (and so the operating
 //     frequency), Teacher/Student mode and the playback settings carry from step to step.
+//   * Structure Investigation tab (structure/): five stages (Sample, Mass Spectrum, IR Spectrum, ¹H NMR, Identify Structure) with its own store and session key.
 //   * Six steps share one layout (components/StepFrame.jsx): a large visual, the step's principal control, a short explanation and an optional
 //     "Teacher: deeper explanation".
 
 /** Visual theme: "dark" (deep navy) is the SAME default as VSEPR_THEME / HYBRIDISATION_THEME so the simulations look consistent. */
 export const SPECTROSCOPY_THEME = "dark";
 
-const DEV_BLURB = {
-  structure: "Structure Investigation will combine evidence from several techniques to determine an unknown structure. The molecule workspace for ¹H NMR (step 6 of ¹H NMR) is the part that already exists.",
-};
+// Every technique tab is developed now (Structure Investigation: structure/, docs/STRUCTURE_INVESTIGATION.md). The placeholder below is kept only as the fallback for a future tab.
+const DEV_BLURB = {};
 const TECH_TABS = TECHNIQUES.map((t) => ({ id: t.id, label: t.label, title: t.developed ? t.label : `${t.label} (in development)`, testId: `tech-${t.id}` }));
 const STEP_VIEWS = { 1: Step1Nucleus, 2: Step2Field, 3: Step3Radio, 4: Step4Instrument, 5: Step5Spectrum, 6: Step6Molecules };
 
@@ -45,6 +48,7 @@ function Workbench() {
   const tech = TECHNIQUES.find((t) => t.id === technique) ?? TECHNIQUES[2];
   if (technique === "ir") return <IrWorkbench />;
   if (technique === "ms") return <MsWorkbench />;
+  if (technique === "structure") return <StructureWorkbench />;
   if (!tech.developed) {
     return (
       <div className="ss-wb" data-testid="stage-box" data-stage={tech.id}>
@@ -74,8 +78,9 @@ function Workspace() {
   const tech = TECHNIQUES.find((t) => t.id === technique) ?? TECHNIQUES[2];
   const irActions = useIrActions(); const irStage = useIr((x) => x.stage);
   const msActions = useMsActions(); const msStage = useMs((x) => x.stage);
-  const subtitle = technique === "ms" ? `Mass Spec · stage ${msStage} of ${MS_STAGES.length}` : technique === "ir" ? `IR Spectroscopy · stage ${irStage} of ${IR_STAGES.length}` : tech.developed ? `¹H NMR · step ${step} of ${STEPS.length}` : tech.label;
-  const onReset = technique === "ms" ? () => { msActions.reset(); a.resetPlayback(); } : technique === "ir" ? () => { irActions.reset(); a.resetPlayback(); } : a.resetExperiment;
+  const stActions = useStructureActions(); const stStage = useStructure((x) => x.stage);
+  const subtitle = technique === "structure" ? `Structure Investigation · stage ${stStage} of ${STRUCTURE_STAGES.length}` : technique === "ms" ? `Mass Spec · stage ${msStage} of ${MS_STAGES.length}` : technique === "ir" ? `IR Spectroscopy · stage ${irStage} of ${IR_STAGES.length}` : tech.developed ? `¹H NMR · step ${step} of ${STEPS.length}` : tech.label;
+  const onReset = technique === "structure" ? () => { stActions.reset(); } : technique === "ms" ? () => { msActions.reset(); a.resetPlayback(); } : technique === "ir" ? () => { irActions.reset(); a.resetPlayback(); } : a.resetExperiment;
   return (
     <div className="ss-theme" data-ss-theme={SPECTROSCOPY_THEME}>
       <SimulationDashboard
@@ -89,7 +94,7 @@ function Workspace() {
           />
         )}
         chamber={<Workbench />}
-        live={technique === "ms" ? <MsPlayback /> : technique === "ir" ? <IrPlayback /> : tech.developed ? <PlaybackBar /> : null}
+        live={technique === "structure" ? null : technique === "ms" ? <MsPlayback /> : technique === "ir" ? <IrPlayback /> : tech.developed ? <PlaybackBar /> : null}
       />
       <p className="ss-sr" role="status" data-testid="mode-status">{mode === "teacher" ? "Teacher mode" : "Student mode"}</p>
     </div>
@@ -102,7 +107,9 @@ export default function SpectroscopyStudio({ compact = false, standalone = false
       <StudioProvider>
         <IrProvider>
           <MsProvider>
-            <Workspace />
+            <StructureProvider>
+              <Workspace />
+            </StructureProvider>
           </MsProvider>
         </IrProvider>
       </StudioProvider>
