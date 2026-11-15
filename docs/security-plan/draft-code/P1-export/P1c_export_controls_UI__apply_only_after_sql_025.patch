@@ -1,0 +1,151 @@
+diff --git a/scripts/test-disaster-recovery.mjs b/scripts/test-disaster-recovery.mjs
+index f6d850f..9a43f17 100644
+--- a/scripts/test-disaster-recovery.mjs
++++ b/scripts/test-disaster-recovery.mjs
+@@ -455,7 +455,7 @@ await (async () => {
+     // entries (group "question_bank"/"question_papers") and so are already
+     // covered by the spread below, exactly like every other backed-up table.
+     ...c.BACKUP_DATASETS.map((t) => t.table),
+-    "user_access_overview", "platform_settings_public", // views over accounted-for base tables
++    "user_access_overview", "platform_settings_public", "platform_export_policy", // views over accounted-for base tables
+   ]);
+ 
+   test("every .from(\"table\") name found in src/ is accounted for (content, backed up, or excluded with a reason)", () => {
+diff --git a/src/lib/backup/constants.js b/src/lib/backup/constants.js
+index 15fc289..e3b5a63 100644
+--- a/src/lib/backup/constants.js
++++ b/src/lib/backup/constants.js
+@@ -605,7 +605,7 @@ export const EXCLUDED_TABLES = [
+   // application data is eligible for backup regardless of that gap, with
+   // the gap itself surfaced honestly instead of used as a reason to drop
+   // real data from Complete Disaster Recovery.
+-  { table: "user_access_overview / platform_settings_public", reason: "Both are Postgres VIEWs (create or replace view — see admin-access-migration.sql / admin-settings-migration.sql), not base tables: they have no rows of their own to back up. Their underlying base tables (user_access, platform_settings) ARE in BACKUP_DATASETS above; restoring those automatically makes the views correct again.", deploymentTier: DEPLOYMENT_TIER.EXCLUDED },
++  { table: "user_access_overview / platform_settings_public / platform_export_policy", reason: "All are Postgres VIEWs (create or replace view — see admin-access-migration.sql / admin-settings-migration.sql), not base tables: they have no rows of their own to back up. Their underlying base tables (user_access, platform_settings) ARE in BACKUP_DATASETS above; restoring those automatically makes the views correct again.", deploymentTier: DEPLOYMENT_TIER.EXCLUDED },
+   { table: "Supabase Auth sessions/tokens/refresh tokens", reason: "Secrets — never captured anywhere in application code or this backup, by design (spec §12/§35).", deploymentTier: DEPLOYMENT_TIER.EXCLUDED },
+ ];
+ 
+diff --git a/src/lib/exportPolicy.js b/src/lib/exportPolicy.js
+new file mode 100644
+index 0000000..c1ebd76
+--- /dev/null
++++ b/src/lib/exportPolicy.js
+@@ -0,0 +1,37 @@
++import { useEffect, useState } from "react";
++import { supabase, isSupabaseConfigured } from "./supabaseClient.js";
++
++import { DEFAULT_EXPORT_POLICY, resolveExportPolicy } from "./exportPolicyCore.js";
++export { DEFAULT_EXPORT_POLICY, resolveExportPolicy };
++
++let cached = null;
++let inflight = null;
++export function __resetExportPolicyCacheForTests() { cached = null; inflight = null; }
++
++async function loadExportPolicy(client = supabase) {
++  if (cached) return cached;
++  if (!inflight) {
++    inflight = (async () => {
++      try {
++        const { data, error } = await client.from("platform_export_policy").select("*").maybeSingle();
++        cached = error || !data ? DEFAULT_EXPORT_POLICY : resolveExportPolicy(data);
++      } catch {
++        cached = DEFAULT_EXPORT_POLICY;
++      }
++      return cached;
++    })();
++  }
++  return inflight;
++}
++export { loadExportPolicy };
++
++export function useExportPolicy() {
++  const [policy, setPolicy] = useState(cached ?? DEFAULT_EXPORT_POLICY);
++  useEffect(() => {
++    if (!isSupabaseConfigured || cached) return undefined;
++    let alive = true;
++    loadExportPolicy().then((p) => { if (alive) setPolicy(p); });
++    return () => { alive = false; };
++  }, []);
++  return policy;
++}
+diff --git a/src/lib/exportPolicyCore.js b/src/lib/exportPolicyCore.js
+new file mode 100644
+index 0000000..846afd4
+--- /dev/null
++++ b/src/lib/exportPolicyCore.js
+@@ -0,0 +1,15 @@
++// PURE half of exportPolicy.js (no Supabase import) so it is unit-testable without a browser environment.
++// What application-provided download / export controls may be SHOWN right now.
++//   allowResourceDownloads  mirrors platform_settings.allow_resource_downloads. For resource FILES the database enforces it too
++//                           (storage policy, sql/032) -- this only keeps the UI honest.
++//   allowTeacherExports     Q Builder Export PDF / Export Word / Print buttons. UI control only (files are generated in the browser).
++// A missing view/column (migration 025 not applied yet) or a failed read means "current behaviour": allowed.
++export const DEFAULT_EXPORT_POLICY = Object.freeze({ allowResourceDownloads: true, allowTeacherExports: true });
++
++export function resolveExportPolicy(row) {
++  return {
++    allowResourceDownloads: row?.allow_resource_downloads !== false,
++    allowTeacherExports: row?.allow_teacher_exports !== false,
++  };
++}
++
+diff --git a/src/pages/student/resources/components/ResourceCard.jsx b/src/pages/student/resources/components/ResourceCard.jsx
+index 5df4aca..8517c49 100644
+--- a/src/pages/student/resources/components/ResourceCard.jsx
++++ b/src/pages/student/resources/components/ResourceCard.jsx
+@@ -3,6 +3,7 @@ import { FileText, Download, ExternalLink, Lock, Loader2 } from "lucide-react";
+ import Card from "../../../../components/ui/Card.jsx";
+ import Badge from "../../../../components/ui/Badge.jsx";
+ import { openResource } from "../../../../lib/useVisibleResources.js";
++import { useExportPolicy } from "../../../../lib/exportPolicy.js";
+ 
+ // Extended (not replaced) to additionally support Supabase-backed
+ // resources, which carry `isLocked`/`needsSignedUrl` instead of a direct
+@@ -11,7 +12,11 @@ import { openResource } from "../../../../lib/useVisibleResources.js";
+ export default function ResourceCard({ resource }) {
+   const [opening, setOpening] = useState(false);
+   const isExternal = Boolean(resource.externalUrl) && !resource.needsSignedUrl;
+-  const isLocked = Boolean(resource.isLocked);
++  // Admin switch (platform_settings.allow_resource_downloads). Files are ALSO closed in the database when it is off (sql/032), so
++  // this only keeps the button honest. External links and static catalogue entries are unaffected.
++  const { allowResourceDownloads } = useExportPolicy();
++  const downloadsOff = !allowResourceDownloads && Boolean(resource.needsSignedUrl);
++  const isLocked = Boolean(resource.isLocked) || downloadsOff;
+ 
+   async function handleOpen(e) {
+     if (!resource.needsSignedUrl && !isExternal) return; // plain <a href> already handles this case
+@@ -50,7 +55,7 @@ export default function ResourceCard({ resource }) {
+ 
+       {isLocked ? (
+         <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-[var(--color-line)] px-3 py-2 text-sm text-[var(--color-ink-faint)]">
+-          <Lock size={14} /> Locked
++          <Lock size={14} /> {downloadsOff ? "Unavailable" : "Locked"}
+         </span>
+       ) : (
+         <a
+diff --git a/src/pages/teacher/qbuilder/components/ExportControls.jsx b/src/pages/teacher/qbuilder/components/ExportControls.jsx
+index 8d93114..59d9855 100644
+--- a/src/pages/teacher/qbuilder/components/ExportControls.jsx
++++ b/src/pages/teacher/qbuilder/components/ExportControls.jsx
+@@ -1,9 +1,11 @@
+ import { useState } from "react";
+ import { FileDown, FileType, Printer } from "lucide-react";
+ import { exportPdf, exportDocx } from "../lib/export.js";
++import { useExportPolicy } from "../../../../lib/exportPolicy.js";
+ 
+ export default function ExportControls({ draft, totalMarks, mode }) {
+   const [busy, setBusy] = useState(false);
++  const { allowTeacherExports } = useExportPolicy();
+ 
+   async function handleDocx() {
+     setBusy(true);
+@@ -14,6 +16,10 @@ export default function ExportControls({ draft, totalMarks, mode }) {
+     }
+   }
+ 
++  if (!allowTeacherExports) {
++    return <p className="qbuilder-chrome text-xs text-[var(--color-ink-faint)]">Exporting is currently disabled by the administrator.</p>;
++  }
++
+   return (
+     <div className="qbuilder-chrome flex flex-wrap gap-2">
+       <button

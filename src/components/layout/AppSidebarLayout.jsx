@@ -28,7 +28,7 @@ function TopTabBar({ tabs, accentHex, role }) {
         <div className="shrink-0 pr-2 [&_*]:text-white"><Wordmark /></div>
         <button type="button" onClick={() => navigate(-1)} aria-label="Go back" className="flex shrink-0 items-center gap-1 px-2 text-sm font-semibold text-[#AAB3CE] hover:text-white"><ArrowLeft size={16}/> Back</button>
         <nav className="flex min-w-0 flex-1 gap-1 overflow-x-auto">
-          {tabs.map((tab) => <NavLink key={tab.to} to={tab.to} end={tab.end} className={({isActive})=>`flex shrink-0 items-center gap-2 border-b-2 px-4 py-5 text-[15px] font-semibold transition-colors ${isActive ? "border-current text-white" : "border-transparent text-[#8C97B8] hover:text-white"}`} style={({isActive})=>isActive?{color:"#fff",borderColor:accentHex}:undefined}><tab.icon size={17}/>{tab.label}</NavLink>)}
+          {tabs.map((tab) => <NavLink key={tab.to} to={tab.to} end={tab.end} className={({isActive})=>`flex shrink-0 items-center gap-2 border-b-2 px-3.5 py-5 text-[15px] font-semibold transition-colors ${isActive ? "border-current text-white" : "border-transparent text-[#8C97B8] hover:text-white"}`} style={({isActive})=>isActive?{color:"#fff",borderColor:accentHex}:undefined}><tab.icon size={17}/>{tab.label}</NavLink>)}
         </nav>
         <div className="flex shrink-0 items-center gap-2 text-white">
           <SiteSearch role={role} />

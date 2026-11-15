@@ -2,6 +2,8 @@ import StimulusRenderer from "../../teacher/qbuilder/components/visuals/Stimulus
 import StimulusErrorBoundary from "../../../components/ui/StimulusErrorBoundary.jsx";
 import ZoomableImage from "../../../components/image-viewer/ZoomableImage.jsx";
 import { ScientificText } from "../../../lib/scientificContent.jsx";
+import QuestionStemLayout from "../../../components/questions/QuestionStemLayout.jsx";
+import { getStimulusPlacement } from "../../../lib/questionLayout.js";
 
 // Renders a question during an active challenge — no correctness
 // feedback, no explanations, no hints, ever (enforced by simply never
@@ -24,15 +26,18 @@ export default function QuestionRenderer({ question, questionNumber, answer, onA
         {question.marks != null && <span className="text-xs text-[var(--color-ink-faint)]">[{question.marks} mark{question.marks === 1 ? "" : "s"}]</span>}
       </div>
 
-      {question.stimulus && (
-        <div className="mb-5">
+      {(() => {
+        const media = question.stimulus && (
           <StimulusErrorBoundary questionId={question.id}>
             <StimulusRenderer stimulus={question.stimulus} questionId={question.id} />
           </StimulusErrorBoundary>
-        </div>
-      )}
-
-      <p className="text-[15px] leading-relaxed text-[var(--color-ink)]"><ScientificText text={question.questionText} /></p>
+        );
+        const stem = <p className="text-[15px] leading-relaxed text-[var(--color-ink)]"><ScientificText text={question.questionText} /></p>;
+        const placement = question.stimulus ? getStimulusPlacement(question.stimulus) : null;
+        // No placement saved (every existing question): exactly the original markup.
+        if (!placement) return (<>{question.stimulus && <div className="mb-5">{media}</div>}{stem}</>);
+        return <QuestionStemLayout placement={placement} media={media} stem={stem} />;
+      })()}
 
       <div className="mt-5">
         {question.parts?.length > 0 ? (

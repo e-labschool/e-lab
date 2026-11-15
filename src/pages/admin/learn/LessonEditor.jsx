@@ -27,13 +27,17 @@ import { hashString } from "../../../lib/draftStore.js";
 import { loadLearnAuthorDefaults, saveLearnAuthorDefaults } from "../../../lib/learnAuthorDefaults.js";
 import { getSyllabusCodeOptions } from "../../../lib/learn-tree.js";
 import { filterBlocksForStudent } from "../../../lib/learnLevelAccess.js";
+import LearnBlocksLayout from "../../../components/learn/LearnBlocksLayout.jsx";
+import BlockWorkspace from "./editor/BlockWorkspace.jsx";
+import * as BL from "../../../lib/blockLayout.js";
+import { runLayoutOp, applyDrop, blockLabel, snapshotLayouts, applySnapshot, diffForPersist, makePersisted, keepLayout } from "../../../lib/blockLayoutOps.js";
 
 const inputCls = "w-full rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] px-3 py-2 text-sm text-[var(--color-ink)] focus:border-[var(--color-indigo)] focus:outline-none";
 const labelCls = "mb-1 block text-xs font-medium text-[var(--color-ink-soft)]";
 
 export default function LessonEditor() {
   const { pageId } = useParams();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const { user } = useAuth();
   const isNew = !pageId;
@@ -70,6 +74,20 @@ export default function LessonEditor() {
   const redoStack = useRef([]);
   const [, setHistoryTick] = useState(0);
   const suppressHistory = useRef(false);
+  // Flexible layout (content.layout, see src/lib/blockLayout.js). blocksRef always holds the latest block
+  // list so keyboard repeats and debounced saves never read a stale render; persistedRef is what the
+  // database is known to contain, so only real layout/order changes are written.
+  const blocksRef = useRef([]);
+  useEffect(() => { blocksRef.current = blocks; }, [blocks]);
+  const groupSeq = useRef(0);
+  const flushLayoutRef = useRef(null);
+  const persistedRef = useRef(makePersisted([]));
+  const flushTimer = useRef(null);
+  const layoutPending = useRef(false);
+  const [live, setLive] = useState({ text: "", n: 0 });
+  const [collapsedIds, setCollapsedIds] = useState(() => new Set());
+  const useClassic = searchParams.get("editor") === "classic";
+  const announce = (text) => setLive((p) => ({ text, n: p.n + 1 }));
 
   useEffect(() => { setAuthorDefaults(loadLearnAuthorDefaults(user?.id)); }, [user?.id]);
   function updateAuthorDefaults(patch) {
@@ -79,7 +97,7 @@ export default function LessonEditor() {
   }
   function pushHistory(entry) {
     if (suppressHistory.current) return;
-    undoStack.current = [...undoStack.current.slice(-39), entry];
+    undoStack.current = [...undoStack.current.slice(-99), entry];
     redoStack.current = [];
     setHistoryTick((n) => n + 1);
   }
@@ -116,6 +134,8 @@ export default function LessonEditor() {
         }
         setStatus(lesson.status);
         setBlocks(blockRows);
+        blocksRef.current = blockRows;
+        persistedRef.current = makePersisted(blockRows);
         setCheckQuestions(checkRows);
         setFormHydrated(true);
       })
@@ -137,7 +157,7 @@ export default function LessonEditor() {
   // be pixel-perfect.
   useEffect(() => {
     if (loading || !expandedBlockId) return;
-    const el = document.getElementById(`learn-block-${expandedBlockId}`);
+    const el = document.getElementById("block-content-editor") || document.getElementById(`learn-block-${expandedBlockId}`);
     el?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [loading, expandedBlockId]);
 
@@ -148,6 +168,41 @@ export default function LessonEditor() {
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
   }, [formDirty]);
+
+  useEffect(() => {
+    const warn = (e) => { if (!layoutPending.current) return; e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => { window.removeEventListener("beforeunload", warn); if (layoutPending.current) flushLayoutRef.current?.(); };
+  }, []);
+
+  // ---- layout persistence (debounced; flushed before Save/Publish and on leaving the page) ----
+  async function flushLayout() {
+    clearTimeout(flushTimer.current);
+    const list = blocksRef.current;
+    const { orderChanged, changed, ids } = diffForPersist(persistedRef.current, list);
+    if (!orderChanged && changed.length === 0) { layoutPending.current = false; return; }
+    try {
+      await Promise.all(changed.map((b) => updateBlock(b.id, { content: b.content })));
+      if (orderChanged) await reorderBlocks(ids);
+      persistedRef.current = makePersisted(list);
+      if (blocksRef.current === list) layoutPending.current = false;
+    } catch (err) {
+      setError(err.message || "Couldn't save the layout change. It will be retried on the next change.");
+    }
+  }
+  useEffect(() => { flushLayoutRef.current = flushLayout; });
+  function scheduleFlush() {
+    layoutPending.current = true;
+    clearTimeout(flushTimer.current);
+    flushTimer.current = setTimeout(() => flushLayoutRef.current?.(), 400);
+  }
+  function commitBlocks(next) {
+    blocksRef.current = next;
+    setBlocks(next);
+    scheduleFlush();
+  }
+  const persistedAdd = (b) => { const p = persistedRef.current; p.order = [...p.order.filter((x) => x !== b.id), b.id]; p.layouts.set(b.id, JSON.stringify(b.content?.layout ?? null)); };
+  const persistedRemove = (id) => { const p = persistedRef.current; p.order = p.order.filter((x) => x !== id); p.layouts.delete(id); };
 
   async function ensurePageExists() {
     if (currentPageId) {
@@ -165,6 +220,7 @@ export default function LessonEditor() {
     setSaving(true);
     setError(null);
     try {
+      await flushLayout();
       const id = await ensurePageExists();
       await saveLessonAsDraft(id);
       serverFormRef.current = form;
@@ -182,6 +238,7 @@ export default function LessonEditor() {
     setSaving(true);
     setError(null);
     try {
+      await flushLayout();
       const id = await ensurePageExists();
       const published = await publishLesson(id);
       serverFormRef.current = form;
@@ -195,61 +252,127 @@ export default function LessonEditor() {
     }
   }
 
-  async function handleAddBlock(blockType) {
-    setShowPicker(false);
-    if (!currentPageId) {
-      setError("Save this lesson as a draft first, then add blocks.");
-      return;
-    }
-    if (blockType === "check_understanding" && blocks.some((b) => b.block_type === "check_understanding")) {
-      setError("This lesson already has a Check Your Understanding block. Move the existing block to the position you want.");
-      return;
-    }
+  function initialContentFor(blockType) {
     let initialContent = { ...BLOCK_TYPES[blockType].defaultContent, audience: "both" };
     if (blockType === "image") initialContent = { ...initialContent, width: authorDefaults.imageWidth, alignment: authorDefaults.imageAlignment };
     if (blockType === "video") initialContent = { ...initialContent, width: authorDefaults.videoWidth, alignment: authorDefaults.videoAlignment };
-    const created = await createBlock(currentPageId, { blockType, content: initialContent, position: blocks.length });
-    pushHistory({ type: "add", block: created });
-    setBlocks((prev) => [...prev, created]);
-    setExpandedBlockId(created.id);
+    return initialContent;
   }
+
+  // Creates the blocks on the server (appended at the end, like always), then arranges them locally:
+  // after `afterId`'s row, or at a drop `target` ({ id, zone }); layout + order are persisted by the debounced flush.
+  async function createAndPlace(types, { afterId = null, target = null, spans = null } = {}) {
+    if (!currentPageId) { setError("Save this lesson as a draft first, then add blocks."); return null; }
+    if (types.includes("check_understanding") && blocksRef.current.some((b) => b.block_type === "check_understanding")) {
+      setError("This lesson already has a Check Your Understanding block. Move the existing block to the position you want.");
+      return null;
+    }
+    setError(null);
+    try {
+      const created = [];
+      const group = `g${groupSeq.current += 1}`;
+      for (const type of types) {
+        const row = await createBlock(currentPageId, { blockType: type, content: initialContentFor(type), position: blocksRef.current.length + created.length });
+        created.push(row);
+        persistedAdd(row);
+        pushHistory({ type: "add", block: row, group: types.length > 1 ? group : undefined });
+      }
+      const before = blocksRef.current;
+      let next = before; let anchor = afterId;
+      for (const row of created) { next = BL.insertAfter(next, row, anchor); anchor = row.id; }
+      if (target && created.length) {
+        const zone = target.zone === "left" || target.zone === "right" ? (spans ? "after" : target.zone) : target.zone;
+        next = target.zone === "end" || !target.id ? next : applyDrop(next, created[0].id, target.id, zone);
+      }
+      if (spans && created.length > 1) next = BL.applyPresetRow(next, created.map((r) => r.id), spans);
+      commitBlocks(next);
+      setExpandedBlockId(created[0]?.id ?? null);
+      announce(`${created.length > 1 ? "Layout preset" : blockLabel(created[0])} added. ${BL.describePlacement(next, created[0]?.id)}.`);
+      return created;
+    } catch (err) {
+      setError(err.message || "Couldn't add the block.");
+      return null;
+    }
+  }
+  const handleAddBlock = (blockType, afterId = null, target = null) => { setShowPicker(false); return createAndPlace([blockType], { afterId, target }); };
+  const handleAddPreset = (key, afterId = null, target = null) => {
+    const preset = BL.LAYOUT_PRESETS[key];
+    return preset ? createAndPlace(preset.types, { afterId, target, spans: preset.spans }) : null;
+  };
 
   async function handleUpdateBlockContent(blockId, content) {
     const before = blocks.find((b) => b.id === blockId)?.content;
     if (before && JSON.stringify(before) !== JSON.stringify(content)) pushHistory({ type: "content", blockId, before, after: content });
     setBlocks((prev) => prev.map((b) => (b.id === blockId ? { ...b, content } : b)));
+    persistedRef.current.layouts.set(blockId, JSON.stringify(content?.layout ?? null));
     await updateBlock(blockId, { content });
   }
 
   async function handleToggleVisible(block) {
+    if (!block) return;
     const visible = !block.visible;
     pushHistory({ type: "visibility", blockId: block.id, before: block.visible, after: visible });
     setBlocks((prev) => prev.map((b) => (b.id === block.id ? { ...b, visible } : b)));
     await updateBlock(block.id, { visible });
+    announce(`${blockLabel(block)} ${visible ? "shown" : "hidden from students"}.`);
   }
 
   async function handleDuplicate(block) {
+    if (!block) return;
     if (block.block_type === "check_understanding") {
       setError("A lesson can contain one Check Your Understanding block. Move the existing block instead of duplicating it.");
       return;
     }
-    const created = await createBlock(currentPageId, { blockType: block.block_type, content: block.content, position: blocks.length });
-    pushHistory({ type: "add", block: created });
-    setBlocks((prev) => [...prev, created]);
+    try {
+      const created = await createBlock(currentPageId, { blockType: block.block_type, content: block.content, position: blocksRef.current.length });
+      persistedAdd(created);
+      pushHistory({ type: "add", block: created });
+      commitBlocks(BL.insertAfter(blocksRef.current, created, block.id));
+      announce(`${blockLabel(block)} duplicated.`);
+    } catch (err) {
+      setError(err.message || "Couldn't duplicate the block.");
+    }
   }
 
   async function handleDelete(blockId) {
-    const index = blocks.findIndex((b) => b.id === blockId);
-    const deleted = blocks[index];
-    if (deleted) pushHistory({ type: "delete", block: deleted, index });
-    setBlocks((prev) => prev.filter((b) => b.id !== blockId));
+    const index = blocksRef.current.findIndex((b) => b.id === blockId);
+    const deleted = blocksRef.current[index];
+    if (deleted) pushHistory({ type: "delete", block: { ...deleted, content: keepLayout(deleted.content, null) }, index });
+    commitBlocks(BL.removeBlock(blocksRef.current, blockId));
+    persistedRemove(blockId);
+    if (expandedBlockId === blockId) setExpandedBlockId(null);
     await deleteBlock(blockId);
+    if (deleted) announce(`${blockLabel(deleted)} deleted. Undo is available.`);
+  }
+
+  // ---- layout intents from the workspace ----
+  function handleLayoutOp(name, id, arg) {
+    const cur = blocksRef.current;
+    const r = runLayoutOp(cur, name, id, arg);
+    if (r.changed) {
+      pushHistory({ type: "layout", before: snapshotLayouts(cur), after: snapshotLayouts(r.blocks) });
+      commitBlocks(r.blocks);
+    }
+    if (r.message) announce(r.message);
+  }
+  function handleDrop(payload, target) {
+    if (payload.kind === "move") {
+      const cur = blocksRef.current;
+      const next = applyDrop(cur, payload.id, target.id, target.zone);
+      const moved = cur.find((b) => b.id === payload.id);
+      if (next !== cur) {
+        pushHistory({ type: "layout", before: snapshotLayouts(cur), after: snapshotLayouts(next) });
+        commitBlocks(next);
+        announce(`${blockLabel(moved)} moved: ${BL.describePlacement(next, payload.id)}.`);
+      } else announce(`${blockLabel(moved)} could not be placed there.`);
+    } else if (payload.kind === "new") handleAddBlock(payload.type, null, target);
+    else if (payload.kind === "preset") handleAddPreset(payload.key, null, target);
   }
 
   function handleDragStart(e, index) {
     e.dataTransfer.setData("text/plain", String(index));
   }
-  function handleDrop(e, targetIndex) {
+  function handleClassicDrop(e, targetIndex) {
     e.preventDefault();
     const sourceIndex = Number(e.dataTransfer.getData("text/plain"));
     if (sourceIndex === targetIndex) return;
@@ -258,15 +381,16 @@ export default function LessonEditor() {
     const [moved] = next.splice(sourceIndex, 1);
     next.splice(targetIndex, 0, moved);
     pushHistory({ type: "reorder", beforeIds, afterIds: next.map((b) => b.id) });
-    setBlocks(next);
-    reorderBlocks(next.map((b) => b.id));
+    commitBlocks(next);
   }
 
   async function applyHistory(entry, direction) {
     suppressHistory.current = true;
     try {
-      if (entry.type === "content") {
-        const content = direction === "undo" ? entry.before : entry.after;
+      if (entry.type === "layout") {
+        commitBlocks(applySnapshot(blocksRef.current, direction === "undo" ? entry.before : entry.after));
+      } else if (entry.type === "content") {
+        const content = keepLayout(direction === "undo" ? entry.before : entry.after, blocksRef.current.find((b) => b.id === entry.blockId));
         setBlocks((prev) => prev.map((b) => b.id === entry.blockId ? { ...b, content } : b));
         await updateBlock(entry.blockId, { content });
       } else if (entry.type === "visibility") {
@@ -275,41 +399,59 @@ export default function LessonEditor() {
         await updateBlock(entry.blockId, { visible });
       } else if (entry.type === "reorder") {
         const ids = direction === "undo" ? entry.beforeIds : entry.afterIds;
-        setBlocks((prev) => ids.map((id) => prev.find((b) => b.id === id)).filter(Boolean));
-        await reorderBlocks(ids);
+        commitBlocks(ids.map((id) => blocksRef.current.find((b) => b.id === id)).filter(Boolean));
       } else if (entry.type === "add") {
         if (direction === "undo") {
           await deleteBlock(entry.block.id);
-          setBlocks((prev) => prev.filter((b) => b.id !== entry.block.id));
+          persistedRemove(entry.block.id);
+          commitBlocks(BL.removeBlock(blocksRef.current, entry.block.id));
         } else {
           const recreated = await createBlock(currentPageId, { blockType: entry.block.block_type, content: entry.block.content, position: entry.block.position ?? blocks.length });
           entry.block = recreated;
+          persistedAdd(recreated);
           setBlocks((prev) => [...prev, recreated]);
         }
       } else if (entry.type === "delete") {
         if (direction === "undo") {
           const recreated = await createBlock(currentPageId, { blockType: entry.block.block_type, content: entry.block.content, position: entry.index });
           entry.block = recreated;
-          setBlocks((prev) => { const next=[...prev]; next.splice(Math.min(entry.index,next.length),0,recreated); return next; });
+          persistedAdd(recreated);
+          const next = [...blocksRef.current]; next.splice(Math.min(entry.index, next.length), 0, recreated);
+          commitBlocks(next);
         } else {
           await deleteBlock(entry.block.id);
-          setBlocks((prev) => prev.filter((b) => b.id !== entry.block.id));
+          persistedRemove(entry.block.id);
+          commitBlocks(BL.removeBlock(blocksRef.current, entry.block.id));
         }
       }
     } finally { suppressHistory.current = false; setHistoryTick((n) => n + 1); }
   }
-  async function handleUndo() { const entry = undoStack.current.pop(); if (!entry) return; await applyHistory(entry, "undo"); redoStack.current.push(entry); setHistoryTick((n)=>n+1); }
-  async function handleRedo() { const entry = redoStack.current.pop(); if (!entry) return; await applyHistory(entry, "redo"); undoStack.current.push(entry); setHistoryTick((n)=>n+1); }
+  // Entries created by one user action (e.g. a layout preset adds several blocks) share a `group` and undo/redo together.
+  async function handleUndo() {
+    const entry = undoStack.current.pop(); if (!entry) return;
+    await applyHistory(entry, "undo"); redoStack.current.push(entry);
+    while (entry.group && undoStack.current.at(-1)?.group === entry.group) { const e2 = undoStack.current.pop(); await applyHistory(e2, "undo"); redoStack.current.push(e2); }
+    setHistoryTick((n) => n + 1);
+    announce("Undone.");
+  }
+  async function handleRedo() {
+    const entry = redoStack.current.pop(); if (!entry) return;
+    await applyHistory(entry, "redo"); undoStack.current.push(entry);
+    while (entry.group && redoStack.current.at(-1)?.group === entry.group) { const e2 = redoStack.current.pop(); await applyHistory(e2, "redo"); undoStack.current.push(e2); }
+    setHistoryTick((n) => n + 1);
+    announce("Redone.");
+  }
 
   useEffect(() => {
     const onKey = (e) => {
-      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "z") return;
+      const k = e.key.toLowerCase();
+      if (!(e.ctrlKey || e.metaKey) || (k !== "z" && k !== "y")) return;
       // Inside a text field / the Rich Text editor Ctrl+Z belongs to THAT
       // field's own history, not to block-level undo.
       const t = e.target;
       if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
       e.preventDefault();
-      if (e.shiftKey) handleRedo(); else handleUndo();
+      if (k === "y" || e.shiftKey) handleRedo(); else handleUndo();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -372,20 +514,55 @@ export default function LessonEditor() {
     }
   }
 
+  function renderBlockContentEditor(block) {
+    return (
+      <>
+        <div className="mb-3 flex flex-wrap items-center gap-3 rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] px-3 py-2">
+          <div>
+            <p className="text-xs font-semibold text-[var(--color-ink)]">Block access</p>
+            <p className="text-[11px] text-[var(--color-ink-faint)]">HL students always see SL content too.</p>
+          </div>
+          <select className="ml-auto rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)] px-2 py-1.5 text-xs text-[var(--color-ink)]" value={block.content?.audience || "both"} onChange={(e) => handleUpdateBlockContent(block.id, { ...(block.content || {}), audience: e.target.value })}>
+            <option value="both">SL + HL</option>
+            <option value="hl">HL only</option>
+          </select>
+        </div>
+        {block.block_type === "check_understanding" ? (
+          <div className="rounded-md border border-[var(--color-indigo)]/25 bg-[var(--color-indigo-soft)] p-4">
+            <div className="mb-3">
+              <p className="text-sm font-bold text-[var(--color-ink)]">💡 Check Your Understanding</p>
+              <p className="mt-0.5 text-xs text-[var(--color-ink-faint)]">Optional block — drag it anywhere in the lesson. Add questions from the bank or create manual questions with an optional uploaded image.</p>
+            </div>
+            <CheckQuestionPicker
+              selected={checkQuestions}
+              pageId={currentPageId}
+              onAdd={handleAddCheckQuestion}
+              onAddManual={handleAddManualQuestion}
+              onUpdateManual={handleUpdateManualQuestion}
+              onRemove={handleRemoveCheckQuestion}
+              onMove={handleMoveCheckQuestion}
+            />
+          </div>
+        ) : (
+          <BlockEditor blockType={block.block_type} content={block.content} pageId={currentPageId} blockId={block.id} onChange={(content) => handleUpdateBlockContent(block.id, content)} />
+        )}
+      </>
+    );
+  }
+
   if (loading) return <div className="flex min-h-[50vh] items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-[var(--color-ink-faint)]" /></div>;
 
-  if (previewing) {
+  // The student-facing rendering of the lesson (levels, pages, layout) -- used by the full-page preview and the
+  // workspace's Preview mode, so both go through exactly the code students get.
+  function renderLessonPreview({ withChrome }) {
     const previewPages = splitLearnBlocksIntoPages(filterBlocksForStudent(blocks.filter((b) => b.visible), previewLevel));
     const safePreviewPage = Math.min(previewPage, previewPages.length - 1);
     const activePreviewPage = previewPages[safePreviewPage];
     return (
-      <div className="mx-auto max-w-2xl px-6 py-10">
-        <button type="button" onClick={() => setPreviewing(false)} className="mb-4 inline-flex items-center gap-1 text-sm text-[var(--color-ink-faint)] hover:text-[var(--color-ink)]">
-          <ChevronLeft size={15} /> Back to editor
-        </button>
+      <div>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-amber)]">Preview as Student</p><div className="inline-flex rounded-md border border-[var(--color-line)] p-1">{["SL","HL"].map((level)=><button key={level} type="button" onClick={()=>{setPreviewLevel(level);setPreviewPage(0);}} className={`rounded px-2.5 py-1 text-xs font-semibold ${previewLevel===level?"bg-[var(--color-indigo)] text-white":"text-[var(--color-ink-soft)]"}`}>{level}</button>)}</div></div>
-        <p className="font-mono text-xs text-[var(--color-indigo)]">{form.lessonCode}</p>
-        <h1 className="mt-1 font-[var(--font-display)] text-[26px] font-bold text-[var(--color-lesson-title)]">{form.title}</h1>
+        {withChrome && <><p className="font-mono text-xs text-[var(--color-indigo)]">{form.lessonCode}</p>
+        <h1 className="mt-1 font-[var(--font-display)] text-[26px] font-bold text-[var(--color-lesson-title)]">{form.title}</h1></>}
         {previewPages.length > 1 && (
           <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-y border-[var(--color-line)] py-3">
             <div>
@@ -399,15 +576,16 @@ export default function LessonEditor() {
             </div>
           </div>
         )}
-        <div className="mt-6 space-y-5">
-          {activePreviewPage.blocks.map((block) =>
+        <LearnBlocksLayout
+          blocks={activePreviewPage.blocks}
+          renderBlock={(block, { inCell }) =>
             block.block_type === "check_understanding" ? (
               <CheckYourUnderstanding key={block.id} pageId={currentPageId} checkQuestions={checkQuestions} />
             ) : (
-              <LearnBlockRenderer key={block.id} block={block} />
+              <LearnBlockRenderer key={block.id} block={block} inCell={inCell} />
             )
-          )}
-        </div>
+          }
+        />
         {previewPages.length > 1 && (
           <div className="mt-6 flex justify-between border-t border-[var(--color-line)] pt-4">
             <Button size="sm" variant="secondary" disabled={safePreviewPage === 0} onClick={() => setPreviewPage((p) => Math.max(0, p - 1))}>Previous Page</Button>
@@ -418,14 +596,25 @@ export default function LessonEditor() {
     );
   }
 
+  if (previewing) {
+    return (
+      <div className="mx-auto max-w-[980px] px-6 py-10">
+        <button type="button" onClick={() => setPreviewing(false)} className="mb-4 inline-flex items-center gap-1 text-sm text-[var(--color-ink-faint)] hover:text-[var(--color-ink)]">
+          <ChevronLeft size={15} /> Back to editor
+        </button>
+        {renderLessonPreview({ withChrome: true })}
+      </div>
+    );
+  }
+
   return (
-    <div className="mx-auto max-w-3xl px-6 py-10">
+    <div className="mx-auto max-w-[1400px] px-6 py-10">
       <button type="button" onClick={() => { if (user?.id) clearLearnDraft(user.id); navigate("/admin/learn-content"); }} className="mb-4 inline-flex items-center gap-1 text-sm text-[var(--color-ink-faint)] hover:text-[var(--color-ink)]">
         <ChevronLeft size={15} /> Learn Content
       </button>
 
       {/* Settings */}
-      <div className="rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-5">
+      <div className="max-w-3xl rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-5">
         <div className="flex items-center justify-between">
           <h1 className="text-lg font-semibold text-[var(--color-ink)]">{isNew && !currentPageId ? "New Lesson" : "Edit Lesson"}</h1>
           <Badge tone={status === "published" ? "teal" : "neutral"}>{status}</Badge>
@@ -500,9 +689,10 @@ export default function LessonEditor() {
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-sm font-semibold text-[var(--color-ink)]">Lesson Blocks</h2>
             <div className="flex items-center gap-1.5">
-              <button type="button" onClick={handleUndo} disabled={!undoStack.current.length} title="Undo (Ctrl/Cmd+Z)" className="flex items-center gap-1 rounded-md border border-[var(--color-line)] px-2 py-1 text-xs text-[var(--color-ink-soft)] disabled:opacity-35"><Undo2 size={13}/> Undo</button>
-              <button type="button" onClick={handleRedo} disabled={!redoStack.current.length} title="Redo (Ctrl/Cmd+Shift+Z)" className="flex items-center gap-1 rounded-md border border-[var(--color-line)] px-2 py-1 text-xs text-[var(--color-ink-soft)] disabled:opacity-35"><Redo2 size={13}/> Redo</button>
+              {useClassic && <button type="button" onClick={handleUndo} disabled={!undoStack.current.length} title="Undo (Ctrl/Cmd+Z)" className="flex items-center gap-1 rounded-md border border-[var(--color-line)] px-2 py-1 text-xs text-[var(--color-ink-soft)] disabled:opacity-35"><Undo2 size={13}/> Undo</button>}
+              {useClassic && <button type="button" onClick={handleRedo} disabled={!redoStack.current.length} title="Redo (Ctrl/Cmd+Shift+Z)" className="flex items-center gap-1 rounded-md border border-[var(--color-line)] px-2 py-1 text-xs text-[var(--color-ink-soft)] disabled:opacity-35"><Redo2 size={13}/> Redo</button>}
               <button type="button" onClick={() => setShowDesignDefaults((v)=>!v)} className="flex items-center gap-1 rounded-md border border-[var(--color-line)] px-2 py-1 text-xs text-[var(--color-ink-soft)]"><SlidersHorizontal size={13}/> Design Defaults</button>
+              <button type="button" onClick={() => { const q = new URLSearchParams(searchParams); if (useClassic) q.delete("editor"); else q.set("editor", "classic"); setSearchParams(q, { replace: true }); }} className="rounded-md border border-[var(--color-line)] px-2 py-1 text-xs text-[var(--color-ink-soft)]">{useClassic ? "Use layout editor" : "Classic list"}</button>
             </div>
           </div>
           {showDesignDefaults && <div className="mb-3 rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] p-3">
@@ -515,6 +705,39 @@ export default function LessonEditor() {
             </div>
             <p className="mt-2 text-[11px] text-[var(--color-ink-faint)]">Saved for this Admin profile. New media blocks use these values; individual blocks can override them.</p>
           </div>}
+          {!useClassic ? (
+            <>
+              <BlockWorkspace
+                blocks={blocks}
+                editingId={expandedBlockId}
+                onEdit={(id) => setExpandedBlockId((cur) => (cur === id ? null : id))}
+                onOp={handleLayoutOp}
+                onDrop={handleDrop}
+                onAdd={handleAddBlock}
+                onPreset={handleAddPreset}
+                onDuplicate={(id) => handleDuplicate(blocks.find((b) => b.id === id))}
+                onDelete={handleDelete}
+                onToggleVisible={(id) => handleToggleVisible(blocks.find((b) => b.id === id))}
+                onUndo={handleUndo}
+                onRedo={handleRedo}
+                canUndo={undoStack.current.length > 0}
+                canRedo={redoStack.current.length > 0}
+                live={`${live.text}${live.n % 2 ? "\u200B" : ""}`}
+                renderPreview={() => renderLessonPreview({ withChrome: false })}
+                collapsedIds={collapsedIds}
+                onCollapsedChange={setCollapsedIds}
+              />
+              {expandedBlockId && blocks.find((b) => b.id === expandedBlockId) && (
+                <section id="block-content-editor" aria-label="Block content" data-testid="content-panel" className="mt-4 rounded-lg border border-[var(--color-amber)]/50 bg-[var(--color-paper-raised)]">
+                  <div className="flex items-center justify-between gap-2 border-b border-[var(--color-line)] px-4 py-2.5">
+                    <p className="text-sm font-semibold text-[var(--color-ink)]">Editing: {getLearnBlockDisplayLabel(blocks.find((b) => b.id === expandedBlockId)).typeLabel}</p>
+                    <button type="button" onClick={() => setExpandedBlockId(null)} className="rounded-md border border-[var(--color-line)] px-3 py-1.5 text-xs font-medium text-[var(--color-ink-soft)] hover:text-[var(--color-ink)]">Close</button>
+                  </div>
+                  <div className="max-w-4xl p-4">{renderBlockContentEditor(blocks.find((b) => b.id === expandedBlockId))}</div>
+                </section>
+              )}
+            </>
+          ) : (<>
           <div className="space-y-2">
             {blocks.map((block, i) => (
               <div
@@ -524,7 +747,7 @@ export default function LessonEditor() {
                 onDragEnd={() => setDragArmedId(null)}
                 onDragStart={(e) => handleDragStart(e, i)}
                 onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => handleDrop(e, i)}
+                onDrop={(e) => handleClassicDrop(e, i)}
                 className={`rounded-md border bg-[var(--color-paper-raised)] ${block.visible ? "border-[var(--color-line)]" : "border-dashed border-[var(--color-line)] opacity-60"}`}
               >
                 <div className="flex items-center gap-2 border-b border-[var(--color-line)] px-3 py-2">
@@ -544,35 +767,7 @@ export default function LessonEditor() {
                 </div>
                 {expandedBlockId === block.id && (
                   <div className="p-3">
-                    <div className="mb-3 flex flex-wrap items-center gap-3 rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] px-3 py-2">
-                      <div>
-                        <p className="text-xs font-semibold text-[var(--color-ink)]">Block access</p>
-                        <p className="text-[11px] text-[var(--color-ink-faint)]">HL students always see SL content too.</p>
-                      </div>
-                      <select className="ml-auto rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)] px-2 py-1.5 text-xs text-[var(--color-ink)]" value={block.content?.audience || "both"} onChange={(e) => handleUpdateBlockContent(block.id, { ...(block.content || {}), audience: e.target.value })}>
-                        <option value="both">SL + HL</option>
-                        <option value="hl">HL only</option>
-                      </select>
-                    </div>
-                    {block.block_type === "check_understanding" ? (
-                      <div className="rounded-md border border-[var(--color-indigo)]/25 bg-[var(--color-indigo-soft)] p-4">
-                        <div className="mb-3">
-                          <p className="text-sm font-bold text-[var(--color-ink)]">💡 Check Your Understanding</p>
-                          <p className="mt-0.5 text-xs text-[var(--color-ink-faint)]">Optional block — drag it anywhere in the lesson. Add questions from the bank or create manual questions with an optional uploaded image.</p>
-                        </div>
-                        <CheckQuestionPicker
-                          selected={checkQuestions}
-                          pageId={currentPageId}
-                          onAdd={handleAddCheckQuestion}
-                          onAddManual={handleAddManualQuestion}
-                          onUpdateManual={handleUpdateManualQuestion}
-                          onRemove={handleRemoveCheckQuestion}
-                          onMove={handleMoveCheckQuestion}
-                        />
-                      </div>
-                    ) : (
-                      <BlockEditor blockType={block.block_type} content={block.content} pageId={currentPageId} blockId={block.id} onChange={(content) => handleUpdateBlockContent(block.id, content)} />
-                    )}
+                    {renderBlockContentEditor(block)}
                   </div>
                 )}
               </div>
@@ -598,6 +793,7 @@ export default function LessonEditor() {
               </div>
             )}
           </div>
+          </>)}
 
         </div>
       )}

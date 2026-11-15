@@ -60,10 +60,18 @@ export async function deleteResourceFile(filePath) {
   return error ?? null;
 }
 
-export async function getResourceSignedUrl(filePath) {
+/**
+ * Short-lived signed URL (generated on demand, never stored).  `options.download` (a file name, or true) asks the
+ * storage server to answer with `Content-Disposition: attachment; filename=...`, which forces a download instead of
+ * displaying the file; omit it for "view in the browser".
+ */
+export async function getResourceSignedUrl(filePath, options = {}) {
   if (!supabase) throw new Error("Not connected to Supabase.");
-  const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(filePath, SIGNED_URL_TTL_SECONDS);
+  const { download } = options ?? {};
+  const args = download ? [filePath, SIGNED_URL_TTL_SECONDS, { download }] : [filePath, SIGNED_URL_TTL_SECONDS];
+  const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(...args);
   if (error) throw error;
+  if (!data?.signedUrl) throw new Error("No signed URL returned.");
   return data.signedUrl;
 }
 
@@ -87,21 +95,33 @@ export async function listVisibleResources() {
   return data;
 }
 
+// resources.folder_id only exists AFTER docs/platform-sql/010_resource_folders.sql is applied.
+// If a write that carries folder_id fails because the column is missing, retry once without it
+// (the legacy `category` is always written too, so nothing is lost).
+function isMissingFolderIdColumn(error) {
+  return Boolean(error) && /folder_id/i.test(`${error.message ?? ""} ${error.details ?? ""}`) &&
+    (["42703", "PGRST204"].includes(error.code) || /(does not exist|schema cache|could not find)/i.test(error.message ?? ""));
+}
+function withoutFolderId(fields) {
+  const { folder_id: _ignored, ...rest } = fields; // eslint-disable-line no-unused-vars
+  return rest;
+}
+
 export async function createResource(fields) {
   if (!supabase) throw new Error("Not connected to Supabase.");
   const { data: userData } = await supabase.auth.getUser();
-  const { data, error } = await supabase
-    .from("resources")
-    .insert({ ...fields, created_by: userData?.user?.id })
-    .select()
-    .single();
+  const insert = (f) => supabase.from("resources").insert({ ...f, created_by: userData?.user?.id }).select().single();
+  let { data, error } = await insert(fields);
+  if (error && "folder_id" in fields && isMissingFolderIdColumn(error)) ({ data, error } = await insert(withoutFolderId(fields)));
   if (error) throw error;
   return data;
 }
 
 export async function updateResource(id, fields) {
   if (!supabase) throw new Error("Not connected to Supabase.");
-  const { data, error } = await supabase.from("resources").update(fields).eq("id", id).select().single();
+  const update = (f) => supabase.from("resources").update(f).eq("id", id).select().single();
+  let { data, error } = await update(fields);
+  if (error && "folder_id" in fields && isMissingFolderIdColumn(error)) ({ data, error } = await update(withoutFolderId(fields)));
   if (error) throw error;
   return data;
 }

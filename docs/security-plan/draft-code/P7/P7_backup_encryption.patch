@@ -1,0 +1,27 @@
+diff --git a/src/lib/backupCrypto.js b/src/lib/backupCrypto.js
+new file mode 100644
+index 0000000..cfc3f60
+--- /dev/null
++++ b/src/lib/backupCrypto.js
+@@ -0,0 +1,21 @@
++// DRAFT (docs/security-plan P7) -- NOT applied. Optional passphrase encryption (AES-256-GCM, PBKDF2-SHA256) for admin backup files so a
++// stolen/forwarded file is not a readable copy of the whole curriculum. Uses WebCrypto only. The passphrase is never stored.
++const ITER = 600_000;
++const enc = new TextEncoder(), dec = new TextDecoder();
++const b64 = (u8) => btoa(String.fromCharCode(...u8)), unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
++async function key(pass, salt, iter) {
++  const base = await crypto.subtle.importKey("raw", enc.encode(pass), "PBKDF2", false, ["deriveKey"]);
++  return crypto.subtle.deriveKey({ name: "PBKDF2", salt, iterations: iter, hash: "SHA-256" }, base, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
++}
++export async function encryptBackup(text, passphrase, iter = ITER) {
++  if (!passphrase || passphrase.length < 12) throw new Error("Passphrase must be at least 12 characters.");
++  const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
++  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, await key(passphrase, salt, iter), enc.encode(text)));
++  return JSON.stringify({ format: "elab-backup-enc-v1", kdf: "PBKDF2-SHA256", iter, salt: b64(salt), iv: b64(iv), data: b64(ct) });
++}
++export async function decryptBackup(envelope, passphrase) {
++  const e = typeof envelope === "string" ? JSON.parse(envelope) : envelope;
++  if (e?.format !== "elab-backup-enc-v1") throw new Error("Not an encrypted e-Lab backup.");
++  try { return dec.decode(await crypto.subtle.decrypt({ name: "AES-GCM", iv: unb64(e.iv) }, await key(passphrase, unb64(e.salt), e.iter), unb64(e.data))); }
++  catch { throw new Error("Wrong passphrase or damaged file."); }
++}

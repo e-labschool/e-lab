@@ -1,13 +1,17 @@
 import { useState, useEffect, useMemo } from "react";
-import { Plus, Search, FileText, Lock, Eye, EyeOff, Pencil, Trash2, Loader2, ExternalLink } from "lucide-react";
+import { Plus, Search, FileText, Lock, Globe, Pencil, Trash2, Loader2 } from "lucide-react";
 import { useAuth } from "../../../context/AuthContext.jsx";
-import { listAllResourcesForAdmin, updateResource, deleteResource, getResourceSignedUrl } from "../../../lib/resourceService.js";
+import { listAllResourcesForAdmin, updateResource, deleteResource } from "../../../lib/resourceService.js";
+import ResourceActions from "../../../components/resources/ResourceActions.jsx";
+import { resourceFromRow } from "../../../lib/resourceActions.js";
 import Button from "../../../components/ui/Button.jsx";
 import Badge from "../../../components/ui/Badge.jsx";
 import ResourceForm from "./ResourceForm.jsx";
+import { useResourceFolders } from "../../../lib/useResourceFolders.js";
+import { resolveResourceFolderId, folderOptionsForAudience, getDescendantIds, getAncestry } from "../../../lib/resourceFolders.js";
 
 const STATUS_TONE = { draft: "neutral", published: "teal", hidden: "amber" };
-const DEFAULT_FILTERS = { audience: "All", category: "All", level: "All", status: "All", search: "" };
+const DEFAULT_FILTERS = { audience: "All", folder: "All", level: "All", status: "All", search: "" };
 
 export default function AdminResources() {
   const { isConfigured } = useAuth();
@@ -19,6 +23,9 @@ export default function AdminResources() {
   const [pendingDelete, setPendingDelete] = useState(null);
   const [busyId, setBusyId] = useState(null);
   const [refetchToken] = useState(0);
+  const { folders, tree } = useResourceFolders("admin");
+  // folder (or legacy category fallback) each resource lives in
+  const folderIdOf = (r) => resolveResourceFolderId(r, folders, "admin");
 
   useEffect(() => {
     if (!isConfigured) return;
@@ -32,15 +39,25 @@ export default function AdminResources() {
     const q = filters.search.trim().toLowerCase();
     return resources.filter((r) => {
       if (filters.audience !== "All" && r.audience !== filters.audience) return false;
-      if (filters.category !== "All" && r.category !== filters.category) return false;
+      if (filters.folder !== "All") {
+        const fid = folderIdOf(r);
+        const inFolder = fid === filters.folder || (fid != null && getDescendantIds(tree, filters.folder).includes(fid));
+        if (!inFolder && !(fid == null && r.category === filters.folder)) return false; // category fallback when unfiled
+      }
       if (filters.level !== "All" && r.level !== filters.level) return false;
       if (filters.status !== "All" && r.status !== filters.status) return false;
       if (q && !`${r.title} ${r.description ?? ""} ${r.topic ?? ""}`.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [resources, filters]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resources, filters, folders, tree]);
 
-  const categoryOptions = useMemo(() => ["All", ...new Set(resources.map((r) => r.category))], [resources]);
+  const folderFilterOptions = useMemo(() => [
+    { value: "All", label: "Folder: All" },
+    ...folderOptionsForAudience(folders, "both").map((o) => ({ value: o.id, label: o.label })),
+    // legacy categories that match no folder (e.g. older free-text values) stay filterable
+    ...[...new Set(resources.filter((r) => resolveResourceFolderId(r, folders, "admin") == null).map((r) => r.category))].map((c) => ({ value: c, label: `${c} (no folder)` })),
+  ], [folders, resources]);
 
   async function toggleStatus(resource) {
     setBusyId(resource.id);
@@ -64,15 +81,6 @@ export default function AdminResources() {
       setLoadError(err.message);
     } finally {
       setBusyId(null);
-    }
-  }
-
-  async function handlePreview(resource) {
-    try {
-      const url = resource.external_url || (await getResourceSignedUrl(resource.file_path));
-      window.open(url, "_blank", "noopener,noreferrer");
-    } catch (err) {
-      setLoadError(err.message);
     }
   }
 
@@ -113,7 +121,7 @@ export default function AdminResources() {
           />
         </div>
         <FilterSelect label="Audience" value={filters.audience} options={["All", "student", "teacher", "both"]} onChange={(v) => setFilters((f) => ({ ...f, audience: v }))} />
-        <FilterSelect label="Category" value={filters.category} options={categoryOptions} onChange={(v) => setFilters((f) => ({ ...f, category: v }))} />
+        <FilterSelect label="Folder" value={filters.folder} options={folderFilterOptions} onChange={(v) => setFilters((f) => ({ ...f, folder: v }))} />
         <FilterSelect label="Level" value={filters.level} options={["All", "SL", "HL", "SL & HL"]} onChange={(v) => setFilters((f) => ({ ...f, level: v }))} />
         <FilterSelect label="Status" value={filters.status} options={["All", "draft", "published", "hidden"]} onChange={(v) => setFilters((f) => ({ ...f, status: v }))} />
         {JSON.stringify(filters) !== JSON.stringify(DEFAULT_FILTERS) && (
@@ -144,18 +152,19 @@ export default function AdminResources() {
                 <div className="mt-1 flex flex-wrap gap-1.5">
                   <Badge tone={STATUS_TONE[r.status]}>{r.status}</Badge>
                   <Badge tone="neutral">{r.audience}</Badge>
-                  <Badge tone="neutral">{r.category}</Badge>
+                  <Badge tone="neutral">{folderIdOf(r) ? getAncestry(tree, folderIdOf(r)).map((n) => n.name).join(" / ") : r.category}</Badge>
                   {r.topic && <Badge tone="indigo">{r.subtopic || r.topic}</Badge>}
                   {r.level && <Badge tone="neutral">{r.level}</Badge>}
                   {r.access_tier === "premium" && <Badge tone="amber">Premium</Badge>}
                 </div>
               </div>
+              {/* View (eye) + Download: same component as the student/teacher pages, so the admin can check an upload.  Never locked/blocked for the admin. */}
+              <ResourceActions resource={resourceFromRow(r)} compact />
               <div className="flex shrink-0 items-center gap-1">
-                <IconAction label="Preview" icon={r.external_url ? ExternalLink : FileText} onClick={() => handlePreview(r)} />
                 <IconAction label="Edit" icon={Pencil} onClick={() => setEditing(r)} />
                 <IconAction
                   label={r.status === "published" ? "Unpublish" : "Publish"}
-                  icon={r.status === "published" ? EyeOff : Eye}
+                  icon={Globe} active={r.status === "published"}
                   onClick={() => toggleStatus(r)}
                   busy={busyId === r.id}
                 />
@@ -197,6 +206,7 @@ export default function AdminResources() {
 }
 
 function FilterSelect({ label, value, options, onChange }) {
+  const opts = options.map((o) => (typeof o === "string" ? { value: o, label: o === "All" ? `${label}: All` : o } : o));
   return (
     <select
       aria-label={label}
@@ -204,7 +214,7 @@ function FilterSelect({ label, value, options, onChange }) {
       onChange={(e) => onChange(e.target.value)}
       className="rounded-md border border-[var(--color-line)] bg-transparent px-2 py-1.5 text-xs text-[var(--color-ink-soft)] focus:border-[var(--color-ink)]"
     >
-      {options.map((o) => <option key={o} value={o}>{o === "All" ? `${label}: All` : o}</option>)}
+      {opts.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
     </select>
   );
 }

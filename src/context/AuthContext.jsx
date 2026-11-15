@@ -148,6 +148,16 @@ export function AuthProvider({ children }) {
     if (error) throw error;
   }
 
+  // Saves non-sensitive PREFERENCE metadata (e.g. the chosen curricula) on the signed-in user. Supabase merges top-level
+  // keys. user_metadata is editable by the user, so never use it for roles, plans or entitlements.
+  async function updateUserMetadata(data) {
+    if (!supabase) throw new Error("Saving is unavailable: e-Lab is not yet connected to Supabase.");
+    const { data: res, error } = await supabase.auth.updateUser({ data });
+    if (error) throw error;
+    if (res?.user) setSession((prev) => (prev ? { ...prev, user: res.user } : prev));
+    return res?.user ?? null;
+  }
+
   async function updatePassword(newPassword) {
     if (!supabase) throw new Error("Password update is unavailable: e-Lab is not yet connected to Supabase.");
     const { error } = await supabase.auth.updateUser({ password: newPassword });
@@ -203,6 +213,7 @@ export function AuthProvider({ children }) {
     signOut,
     sendPasswordReset,
     updatePassword,
+    updateUserMetadata,
     upsertProfile,
     fetchProfile,
     refetchProfile: () => fetchProfile(session?.user?.id),

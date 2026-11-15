@@ -42,6 +42,7 @@ import AdminLayout from "./pages/admin/AdminLayout.jsx";
 import AdminDashboard from "./pages/admin/AdminDashboard.jsx";
 import { RoleIndexRedirect, RoleIndexResume, LearnIndexResume } from "./lib/lastRoute.jsx";
 import AdminResources from "./pages/admin/resources/AdminResources.jsx";
+import AdminFolders from "./pages/admin/folders/AdminFolders.jsx";
 import AdminLearnContent from "./pages/admin/learn/AdminLearnContent.jsx";
 import LessonEditor from "./pages/admin/learn/LessonEditor.jsx";
 import AdminQuestionBank from "./pages/admin/questions/AdminQuestionBank.jsx";
@@ -74,6 +75,13 @@ function lazyWithChunkRefresh(factory, key) {
     }
   });
 }
+
+// Simulation library / viewer and the admin access screen are only needed once someone opens them, so they load as
+// their own chunks and add nothing to the landing page's initial JavaScript.
+const SimulationsLibraryPage = lazyWithChunkRefresh(() => import("./pages/shared/SimulationPages.jsx").then((m) => ({ default: m.SimulationsLibraryPage })), "simulations-library");
+const SimulationViewPage = lazyWithChunkRefresh(() => import("./pages/shared/SimulationPages.jsx").then((m) => ({ default: m.SimulationViewPage })), "simulation-view");
+const AdminSimulations = lazyWithChunkRefresh(() => import("./pages/admin/simulations/AdminSimulations.jsx"), "admin-simulations");
+const pageFallback = <div className="flex min-h-[60vh] items-center justify-center"><ELabLoader /></div>;
 
 // Q Builder pulls in PDF/Word export libraries (jsPDF, docx) that are only
 // needed once a teacher actually opens it — lazy-loaded so those libraries
@@ -147,6 +155,8 @@ const router = createBrowserRouter([
       { path: "solve", element: <SolveHome /> },
       { path: "solve/new", element: <Suspense fallback={<div className="flex min-h-[60vh] items-center justify-center"><ELabLoader /></div>}><ChallengeBuilder /></Suspense> },
       { path: "solve/:challengeId/report", element: <Suspense fallback={<div className="flex min-h-[60vh] items-center justify-center"><ELabLoader /></div>}><ChallengeReport /></Suspense> },
+      { path: "simulations", element: <Suspense fallback={pageFallback}><SimulationsLibraryPage role="student" /></Suspense> },
+      { path: "simulations/:simulationId", element: <Suspense fallback={pageFallback}><SimulationViewPage role="student" /></Suspense> },
       { path: "resources", element: <ResourcesLanding /> },
       { path: "resources/:categoryId", element: <ResourcesCategoryPage /> },
       { path: "progress", element: <StudentProgressPage /> },
@@ -190,6 +200,8 @@ const router = createBrowserRouter([
       { path: "class-planner", element: <ClassPlanner /> },
       { path: "class-planner/:planId", element: <ClassPlanWorkspace /> },
       { path: "question-builder", element: <Suspense fallback={<div className="flex min-h-[60vh] items-center justify-center"><ELabLoader /></div>}><TeacherQBuilder /></Suspense> },
+      { path: "simulations", element: <Suspense fallback={pageFallback}><SimulationsLibraryPage role="teacher" /></Suspense> },
+      { path: "simulations/:simulationId", element: <Suspense fallback={pageFallback}><SimulationViewPage role="teacher" /></Suspense> },
       { path: "resources", element: <TeacherResources /> },
       { path: "profile", element: <TeacherProfilePage /> },
     ],
@@ -203,6 +215,7 @@ const router = createBrowserRouter([
       { path: "learn-content/new", element: <LessonEditor /> },
       { path: "learn-content/:pageId", element: <LessonEditor /> },
       { path: "resources", element: <AdminResources /> },
+      { path: "folders", element: <AdminFolders /> },
       { path: "question-bank", element: <AdminQuestionBank /> },
       { path: "question-bank/new", element: <QuestionEditor /> },
       { path: "question-bank/import", element: <ImportQuestions /> },
@@ -210,6 +223,7 @@ const router = createBrowserRouter([
       { path: "users", element: <AdminUsers /> },
       { path: "access", element: <AdminAccess /> },
       { path: "backup", element: <AdminBackupRestore /> },
+      { path: "simulations", element: <Suspense fallback={pageFallback}><AdminSimulations /></Suspense> },
       { path: "settings", element: <AdminSettings /> },
     ],
   },

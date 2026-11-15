@@ -1,20 +1,15 @@
-import { useState, useMemo } from "react";
+import { useMemo } from "react";
 import { useOutletContext } from "react-router-dom";
-import { FolderOpen, Loader2 } from "lucide-react";
 import Container from "../../components/ui/Container.jsx";
-import EmptyStatePanel from "../../components/ui/EmptyStatePanel.jsx";
+import ResourceBrowser from "../../components/resources/ResourceBrowser.jsx";
 import { useVisibleResources } from "../../lib/useVisibleResources.js";
-import { TEACHER_CATEGORIES, isResourceVisibleToAudience, getCategoryForAudience } from "../../lib/resourceService.js";
-import ResourceCard from "../student/resources/components/ResourceCard.jsx";
+import { isResourceVisibleToAudience } from "../../lib/resourceService.js";
 
 export default function Resources() {
   const { subject } = useOutletContext();
   const { resources, loading, error } = useVisibleResources();
-  const [activeCategory, setActiveCategory] = useState(TEACHER_CATEGORIES[0].id);
-  const teacherResources = useMemo(
-    () => resources.filter((r) => isResourceVisibleToAudience(r, "teacher") && getCategoryForAudience(r, "teacher") === activeCategory),
-    [resources, activeCategory]
-  );
+  // Audience rule unchanged: teacher + "both".  Folder placement is done by ResourceBrowser.
+  const teacherResources = useMemo(() => resources.filter((r) => isResourceVisibleToAudience(r, "teacher")), [resources]);
 
   return (
     <Container className="py-8 md:py-10">
@@ -29,40 +24,13 @@ export default function Resources() {
         </p>
       </div>
 
-      <div className="mt-5 flex gap-1.5">
-        {TEACHER_CATEGORIES.map((c) => (
-          <button
-            key={c.id}
-            type="button"
-            onClick={() => setActiveCategory(c.id)}
-            className={`rounded-md px-4 py-2 text-[15px] font-semibold transition-colors ${
-              activeCategory === c.id ? "bg-white text-[#12161C] shadow-sm" : "text-[var(--color-ink-soft)] hover:bg-[var(--color-ink)]/5"
-            }`}
-          >
-            {c.label}
-          </button>
-        ))}
+      <div className="mt-6">
+        <ResourceBrowser
+          role="teacher" resources={teacherResources} resourcesLoading={loading} resourcesError={error}
+          emptyTitle="Downloadable resources are on the way"
+          emptyDescription="Worksheets, practical sheets and reference material will appear here."
+        />
       </div>
-
-      {error && <p className="mt-6 text-sm text-[var(--color-coral)]">Resources couldn't be loaded: {error}</p>}
-
-      {loading ? (
-        <div className="mt-16 flex justify-center"><Loader2 className="h-5 w-5 animate-spin text-[var(--color-ink-faint)]" /></div>
-      ) : teacherResources.length === 0 ? (
-        <div className="mt-8">
-          <EmptyStatePanel
-            icon={FolderOpen}
-            title="Downloadable resources are on the way"
-            description="Worksheets, practical sheets and reference material will appear here."
-          />
-        </div>
-      ) : (
-        <div className="mt-6 flex flex-col gap-2.5">
-          {teacherResources.map((resource) => (
-            <ResourceCard key={resource.id} resource={resource} />
-          ))}
-        </div>
-      )}
     </Container>
   );
 }

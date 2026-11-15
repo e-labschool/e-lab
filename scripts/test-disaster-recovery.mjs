@@ -456,6 +456,8 @@ await (async () => {
     // covered by the spread below, exactly like every other backed-up table.
     ...c.BACKUP_DATASETS.map((t) => t.table),
     "user_access_overview", "platform_settings_public", // views over accounted-for base tables
+    "simulation_access", // DRAFT display-metadata table: explained in EXCLUDED_TABLES (src/lib/backup/constants.js)
+    "resource_folders", // DRAFT folder-tree table (docs/platform-sql/010): explained in EXCLUDED_TABLES (src/lib/backup/constants.js)
   ]);
 
   test("every .from(\"table\") name found in src/ is accounted for (content, backed up, or excluded with a reason)", () => {

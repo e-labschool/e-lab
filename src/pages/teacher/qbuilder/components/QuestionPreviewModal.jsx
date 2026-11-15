@@ -3,6 +3,8 @@ import Badge from "../../../../components/ui/Badge.jsx";
 import { getQuestionMarks } from "../../../../data/questions/schema.js";
 import StimulusRenderer from "./visuals/StimulusRenderer.jsx";
 import { ScientificText } from "../../../../lib/scientificContent.jsx";
+import QuestionStemLayout from "../../../../components/questions/QuestionStemLayout.jsx";
+import { getStimulusPlacement } from "../../../../lib/questionLayout.js";
 
 export default function QuestionPreviewModal({ question, onClose }) {
   if (!question) return null;
@@ -32,13 +34,21 @@ export default function QuestionPreviewModal({ question, onClose }) {
           <Badge tone="neutral">{question.questionType}</Badge>
         </div>
 
-        <p className="text-sm leading-relaxed text-[var(--color-ink)]"><ScientificText text={question.questionText} /></p>
-
-        {question.stimulus && (
-          <div className="mt-3">
-            <StimulusRenderer stimulus={question.stimulus} />
-          </div>
-        )}
+        {(() => {
+          const stem = <p className="text-sm leading-relaxed text-[var(--color-ink)]"><ScientificText text={question.questionText} /></p>;
+          const placement = question.stimulus ? getStimulusPlacement(question.stimulus) : null;
+          if (placement) return <QuestionStemLayout placement={placement} media={<StimulusRenderer stimulus={question.stimulus} />} stem={stem} />;
+          return (
+            <>
+              {stem}
+              {question.stimulus && (
+                <div className="mt-3">
+                  <StimulusRenderer stimulus={question.stimulus} />
+                </div>
+              )}
+            </>
+          );
+        })()}
 
         {question.questionType === "MCQ" && Array.isArray(question.options) && (
           <ul className="mt-3 flex flex-col gap-1 text-sm text-[var(--color-ink-soft)]">

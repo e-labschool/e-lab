@@ -1,4 +1,4 @@
-import { Presentation, CalendarDays, FileEdit, Library } from "lucide-react";
+import { Presentation, CalendarDays, FileEdit, Library, FlaskConical } from "lucide-react";
 import { getSubject } from "../../data/programmes.js";
 import AppSidebarLayout from "../../components/layout/AppSidebarLayout.jsx";
 import { useTrackLastRoute } from "../../lib/lastRoute.jsx";
@@ -6,11 +6,11 @@ import { useTrackLastRoute } from "../../lib/lastRoute.jsx";
 const PROGRAMME_ID = "ibdp";
 const SUBJECT_ID = "chemistry";
 
-// Exactly the four tabs specified: Teach | Class Planner | Question
-// Builder | Resources. Profile is reached via the account menu.
-const TABS = [
+// Tabs: Teach | Class Planner | Simulations | Question Builder | Resources. Profile is reached via the account menu.
+export const TEACHER_TABS = [
   { to: "/teacher/teach", label: "Teach", icon: Presentation },
   { to: "/teacher/class-planner", label: "Class Planner", icon: CalendarDays },
+  { to: "/teacher/simulations", label: "Simulations", icon: FlaskConical },
   { to: "/teacher/question-builder", label: "Question Builder", icon: FileEdit },
   { to: "/teacher/resources", label: "Resources", icon: Library },
 ];
@@ -21,7 +21,7 @@ export default function TeacherLayout() {
   return (
     <AppSidebarLayout
       role="teacher"
-      tabs={TABS}
+      tabs={TEACHER_TABS}
       accentHex="#C96A21"
       subject={subject}
       programmeId={PROGRAMME_ID}

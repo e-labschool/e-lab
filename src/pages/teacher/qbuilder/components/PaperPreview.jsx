@@ -1,5 +1,7 @@
 import { getQuestionMarks } from "../../../../data/questions/schema.js";
 import StimulusRenderer from "./visuals/StimulusRenderer.jsx";
+import QuestionStemLayout from "../../../../components/questions/QuestionStemLayout.jsx";
+import { getStimulusPlacement } from "../../../../lib/questionLayout.js";
 
 export default function PaperPreview({ draft, totalMarks }) {
   const { details, questions } = draft;
@@ -34,15 +36,25 @@ export default function PaperPreview({ draft, totalMarks }) {
           const hasParts = Array.isArray(q.parts) && q.parts.length > 0;
           return (
             <div key={q.id}>
-              <p className="whitespace-pre-line text-sm leading-relaxed">
-                <span className="font-semibold">{index + 1}.</span> {q.questionText}
-              </p>
-
-              {q.stimulus && (
-                <div className="my-2 pl-5">
-                  <StimulusRenderer stimulus={q.stimulus} />
-                </div>
-              )}
+              {(() => {
+                const stem = (
+                  <p className="whitespace-pre-line text-sm leading-relaxed">
+                    <span className="font-semibold">{index + 1}.</span> {q.questionText}
+                  </p>
+                );
+                const placement = q.stimulus ? getStimulusPlacement(q.stimulus) : null;
+                if (placement) return <div className="my-1"><QuestionStemLayout placement={placement} media={<StimulusRenderer stimulus={q.stimulus} />} stem={stem} /></div>;
+                return (
+                  <>
+                    {stem}
+                    {q.stimulus && (
+                      <div className="my-2 pl-5">
+                        <StimulusRenderer stimulus={q.stimulus} />
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
 
               {q.questionType === "MCQ" && Array.isArray(q.options) && (
                 <ul className="mt-1.5 flex flex-col gap-0.5 pl-5 text-sm">

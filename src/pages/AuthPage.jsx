@@ -9,6 +9,10 @@ import CopyrightNotice from "../components/layout/CopyrightNotice.jsx";
 import Button from "../components/ui/Button.jsx";
 import CountrySelect from "../components/ui/CountrySelect.jsx";
 import SignupConfirmation from "../components/auth/SignupConfirmation.jsx";
+import CurriculumField from "../components/auth/CurriculumField.jsx";
+import TeacherProfileFields from "../components/auth/TeacherProfileFields.jsx";
+import { buildTeacherProfileMetadata, validateTeacherProfile } from "../data/teacherProfile.js";
+import { DEFAULT_CURRICULUM_ID, buildCurriculumMetadata, curriculaForRole } from "../data/curricula.js";
 import { classifySignUp, savePending, loadPending, clearPending } from "../lib/signupFlow.js";
 
 const inputClasses =
@@ -244,8 +248,18 @@ function CreateAccountForm({ role, onSignedUpPending }) {
     fullName: "", email: "", password: "", confirmPassword: "",
     school: "", country: "", classGrade: "",
   });
+  // Curriculum is required; IB Diploma is preselected so nobody is blocked. Students pick one, teachers one or more
+  // (curriculaForRole enforces that even if the role is switched on this page after choosing).
+  const [curricula, setCurricula] = useState([DEFAULT_CURRICULUM_ID]);
+  const [curriculumOther, setCurriculumOther] = useState("");
+  // Teacher-only extra fields (required school name + professional field). Students never see or send them.
+  const [professionalField, setProfessionalField] = useState("");
+  const [professionalOther, setProfessionalOther] = useState("");
+  const [fieldErrors, setFieldErrors] = useState({});
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
+  // Switching role on this page must not leave teacher-only errors behind.
+  useEffect(() => { setFieldErrors({}); }, [role]);
 
   function set(key, value) {
     setFields((prev) => ({ ...prev, [key]: value }));
@@ -255,8 +269,18 @@ function CreateAccountForm({ role, onSignedUpPending }) {
     e.preventDefault();
     setError(null);
 
+    // Teacher-only: school name + professional field are required (inline messages, focus on the first problem).
+    const teacherErrors = role === "teacher" ? validateTeacherProfile({ school: fields.school, professionalField }) : {};
+    setFieldErrors(teacherErrors);
+    const firstBad = teacherErrors.school ? "su-school" : teacherErrors.professionalField ? "su-prof-field" : null;
+    if (firstBad) {
+      document.getElementById(firstBad)?.focus();
+      return;
+    }
+
     if (fields.password.length < 8) return setError("Password must be at least 8 characters.");
     if (fields.password !== fields.confirmPassword) return setError("Passwords don't match.");
+    if (curriculaForRole(role, curricula).length === 0) return setError("Choose a curriculum.");
 
     setLoading(true);
     try {
@@ -269,7 +293,12 @@ function CreateAccountForm({ role, onSignedUpPending }) {
         role,
         school: fields.school,
         country: fields.country,
-        curriculum: "IB Diploma Programme",
+        // Teacher only: school (trimmed; same key the trigger copies into profiles.school) + professional_field(+_other),
+        // which live in user_metadata only. Display data, never used for access. See docs/TEACHER_SIGNUP_FIELDS.md.
+        ...(role === "teacher" ? buildTeacherProfileMetadata({ school: fields.school, professionalField, other: professionalOther }) : {}),
+        // curriculum (text, copied into profiles.curriculum by the existing trigger), curricula (ids) and, with "Other",
+        // curriculum_other. No database migration: see docs/CURRICULA_AND_LOCKS.md.
+        ...buildCurriculumMetadata(role, curricula, curriculumOther),
         grade_or_class: fields.classGrade,
       };
 
@@ -334,10 +363,19 @@ function CreateAccountForm({ role, onSignedUpPending }) {
       </div>
 
       <div className="border-t border-[var(--color-line)] pt-4">
+        {role === "teacher" ? (
+          <TeacherProfileFields
+            idPrefix="su" school={fields.school} professionalField={professionalField} other={professionalOther} errors={fieldErrors}
+            onSchoolChange={(v) => { set("school", v); setFieldErrors((e) => ({ ...e, school: undefined })); }}
+            onProfessionalFieldChange={(v) => { setProfessionalField(v); setFieldErrors((e) => ({ ...e, professionalField: undefined })); }}
+            onOtherChange={setProfessionalOther}
+          />
+        ) : (
         <div>
           <label className={labelClasses} htmlFor="su-school">School</label>
           <input id="su-school" className={inputClasses} value={fields.school} onChange={(e) => set("school", e.target.value)} />
         </div>
+        )}
         <div className="mt-3">
           <label className={labelClasses} htmlFor="su-country">Country</label>
           <CountrySelect id="su-country" value={fields.country} onChange={(v) => set("country", v)} />
@@ -351,8 +389,7 @@ function CreateAccountForm({ role, onSignedUpPending }) {
           </select>
         </div>
         <div className="mt-3">
-          <span className={labelClasses}>Curriculum</span>
-          <p className="rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] px-3 py-2.5 text-sm text-[var(--color-ink-soft)]">IB Diploma Programme</p>
+          <CurriculumField role={role} idPrefix="su-curriculum" value={curricula} other={curriculumOther} onChange={setCurricula} onOtherChange={setCurriculumOther} />
         </div>
       </div>
 

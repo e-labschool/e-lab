@@ -4,6 +4,9 @@ import { SIMULATION_REGISTRY } from "../data/simulationRegistry.js";
 import { SIMULATION_COMPONENTS } from "../data/simulationEngineComponents.js";
 import ELabLoader from "../components/ui/ELabLoader.jsx";
 import { SimulationSessionProvider } from "../components/interactive-shell/simulationSession.js";
+import LockedContent from "../components/simulation-library/LockedContent.jsx";
+import { useAccessConfig, useAccessContext } from "../lib/access/AccessConfigContext.jsx";
+import { checkAccess } from "../lib/access/accessPolicy.js";
 
 // The "Open in New Tab" destination -- a dedicated, standalone route
 // (/simulation/:simulationId) rather than reopening the whole Student
@@ -32,6 +35,11 @@ export default function SimulationStandalonePage() {
   const { simulationId } = useParams();
   const meta = SIMULATION_REGISTRY[simulationId];
   const Sim = SIMULATION_COMPONENTS[simulationId];
+  // Access rules (accessPolicy): while everything is free this is always allowed, so nothing changes today.
+  const { catalogue } = useAccessConfig();
+  const accessCtx = useAccessContext();
+  const entry = catalogue.find((e) => e.id === simulationId);
+  const access = entry ? checkAccess(entry, accessCtx) : { allowed: true, reason: "ok" };
 
   // A dedicated tab should say what it is (tab strip, history, bookmarks).
   useEffect(() => {
@@ -50,6 +58,16 @@ export default function SimulationStandalonePage() {
         <Link to="/" className="text-sm font-medium text-[var(--color-indigo)] underline">
           Back to e-Lab
         </Link>
+      </div>
+    );
+  }
+
+  if (!access.allowed) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-[var(--color-paper)] px-4 py-8">
+        <div className="w-full max-w-3xl">
+          <LockedContent entry={entry} reason={access.reason} backTo="/" loginTo={`/auth?next=${encodeURIComponent(`/simulation/${simulationId}`)}`} />
+        </div>
       </div>
     );
   }

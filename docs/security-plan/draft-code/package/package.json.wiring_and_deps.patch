@@ -1,0 +1,38 @@
+diff --git a/package.json b/package.json
+index 09a2d09..8f27568 100644
+--- a/package.json
++++ b/package.json
+@@ -15,7 +15,7 @@
+     "test:state-persistence": "node scripts/test-state-persistence.mjs",
+     "verify:rich-text": "node scripts/verify-rich-text-editor.mjs",
+     "verify:state": "node scripts/verify-state-persistence.mjs",
+-    "test": "npm run test:disaster-recovery && npm run test:scientific-rendering && npm run test:rich-text-selection && npm run test:rich-text-ops && npm run test:state-persistence && npm run test:ideal-gas && npm run test:gas-laws && npm run test:gas-laws-ui && npm run test:dashboard-layout && npm run test:image-viewer && npm run test:bonding && npm run test:vsepr && npm run test:hybridisation && npm run test:imf && npm run test:nmr-physics && npm run test:nmr-ui && npm run test:nmr-molecular && npm run test:nmr-steps && npm run test:ir && npm run test:ms && npm run test:structure && npm run test:simulation-shell && npm run test:build-atom && npm run test:electron-config && npm run test:heating-cooling && npm run test:auth-signup",
++    "test": "npm run test:disaster-recovery && npm run test:scientific-rendering && npm run test:rich-text-selection && npm run test:rich-text-ops && npm run test:state-persistence && npm run test:ideal-gas && npm run test:gas-laws && npm run test:gas-laws-ui && npm run test:dashboard-layout && npm run test:image-viewer && npm run test:bonding && npm run test:vsepr && npm run test:hybridisation && npm run test:imf && npm run test:nmr-physics && npm run test:nmr-ui && npm run test:nmr-molecular && npm run test:nmr-steps && npm run test:ir && npm run test:ms && npm run test:structure && npm run test:simulation-shell && npm run test:build-atom && npm run test:electron-config && npm run test:heating-cooling && npm run test:auth-signup && npm run test:security",
+     "test:ideal-gas": "node scripts/test-ideal-gas-model.mjs",
+     "test:gas-laws": "node scripts/test-gas-laws-model.mjs",
+     "test:gas-laws-ui": "node scripts/test-gas-laws-ui.mjs",
+@@ -42,6 +42,8 @@
+     "test:build-atom": "node scripts/test-build-atom-controls.mjs",
+     "test:electron-config": "node scripts/test-electron-config.mjs",
+     "test:auth-signup": "node scripts/test-auth-signup-confirmation.mjs",
++    "test:security": "node scripts/test-sanitize-html.mjs && node scripts/test-security-libs.mjs && node scripts/check-learn-export-controls.mjs",
++    "check:build-security": "node scripts/check-build-security.mjs dist",
+     "test:heating-cooling": "node scripts/test-heating-cooling-curve.mjs",
+     "verify:build-atom-shells": "node scripts/verify-build-atom-shells.mjs",
+     "verify:build-atom-heating": "node scripts/verify-build-atom-heating.mjs",
+@@ -55,6 +57,7 @@
+     "@react-three/fiber": "^9.7.0",
+     "@supabase/supabase-js": "^2.115.0",
+     "docx": "^9.7.1",
++    "dompurify": "^3.4.17",
+     "jspdf": "^4.2.1",
+     "jszip": "^3.10.2",
+     "lucide-react": "^1.39.0",
+@@ -71,6 +74,6 @@
+     "jsdom": "^30.1.1",
+     "oxlint": "^1.79.0",
+     "tailwindcss": "^4.3.3",
+-    "vite": "^8.2.2"
++    "vite": "^8.3.8"
+   }
+ }

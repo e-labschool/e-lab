@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { X, Loader2 } from "lucide-react";
 import { UNITS, TOPICS } from "../../../data/questions/unitMeta.js";
 import {
   uploadResourceFile, createResource, updateResource,
-  RESOURCE_TYPES, LEVEL_OPTIONS, STUDENT_CATEGORIES, TEACHER_CATEGORIES,
+  RESOURCE_TYPES, LEVEL_OPTIONS,
 } from "../../../lib/resourceService.js";
+import { useResourceFolders } from "../../../lib/useResourceFolders.js";
+import { folderOptionsForAudience, resolveResourceFolderId, legacyCategoryForFolder, isSyntheticFolderId } from "../../../lib/resourceFolders.js";
 import Button from "../../../components/ui/Button.jsx";
 import ResourceUploader from "./ResourceUploader.jsx";
 
@@ -44,7 +46,15 @@ export default function ResourceForm({ resource, onClose, onSaved }) {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
-  const categoryOptions = form.audience === "teacher" ? TEACHER_CATEGORIES : STUDENT_CATEGORIES;
+  // Folder dropdown: full paths, filtered by the chosen audience.  The legacy `category` is still
+  // written (derived from the top-level folder) so older readers keep working; the storage path
+  // scheme (audience/category/uuid.ext) is unchanged.
+  const { folders, tree, source, loading: foldersLoading } = useResourceFolders("admin");
+  const folderOptions = useMemo(() => folderOptionsForAudience(folders, form.audience), [folders, form.audience]);
+  const [pickedFolder, setPickedFolder] = useState(null); // null = user has not chosen yet
+  const resolvedForEdit = useMemo(() => (isEdit ? resolveResourceFolderId(resource, folders, "admin") : null), [isEdit, resource, folders]);
+  const chosen = pickedFolder ?? resolvedForEdit;
+  const selectedFolder = folderOptions.some((o) => o.id === chosen) ? chosen : (isEdit && (pickedFolder === "" || (pickedFolder == null && resolvedForEdit == null)) ? "" : (folderOptions[0]?.id ?? ""));
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -53,13 +63,18 @@ export default function ResourceForm({ resource, onClose, onSaved }) {
     if (!form.title.trim()) return setError("Title is required.");
     if (!file && !form.external_url && !form.file_path) return setError("Add a file or an external link.");
     if (file && form.external_url) return setError("Use either a file upload or an external link, not both.");
+    if (!selectedFolder && !isEdit) return setError("Choose a folder.");
+
+    // Keep the stored category on an unrelated edit; otherwise derive it from the folder.
+    const keepCategory = isEdit && pickedFolder == null && form.audience === resource.audience && (resolvedForEdit != null || !selectedFolder);
+    const category = keepCategory || !selectedFolder ? (form.category || resource.category) : legacyCategoryForFolder(tree, selectedFolder, form.audience);
 
     setSaving(true);
     try {
       let fileFields = {};
       if (file) {
         setUploading(true);
-        const uploaded = await uploadResourceFile(file, { audience: form.audience, category: form.category });
+        const uploaded = await uploadResourceFile(file, { audience: form.audience, category });
         setUploading(false);
         fileFields = {
           file_path: uploaded.filePath,
@@ -74,7 +89,9 @@ export default function ResourceForm({ resource, onClose, onSaved }) {
         title: form.title.trim(),
         description: form.description || null,
         audience: form.audience,
-        category: form.category,
+        category,
+        // folder_id only once the folders table exists and the choice is a real folder row
+        ...(selectedFolder && source === "database" && !isSyntheticFolderId(selectedFolder) ? { folder_id: selectedFolder } : {}),
         curriculum: form.curriculum,
         topic: form.topic || null,
         subtopic: form.subtopic || null,
@@ -125,12 +142,21 @@ export default function ResourceForm({ resource, onClose, onSaved }) {
               </select>
             </div>
             <div>
-              <label className={labelClasses} htmlFor="rf-category">Category</label>
-              <select id="rf-category" className={inputClasses} value={form.category} onChange={(e) => set("category", e.target.value)}>
-                {categoryOptions.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+              <label className={labelClasses} htmlFor="rf-folder">Folder</label>
+              <select
+                id="rf-folder" className={inputClasses} value={selectedFolder} disabled={foldersLoading}
+                onChange={(e) => setPickedFolder(e.target.value)}
+              >
+                {foldersLoading && <option value="">Loading folders&hellip;</option>}
+                {!foldersLoading && !selectedFolder && <option value="">{isEdit ? `Keep current category (${resource.category})` : "Choose a folder\u2026"}</option>}
+                {folderOptions.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
               </select>
             </div>
           </div>
+
+          {!foldersLoading && source === "fallback" && (
+            <p className="-mt-2 text-xs text-[var(--color-ink-faint)]">Folders are the standard categories until the folders update is applied (Admin &rarr; Folders).</p>
+          )}
 
           <div>
             <label className={labelClasses} htmlFor="rf-curriculum">Curriculum</label>

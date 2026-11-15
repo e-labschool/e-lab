@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { isSupabaseConfigured } from "./supabaseClient.js";
-import { listVisibleResources, getResourceSignedUrl } from "./resourceService.js";
+import { listVisibleResources } from "./resourceService.js";
+import { viewResource } from "./resourceActions.js";
 
 // Normalizes a Supabase `resources` row into the SAME shape
 // student-resources.js entries already use (title, description, category,
@@ -20,6 +21,9 @@ function normalizeSupabaseResource(row) {
     title: row.title,
     description: row.description ?? "",
     category: row.category,
+    folderId: row.folder_id ?? null, // undefined/null before the resource-folders migration -> legacy category fallback
+    createdAt: row.created_at ?? null,
+    accessTier: row.access_tier ?? "free",
     topic: row.subtopic || row.topic || null,
     resourceType: row.resource_type,
     fileType,
@@ -30,6 +34,8 @@ function normalizeSupabaseResource(row) {
     isLocked: row.is_locked,
     needsSignedUrl: Boolean(row.file_path),
     supabaseFilePath: row.file_path,
+    mimeType: row.mime_type ?? null,
+    originalFileName: row.original_file_name ?? null,
     audience: row.audience,
   };
 }
@@ -52,13 +58,7 @@ export function useVisibleResources() {
   return { resources, loading, error, refetch: () => setRefetchToken((t) => t + 1) };
 }
 
+/** Kept for compatibility: opens the resource in a new tab (see resourceActions.viewResource for the behaviour). */
 export async function openResource(resource) {
-  if (resource.isLocked) return; // defensive — UI already prevents this click
-  if (resource.needsSignedUrl && resource.supabaseFilePath) {
-    const url = await getResourceSignedUrl(resource.supabaseFilePath);
-    window.open(url, "_blank", "noopener,noreferrer");
-    return;
-  }
-  const href = resource.externalUrl || resource.filePath;
-  window.open(href, "_blank", "noopener,noreferrer");
+  return viewResource(resource);
 }

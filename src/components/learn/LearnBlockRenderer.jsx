@@ -24,7 +24,10 @@ import { useAuth } from "../../context/AuthContext.jsx";
 // it from this file.
 export { renderCompactLatex };
 
-export default function LearnBlockRenderer({ block }) {
+// `inCell` is true only when the block sits in a flexible-layout grid cell
+// (see LearnBlocksLayout.jsx). Without it (every legacy lesson) rendering is
+// byte-for-byte what it always was.
+export default function LearnBlockRenderer({ block, inCell = false }) {
   const c = block.content ?? {};
 
   switch (block.block_type) {
@@ -41,6 +44,15 @@ export default function LearnBlockRenderer({ block }) {
     }
 
     case "image": {
+      if (inCell) {
+        // In a layout cell the grid decides the width, so the image fills it.
+        return (
+          <figure className="w-full">
+            <ZoomableImage src={c.url} alt={c.alt || ""} className="block h-auto w-full rounded-md" />
+            {c.caption && <figcaption className="mt-1.5 text-xs text-[var(--color-ink-faint)]">{c.caption}</figcaption>}
+          </figure>
+        );
+      }
       const wrap = c.wrap || "none";
       const normalWidth = c.width === "small" ? "w-1/2" : c.width === "medium" ? "w-[70%]" : c.width === "full" ? "w-full" : "w-[85%]";
       const wrappedWidth = c.width === "small" ? "sm:w-1/3" : c.width === "medium" ? "sm:w-[42%]" : "sm:w-1/2";
@@ -65,8 +77,8 @@ export default function LearnBlockRenderer({ block }) {
       const isDirectVideo = /\.(mp4|webm|mov)(\?|#|$)/i.test(url) || url.includes("/storage/v1/object/public/learn-media/");
       const embedUrl = toEmbedVideoUrl(url);
       if (!url) return <PlaceholderBlock label="Video not yet configured" />;
-      const widthClass = c.width === "small" ? "w-1/2" : c.width === "medium" ? "w-[70%]" : c.width === "full" ? "w-full" : "w-[85%]";
-      const alignClass = c.alignment === "left" ? "mr-auto" : c.alignment === "right" ? "ml-auto" : "mx-auto";
+      const widthClass = inCell ? "w-full" : c.width === "small" ? "w-1/2" : c.width === "medium" ? "w-[70%]" : c.width === "full" ? "w-full" : "w-[85%]";
+      const alignClass = inCell ? "" : c.alignment === "left" ? "mr-auto" : c.alignment === "right" ? "ml-auto" : "mx-auto";
       return (
         <figure>
           <div className={`aspect-video overflow-hidden rounded-md bg-black ${widthClass} ${alignClass}`}>

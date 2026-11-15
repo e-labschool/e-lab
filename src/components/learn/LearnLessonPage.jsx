@@ -8,6 +8,7 @@ import { getLearnCmsCurriculumTree } from "../../data/learnCmsCurriculum.js";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { saveUserScopedValue, loadUserScopedValue } from "../../lib/userScopedStorage.js";
 import LearnBlockRenderer from "./LearnBlockRenderer.jsx";
+import LearnBlocksLayout from "./LearnBlocksLayout.jsx";
 import CheckYourUnderstanding from "./CheckYourUnderstanding.jsx";
 import ELabLoader from "../ui/ELabLoader.jsx";
 import { splitLearnBlocksIntoPages } from "../../lib/learnPagination.js";
@@ -222,15 +223,16 @@ export default function LearnLessonPage() {
         </div>
       )}
 
-      <div className="mt-6 space-y-5">
-        {activePage.blocks.map((block) =>
+      <LearnBlocksLayout
+        blocks={activePage.blocks}
+        renderBlock={(block, { inCell }) =>
           block.block_type === "check_understanding" ? (
             <CheckYourUnderstanding key={block.id} pageId={pageId} checkQuestions={visibleCheckQuestions} progressConceptIds={progressConceptIds} />
           ) : (
-            <LearnBlockRenderer key={block.id} block={block} />
+            <LearnBlockRenderer key={block.id} block={block} inCell={inCell} />
           )
-        )}
-      </div>
+        }
+      />
 
       {pages.length > 1 && (
         <div className="mt-8 flex items-center justify-between border-t border-[var(--color-line)] pt-5">

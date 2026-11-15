@@ -1,0 +1,106 @@
+diff --git a/scripts/compare-lesson-images.mjs b/scripts/compare-lesson-images.mjs
+new file mode 100644
+index 0000000..191f7cf
+--- /dev/null
++++ b/scripts/compare-lesson-images.mjs
+@@ -0,0 +1,15 @@
++#!/usr/bin/env node
++// DRAFT (docs/security-plan P5). Before/after proof that every image a lesson references still loads and is byte-identical.
++// Input: a JSON list of {page_id, label, before: <public URL>, after: <signed URL or storage ref already resolved>} produced by the staging
++// harness (see plan P5 test T5.x). Fetches both, compares status, content-type and SHA-256. Prints no URLs with tokens (path only).
++import fs from "node:fs"; import crypto from "node:crypto";
++const items = JSON.parse(fs.readFileSync(process.argv[2] || "image-pairs.json", "utf8"));
++const get = async (u) => { try { const r = await fetch(u); const b = Buffer.from(await r.arrayBuffer()); return { s: r.status, t: r.headers.get("content-type"), h: crypto.createHash("sha256").update(b).digest("hex") }; } catch (e) { return { s: 0, t: "", h: "" }; } };
++const short = (u) => { try { return new URL(u).pathname; } catch { return "?"; } };
++let bad = 0;
++for (const it of items) {
++  const [a, b] = await Promise.all([get(it.before), get(it.after)]);
++  const ok = a.s === 200 && b.s === 200 && a.h === b.h && a.t === b.t;
++  if (!ok) { bad++; console.log(`DIFF ${it.page_id} ${short(it.before)} before=${a.s}/${a.t} after=${b.s}/${b.t} same=${a.h === b.h}`); }
++}
++console.log(`${items.length - bad}/${items.length} identical`); process.exit(bad ? 1 : 0);
+diff --git a/scripts/copy-media-to-private.mjs b/scripts/copy-media-to-private.mjs
+new file mode 100644
+index 0000000..7dbaaae
+--- /dev/null
++++ b/scripts/copy-media-to-private.mjs
+@@ -0,0 +1,42 @@
++#!/usr/bin/env node
++// DRAFT (docs/security-plan P5) -- NOT RUN against any live system. COPY (never move/delete) objects from the public buckets to the
++// private ones, preserving the path, then verify byte-for-byte by SHA-256. DRY-RUN by default; --apply is required to write.
++// Credentials come ONLY from environment variables at run time (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY). They are never printed or saved.
++// Run from an admin workstation, never from the browser bundle. Usage: node copy-media-to-private.mjs [--apply] [--only=learn|question] [--manifest=path.json]
++import { createClient } from "@supabase/supabase-js"; import crypto from "node:crypto"; import fs from "node:fs";
++const args = Object.fromEntries(process.argv.slice(2).map((a) => { const [k, v] = a.replace(/^--/, "").split("="); return [k, v ?? true]; }));
++const PAIRS = [["learn-media", "learn-media-private", "learn"], ["question-media", "question-media-private", "question"]].filter(([, , k]) => !args.only || args.only === k);
++const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = process.env;
++if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) { console.error("Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in the environment (not echoed). Nothing done."); process.exit(2); }
++const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
++const sha = (buf) => crypto.createHash("sha256").update(Buffer.from(buf)).digest("hex");
++async function listAll(bucket, prefix = "") {
++  const out = []; let offset = 0;
++  for (;;) {
++    const { data, error } = await sb.storage.from(bucket).list(prefix, { limit: 100, offset, sortBy: { column: "name", order: "asc" } });
++    if (error) throw error; if (!data.length) break;
++    for (const e of data) { const p = prefix ? `${prefix}/${e.name}` : e.name; if (e.id === null) out.push(...await listAll(bucket, p)); else out.push(p); }
++    offset += data.length; if (data.length < 100) break;
++  }
++  return out;
++}
++const manifest = [];
++for (const [src, dst] of PAIRS) {
++  const paths = await listAll(src); console.log(`${src}: ${paths.length} objects`);
++  for (const p of paths) {
++    const row = { src, dst, path: p, status: "planned" };
++    if (args.apply) {
++      const a = await sb.storage.from(src).download(p); if (a.error) { row.status = "download_failed"; manifest.push(row); continue; }
++      const buf = await a.data.arrayBuffer(); row.sha256 = sha(buf); row.bytes = buf.byteLength;
++      const up = await sb.storage.from(dst).upload(p, buf, { contentType: a.data.type || undefined, upsert: false });
++      if (up.error && !/already exists|Duplicate/i.test(up.error.message)) { row.status = "upload_failed"; manifest.push(row); continue; }
++      const b = await sb.storage.from(dst).download(p);
++      row.status = !b.error && sha(await b.data.arrayBuffer()) === row.sha256 ? "verified" : "MISMATCH";
++    }
++    manifest.push(row);
++  }
++}
++const file = args.manifest || "media-copy-manifest.json"; fs.writeFileSync(file, JSON.stringify(manifest, null, 1));
++const c = manifest.reduce((m, r) => (m[r.status] = (m[r.status] || 0) + 1, m), {});
++console.log(args.apply ? "APPLIED (copy only; public originals untouched)" : "DRY RUN (nothing written)", c, "manifest:", file);
++process.exit(manifest.some((r) => /failed|MISMATCH/.test(r.status)) ? 1 : 0);
+diff --git a/src/lib/resolveStorageRefs.js b/src/lib/resolveStorageRefs.js
+new file mode 100644
+index 0000000..70115da
+--- /dev/null
++++ b/src/lib/resolveStorageRefs.js
+@@ -0,0 +1,31 @@
++// DRAFT (docs/security-plan P5) -- NOT applied. Turns "storage://<bucket>/<path>" references (written by sql/050 rewrite_media_refs for
++// lessons whose media_mode='private') into short-lived signed URLs. https/legacy public URLs pass through untouched, so unmigrated
++// lessons and demo images behave exactly as today. `signer(bucket, paths)` = supabase.storage.from(bucket).createSignedUrls(paths, ttl).
++// NOTE: a signed URL does not stop an authorised user saving what they see; it stops unauthenticated/expired bulk fetching and listing.
++const REF = /storage:\/\/([a-z0-9-]+)\/([^\s"'<>)]+)/gi;
++
++export function collectRefs(value, out = new Map()) {
++  if (typeof value === "string") { for (const m of value.matchAll(REF)) { if (!out.has(m[1])) out.set(m[1], new Set()); out.get(m[1]).add(m[2]); } }
++  else if (Array.isArray(value)) value.forEach((v) => collectRefs(v, out));
++  else if (value && typeof value === "object") Object.values(value).forEach((v) => collectRefs(v, out));
++  return out;
++}
++export function applyUrls(value, urlOf) {
++  if (typeof value === "string") return value.replace(REF, (all, b, p) => urlOf.get(`${b}/${p}`) || "");
++  if (Array.isArray(value)) return value.map((v) => applyUrls(v, urlOf));
++  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, applyUrls(v, urlOf)]));
++  return value;
++}
++export async function resolveStorageRefs(content, signer, { ttlSeconds = 600 } = {}) {
++  const refs = collectRefs(content);
++  if (!refs.size) return { content, expiresAt: null };
++  const urlOf = new Map();
++  for (const [bucket, paths] of refs) {
++    const { data, error } = await signer(bucket, [...paths], ttlSeconds);
++    if (error) throw error;
++    for (const row of data || []) if (row.signedUrl && !row.error) urlOf.set(`${bucket}/${row.path}`, row.signedUrl);
++  }
++  return { content: applyUrls(content, urlOf), expiresAt: Date.now() + ttlSeconds * 1000 };
++}
++// Refresh before expiry (call from the lesson page on a timer / visibilitychange): safe margin of 60 s.
++export const needsRefresh = (expiresAt, now = Date.now()) => expiresAt != null && now > expiresAt - 60_000;

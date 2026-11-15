@@ -122,7 +122,7 @@ export default function SiteSearch({ role }) {
   return (
     <>
       {/* Desktop: compact inline search field in the top bar */}
-      <div ref={desktopRef} className="relative hidden w-52 shrink-0 sm:block lg:w-64">
+      <div ref={desktopRef} className="relative hidden w-52 shrink-0 sm:block lg:w-44 2xl:w-64">
         <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[#8C97B8]" />
         <input
           type="search"

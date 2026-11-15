@@ -1,6 +1,7 @@
 import { useState, useEffect, lazy, Suspense } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, Loader2, ChevronLeft, ChevronRight, Plus, HelpCircle, Upload, ImageIcon, AlertTriangle, Eye } from "lucide-react";
+import { Search, Loader2, ChevronLeft, ChevronRight, Plus, HelpCircle, Upload, ImageIcon, AlertTriangle, Eye, Copy } from "lucide-react";
+import { getStimulusPlacement } from "../../../lib/questionLayout.js";
 import { listQuestions, listQuestionsForVisualStats } from "../../../lib/questionBankService.js";
 import { getVisualStatus, matchesVisualFilter, VISUAL_FILTER_OPTIONS } from "./visualStatus.js";
 import Badge from "../../../components/ui/Badge.jsx";
@@ -101,7 +102,7 @@ export default function AdminQuestionBank() {
                 visualFilter === id ? "border-[var(--color-indigo)] bg-[var(--color-indigo-soft)] text-[var(--color-indigo)]" : "border-[var(--color-line)] text-[var(--color-ink-soft)] hover:border-[var(--color-ink)]"
               }`}
             >
-              {label} \u00b7 {count}
+              {label} · {count}
             </button>
           ))}
         </div>
@@ -159,6 +160,7 @@ export default function AdminQuestionBank() {
               <thead>
                 <tr className="border-b border-[var(--color-line)] text-xs text-[var(--color-ink-faint)]">
                   <th className="px-4 py-2.5 font-medium">ID</th>
+                  <th className="px-4 py-2.5 font-medium">Question</th>
                   <th className="px-4 py-2.5 font-medium">Topic</th>
                   <th className="px-4 py-2.5 font-medium">Concept</th>
                   <th className="px-4 py-2.5 font-medium">Level</th>
@@ -168,7 +170,7 @@ export default function AdminQuestionBank() {
                   <th className="px-4 py-2.5 font-medium">Marks</th>
                   <th className="px-4 py-2.5 font-medium">Status</th>
                   <th className="px-4 py-2.5 font-medium">Visual</th>
-                  <th className="px-4 py-2.5 font-medium">Preview</th>
+                  <th className="px-4 py-2.5 font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -181,6 +183,7 @@ export default function AdminQuestionBank() {
                       className="cursor-pointer border-b border-[var(--color-line)] last:border-0 hover:bg-[var(--color-line)]/15"
                     >
                       <td className="px-4 py-2.5 font-mono text-xs text-[var(--color-ink)]">{q.id}</td>
+                      <td className="max-w-[18rem] px-4 py-2.5 text-xs text-[var(--color-ink-soft)]"><span className="line-clamp-2" title={q.question_content}>{String(q.question_content ?? "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim()}</span></td>
                       <td className="px-4 py-2.5 text-[var(--color-ink-soft)]">{q.topic_code}</td>
                       <td className="px-4 py-2.5 text-xs text-[var(--color-ink-faint)]">{q.concept}</td>
                       <td className="px-4 py-2.5 text-[var(--color-ink-soft)]">{q.level}</td>
@@ -191,11 +194,11 @@ export default function AdminQuestionBank() {
                       <td className="px-4 py-2.5"><Badge tone={STATUS_TONE[q.status]}>{q.status}</Badge></td>
                       <td className="px-4 py-2.5">
                         {visualStatusId === "no-visual" ? (
-                          <span className="text-xs text-[var(--color-ink-faint)]">\u2014</span>
+                          <span className="text-xs text-[var(--color-ink-faint)]">—</span>
                         ) : (
                           <Badge tone={VISUAL_BADGE_TONE[visualStatusId]}>
                             {visualStatusId === "elab-visual"
-                              ? <span className="flex items-center gap-1">Visual \u00b7 {q.visual_data.type}</span>
+                              ? <span className="flex items-center gap-1">Visual · {q.visual_data.type}{getStimulusPlacement(q.visual_data) ? ` \u00b7 ${getStimulusPlacement(q.visual_data).side}` : ""}</span>
                               : visualStatusId === "visual-issue"
                                 ? <span className="flex items-center gap-1"><AlertTriangle size={11} /> {VISUAL_BADGE_LABEL[visualStatusId]}</span>
                                 : visualStatusId === "uploaded-image"
@@ -205,9 +208,14 @@ export default function AdminQuestionBank() {
                         )}
                       </td>
                       <td className="px-4 py-2.5">
-                        <button type="button" onClick={(e) => { e.stopPropagation(); setPreviewQuestion(q); }} className="inline-flex items-center gap-1 rounded-md border border-[var(--color-line)] px-2 py-1 text-xs text-[var(--color-ink-soft)] hover:border-[var(--color-indigo)] hover:text-[var(--color-indigo)]">
-                          <Eye size={12} /> Preview
-                        </button>
+                        <div className="flex gap-1.5">
+                          <button type="button" onClick={(e) => { e.stopPropagation(); setPreviewQuestion(q); }} className="inline-flex items-center gap-1 rounded-md border border-[var(--color-line)] px-2 py-1 text-xs text-[var(--color-ink-soft)] hover:border-[var(--color-indigo)] hover:text-[var(--color-indigo)]">
+                            <Eye size={12} /> Preview
+                          </button>
+                          <button type="button" aria-label={`Duplicate ${q.id}`} onClick={(e) => { e.stopPropagation(); navigate(`/admin/question-bank/new?from=${encodeURIComponent(q.id)}`); }} className="inline-flex items-center gap-1 rounded-md border border-[var(--color-line)] px-2 py-1 text-xs text-[var(--color-ink-soft)] hover:border-[var(--color-indigo)] hover:text-[var(--color-indigo)]">
+                            <Copy size={12} /> Duplicate
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

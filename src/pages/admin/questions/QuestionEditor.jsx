@@ -1,9 +1,10 @@
 import { useState, useEffect, lazy, Suspense } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import { ChevronLeft, Loader2, AlertTriangle, Eye, Plus, Trash2 } from "lucide-react";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
+import { ChevronLeft, Loader2, AlertTriangle, Eye, Plus, Trash2, Copy } from "lucide-react";
 import { getQuestion, getAdminQuestionSecrets, saveQuestionWithSecrets } from "../../../lib/questionBankService.js";
 import Button from "../../../components/ui/Button.jsx";
 import EquationFriendlyField from "../../../components/admin/EquationFriendlyField.jsx";
+import { getStimulusPlacement, withStimulusPlacement, STEM_SIDES, STEM_SIDE_LABELS, STEM_WIDTHS, STEM_WIDTH_LABELS } from "../../../lib/questionLayout.js";
 
 // Lazy-loaded specifically because it pulls in the real StimulusRenderer
 // (and, through it, all 30+ visual sub-renderer components) — required
@@ -13,6 +14,7 @@ import EquationFriendlyField from "../../../components/admin/EquationFriendlyFie
 // just the question editor.
 const VisualEditor = lazy(() => import("./VisualEditor.jsx"));
 const StudentQuestionPreviewModal = lazy(() => import("./StudentQuestionPreviewModal.jsx"));
+const StemPlacementPreview = lazy(() => import("./StemPlacementPreview.jsx"));
 
 const LEVELS = ["SL", "HL", "SL/HL"];
 const PAPERS = ["Paper 1A", "Paper 1B", "Paper 2"];
@@ -128,10 +130,15 @@ function MCQOptionsEditor({ value, onChange }) {
 export default function QuestionEditor() {
   const { questionId } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const isNew = !questionId;
+  // "Duplicate question": /admin/question-bank/new?from=<id> pre-fills a NEW draft from an existing question (content and answer
+  // key are read through the same secure paths as editing). Nothing is saved until the admin picks a new ID and presses Save.
+  const copyFrom = isNew ? searchParams.get("from") : null;
+  const sourceId = questionId ?? copyFrom;
 
   const [form, setForm] = useState(EMPTY_FORM);
-  const [loading, setLoading] = useState(!isNew);
+  const [loading, setLoading] = useState(Boolean(!isNew || copyFrom));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -143,18 +150,18 @@ export default function QuestionEditor() {
   const [secretsLoadFailed, setSecretsLoadFailed] = useState(false);
 
   useEffect(() => {
-    if (isNew) return;
-    Promise.all([getQuestion(questionId), getAdminQuestionSecrets(questionId)])
+    if (!sourceId) return;
+    Promise.all([getQuestion(sourceId), getAdminQuestionSecrets(sourceId)])
       .then(([q, secrets]) => {
         setForm({
-          id: q.id, curriculumSection: q.curriculum_section, topicCode: q.topic_code, topicTitle: q.topic_title,
+          id: copyFrom ? "" : q.id, curriculumSection: q.curriculum_section, topicCode: q.topic_code, topicTitle: q.topic_title,
           unitCode: q.unit_code, unitTitle: q.unit_title, concept: q.concept, level: q.level, paper: q.paper,
           questionType: q.question_type, difficulty: q.difficulty, marks: q.marks,
           commandTerms: (q.command_terms ?? []).join(", "), tags: (q.tags ?? []).join(", "),
           questionContent: q.question_content, visualData: q.visual_data ?? null,
           parts: jsonToText(q.parts), options: jsonToText(q.options),
           estimatedMinutes: q.estimated_minutes ?? "", dataBookletRequired: q.data_booklet_required,
-          calculatorRequired: q.calculator_required, status: q.status,
+          calculatorRequired: q.calculator_required, status: copyFrom ? "draft" : q.status,
           correctAnswerData: jsonToText(secrets?.correct_answer_data), markscheme: jsonToText(secrets?.markscheme),
           explanation: secrets?.explanation ?? "",
         });
@@ -164,7 +171,7 @@ export default function QuestionEditor() {
         setSecretsLoadFailed(true);
       })
       .finally(() => setLoading(false));
-  }, [questionId, isNew]);
+  }, [sourceId, copyFrom]);
 
   function set(key, value) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -175,7 +182,7 @@ export default function QuestionEditor() {
     // Hard block, not a confirmable workaround: if this is an existing
     // question and its secrets could not be securely read, saving is
     // refused outright. There is no path that lets this proceed anyway.
-    if (!isNew && secretsLoadFailed) {
+    if ((!isNew || copyFrom) && secretsLoadFailed) {
       setError("Cannot save: the existing answer key could not be securely loaded, so saving is blocked to avoid overwriting it.");
       return;
     }
@@ -212,10 +219,19 @@ export default function QuestionEditor() {
       <button type="button" onClick={() => navigate("/admin/question-bank")} className="mb-4 inline-flex items-center gap-1 text-sm text-[var(--color-ink-faint)] hover:text-[var(--color-ink)]">
         <ChevronLeft size={15} /> Question Bank
       </button>
-      <h1 className="font-[var(--font-display)] text-2xl font-semibold text-[var(--color-ink)]">{isNew ? "New Question" : `Edit ${form.id}`}</h1>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h1 className="font-[var(--font-display)] text-2xl font-semibold text-[var(--color-ink)]">{isNew ? (copyFrom ? "New Question (copy)" : "New Question") : `Edit ${form.id}`}</h1>
+        {!isNew && <Button type="button" variant="secondary" size="sm" onClick={() => navigate(`/admin/question-bank/new?from=${encodeURIComponent(form.id)}`)}><Copy size={14} /> Duplicate question</Button>}
+      </div>
+      {copyFrom && <p role="status" className="mt-2 rounded-md bg-[var(--color-amber-soft)] px-3 py-2 text-xs text-[var(--color-ink)]">Copy of <span className="font-mono">{copyFrom}</span>. Nothing is saved yet: choose a new Question ID, review the content and answer key, then press Save. The copy starts as a draft.</p>}
+      <nav aria-label="Jump to section" className="sticky top-0 z-10 -mx-1 mt-4 flex flex-wrap gap-1.5 bg-[var(--color-paper)]/95 px-1 py-2 backdrop-blur">
+        {[["sec-identity", "Identity"], ["sec-metadata", "Assessment"], ["sec-content", "Question content"], ["sec-visual", "Visual & layout"], ["sec-answer", "Answer key"]].map(([id, label]) => (
+          <a key={id} href={`#${id}`} onClick={(e) => { e.preventDefault(); const el = document.getElementById(id); if (el) { el.open = true; el.scrollIntoView({ block: "start" }); } }} className="rounded-full border border-[var(--color-line)] bg-[var(--color-paper-raised)] px-3 py-1 text-xs font-medium text-[var(--color-ink-soft)] hover:border-[var(--color-indigo)] hover:text-[var(--color-indigo)]">{label}</a>
+        ))}
+      </nav>
 
       <form onSubmit={handleSave} className="mt-6 space-y-6">
-        <Section title="Identity & Classification">
+        <Section id="sec-identity" title="Identity & Classification">
           <Row>
             <Field label="Question ID"><input required disabled={!isNew} className={inputClasses} value={form.id} onChange={(e) => set("id", e.target.value)} placeholder="EL-S1-1-001" /></Field>
             <Field label="Status">
@@ -243,7 +259,7 @@ export default function QuestionEditor() {
           </Row>
         </Section>
 
-        <Section title="Assessment Metadata">
+        <Section id="sec-metadata" title="Assessment Metadata">
           <Row>
             <Field label="Level">
               <select className={inputClasses} value={form.level} onChange={(e) => set("level", e.target.value)}>{LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}</select>
@@ -274,7 +290,7 @@ export default function QuestionEditor() {
           </Row>
         </Section>
 
-        <Section title="Question Content">
+        <Section id="sec-content" title="Question Content">
           <Field label="Question Content"><textarea required rows={4} className={inputClasses} value={form.questionContent} onChange={(e) => set("questionContent", e.target.value)} /></Field>
           {form.questionType === "MCQ" ? (
             <Field label="Answer Options (A/B/C/D)">
@@ -287,10 +303,16 @@ export default function QuestionEditor() {
         </Section>
 
         <Suspense fallback={<div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-[var(--color-ink-faint)]" /></div>}>
-          <VisualEditor questionId={form.id || "new-question"} content={form.visualData} onChange={(v) => set("visualData", v)} />
+          <div id="sec-visual" className="scroll-mt-16 space-y-6">
+            {/* a visual swap rebuilds the object -- carry the saved placement over so it is never silently lost */}
+            <VisualEditor questionId={form.id || "new-question"} content={form.visualData} onChange={(v) => set("visualData", v && form.visualData?.placement && !v.placement ? { ...v, placement: form.visualData.placement } : v)} />
+            {form.visualData && typeof form.visualData === "object" && (
+              <StemLayoutSection form={form} onChange={(v) => set("visualData", v)} />
+            )}
+          </div>
         </Suspense>
 
-        <Section title="Answer Key & Marking (secret — never shown to students before submission)">
+        <Section id="sec-answer" title="Answer Key & Marking (secret — never shown to students before submission)">
           {!isNew && secretsLoadFailed && (
             <div className="flex items-start gap-2 rounded-md bg-[var(--color-coral-soft)] p-3 text-xs text-[var(--color-coral)]">
               <AlertTriangle size={14} className="mt-0.5 shrink-0" />
@@ -308,7 +330,7 @@ export default function QuestionEditor() {
         {error && <p role="alert" className="text-sm text-[var(--color-coral)]">{error}</p>}
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="secondary" onClick={() => setPreviewOpen(true)}><Eye size={15} /> Preview as Student</Button>
-          <Button type="submit" disabled={saving || (!isNew && secretsLoadFailed)}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Question"}</Button>
+          <Button type="submit" disabled={saving || ((!isNew || Boolean(copyFrom)) && secretsLoadFailed)}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Question"}</Button>
         </div>
       </form>
 
@@ -321,11 +343,42 @@ export default function QuestionEditor() {
   );
 }
 
-function Section({ title, children }) {
+function Section({ id, title, children }) {
   return (
-    <div className="rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-5">
-      <p className="mb-4 text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">{title}</p>
+    <details id={id} open className="scroll-mt-16 rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-5">
+      <summary className="mb-4 cursor-pointer text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">{title}</summary>
       <div className="space-y-4">{children}</div>
+    </details>
+  );
+}
+
+const choiceBtn = (on) => `min-h-9 rounded-md border px-3 py-1.5 text-xs font-semibold ${on ? "border-[var(--color-indigo)] bg-[var(--color-indigo)] text-white" : "border-[var(--color-line)] bg-[var(--color-paper)] text-[var(--color-ink-soft)] hover:border-[var(--color-ink)]/40"}`;
+
+/** Where the question's visual sits relative to the question text. Stored as visual_data.placement (see src/lib/questionLayout.js).
+ * "Default" removes it, so the question renders exactly as before everywhere. */
+function StemLayoutSection({ form, onChange }) {
+  const stimulus = form.visualData;
+  const placement = getStimulusPlacement(stimulus);
+  const sideBySide = placement && (placement.side === "left" || placement.side === "right");
+  const setPlacement = (next) => onChange(withStimulusPlacement(stimulus, next));
+  return (
+    <div className="rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-5" id="sec-layout" data-testid="stem-layout-section">
+      <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Visual placement</p>
+      <p className="mb-3 text-xs text-[var(--color-ink-faint)]">Choose where the image or diagram sits next to the question text. Options, parts and answers always stay below. On phones a side-by-side placement stacks with the visual first. Default keeps today&apos;s layout.</p>
+      <div className="flex flex-wrap gap-1.5" role="group" aria-label="Visual position">
+        <button type="button" aria-pressed={!placement} className={choiceBtn(!placement)} onClick={() => setPlacement(null)}>Default</button>
+        {STEM_SIDES.map((side) => <button key={side} type="button" aria-pressed={placement?.side === side} className={choiceBtn(placement?.side === side)} onClick={() => setPlacement({ side, width: placement?.width ?? (side === "left" || side === "right" ? "half" : "full") })}>{STEM_SIDE_LABELS[side]}</button>)}
+      </div>
+      {sideBySide && (
+        <div className="mt-3 flex flex-wrap items-center gap-1.5" role="group" aria-label="Visual width">
+          <span className="mr-1 text-xs text-[var(--color-ink-soft)]">Visual width</span>
+          {["third", "half", "twothirds"].map((w) => <button key={w} type="button" aria-pressed={placement.width === w} className={choiceBtn(placement.width === w)} onClick={() => setPlacement({ side: placement.side, width: w })}>{STEM_WIDTH_LABELS[w]} <span className="sr-only">({STEM_WIDTHS[w]} of 12 columns)</span></button>)}
+        </div>
+      )}
+      <div className="mt-4">
+        <p className="mb-1.5 text-[11px] font-medium text-[var(--color-ink-soft)]">Preview (student view)</p>
+        <Suspense fallback={null}><StemPlacementPreview stimulus={stimulus} text={form.questionContent} questionId={form.id || "preview"} /></Suspense>
+      </div>
     </div>
   );
 }

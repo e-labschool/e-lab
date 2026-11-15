@@ -1,0 +1,44 @@
+-- =====================================================================================================
+-- 010_baseline_live_functions.TEMPLATE.sql   --   NOT RUNNABLE / DOCUMENTATION TEMPLATE / Phase P2 (repo hygiene)
+--
+-- Purpose: put the SECURITY DEFINER objects that exist ONLY in the live database into version control, so a rebuild
+-- or disaster-recovery target cannot silently regress to the insecure repo definitions (C-AUTH-02).
+-- THE AUTHOR HAS NOT SEEN THESE BODIES. Do not fill this file from memory or from the audit report's paraphrase.
+--
+-- PROCEDURE (user, read-only on production):
+--   1. Run Q15 and Q14 from 00_preflight_readonly.sql in the Supabase SQL editor.
+--   2. For each function below paste the exact `pg_get_functiondef` output in place of the placeholder.
+--   3. Save the file as supabase/baseline/<date>_live_security_definer_functions.sql (a NEW file; documentation only,
+--      never executed against live) and add a header banner to supabase/schema.sql pointing to it.
+--   4. Review each body against the checklist; record findings in the plan's Findings log, THEN decide changes.
+--
+-- The five functions the audit could not see (C-AUTH-03), what to check in each, and the harm if wrong:
+--
+-- [1] public.is_teacher_or_admin()
+--       check: reads profiles.role (NOT auth.jwt()->'user_metadata'); STABLE; SECURITY DEFINER; pinned search_path;
+--              role list is exactly ('teacher','admin'); owner is postgres.
+--       harm : if it reads user_metadata, anyone can become a teacher/admin by editing their own metadata.
+-- [2] public.maybe_create_question_version(text)
+--       check: admin-gated or only callable from trusted definers; EXECUTE not granted to anon.
+--       harm : data pollution of question_versions from any client.
+-- [3] public.admin_update_profile_role_status(uuid, text, text)
+--       check: first statement is `if not public.is_admin() then raise`; validates role in (student,teacher,admin) and
+--              status in (active,suspended); refuses to demote the last admin; pinned search_path; no anon EXECUTE.
+--       harm : privilege escalation to admin. THE highest-value function to read.
+-- [4] public.submit_and_mark_challenge(...)
+--       check: challenge.user_id = auth.uid(); status not already submitted; never returns secrets; server computes score.
+--       harm : marking/overwriting another user's challenge; answer leakage.
+-- [5] public.get_review_content(uuid)
+--       check: ownership AND status = 'submitted' before returning correct answers/explanations.
+--       harm : a student reads answers for an in-progress challenge.
+-- Also capture (needed for P2/P7/P8 decisions): public.handle_new_user(), public.is_admin(), public.enforce_registration_open()
+-- if applied, and any trigger functions found by Q17.
+-- =====================================================================================================
+
+-- <<< PASTE LIVE BODY: public.is_teacher_or_admin >>>
+-- <<< PASTE LIVE BODY: public.maybe_create_question_version >>>
+-- <<< PASTE LIVE BODY: public.admin_update_profile_role_status >>>
+-- <<< PASTE LIVE BODY: public.submit_and_mark_challenge >>>
+-- <<< PASTE LIVE BODY: public.get_review_content >>>
+-- <<< PASTE LIVE BODY: public.handle_new_user >>>
+-- <<< PASTE LIVE BODY: public.is_admin >>>

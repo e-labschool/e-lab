@@ -264,3 +264,46 @@ body {
   outline: 2px solid var(--color-indigo, #3654D6);
   outline-offset: 2px;
 }
+
+/* ---- Flexible lesson layout (see src/lib/blockLayout.js, docs/FLEXIBLE_EDITOR.md) ----
+   A lesson with NO layout data never gets these classes (legacy DOM). Rows are 12-column
+   grids that only apply side-by-side placement when the LESSON COLUMN is >= 640px wide
+   (container query, so the editor's Phone/Tablet previews behave like real screens);
+   below that every row is one stacked column, optionally re-ordered with data-mobile. */
+.lb-root { container: lb / inline-size; width: 100%; }
+/* The admin editor canvas shares the 3-column workspace with two side panels, so its
+   edit-mode threshold is 480px; Preview mode uses the real .lb-root (640px) rules. */
+.lb-edit { container: lbe / inline-size; width: 100%; }
+.lb-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--lb-gap, 1.25rem); }
+.lb-cell { min-width: 0; }
+.lb-cell[data-mobile="first"] { order: -1; }
+.lb-cell[data-mobile="last"] { order: 1; }
+.lb-cell img, .lb-cell video, .lb-cell iframe, .lb-cell table { max-width: 100%; }
+@container lb (min-width: 640px) {
+  .lb-row { grid-template-columns: repeat(12, minmax(0, 1fr)); }
+  .lb-cell, .lb-cell[data-mobile] { grid-column: var(--lb-start, auto) / span var(--lb-span, 12); order: 0; }
+  .lb-cell[data-align="center"] { align-self: center; }
+  .lb-cell[data-align="end"] { align-self: end; }
+}
+@container lbe (min-width: 480px) {
+  .lb-row { grid-template-columns: repeat(12, minmax(0, 1fr)); }
+  .lb-cell, .lb-cell[data-mobile] { grid-column: var(--lb-start, auto) / span var(--lb-span, 12); order: 0; }
+  .lb-cell[data-align="center"] { align-self: center; }
+  .lb-cell[data-align="end"] { align-self: end; }
+}
+/* Question stems (QuestionStemLayout) sit in narrower containers (preview modal, solve panel), so they switch at 480px. */
+.lb-stem { container: lbs / inline-size; width: 100%; }
+@container lbs (min-width: 480px) {
+  .lb-row { grid-template-columns: repeat(12, minmax(0, 1fr)); }
+  .lb-cell, .lb-cell[data-mobile] { grid-column: var(--lb-start, auto) / span var(--lb-span, 12); order: 0; }
+}
+.lb-guides {
+  background-image: linear-gradient(to right, color-mix(in srgb, var(--color-indigo) 14%, transparent) 1px, transparent 1px);
+  background-size: calc(100% / 12) 100%;
+}
+@media print {
+  .lb-cell { break-inside: avoid; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lb-edit *, .lb-edit *::before, .lb-edit *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+}

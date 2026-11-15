@@ -1,0 +1,60 @@
+#!/usr/bin/env node
+// DRAFT (docs/security-plan). Pure-logic tests, no Supabase, no DOM: embedUrl, exportPolicy, asyncCache, lessonDeliveryClient, resolveStorageRefs, backupCrypto.
+import assert from "node:assert/strict";
+import { classifyVideoUrl } from "../src/lib/embedUrl.js";
+import { resolveExportPolicy, DEFAULT_EXPORT_POLICY } from "../src/lib/exportPolicyCore.js";
+import { createAsyncCache } from "../src/lib/asyncCache.js";
+import { createLessonDeliveryClient, fallbackStats } from "../src/lib/lessonDeliveryClient.js";
+import { resolveStorageRefs, needsRefresh } from "../src/lib/resolveStorageRefs.js";
+import { encryptBackup, decryptBackup } from "../src/lib/backupCrypto.js";
+let p = 0, f = 0;
+const test = async (n, fn) => { try { await fn(); console.log("  PASS ", n); p++; } catch (e) { console.log("  FAIL ", n, "\n       ", e.message); f++; } };
+
+await test("youtube watch -> embed", () => assert.deepEqual(classifyVideoUrl("https://www.youtube.com/watch?v=dQw4w9WgXcQ"), { kind: "embed", url: "https://www.youtube.com/embed/dQw4w9WgXcQ" }));
+await test("youtu.be -> embed", () => assert.equal(classifyVideoUrl("https://youtu.be/dQw4w9WgXcQ").kind, "embed"));
+await test("vimeo -> player embed", () => assert.equal(classifyVideoUrl("https://vimeo.com/123456").url, "https://player.vimeo.com/video/123456"));
+await test("lookalike host is NOT framed", () => { for (const u of ["https://evilyoutube.com/watch?v=dQw4w9WgXcQ", "https://youtube.com.evil.example/embed/x", "https://notvimeo.com/123"]) assert.notEqual(classifyVideoUrl(u).kind, "embed", u); });
+await test("http / javascript / garbage -> none", () => { for (const u of ["http://www.youtube.com/embed/abc", "javascript:alert(1)", "", null, "not a url"]) assert.equal(classifyVideoUrl(u).kind, "none", String(u)); });
+await test("hosted file -> direct; unknown https -> link", () => { assert.equal(classifyVideoUrl("https://x.example/a.mp4").kind, "direct"); assert.equal(classifyVideoUrl("https://x.example/page").kind, "link"); assert.equal(classifyVideoUrl("https://abc.supabase.co/x", { storageHost: "abc.supabase.co" }).kind, "direct"); });
+
+await test("export policy fails open to today's behaviour", () => { assert.deepEqual(resolveExportPolicy(null), DEFAULT_EXPORT_POLICY); assert.deepEqual(resolveExportPolicy({}), DEFAULT_EXPORT_POLICY); });
+await test("export policy honours explicit false only", () => { const r = resolveExportPolicy({ allow_resource_downloads: false, allow_teacher_exports: "false" }); assert.equal(r.allowResourceDownloads, false); assert.equal(r.allowTeacherExports, true); });
+
+await test("asyncCache dedupes in-flight and expires", async () => {
+  let t = 0, n = 0; const c = createAsyncCache({ ttlMs: 100, now: () => t });
+  const load = async () => ++n; const [a, b] = await Promise.all([c.get("k", load), c.get("k", load)]);
+  assert.equal(a, 1); assert.equal(b, 1); assert.equal(n, 1); t = 99; await c.get("k", load); assert.equal(n, 1); t = 101; assert.equal(await c.get("k", load), 2);
+});
+await test("asyncCache does not cache failures", async () => { const c = createAsyncCache(); await assert.rejects(c.get("k", async () => { throw new Error("x"); })); assert.equal(await c.get("k", async () => 7), 7); });
+
+await test("lesson client pages through has_more", async () => {
+  const calls = []; const rpc = async (fn, a) => { calls.push(a.p_offset); return { data: { ok: true, page: { id: 1 }, blocks: [a.p_offset], has_more: a.p_offset < 2, next_offset: a.p_offset + 1 } }; };
+  const r = await createLessonDeliveryClient({ rpc }).lesson("x"); assert.deepEqual(r.blocks, [0, 1, 2]); assert.deepEqual(calls, [0, 1, 2]);
+});
+await test("lesson client maps rate_limited / denied to errors", async () => {
+  const c = createLessonDeliveryClient({ rpc: async () => ({ data: { ok: false, error: "rate_limited" } }) });
+  await assert.rejects(c.lesson("x"), (e) => e.code === "rate_limited");
+});
+await test("legacy fallback only when RPC missing, and is counted", async () => {
+  const before = fallbackStats.count; const c = createLessonDeliveryClient({ rpc: async () => ({ error: { code: "PGRST202" } }), legacy: { getLesson: async () => ({ legacy: true }) } });
+  assert.deepEqual(await c.lesson("x"), { legacy: true }); assert.equal(fallbackStats.count, before + 1);
+  const d = createLessonDeliveryClient({ rpc: async () => ({ error: { code: "42501", message: "permission denied" } }), legacy: { getLesson: async () => ({ legacy: true }) } });
+  await assert.rejects(d.lesson("x"));
+});
+
+await test("storage refs resolved, https untouched, signer called per bucket", async () => {
+  const seen = []; const signer = async (b, paths) => { seen.push([b, paths.length]); return { data: paths.map((x) => ({ path: x, signedUrl: `https://s/${b}/${x}?t=1` })) }; };
+  const c = { html: '<img src="storage://learn-media-private/a/b.png">', url: "https://abc.supabase.co/storage/v1/object/public/learn-media/z.png", n: [{ u: "storage://question-media-private/q.png" }] };
+  const r = await resolveStorageRefs(c, signer);
+  assert.ok(r.content.html.includes("https://s/learn-media-private/a/b.png?t=1")); assert.equal(r.content.url, c.url); assert.ok(r.content.n[0].u.startsWith("https://s/question-media-private/")); assert.equal(seen.length, 2);
+  assert.equal(needsRefresh(r.expiresAt, Date.now()), false); assert.equal(needsRefresh(r.expiresAt, Date.now() + 560_000), true);
+});
+await test("unsignable ref is blanked, never leaks the storage:// path", async () => {
+  const r = await resolveStorageRefs({ s: "storage://b/x.png" }, async () => ({ data: [{ path: "x.png", error: "denied", signedUrl: null }] })); assert.equal(r.content.s, "");
+});
+await test("backup encrypt/decrypt round trip + wrong passphrase", async () => {
+  const env = await encryptBackup('{"a":1}', "correct horse battery", 1000); assert.ok(!env.includes('"a"'));
+  assert.equal(await decryptBackup(env, "correct horse battery"), '{"a":1}'); await assert.rejects(decryptBackup(env, "wrong passphrase!!"));
+  await assert.rejects(encryptBackup("x", "short"));
+});
+console.log(`\n${p} passed, ${f} failed`); process.exit(f ? 1 : 0);

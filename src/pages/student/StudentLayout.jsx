@@ -1,4 +1,4 @@
-import { BookOpen, PenLine, Library, TrendingUp } from "lucide-react";
+import { BookOpen, PenLine, Library, TrendingUp, FlaskConical } from "lucide-react";
 import { getSubject } from "../../data/programmes.js";
 import AppSidebarLayout from "../../components/layout/AppSidebarLayout.jsx";
 import { ImageLightboxProvider } from "../../components/image-viewer/ImageLightbox.jsx";
@@ -7,11 +7,12 @@ import { useTrackLastRoute } from "../../lib/lastRoute.jsx";
 const PROGRAMME_ID = "ibdp";
 const SUBJECT_ID = "chemistry";
 
-// Exactly the four tabs specified: Learn | Assess | Resources | Progress.
+// Tabs: Learn | Simulations | Assess | Resources | Progress.
 // Profile is reachable from the account menu in the header row instead of
 // being a fifth top tab.
-const TABS = [
+export const STUDENT_TABS = [
   { to: "/student/learn", label: "Learn", icon: BookOpen },
+  { to: "/student/simulations", label: "Simulations", icon: FlaskConical },
   { to: "/student/solve", label: "Assess", icon: PenLine },
   { to: "/student/resources", label: "Resources", icon: Library },
   { to: "/student/progress", label: "Progress", icon: TrendingUp },
@@ -27,7 +28,7 @@ export default function StudentLayout() {
     <ImageLightboxProvider>
     <AppSidebarLayout
       role="student"
-      tabs={TABS}
+      tabs={STUDENT_TABS}
       accentHex="#3654D6"
       subject={subject}
       programmeId={PROGRAMME_ID}

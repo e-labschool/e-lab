@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useSessionState, sessionKey } from "../../lib/sessionState.js";
 import { useScrollRestoration, documentNavigationType } from "../../lib/scrollRestore.js";
-import { LayoutDashboard, BookOpen, FolderOpen, HelpCircle, Users, Lock, DatabaseBackup, Settings, Menu, X, ArrowLeft } from "lucide-react";
+import { LayoutDashboard, BookOpen, FolderOpen, FolderTree, FlaskConical, HelpCircle, Users, Lock, DatabaseBackup, Settings, Menu, X, ArrowLeft } from "lucide-react";
 import ProtectedRoute from "../../components/auth/ProtectedRoute.jsx";
 import Wordmark from "../../components/layout/Wordmark.jsx";
 import AccountMenu from "../../components/auth/AccountMenu.jsx";
@@ -19,6 +19,8 @@ const NAV = [
   { to: "/admin", end: true, label: "Dashboard", icon: LayoutDashboard },
   { to: "/admin/learn-content", label: "Learn Content", icon: BookOpen },
   { to: "/admin/resources", label: "Resources", icon: FolderOpen },
+  { to: "/admin/folders", label: "Folders", icon: FolderTree },
+  { to: "/admin/simulations", label: "Simulations", icon: FlaskConical },
   { to: "/admin/question-bank", label: "Question Bank", icon: HelpCircle },
   { to: "/admin/users", label: "Users", icon: Users },
   { to: "/admin/access", label: "Access", icon: Lock },

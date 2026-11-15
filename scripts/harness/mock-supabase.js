@@ -25,6 +25,7 @@ function seed() {
     profiles: [
       { id: "u-student", role: "student", status: "active", level: "HL", full_name: "Test Student", email: "s@example.com" },
       { id: "u-admin", role: "admin", status: "active", level: "HL", full_name: "Test Admin", email: "a@example.com" },
+      { id: "u-teacher", role: "teacher", status: "active", level: "HL", full_name: "Test Teacher", email: "t@example.com" },
     ],
   };
 }
@@ -39,7 +40,7 @@ window.__mockDb = { get: () => db, reset: () => { db = seed(); persist(); }, per
 window.__mockCalls = { select: {}, update: 0 };
 
 const roleKey = () => { try { return localStorage.getItem("mock-role") || "student"; } catch { return "student"; } };
-const userId = () => (roleKey() === "admin" ? "u-admin" : "u-student");
+const userId = () => (roleKey() === "admin" ? "u-admin" : roleKey() === "teacher" ? "u-teacher" : "u-student");
 function makeSession() {
   const id = userId();
   return { access_token: `tok-${Math.random()}`, refresh_token: "r", expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id, email: `${id}@example.com`, aud: "authenticated", app_metadata: {}, user_metadata: {}, created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z" } };

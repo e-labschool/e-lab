@@ -1,0 +1,39 @@
+diff --git a/src/lib/lessonDeliveryClient.js b/src/lib/lessonDeliveryClient.js
+new file mode 100644
+index 0000000..83914cd
+--- /dev/null
++++ b/src/lib/lessonDeliveryClient.js
+@@ -0,0 +1,33 @@
++// DRAFT (docs/security-plan P4) -- NOT applied. Client for the DATABASE-phase RPCs list_lesson_catalog / get_lesson_page (sql/040).
++// Dependency-injected `rpc` so it is testable without Supabase. Mirrors the shapes of listPublishedLessonMeta / getPublishedLesson.
++// Legacy fallback (direct table reads) is used ONLY while the RPCs are not deployed (PostgREST 404 / SQLSTATE 42883 / PGRST202) and is
++// counted so you can see when it is safe to run sql/041 (which removes direct reads). After 041, the fallback fails closed.
++export const fallbackStats = { count: 0 };
++const MISSING = (e) => e && (e.code === "42883" || e.code === "PGRST202" || e.status === 404 || /could not find the function/i.test(e.message || ""));
++
++export function createLessonDeliveryClient({ rpc, legacy, pageSize = 400 }) {
++  async function catalog(level) {
++    const { data, error } = await rpc("list_lesson_catalog", { p_limit: 500, p_offset: 0 });
++    if (error) {
++      if (MISSING(error) && legacy?.listMeta) { fallbackStats.count++; return legacy.listMeta(level); }
++      throw error;
++    }
++    return data || [];
++  }
++  async function lesson(pageId) {
++    const blocks = []; let offset = 0; let page = null; let guard = 0;
++    for (;;) {
++      const { data, error } = await rpc("get_lesson_page", { p_page_id: pageId, p_offset: offset, p_limit: pageSize });
++      if (error) {
++        if (MISSING(error) && legacy?.getLesson && offset === 0) { fallbackStats.count++; return legacy.getLesson(pageId); }
++        throw error;
++      }
++      if (!data?.ok) { const e = new Error(data?.error === "rate_limited" ? "Too many lessons opened too quickly. Please wait a moment." : "This lesson is not available."); e.code = data?.error || "denied"; throw e; }
++      page = page || data.page; blocks.push(...(data.blocks || []));
++      if (!data.has_more || ++guard > 50) break;
++      offset = data.next_offset;
++    }
++    return { page, blocks };
++  }
++  return { catalog, lesson };
++}
