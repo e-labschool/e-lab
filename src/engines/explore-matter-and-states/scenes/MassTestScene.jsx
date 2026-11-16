@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { BalanceIcon } from "../components/ApparatusIcons.jsx";
 import ConclusionBadge from "../components/ConclusionBadge.jsx";
+import NeedSample from "../components/NeedSample.jsx";
 import SceneQuestion from "../components/SceneQuestion.jsx";
 
-export default function MassTestScene({ example, forceToken }) {
+export default function MassTestScene({ example, forceToken, onChooseSample, onRandomSample }) {
   const [tested, setTested] = useState(false);
 
   useEffect(() => {
@@ -16,11 +17,7 @@ export default function MassTestScene({ example, forceToken }) {
   }, [forceToken]);
 
   if (!example || !example.mass) {
-    return (
-      <div className="rounded-md border border-dashed border-[var(--color-line)] p-8 text-center text-sm text-[var(--color-ink-faint)]">
-        Choose a matter sample from the tray in the previous section first.
-      </div>
-    );
+    return <NeedSample example={example} what="mass" onChooseSample={onChooseSample} onRandomSample={onRandomSample} />;
   }
 
   return (
@@ -46,7 +43,7 @@ export default function MassTestScene({ example, forceToken }) {
         </div>
       </div>
 
-      <p className="text-xs text-[var(--color-ink-faint)]">Values shown are illustrative, not measured data.</p>
+      <p className="text-xs text-[var(--color-ink-faint)]">Values are calculated from typical densities (m = \u03c1 \u00d7 V at about 25 \u00b0C) and rounded; they are not measurements. Gases have a very small mass, so a sensitive balance is needed.</p>
     </div>
   );
 }

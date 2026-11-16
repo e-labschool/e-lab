@@ -8,13 +8,17 @@ import { compileMolecule } from "../model/moleculeLayout.js";
 import { stepView, energyAtom, stepDuration, geometryRequests } from "../scene/stepView.js";
 import PhaseLegend from "./PhaseLegend.jsx";
 import { MOLECULE_DIR } from "../scene/Scene3D.jsx";
+import useReducedMotion from "../../shared-3d/useReducedMotion.js";
 import { bondSummary } from "../model/overlap.js";
 
+/** Default camera direction per molecule (unit-ish vectors, z is "up" in the scene). Planar ring: look almost straight down on the ring so the six p lobes and the sigma ring do not pile up in the oblique default (BS-24). */
+const VIEW_DIR = { C6H6: [0.16, -0.1, 1], BF3: [0.2, -0.15, 1] };
 const SUB = "₀₁₂₃₄₅₆₇₈₉";
 export const formulaUnicode = (plain) => plain.replace(/\d/g, (d) => SUB[Number(d)]);
 const idle = (fn) => (typeof requestIdleCallback === "function" ? requestIdleCallback(fn, { timeout: 200 }) : setTimeout(fn, 0));
 
 export default function useMoleculeExplorer({ active }) {
+  const reduced = useReducedMotion(); // reduced motion: every step is shown already complete (no gliding atoms / morph)
   const [molId, setMolId] = useState("C2H4");
   const [step, setStep] = useState(0); const [playing, setPlaying] = useState(false); const [showEnergy, setShowEnergy] = useState(false);
   const [labels, setLabels] = useState(true); const [showPhase, setShowPhase] = useState(false);
@@ -54,8 +58,8 @@ export default function useMoleculeExplorer({ active }) {
   };
 
   const st = compiled.steps[Math.min(step, last)];
-  const view = useMemo(() => ({ ...stepView(compiled, Math.min(step, last), performance.now(), { labels }), showPhase }), [compiled, step, last, stamp, labels, showPhase]); // eslint-disable-line react-hooks/exhaustive-deps
-  const fit = useMemo(() => ({ key: `mol:${molId}`, center: compiled.center, radius: compiled.radius, dir: MOLECULE_DIR }), [molId, compiled]);
+  const view = useMemo(() => ({ ...stepView(compiled, Math.min(step, last), reduced ? performance.now() - 1e5 : performance.now(), { labels }), showPhase }), [compiled, step, last, stamp, labels, showPhase, reduced]); // eslint-disable-line react-hooks/exhaustive-deps
+  const fit = useMemo(() => ({ key: `mol:${molId}`, center: compiled.center, radius: compiled.radius, dir: VIEW_DIR[molId] ?? MOLECULE_DIR }), [molId, compiled]);
   const ea = energyAtom(compiled, Math.min(step, last));
 
   const controls = (

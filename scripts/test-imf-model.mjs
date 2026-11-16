@@ -11,6 +11,8 @@ import { QID, qFromAxisAngle, qMul, qFromTo, norm, sub, dot, len, add, scale, an
 import { SUBSTANCES as S, MOLECULAR_SUBSTANCES, curveSegments, stateAtEnergy, advanceEnergy, totalEnergy, curvePoints, energyRate, startTemperature } from "../src/engines/intermolecular-forces-visualiser/model/phase.js";
 import { createSystem, stepSystem, bondLengths, metrics, assignIceProtons, poseOf, N_PARTICLES } from "../src/engines/intermolecular-forces-visualiser/model/particles.js";
 import { LESSONS, lessonFrame, lessonDuration } from "../src/engines/intermolecular-forces-visualiser/model/lessons.js";
+import * as RK from "../src/engines/intermolecular-forces-visualiser/model/ranking.js";
+import { START_GAP, layoutRow, separationOf } from "../src/engines/intermolecular-forces-visualiser/model/workspace.js";
 import * as THREE from "three";
 import { buildMoleculeObject, makeMoleculeGeometry, worldGeometry, bondSticks, BOND_OFFSET } from "../src/engines/intermolecular-forces-visualiser/scene/moleculeObject.js";
 import { ELEM } from "../src/engines/intermolecular-forces-visualiser/model/molecules.js";
@@ -529,5 +531,43 @@ test("continuity across melting and boiling: no particle jumps between frames, s
 });
 
 void DEBYE_IN_E_ANGSTROM; void TRAY_POLAR;
+console.log("Boiling-point ranking, alkane series, first view (BS-27 / BS-29)");
+test("every ranking set: unique ids, boiling points strictly distinct, a force tag on each item, the shuffle is never already correct", () => {
+  assert.equal(RK.RANK_SETS.length, 7);
+  for (const s of RK.RANK_SETS) {
+    assert.ok(s.items.length >= 3 && s.items.length <= 6, s.id); assert.equal(new Set(s.items.map((i) => i.id)).size, s.items.length, s.id);
+    assert.equal(new Set(s.items.map((i) => i.bp)).size, s.items.length, `${s.id} distinct bp`);
+    for (const i of s.items) { assert.ok(i.forces.length && i.why.length > 20, `${s.id}/${i.id}`); for (const f of i.forces) assert.ok(RK.FORCE_TAGS[f]); }
+    for (const seed of [1, 2, 3, 99]) assert.notEqual(RK.shuffledOrder(s.id, seed).join(), RK.correctOrder(s.id).join(), `${s.id} seed ${seed}`);
+    assert.deepEqual([...RK.shuffledOrder(s.id, 4)].sort(), s.items.map((i) => i.id).sort());
+  }
+});
+test("verified alkane boiling points (Potsdam alkane table, rounded): CH4 -162, C2H6 -89, C3H8 -42, C4H10 -1, C5H12 36, C6H14 69; pentane isomers 36 / 28 / 9", () => {
+  const bp = (set, id) => RK.RANK_SET_BY_ID[set].items.find((i) => i.id === id).bp;
+  assert.deepEqual(["CH4", "C2H6", "C3H8", "C4H10", "C5H12", "C6H14"].map((id) => bp("alkanes", id)), [-162, -89, -42, -1, 36, 69]);
+  assert.deepEqual(["neo", "iso", "pen"].map((id) => bp("pentanes", id)), [9, 28, 36]);
+  assert.deepEqual(RK.alkaneSeries().map((x) => x.bp), [-162, -89, -42, -1, 36, 69, 98, 126]);
+});
+test("chemistry ordering rules hold in the data: more electrons raise bp within a London-only set; HF is the hydrogen halide exception; water tops the hydrides", () => {
+  assert.deepEqual(RK.correctOrder("halogens"), ["F2", "Cl2", "Br2", "I2"]); assert.deepEqual(RK.correctOrder("noble"), ["Ne", "Ar", "Kr", "Xe"]);
+  assert.deepEqual(RK.correctOrder("hydrogen-halides"), ["HCl", "HBr", "HI", "HF"]); assert.equal(RK.correctOrder("hydrides").at(-1), "H2O");
+  assert.deepEqual(RK.correctOrder("similar-mass"), ["C3H8", "ethanal", "ethanol"]);
+  const s = RK.alkaneSeries(); for (let i = 1; i < s.length; i += 1) { assert.ok(s[i].bp > s[i - 1].bp && s[i].electrons === s[i - 1].electrons + 8); }
+  assert.equal(RK.alkaneElectrons(1), 10); assert.equal(RK.alkaneFormula(1), "CH4"); assert.equal(RK.alkaneFormula(5), "C5H12");
+});
+test("scoring and moving: perfect, partial, invalid", () => {
+  const good = RK.correctOrder("halogens"); assert.equal(RK.scoreRanking("halogens", good).perfect, true);
+  const sw = RK.moveItem(good, 0, 1); const r = RK.scoreRanking("halogens", sw); assert.equal(r.correct, 2); assert.equal(r.perfect, false); assert.equal(r.places.find((p) => p.id === "F2").actual, 0);
+  assert.equal(RK.scoreRanking("halogens", ["F2", "Cl2"]).valid, false); assert.equal(RK.scoreRanking("halogens", ["F2", "F2", "Br2", "I2"]).valid, false);
+  assert.deepEqual(RK.moveItem([1, 2, 3], 0, -5), [1, 2, 3]); assert.deepEqual(RK.moveItem([1, 2, 3], 0, 9), [2, 3, 1]);
+});
+test("first view of Explore shows an interaction (BS-29): START_GAP is small and a freshly laid-out pair is within the dispersion gate (it was 6 A, where the indicators read ~0)", () => {
+  assert.ok(START_GAP <= 1.5);
+  for (const ids of [["H2", "H2"], ["Ar", "Ar"], ["HCl", "HCl"], ["I2", "I2"]]) {
+    const list = layoutRow(ids.map((id, i) => ({ uid: i + 1, id, pos: [0, 0, 0], quat: [...QID] }))); const [a, b] = ids.map((id) => M[id]);
+    assert.ok(I.fluctuationGate(separationOf(list), a.radius, b.radius) > 0.5, `${ids.join("+")} gate ${I.fluctuationGate(separationOf(list), a.radius, b.radius).toFixed(2)}`);
+  }
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

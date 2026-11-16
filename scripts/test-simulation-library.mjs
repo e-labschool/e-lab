@@ -86,10 +86,14 @@ await test("every simulation in simulationRegistry has catalogue metadata (and a
 });
 await test("every live catalogue entry is in simulationRegistry AND has an engine component (and vice versa)", () => {
   assert.deepEqual(live.map((e) => e.id).sort(), Object.keys(SIMULATION_REGISTRY).sort());
-  assert.deepEqual(live.map((e) => e.id).sort(), Object.keys(SIMULATION_COMPONENTS).sort());
+  // mixture-separation-explorer is deliberately NOT live (placeholder art): its engine stays registered here so existing Learn embeds
+  // still render, but it is not in the catalogue's live list / SIMULATION_REGISTRY, so it is not offered or openable at /simulation/:id.
+  const HIDDEN_BUT_REGISTERED = ["mixture-separation-explorer"];
+  assert.deepEqual(live.map((e) => e.id).concat(HIDDEN_BUT_REGISTERED).sort(), Object.keys(SIMULATION_COMPONENTS).sort());
+  assert.equal(cat.getCatalogueEntry("mixture-separation-explorer")?.status, "planned");
 });
-await test("registry key order unchanged (matches the historical 25-engine order)", () => {
-  assert.equal(Object.keys(SIMULATION_REGISTRY).length, 25);
+await test("registry key order unchanged (the historical engine order, minus the hidden mixture-separation-explorer = 24)", () => {
+  assert.equal(Object.keys(SIMULATION_REGISTRY).length, 24);
   assert.deepEqual(Object.keys(SIMULATION_REGISTRY).slice(0, 3), ["electron-configuration", "vsepr-explorer-3d", "explore-matter-and-states"]);
   assert.equal(Object.keys(SIMULATION_REGISTRY).at(-1), "spectroscopy-studio");
 });
@@ -113,9 +117,16 @@ await test("every live simulation has a thumbnail file under public/ (< 60 KB); 
   }
   assert.ok(cat.SIMULATION_CATALOGUE.filter((e) => !cat.isLive(e)).every((e) => e.thumbnail === null));
 });
-await test("featured simulations exist (>= 4 live) and Build an Atom is first", () => {
+await test("featured set: VSEPR, Heating Curve, Hybridisation now; Electron Configuration is not featured", () => {
   const f = cat.getFeaturedSimulations();
-  assert.ok(f.length >= 4); assert.equal(f[0].id, "build-an-atom");
+  assert.equal(cat.FEATURE_WHEN_READY, false, "FEATURE_WHEN_READY is off until the rebuilds land (flip it, then update this test)");
+  assert.deepEqual(f.map((e) => e.id), ["vsepr-explorer-3d", "phase-change-heating-curve", "hybridisation-explorer"]);
+  assert.ok(!f.some((e) => e.id === "electron-configuration"));
+  assert.equal(cat.getCatalogueEntry("electron-configuration").featured, false);
+  // the owner's four 'when ready' sims stay fully live and openable, just not featured yet
+  for (const id of ["build-an-atom", "collision-theory-visualizer", "buffer-action-visualizer", "bonding-visualizer"]) {
+    const e = cat.getCatalogueEntry(id); assert.ok(cat.isLive(e), id); assert.equal(e.featured, false, `${id} featured only after FEATURE_WHEN_READY`);
+  }
 });
 await test("existing /interactives registry still intact and linked: every live resource maps to a catalogue entry; non-live ones are not lost", () => {
   const all = resources.getAllResources();

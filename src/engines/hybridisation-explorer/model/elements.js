@@ -78,8 +78,22 @@ function Z_CORE(cfg, n) {
   return { electrons: core, parts };
 }
 
-export function promotionsFor(symbol) { return PROMOTIONS[symbol] ?? []; }
-export function canExcite(symbol) { return promotionsFor(symbol).length > 0; }
+/** True when a promotion puts an electron into an nd orbital (sp3d, sp3d2 ...): the traditional models that are NOT part of the IB DP course. */
+export const promotionUsesD = (promo) => Object.entries(promo.occupancy).some(([id, e]) => e > 0 && /^\dd/.test(id));
+/** Promotions on offer.  beyondIB=false (the course default) hides the d-orbital ones; the default of the MODEL functions stays "all" (tests, data). */
+export function promotionsFor(symbol, beyondIB = true) { const l = PROMOTIONS[symbol] ?? []; return beyondIB ? l : l.filter((p) => !promotionUsesD(p)); }
+export function canExcite(symbol, beyondIB = true) { return promotionsFor(symbol, beyondIB).length > 0; }
+/** Elements offered in the picker: xenon only has d-orbital models, so it appears only with the "beyond the IB course" switch. */
+export const IB_SELECTABLE_SYMBOLS = SELECTABLE_SYMBOLS.filter((s) => s !== "Xe");
+export const BEYOND_IB_REASON = "This needs d orbitals (sp\u00b3d, sp\u00b3d\u00b2): a traditional model that is beyond the IB course. Switch on 'Beyond the IB course' to see it.";
+/** Why carbon (and Be, B, Si) is shown in an excited state: the IB-level explanation of promotion before hybridisation. */
+export function groundStateHint(symbol, kind) {
+  const ex = { Be: "Be (2s\u00b2) has no unpaired electron, yet BeCl\u2082 has two bonds", B: "B (2s\u00b2 2p\u00b9) has one unpaired electron, yet BF\u2083 has three bonds", C: "Ground-state C (2s\u00b2 2p\u00b2) has only two unpaired electrons, yet carbon forms four bonds in CH\u2084", Si: "Si (3s\u00b2 3p\u00b2) has only two unpaired electrons, yet SiH\u2084 has four bonds" }[symbol];
+  if (!ex) return "";
+  return kind === "excited"
+    ? "Illustrative promotion: one 2s electron is moved to an empty 2p orbital so the atom has enough unpaired electrons. This costs energy, but the extra bonds that form release more. Hybridisation then mixes the orbitals into equivalent hybrids."
+    : `${ex}. Choose 'Excited State' to see the illustrative promotion that gives enough unpaired electrons; hybridisation then makes the bonds equivalent.`;
+}
 
 /** The excited (illustrative promotion) state for an element, or null if none is defined. */
 export function excitedState(symbol, promotionId) {

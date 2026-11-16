@@ -128,7 +128,8 @@ test("describeElectrons: shells with max and full flag, none, ions, ion note", (
   assert.equal(clMinus.netCharge, -1); assert.equal(clMinus.arrangement, "2,8,8");
   // Fe2+ (26 p, 24 e): count-based pattern + honest note
   const fe2 = M.describeElectrons(24, 26);
-  assert.equal(fe2.isIon, true); assert.equal(fe2.arrangement, "2,8,13,1"); assert.match(fe2.ionNote, /Fe.*2,8,14/);
+  // CHANGED (the old count-based answer 2,8,13,1 was WRONG): ions follow the IB removal rule, 4s before 3d -> Fe2+ is 2,8,14, [Ar] 3d6.
+  assert.equal(fe2.isIon, true); assert.equal(fe2.arrangement, "2,8,14"); assert.equal(fe2.shorthand, "[Ar] 3d⁶"); assert.match(fe2.notes.join(" "), /4s electrons before the 3d/);
   // no protons, no ion label
   assert.equal(M.describeElectrons(3, 0).isIon, false);
   assert.throws(() => M.describeElectrons(41), RangeError);
@@ -181,12 +182,12 @@ test("UI: manual electron +/- updates the panel live and uses the ELECTRON count
   await click(T("atom-add-electron")); await click(T("atom-add-electron")); // 6 p, 8 e
   let p = panel();
   assert.equal(p.arrangement, "2,6"); assert.equal(p.config, "1s² 2s² 2p⁴"); // oxygen's pattern for 8 electrons
-  assert.match(p.ion, /Ion, net charge −2/);
-  await click(T("atom-remove-electron")); await click(T("atom-remove-electron")); await click(T("atom-remove-electron")); // 5 e
-  p = panel();
-  assert.equal(p.arrangement, "2,3"); assert.match(p.ion, /net charge \+1/);
-  await click(T("atom-add-electron")); // back to neutral carbon
+  assert.match(p.ion, /Ion, net charge 2−/);
+  await click(T("atom-remove-electron")); await click(T("atom-remove-electron")); // 6 e: neutral carbon again
   assert.equal(panel().ion, undefined);
+  await click(T("atom-remove-electron")); // CHANGED: carbon forms no cation -> refused with an explanation, still 6 e
+  assert.equal($(T("atom-count-electron")).textContent, "6");
+  assert.match($(T("atom-notice")).textContent, /does not form a positive ion/);
 });
 test("UI: manganese 25/25 -> 2,8,13,2 with 13/18 partial; Cr and Cu exceptions via proton +/- with matching electrons", async () => {
   await click(T("atom-auto-balance")); // ON: electrons follow protons
@@ -208,23 +209,27 @@ test("UI: ion of a transition metal (Fe 26 p, 24 e) gets the small honest note; 
   for (let i = 0; i < 3; i++) await click(T("atom-remove-proton")); // 26 p, 29 e
   for (let i = 0; i < 5; i++) await click(T("atom-remove-electron")); // 24 e
   assert.equal($(T("atom-count-proton")).textContent, "26");
-  assert.equal(panel().arrangement, "2,8,13,1");
-  assert.match(panel().ion, /\+2/);
-  assert.match($(T("atom-shells-ion-note")).textContent, /Fe.*2,8,14/);
-  assert.match($(T("atom-shells-ion-basis")).textContent, /24 electrons.*26 protons/);
+  assert.equal(panel().arrangement, "2,8,14"); // CHANGED: Fe2+ is 2,8,14 (4s lost first), not the count-based 2,8,13,1
+  assert.equal(panel().shorthand, "[Ar] 3d⁶");
+  assert.match(panel().ion, /2\+/);
+  assert.match($(T("atom-shells-note")).textContent, /Cation/);
+  assert.match(document.querySelector(T("atom-shells")).textContent, /4s electrons before the 3d/);
   await click(T("atom-start-empty"));
   assert.equal(panel().none, true);
   assert.match($(T("atom-shells")).textContent, /No electrons/);
-  assert.equal($(T("atom-shells-ion-note")), null);
+  assert.equal($(T("atom-shells-note")), null);
 });
-test("UI: 37-40 electrons (anions) show a real 5th shell and the panel never shows a shell above 2n^2", async () => {
+test("UI: krypton (36 e) is the largest species; a 37th electron is refused with an explanation (CHANGED from allowing Kr4-)", async () => {
   await click(T("atom-reset-carbon"));
-  for (let i = 0; i < 34; i++) await click(T("atom-add-electron")); // 40 e
+  await click(T("atom-auto-balance"));
+  for (let i = 0; i < 30; i++) await click(T("atom-add-proton")); // 36
   const p = panel();
-  assert.equal(p.arrangement, "2,8,18,10,2");
-  assert.equal(p.shells.length, 5);
-  for (const s of p.shells) { const [c, rest] = s.split("/"); const m = Number(rest.split(":")[0]); assert.ok(Number(c) <= m); }
-  assert.equal(document.querySelectorAll('[data-testid="atom-svg"] foreignObject').length >= 40, true);
+  assert.equal(p.arrangement, "2,8,18,8");
+  assert.equal(p.shells.length, 4);
+  await click(T("atom-auto-balance"));
+  await click(T("atom-add-electron"));
+  assert.equal($(T("atom-count-electron")).textContent, "36");
+  assert.match($(T("atom-notice")).textContent, /full outer shell/);
 });
 
 for (const { name, fn } of pending) {

@@ -3,7 +3,7 @@ import InteractiveFrame from "../../components/interactive-shell/InteractiveFram
 import { useSimulationPresentation } from "../../components/interactive-shell/SimulationPresentation.js";
 import { deriveAtom, CARBON_12, EMPTY_ATOM } from "./lib/atomState.js";
 import { describeChange, autoBalanceLines } from "./lib/whatChanged.js";
-import { applyChange, setProtons, toggleAutoBalance, nuclideStatus, LIMITS } from "./lib/atomControls.js";
+import { tryChange, trySetProtons, toggleAutoBalance, nuclideStatus, LIMITS } from "./lib/atomControls.js";
 import { useSize } from "./lib/useSize.js";
 import AtomVisualizer from "./components/AtomVisualizer.jsx";
 import ParticleControls from "./components/ParticleControls.jsx";
@@ -29,6 +29,7 @@ export default function BuildAtomSimulation({ compact = false, standalone = fals
   const [autoBalance, setAutoBalance] = useState(false);
   const [lastChange, setLastChange] = useState(null);
   const [flights, setFlights] = useState([]);
+  const [notice, setNotice] = useState(null);
   const flightIdRef = useRef(0);
 
   const derived = deriveAtom(atom);
@@ -42,7 +43,10 @@ export default function BuildAtomSimulation({ compact = false, standalone = fals
   // exactly one count by exactly one (no hidden neutron / electron / isotope
   // change); see lib/atomControls.js for the full contract.
   const handleChange = useCallback((type, delta) => {
-    const next = applyChange(atom, type, delta, { autoBalance });
+    const result = tryChange(atom, type, delta, { autoBalance });
+    if (result.refused) { setNotice({ kind: "refused", text: result.reason }); return; }
+    const next = result.atom;
+    setNotice(result.notes.length ? { kind: "adjusted", text: result.notes.join(" ") } : null);
     if (next === atom) return;
     setAtom(next);
     record(type, atom, next, autoBalance ? autoBalanceLines(type, atom, next) : []);
@@ -54,7 +58,9 @@ export default function BuildAtomSimulation({ compact = false, standalone = fals
   const removeFlight = useCallback((id) => setFlights((f) => f.filter((flight) => flight.id !== id)), []);
 
   function handleSelectElement(atomicNumber) {
-    const next = setProtons(atom, atomicNumber, { autoBalance });
+    const result = trySetProtons(atom, atomicNumber, { autoBalance });
+    const next = result.atom;
+    setNotice(result.notes.length ? { kind: "adjusted", text: result.notes.join(" ") } : null);
     if (next === atom) return;
     setAtom(next);
     record("proton", atom, next, autoBalance ? autoBalanceLines("proton", atom, next) : []);
@@ -62,12 +68,13 @@ export default function BuildAtomSimulation({ compact = false, standalone = fals
 
   function handleToggleAutoBalance(on) {
     setAutoBalance(on);
+    setNotice(null);
     const next = toggleAutoBalance(atom, on);
     if (next !== atom) { setAtom(next); setLastChange(null); }
   }
 
-  function handleStartEmpty() { setAtom(EMPTY_ATOM); setLastChange(null); setFlights([]); }
-  function handleResetCarbon() { setAtom(CARBON_12); setLastChange(null); setFlights([]); }
+  function handleStartEmpty() { setAtom(EMPTY_ATOM); setLastChange(null); setFlights([]); setNotice(null); setAutoBalance(false); }
+  function handleResetCarbon() { setAtom(CARBON_12); setLastChange(null); setFlights([]); setNotice(null); setAutoBalance(false); }
 
   const change = lastChange ? describeChange(lastChange.type, lastChange.delta, lastChange.prevDerived, lastChange.nextDerived, lastChange.extra) : null;
   const highlightType = lastChange?.type;
@@ -80,6 +87,7 @@ export default function BuildAtomSimulation({ compact = false, standalone = fals
         derived={derived}
         autoBalance={autoBalance}
         flights={flights}
+        notice={notice}
         removeFlight={removeFlight}
         handleChange={handleChange}
         handleToggleAutoBalance={handleToggleAutoBalance}
@@ -88,7 +96,7 @@ export default function BuildAtomSimulation({ compact = false, standalone = fals
         handleResetCarbon={handleResetCarbon}
         change={change}
         highlightType={highlightType}
-        unstable={stability === "radioactive" || stability === "not-stable"}
+        unstable={stability === "radioactive" || stability === "unbound" || stability === "unknown"}
       />
     </InteractiveFrame>
   );
@@ -103,9 +111,11 @@ export default function BuildAtomSimulation({ compact = false, standalone = fals
 //   stacked (narrower): atom stage on top, panels below (in fullscreen / new
 //     tab the panels scroll inside their own region; embedded they flow).
 function BuildAtomWorkspace(props) {
-  const { atom, derived, autoBalance, flights, removeFlight, handleChange, handleToggleAutoBalance, handleSelectElement, handleStartEmpty, handleResetCarbon, change, highlightType, unstable } = props;
+  const { atom, derived, autoBalance, notice, flights, removeFlight, handleChange, handleToggleAutoBalance, handleSelectElement, handleStartEmpty, handleResetCarbon, change, highlightType, unstable } = props;
   const { isViewport } = useSimulationPresentation();
-  const [rootRef, { width }] = useSize();
+  const [rootRef, { width, height }] = useSize();
+  // Sticky controls only when the container is tall enough to leave room for the panels below them.
+  const stickyControls = height === 0 || height >= 640;
   const wide = width === 0 || width >= WIDE_MIN_WIDTH;
 
   const toolbar = (
@@ -125,7 +135,7 @@ function BuildAtomWorkspace(props) {
   const buildControls = (
     <div className="flex flex-col gap-2" data-testid="atom-build-controls">
       <p className="text-center text-[10px] font-bold uppercase tracking-wide text-[var(--color-ink-faint)]">Build It</p>
-      <ParticleControls atom={atom} autoBalance={autoBalance} onToggleAutoBalance={handleToggleAutoBalance} onChange={handleChange} />
+      <ParticleControls atom={atom} autoBalance={autoBalance} onToggleAutoBalance={handleToggleAutoBalance} onChange={handleChange} notice={notice} />
     </div>
   );
 
@@ -142,6 +152,9 @@ function BuildAtomWorkspace(props) {
         highlightCharge={highlightType === "electron"}
         nucleusWarning={unstable}
       />
+      <p className="pointer-events-none absolute bottom-1.5 left-2 right-2 text-[10px] leading-tight text-white/80" data-testid="atom-model-note">
+        A model, not a photograph: electrons do not orbit like planets, and the nucleus is not to scale.
+      </p>
       {flights.map((flight) => (
         <FlyingParticle key={flight.id} flight={flight} onComplete={() => removeFlight(flight.id)} />
       ))}
@@ -184,7 +197,7 @@ function BuildAtomWorkspace(props) {
             {shellPanel}
           </div>
           <div className="min-h-0 min-w-0 overflow-y-auto overflow-x-hidden pr-1" data-testid="atom-side">
-            <div className="sticky top-0 z-10 bg-[var(--color-paper)] pb-2">{buildControls}</div>
+            <div className={(stickyControls ? "sticky top-0 z-10 " : "") + "bg-[var(--color-paper)] pb-2"}>{buildControls}</div>
             <div className="flex flex-col gap-3">
               {identity}
               {secondary}

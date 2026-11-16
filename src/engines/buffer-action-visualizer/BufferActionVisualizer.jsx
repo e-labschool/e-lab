@@ -1,291 +1,154 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import InteractiveFrame from "../../components/interactive-shell/InteractiveFrame.jsx";
 import { useSimulationPresentation } from "../../components/interactive-shell/SimulationPresentation.js";
+import "../../lib/acidbase/acidbase-ui.css";
 import "./BufferActionVisualizer.css";
 import { COPYRIGHT_TEXT_COMPACT } from "../../data/copyright.js";
 import BeakerGlass from "./components/BeakerGlass.jsx";
 import DropperPair from "./components/DropperPair.jsx";
 import BufferParticleDot from "./components/BufferParticleDot.jsx";
-import { createParticle, stepBufferParticles, createWaterParticle } from "./lib/bufferParticles.js";
-import {
-  BUFFER_SYSTEMS,
-  createInitialState,
-  bufferPH,
-  unbufferedPH,
-  addAcidToBuffer,
-  addBaseToBuffer,
-  addAcidToUnbuffered,
-  addBaseToUnbuffered,
-  isBufferCapacityExceeded,
-  getBufferParticleCounts,
-  ADDITION_SIZES,
-} from "./lib/bufferChemistry.js";
+import { SYSTEMS, ADDITIONS, MAX_ADDITIONS, bufferState, unbufferedState, targetCounts } from "./lib/bufferModel.js";
+import { createSample, addSeeker, step, reconcile } from "./lib/particles.js";
+import { formatPH, formatDelta, formatDecimal } from "../../lib/acidbase/format.js";
 
-// Beaker-local coordinate space (matches BeakerGlass's default viewBox)
-// and the liquid region within it, used as the physics bounds for both
-// beakers.
-// Liquid region within the beaker's local coordinate space -- matches
-// BeakerGlass's default 240x260 viewBox with liquidLevel=0.72 (computed
-// once and verified against that component's own geometry, not
-// independently guessed).
-const LIQUID_BOUNDS = { x: 10, y: 77, w: 220, h: 165 };
-const SPECTATOR_COUNT = 3;
-const RECONCILE_DELAY_MS = 900;
-
-function formatPH(v) {
-  return Number.isFinite(v) ? v.toFixed(2) : "\u2014";
-}
-function formatDelta(v) {
-  if (!Number.isFinite(v)) return null;
-  const sign = v > 0 ? "+" : v < 0 ? "\u2212" : "";
-  return `${sign}${Math.abs(v).toFixed(2)}`;
+const FRESH = { sysId: "acid", size: "small", h: 0, oh: 0, count: 0, last: null, drop: null, history: [{ x: 0, buf: null, un: null }], prev: null };
+const unTarget = (h, oh) => { const net = h - oh; const n = Math.min(10, Math.round(Math.abs(net) / 0.2)); return { acid: 0, base: 0, free: { H: net > 0 ? n : 0, OH: net < 0 ? n : 0 } }; };
+function fresh(sysId, size = "small") {
+  const sys = SYSTEMS[sysId]; const b = bufferState(sys, 0, 0); const u = unbufferedState(sys, 0, 0);
+  return { ...FRESH, sysId, size, history: [{ x: 0, buf: b.pH, un: u.pH }], prev: { buf: b.pH, un: u.pH } };
 }
 
-function buildBufferParticles(counts, idRef) {
-  const list = [];
-  for (let i = 0; i < counts.acid; i++) list.push(createParticle(`a${idRef.current++}`, "acid", LIQUID_BOUNDS));
-  for (let i = 0; i < counts.base; i++) list.push(createParticle(`b${idRef.current++}`, "base", LIQUID_BOUNDS));
-  for (let i = 0; i < SPECTATOR_COUNT; i++) list.push(createParticle(`s${idRef.current++}`, "spectator", LIQUID_BOUNDS));
-  return list;
+function PHBar({ sys, buf, un }) {
+  const lo = sys.pKa - 4, hi = sys.pKa + 4; const pos = (p) => `${Math.min(100, Math.max(0, ((p - lo) / (hi - lo)) * 100))}%`;
+  return (
+    <div className="buf-bar" aria-hidden="true">
+      <div className="buf-bar-range" style={{ left: pos(sys.pKa - 1), width: `${(2 / (hi - lo)) * 100}%` }}><span>pKa {"±"} 1</span></div>
+      <div className="buf-bar-mark buf" style={{ left: pos(buf) }}><b>B</b></div>
+      <div className="buf-bar-mark un" style={{ left: pos(un) }}><b>U</b></div>
+      <div className="buf-bar-ticks"><span style={{ left: pos(Math.ceil(lo)) }}>{Math.ceil(lo)}</span><span style={{ left: pos(sys.pKa) }}>{sys.pKa.toFixed(2)}</span><span style={{ left: pos(Math.floor(hi)) }}>{Math.floor(hi)}</span></div>
+    </div>
+  );
 }
 
-/** Nudges the visible acid/base particle SAMPLE back toward the target
- * counts by flipping an existing active particle's `kind` in place --
- * NEVER by rebuilding the array or assigning new positions. This is what
- * keeps the representative sample synchronized with the real chemistry
- * over many additions (a single collision-based reaction per click would
- * otherwise drift from the true mole ratio over a long run) without
- * ever causing the "whole beaker jumps" glitch: every particle that
- * isn't being converted keeps its id, x, y, vx, vy untouched. */
-function reconcileBufferParticleCounts(particles, targetCounts) {
-  let acidCount = particles.filter((p) => p.kind === "acid" && p.status === "active").length;
-  let baseCount = particles.filter((p) => p.kind === "base" && p.status === "active").length;
-  const next = [...particles];
-
-  while (acidCount < targetCounts.acid && baseCount > 0) {
-    const idx = next.findIndex((p) => p.kind === "base" && p.status === "active");
-    if (idx === -1) break;
-    next[idx] = { ...next[idx], kind: "acid" };
-    acidCount += 1;
-    baseCount -= 1;
-  }
-  while (baseCount < targetCounts.base && acidCount > 0) {
-    const idx = next.findIndex((p) => p.kind === "acid" && p.status === "active");
-    if (idx === -1) break;
-    next[idx] = { ...next[idx], kind: "base" };
-    baseCount += 1;
-    acidCount -= 1;
-  }
-  return next;
+function Trace({ history, sys }) {
+  const W = 300, H = 130, L = 28, B = 22, T = 6, R = 8;
+  const maxX = Math.max(2, ...history.map((p) => Math.abs(p.x))); const x = (v) => L + ((v + maxX) / (2 * maxX)) * (W - L - R); const y = (p) => T + ((14 - Math.min(14, Math.max(0, p))) / 14) * (H - T - B);
+  const path = (k) => history.map((p, i) => `${i ? "L" : "M"}${x(p.x).toFixed(1)} ${y(p[k]).toFixed(1)}`).join("");
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="ab-svg buf-trace" role="img" aria-label={`pH against net acid added in mmol (negative means base). Buffer ends at pH ${formatPH(history[history.length - 1].buf)}, unbuffered at pH ${formatPH(history[history.length - 1].un)}.`}>
+      <rect x={L} y={y(sys.pKa + 1)} width={W - L - R} height={y(sys.pKa - 1) - y(sys.pKa + 1)} fill="#f59e0b" fillOpacity="0.16" />
+      {[0, 7, 14].map((p) => <g key={p}><line x1={L} x2={W - R} y1={y(p)} y2={y(p)} stroke="#2b3a50" /><text x={L - 4} y={y(p) + 4} textAnchor="end" fontSize="10" fill="#d3dcea">{p}</text></g>)}
+      <line x1={x(0)} x2={x(0)} y1={T} y2={H - B} stroke="#2b3a50" />
+      <text x={x(0)} y={H - 8} textAnchor="middle" fontSize="10" fill="#d3dcea">0</text><text x={L} y={H - 8} fontSize="10" fill="#d3dcea">{"−"}{maxX.toFixed(0)} (base)</text><text x={W - R} y={H - 8} textAnchor="end" fontSize="10" fill="#d3dcea">+{maxX.toFixed(0)} mmol H{"⁺"}</text>
+      <path d={path("un")} fill="none" stroke="#fda4af" strokeWidth="2" strokeDasharray="5 3" /><path d={path("buf")} fill="none" stroke="#5eead4" strokeWidth="2.5" />
+      {history.map((p, i) => <g key={i}><circle cx={x(p.x)} cy={y(p.buf)} r="2.5" fill="#5eead4" /><rect x={x(p.x) - 2.5} y={y(p.un) - 2.5} width="5" height="5" fill="#fda4af" /></g>)}
+    </svg>
+  );
 }
 
-function BufferActionVisualizerBody() {
+function Body() {
   const { isViewport } = useSimulationPresentation();
-  const [systemId, setSystemId] = useState("acid");
-  const [chem, setChem] = useState(() => createInitialState("acid"));
-  const [additionSize, setAdditionSize] = useState("Small amount");
-  const [activeDrop, setActiveDrop] = useState(null);
-  const [lastReaction, setLastReaction] = useState(null); // { systemId, type: "H"|"OH" } | null
-  const [prevPH, setPrevPH] = useState(null);
+  const [st, setSt] = useState(() => fresh("acid"));
+  const sys = SYSTEMS[st.sysId];
+  const stRef = useRef(st); stRef.current = st;
+  const bufP = useRef(null); const unP = useRef(null);
+  const [, tick] = useState(0);
 
-  const [bufferParticles, setBufferParticles] = useState([]);
-  const [unbufferedParticles, setUnbufferedParticles] = useState([]);
-
-  const idRef = useRef(0);
-  const rafRef = useRef(null);
-  const lastTimeRef = useRef(null);
-  const reconcileTimeoutRef = useRef(null);
-  const chemRef = useRef(chem);
-  chemRef.current = chem;
-
-  const system = BUFFER_SYSTEMS[systemId];
-  const currentBufferPH = bufferPH(chem.buffer.acidMoles, chem.buffer.baseMoles, chem.buffer.excessStrong, system.pKa);
-  const currentUnbufferedPH = unbufferedPH(chem.unbuffered.netH);
-  const exceeded = isBufferCapacityExceeded(chem.buffer);
-  const deltaBuffer = prevPH ? formatDelta(currentBufferPH - prevPH.buffer) : null;
-  const deltaUnbuffered = prevPH ? formatDelta(currentUnbufferedPH - prevPH.unbuffered) : null;
-
-  const resetTo = useCallback((nextSystemId) => {
-    if (reconcileTimeoutRef.current) clearTimeout(reconcileTimeoutRef.current);
-    const fresh = createInitialState(nextSystemId);
-    setChem(fresh);
-    setActiveDrop(null);
-    setLastReaction(null);
-    setPrevPH(null);
-    setUnbufferedParticles([]);
-    setBufferParticles(buildBufferParticles(getBufferParticleCounts(fresh.buffer), idRef));
-  }, []);
+  const b = useMemo(() => bufferState(sys, st.h, st.oh), [sys, st.h, st.oh]);
+  const u = useMemo(() => unbufferedState(sys, st.h, st.oh), [sys, st.h, st.oh]);
+  const rebuild = useCallback((s) => { const sy = SYSTEMS[s.sysId]; const t = targetCounts(sy, s.h, s.oh); bufP.current = createSample(t, 3, t.free); unP.current = createSample({ acid: 0, base: 0 }, 3, unTarget(s.h, s.oh).free); }, []);
+  useEffect(() => { rebuild(stRef.current); }, [rebuild]);
 
   useEffect(() => {
-    resetTo("acid");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    let raf = 0; let last = null; const reduced = () => window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const loop = (now) => {
+      const dt = last == null ? 0 : Math.min(0.05, (now - last) / 1000); last = now;
+      const s = stRef.current; const sy = SYSTEMS[s.sysId];
+      if (bufP.current && unP.current) {
+        const f1 = step(bufP.current, dt, reduced()); const f2 = step(unP.current, dt, reduced());
+        if (!f1) reconcile(bufP.current, targetCounts(sy, s.h, s.oh));
+        if (!f2) reconcile(unP.current, unTarget(s.h, s.oh));
+      }
+      tick((n) => (n + 1) % 1e9); raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop); return () => cancelAnimationFrame(raf);
   }, []);
 
-  // Single animation loop, whole lifetime -- reactionRule read fresh each
-  // frame from a ref so it never needs the loop itself to restart.
-  const reactionRuleRef = useRef(null);
-  useEffect(() => {
-    reactionRuleRef.current =
-      lastReaction?.type === "H"
-        ? { seekerKind: "H", targetKind: "base", targetBecomes: "acid" }
-        : lastReaction?.type === "OH"
-        ? { seekerKind: "OH", targetKind: "acid", targetBecomes: "base" }
-        : null;
-  }, [lastReaction]);
-
-  useEffect(() => {
-    function tick(now) {
-      const dt = lastTimeRef.current == null ? 0 : Math.min(0.05, (now - lastTimeRef.current) / 1000);
-      lastTimeRef.current = now;
-
-      setBufferParticles((prev) => {
-        const newWater = [];
-        const stepped = stepBufferParticles(prev, LIQUID_BOUNDS, dt, reactionRuleRef.current, (x, y) => newWater.push(createWaterParticle(`w${idRef.current++}`, x, y)));
-        return [...stepped, ...newWater];
-      });
-      setUnbufferedParticles((prev) => stepBufferParticles(prev, LIQUID_BOUNDS, dt, null));
-
-      rafRef.current = requestAnimationFrame(tick);
-    }
-    rafRef.current = requestAnimationFrame(tick);
-    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); lastTimeRef.current = null; };
-  }, []);
-
-  useEffect(() => () => { if (reconcileTimeoutRef.current) clearTimeout(reconcileTimeoutRef.current); }, []);
-
-  const handleAdd = useCallback(
-    (type) => {
-      const amount = ADDITION_SIZES[additionSize];
-      setPrevPH({ buffer: currentBufferPH, unbuffered: currentUnbufferedPH });
-      setActiveDrop(type === "acid" ? "H" : "OH");
-      setLastReaction({ systemId, type: type === "acid" ? "H" : "OH" });
-
-      const nextBuffer = type === "acid" ? addAcidToBuffer(chem.buffer, amount) : addBaseToBuffer(chem.buffer, amount);
-      const nextUnbuffered = type === "acid" ? addAcidToUnbuffered(chem.unbuffered, amount) : addBaseToUnbuffered(chem.unbuffered, amount);
-      setChem({ buffer: nextBuffer, unbuffered: nextUnbuffered });
-
-      const particleKind = type === "acid" ? "H" : "OH";
-      setBufferParticles((prev) => [...prev, createParticle(`x${idRef.current++}`, particleKind, LIQUID_BOUNDS)]);
-      setUnbufferedParticles((prev) => [...prev, createParticle(`u${idRef.current++}`, particleKind, LIQUID_BOUNDS)]);
-
-      window.setTimeout(() => setActiveDrop(null), 500);
-
-      // Nudge the visible sample toward the fresh chemistry state once
-      // the individual collision-based reaction has had time to play
-      // out -- IN PLACE (see reconcileBufferParticleCounts), never by
-      // rebuilding the array. This is what keeps the representative
-      // sample from drifting over many additions without ever causing
-      // existing particles to jump to new positions.
-      if (reconcileTimeoutRef.current) clearTimeout(reconcileTimeoutRef.current);
-      reconcileTimeoutRef.current = window.setTimeout(() => {
-        const counts = getBufferParticleCounts(nextBuffer);
-        setBufferParticles((prev) => reconcileBufferParticleCounts(prev, counts));
-      }, RECONCILE_DELAY_MS);
-    },
-    [additionSize, chem, currentBufferPH, currentUnbufferedPH, systemId]
-  );
-
-  const handleSystemChange = useCallback(
-    (e) => {
-      const next = e.target.value;
-      setSystemId(next);
-      resetTo(next);
-    },
-    [resetTo]
-  );
-
-  const handleReset = useCallback(() => resetTo(systemId), [resetTo, systemId]);
-
-  const reactionLine = (() => {
-    if (!lastReaction || lastReaction.systemId !== systemId) return null;
-    if (systemId === "acid") {
-      return lastReaction.type === "H" ? "CH\u2083COO\u207B + H\u207A \u2192 CH\u2083COOH" : "CH\u2083COOH + OH\u207B \u2192 CH\u2083COO\u207B + H\u2082O";
-    }
-    return lastReaction.type === "H" ? "NH\u2083 + H\u207A \u2192 NH\u2084\u207A" : "NH\u2084\u207A + OH\u207B \u2192 NH\u2083 + H\u2082O";
-  })();
+  const left = MAX_ADDITIONS - st.count;
+  function add(type) {
+    const s = stRef.current; if (s.count >= MAX_ADDITIONS) return;
+    const a = ADDITIONS[s.size]; const h = s.h + (type === "H" ? a.mmol : 0); const oh = s.oh + (type === "OH" ? a.mmol : 0);
+    const nb = bufferState(sys, h, oh), nu = unbufferedState(sys, h, oh);
+    setSt({ ...s, h, oh, count: s.count + 1, last: type, drop: type, prev: { buf: b.pH, un: u.pH }, history: [...s.history, { x: h - oh, buf: nb.pH, un: nu.pH }] });
+    for (let i = 0; i < a.seekers; i += 1) { if (bufP.current) addSeeker(bufP.current, type); if (unP.current) { const sk = addSeeker(unP.current, type); sk.seek = null; } }
+    window.setTimeout(() => setSt((x) => (x.drop ? { ...x, drop: null } : x)), 500);
+  }
+  const changeSys = (id) => { const s = fresh(id, stRef.current.size); setSt(s); rebuild(s); };
+  const reset = () => { const s = fresh("acid", "small"); setSt(s); rebuild(s); };
+  const reaction = st.last == null ? null : sys.kind === "acid"
+    ? (st.last === "H" ? "CH₃COO⁻ + H⁺ → CH₃COOH" : "CH₃COOH + OH⁻ → CH₃COO⁻ + H₂O")
+    : (st.last === "H" ? "NH₃ + H⁺ → NH₄⁺" : "NH₄⁺ + OH⁻ → NH₃ + H₂O");
+  const dB = formatDelta(b.pH - st.prev.buf), dU = formatDelta(u.pH - st.prev.un);
+  const freeCount = (ps, k) => (ps ? ps.filter((p) => p.kind === k).length : 0);
+  const realFree = Math.abs(st.h - st.oh) / 0.2;
 
   return (
-    <section className={"buffer-sim sim-surface-dark" + (isViewport ? " is-viewport" : "")}>
-      <header className="buffer-header">
-        <h2>Buffer Action Visualizer</h2>
-      </header>
-
-      <div className="buffer-beakers">
-        <div className="buffer-beaker-col">
-          <p className="buffer-beaker-label">{"UNBUFFERED SOLUTION"}</p>
-          <DropperPair activeDrop={activeDrop} />
-          <BeakerGlass gradientId="unbuf">
-            {unbufferedParticles.map((p) => (
-              <BufferParticleDot key={p.id} particle={p} system={system} />
-            ))}
-          </BeakerGlass>
-          <div className="buffer-ph-readout">
-            <span>pH</span>
-            <strong>{formatPH(currentUnbufferedPH)}</strong>
-            {deltaUnbuffered && <small>{"\u0394pH " + deltaUnbuffered}</small>}
+    <section className={"ab-root ab-fixed buf sim-surface-dark" + (isViewport ? " is-viewport" : "")}>
+      <div className="buf-grid">
+        <div className="buf-beakers">
+          <div className="buf-col">
+            <p className="buf-label">UNBUFFERED: {sys.unbuffered}</p>
+            <DropperPair activeDrop={st.drop} />
+            <BeakerGlass gradientId="unbuf">{unP.current && unP.current.map((p) => <BufferParticleDot key={p.id} particle={p} system={sys} />)}</BeakerGlass>
+            <div className="buf-ph"><span>pH</span><strong data-testid="ph-unbuffered">{formatPH(u.pH)}</strong>{dU && <small>{"Δ"}pH {dU}</small>}</div>
+            {realFree > 10 && <p className="ab-note">Showing 10 of {Math.round(realFree)} {st.h > st.oh ? "H⁺" : "OH⁻"} units</p>}
+          </div>
+          <div className="buf-col">
+            <p className="buf-label">BUFFER: {sys.pair}, 0.100 mol dm{"⁻³"} each</p>
+            <DropperPair activeDrop={st.drop} />
+            <BeakerGlass gradientId="buf">{bufP.current && bufP.current.map((p) => <BufferParticleDot key={p.id} particle={p} system={sys} />)}</BeakerGlass>
+            <div className="buf-ph"><span>pH</span><strong data-testid="ph-buffer">{formatPH(b.pH)}</strong>{dB && <small>{"Δ"}pH {dB}</small>}</div>
           </div>
         </div>
-
-        <div className="buffer-beaker-col">
-          <p className="buffer-beaker-label">{"BUFFER SOLUTION"}</p>
-          <DropperPair activeDrop={activeDrop} />
-          <BeakerGlass gradientId="buf">
-            {bufferParticles.map((p) => (
-              <BufferParticleDot key={p.id} particle={p} system={system} />
-            ))}
-          </BeakerGlass>
-          <div className="buffer-ph-readout">
-            <span>pH</span>
-            <strong>{formatPH(currentBufferPH)}</strong>
-            {deltaBuffer && <small>{"\u0394pH " + deltaBuffer}</small>}
+        <div className="buf-side">
+          <div className="ab-panel buf-ctl">
+            <label className="ab-field">Buffer type<select value={st.sysId} onChange={(e) => changeSys(e.target.value)} aria-label="Buffer type"><option value="acid">Acid buffer: CH{"₃"}COOH / CH{"₃"}COO{"⁻"}</option><option value="basic">Basic buffer: NH{"₃"} / NH{"₄⁺"}</option></select></label>
+            <label className="ab-field">Addition (1.00 mol dm{"⁻³"} reagent)<select value={st.size} onChange={(e) => setSt({ ...st, size: e.target.value })} aria-label="Addition size">{Object.values(ADDITIONS).map((a) => <option key={a.id} value={a.id}>{a.label}: {a.cm3.toFixed(1)} cm{"³"} = {a.mmol.toFixed(1)} mmol</option>)}</select></label>
+            <div className="ab-btns">
+              <button type="button" className="sim-btn ab-btn" disabled={left <= 0} onClick={() => add("H")}>Add H{"⁺"} (HCl)</button>
+              <button type="button" className="sim-btn ab-btn" disabled={left <= 0} onClick={() => add("OH")}>Add OH{"⁻"} (NaOH)</button>
+              <button type="button" className="sim-btn ab-btn" onClick={reset}>Reset</button>
+            </div>
+            <p className="ab-note">Additions: {st.count} of {MAX_ADDITIONS}.{left <= 0 ? " Limit reached: press Reset." : ""} Volume change is included (25.0 {"→"} {b.totalCm3.toFixed(1)} cm{"³"}).</p>
           </div>
-          {exceeded && <p className="buffer-capacity-warning">{"BUFFER CAPACITY EXCEEDED"}</p>}
+          <div className="ab-panel buf-ratio" aria-live="polite" data-testid="ratio">
+            <p><strong>{sys.ratioText} = {formatDecimal(b.ratio, 3)}</strong> {"·"} pKa = {sys.pKa.toFixed(2)} {"·"} buffer range pH {(sys.pKa - 1).toFixed(2)}{"–"}{(sys.pKa + 1).toFixed(2)} (ratio 1:10 to 10:1)</p>
+            <p className={b.inRange ? "buf-ok" : "buf-bad"}>{b.inRange ? "Inside the effective buffer range." : "BUFFER CAPACITY EXCEEDED: ratio is outside 1:10 to 10:1, pH is more than 1 from pKa."}</p>
+            <PHBar sys={sys} buf={b.pH} un={u.pH} />
+            <p className="ab-note">B = buffer, U = unbuffered, on a pH scale. Shaded: pKa {"±"} 1.</p>
+          </div>
+          <div className="ab-panel">
+            <p className="buf-label">pH against net acid added</p>
+            <Trace history={st.history} sys={sys} />
+            <p className="ab-note"><span style={{ color: "#5eead4" }}>Solid</span> buffer, <span style={{ color: "#fda4af" }}>dashed</span> unbuffered. Shaded band: pKa {"±"} 1.</p>
+          </div>
+          {reaction && <p className="buf-reaction" data-testid="reaction">{reaction}</p>}
         </div>
       </div>
-
-      <div className="buffer-type-row">
-        <label htmlFor="buffer-system">{"BUFFER TYPE"}</label>
-        <select id="buffer-system" value={systemId} onChange={handleSystemChange}>
-          <option value="acid">{"Acid Buffer \u2014 CH\u2083COOH / CH\u2083COO\u207B"}</option>
-          <option value="basic">{"Basic Buffer \u2014 NH\u2083 / NH\u2084\u207A"}</option>
-        </select>
+      <div className="buf-legend">
+        <span className="ab-chip"><i style={{ background: "#b0841f" }} />{sys.acidLabel} (acid form)</span><span className="ab-chip"><i style={{ background: "#2f86b5" }} />{sys.baseLabel} (base form)</span>
+        <span className="ab-chip"><i style={{ background: "#6f7d90" }} />{sys.spectatorLabel} (spectator)</span><span className="ab-chip"><i style={{ background: "#c23b3b" }} />H{"⁺"}</span><span className="ab-chip"><i style={{ background: "#2f4bc4" }} />OH{"⁻"}</span>
+        <span className="ab-note">Particle view is a sample: 10 dots stand for the buffer (1 dot = 1 mmol) and always match the pH shown. {freeCount(bufP.current, "H") + freeCount(bufP.current, "OH") > 0 ? "Free H⁺ / OH⁻ appear only once the buffer can no longer absorb them." : ""}</span>
       </div>
-
-      <div className="buffer-controls">
-        <div className="buffer-size-select">
-          <label htmlFor="buffer-addition-size">Addition</label>
-          <select id="buffer-addition-size" value={additionSize} onChange={(e) => setAdditionSize(e.target.value)}>
-            <option value="Small amount">Small amount</option>
-            <option value="Medium amount">Medium amount</option>
-          </select>
-        </div>
-        <button type="button" className="buffer-btn-acid" onClick={() => handleAdd("acid")}>{"Add H\u207A"}</button>
-        <button type="button" className="buffer-btn-base" onClick={() => handleAdd("base")}>{"Add OH\u207B"}</button>
-        <button type="button" className="buffer-btn-reset" onClick={handleReset}>Reset</button>
-      </div>
-
-      {reactionLine && <p className="buffer-reaction-line">{reactionLine}</p>}
-
-      <div className="buffer-legend">
-        <span><i className="legend-dot" style={{ background: "#c99a3a" }} /> {system.acidLabel}{" \u2014 acid form"}</span>
-        <span><i className="legend-dot" style={{ background: "#3a9ac9" }} /> {system.baseLabel}{" \u2014 base form"}</span>
-        <span><i className="legend-dot" style={{ background: "#7d8b9c" }} /> {system.spectatorLabel}{" \u2014 "}{system.spectatorNote}</span>
-        <span><i className="legend-dot" style={{ background: "#c23b3b" }} /> {"H\u207A"}</span>
-        <span><i className="legend-dot" style={{ background: "#2f4bc4" }} /> {"OH\u207B"}</span>
-      </div>
-
-      <p className="buffer-copyright">{COPYRIGHT_TEXT_COMPACT}</p>
+      <p className="ab-note buf-copy">{COPYRIGHT_TEXT_COMPACT}</p>
     </section>
   );
 }
 
-// Wrapped in the shared simulation shell so this engine gets the same Fullscreen / Open in New Tab controls, CSS
-// fullscreen fallback and standalone/fullscreen viewport box as every other simulation. The shell's own title row is used
-// in fullscreen / new-tab mode (the engine hides its duplicate heading then, see `.is-viewport` in the stylesheet).
 export default function BufferActionVisualizer({ compact = false, standalone = false }) {
   return (
-    <InteractiveFrame title="Buffer Action Visualizer" subtitle={"See why a CH\u2083COOH/CH\u2083COO\u207B buffer resists pH change, and what happens when its capacity runs out"} compact={compact} standalone={standalone}>
-      <BufferActionVisualizerBody />
+    <InteractiveFrame title="Buffer Action Visualizer" subtitle={"See why a CH₃COOH/CH₃COO⁻ buffer resists pH change, and what happens when its capacity runs out"} compact={compact} standalone={standalone}>
+      <Body />
     </InteractiveFrame>
   );
 }

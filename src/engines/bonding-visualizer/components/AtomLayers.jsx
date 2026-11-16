@@ -16,8 +16,8 @@ export function AtomBody({ a, selected, cloud, dragProps, testId }) {
         <circle key={r.k} cx={a.x} cy={a.y} r={r.r} fill="none" stroke={RING} strokeWidth="1.4" strokeOpacity={r.opacity} data-ring={r.k} />
       ))}
       {selected && <circle cx={a.x} cy={a.y} r={a.outerR + 7} fill="none" stroke="#2f7bf5" strokeWidth="1.6" strokeDasharray="5 4" />}
-      <circle cx={a.x} cy={a.y} r={nucR} fill={a.color} stroke="#fff" strokeWidth="1.5" />
-      <text x={a.x} y={a.y} textAnchor="middle" dominantBaseline="central" fontSize={Math.max(10, 12.5 * a.scale)} fontWeight="800" fill="#1e2a44" pointerEvents="none">{a.symbol}</text>
+      <circle cx={a.x} cy={a.y} r={nucR} fill={a.color} stroke={a.edge ?? "#fff"} strokeWidth="1.5" />
+      <text x={a.x} y={a.y} textAnchor="middle" dominantBaseline="central" fontSize={Math.max(10, 12.5 * a.scale)} fontWeight="800" fill={a.text ?? "#1e2a44"} pointerEvents="none">{a.symbol}</text>
     </g>
   );
 }

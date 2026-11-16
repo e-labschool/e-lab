@@ -16,6 +16,9 @@ export async function listQuestions({ filters = {}, page = 1, pageSize = 25 } = 
   if (filters.questionType) query = query.eq("question_type", filters.questionType);
   if (filters.difficulty) query = query.eq("difficulty", filters.difficulty);
   if (filters.status) query = query.eq("status", filters.status);
+  // review / reuse metadata with NO migration: guide version = the existing syllabus_version column, review flag = the existing tags list ("needs-review")
+  if (filters.guide?.trim()) query = query.ilike("syllabus_version", `%${filters.guide.trim()}%`);
+  if (filters.needsReview) query = query.contains("tags", ["needs-review"]);
   if (filters.search?.trim()) {
     const q = filters.search.trim();
     query = query.or(`id.ilike.%${q}%,question_content.ilike.%${q}%`);

@@ -56,8 +56,8 @@ await test("registered in both registries and the resource registry", () => {
 
 console.log("Explore");
 await mount();
-await test("exactly two tabs: Explore | Learn; WebGL-less fallback shows and controls still work", () => {
-  assert.ok($(T("tab-explore")) && $(T("tab-learn"))); assert.ok($(T("webgl-fallback")), "fallback"); assert.ok($(T("molecule-tray")));
+await test("three tabs: Explore | Learn | Boiling points; WebGL-less fallback shows and controls still work", () => {
+  assert.ok($(T("tab-explore")) && $(T("tab-learn")) && $(T("tab-rank"))); assert.ok($(T("webgl-fallback")), "fallback"); assert.ok($(T("molecule-tray")));
 });
 await test("tray lists the required nonpolar and polar molecules", () => {
   const ids = (sec) => $$(`${T(sec)} [data-molecule]`).map((e) => e.dataset.molecule);
@@ -140,6 +140,39 @@ await test("Compare with Ionic Solid adds NaCl readouts and never calls NaCl a m
   await until(() => $(T("heat-temp-ion")), 3000, "NaCl readout"); const all = document.body.textContent; assert.doesNotMatch(all, /NaCl molecule|sodium chloride molecule/i); assert.match(all, /ionic/i);
 });
 await test("Back to molecules returns to the workspace", async () => { await click(T("heat-back")); await until(() => $(T("explore-chamber")), 2000, "explore"); });
+
+await test("[BS-30] without WebGL the Explore stage shows a flat side view of the placed molecules (not an empty panel) and says what needs WebGL", async () => {
+  await click(T("tab-explore")); await click(T("clear-workspace")); await click(T("tray-H2O")); await click(T("tray-H2O"));
+  const v = $(T("imf-static-view")); assert.ok(v, "static view"); assert.equal($$(`${T("imf-static-view")} [data-molecule="H2O"]`).length, 2);
+  assert.equal($$(`${T("imf-static-view")} circle`).length, 6, "2 x (O + 2 H)"); assert.match(txt(T("webgl-fallback")), /3D view unavailable.*flat side view/);
+  await click(T("clear-workspace"));
+});
+
+console.log("Boiling-point ranking and alkane series (BS-27 / BS-29)");
+await test("Boiling points tab: predict first (no boiling points shown), reorder with buttons, check reveals values + reasons + score", async () => {
+  await click(T("tab-rank")); await until(() => $(T("rank-task")), 3000, "rank task");
+  assert.equal($(T("rank-task")).getAttribute("data-revealed"), "0"); assert.doesNotMatch(txt(T("rank-task")), /°C/); assert.ok($(T("rank-check")));
+  const ids = () => $$('[data-testid^="rank-item-"]').map((e) => e.getAttribute("data-testid").slice(10));
+  const before = ids(); assert.equal(before.length, 4); assert.notDeepEqual(before, ["F2", "Cl2", "Br2", "I2"], "starts shuffled");
+  // sort into the correct order using only the move buttons
+  for (const want of ["F2", "Cl2", "Br2", "I2"]) { let guard = 0; while (ids().indexOf(want) > ["F2", "Cl2", "Br2", "I2"].indexOf(want) && guard++ < 10) await click(T(`rank-up-${want}`)); }
+  assert.deepEqual(ids(), ["F2", "Cl2", "Br2", "I2"]);
+  await click(T("rank-check")); assert.equal($(T("rank-task")).getAttribute("data-revealed"), "1");
+  assert.match(txt(T("rank-score")), /All 4 in the right place/); assert.match(txt(T("rank-bp-I2")), /184 °C/); assert.match(txt(T("rank-task")), /106 electrons/);
+  assert.match(txt(T("live-rankscore")), /4 \/ 4/); assert.ok(!$(T("rank-up-F2")), "buttons gone after the reveal");
+});
+await test("a wrong order is scored honestly and each wrong item names its correct place; Try again reshuffles to a new prediction round", async () => {
+  await click(T("rank-again")); assert.equal($(T("rank-task")).getAttribute("data-revealed"), "0");
+  await click(T("rankset-hydrogen-halides")); await click(T("rank-check")); const t = txt(T("rank-score")); assert.match(t, /\d of 4 in the right place|All 4/);
+  assert.match(txt(T("rank-task")), /hydrogen bond/i);
+});
+await test("alkane series (homologous): slider changes chain length, electrons, boiling point and the sentence; chart marks the point", async () => {
+  await click(T("rankset-alkanes")); await until(() => $(T("alkane-series")), 2000, "series");
+  const set = async (v) => { const el = $(T("alk-slider")); const d = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value"); d.set.call(el, String(v)); el.dispatchEvent(new window.Event("input", { bubbles: true })); el.dispatchEvent(new window.Event("change", { bubbles: true })); await tick(); };
+  await set(5); assert.match(txt(T("alk-name")), /pentane/); assert.equal(txt(T("alk-electrons")), "42"); assert.match(txt(T("alk-bp")), /36 °C/); assert.match(txt(T("alk-text")), /adds 8 electrons.*stronger London dispersion/);
+  await set(1); assert.match(txt(T("alk-text")), /weakest London dispersion/); assert.equal($$('[data-testid^="alk-pt-"]').length, 8);
+});
+await test("no WebGL is needed for the Boiling points tab (no stage, no fallback message)", () => { assert.equal($(T("imf-stage")), null); });
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

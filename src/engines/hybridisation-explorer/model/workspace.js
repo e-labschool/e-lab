@@ -1,7 +1,7 @@
 // Orbital Lab workspace state: atoms (each with its own configuration, selection, hybridisation, position and rotation),
 // the reducer with undo history, and the derived bond analysis. Pure (no React / three).
-import { atomicState, canExcite, promotionsFor, NO_PROMOTION_REASON, SELECTABLE_SYMBOLS } from "./elements.js";
-import { mixOrbitals, analyseSelection, RECIPES } from "./hybrids.js";
+import { atomicState, canExcite, promotionsFor, NO_PROMOTION_REASON, SELECTABLE_SYMBOLS, BEYOND_IB_REASON } from "./elements.js";
+import { mixOrbitals, analyseSelection, RECIPES, isBeyondIB } from "./hybrids.js";
 import { atomOrbitalInstances, analyseBonds } from "./overlap.js";
 import { planSnap } from "./snap.js";
 import { QI } from "./vec.js";
@@ -38,7 +38,7 @@ function pruneFormed(p) {
 const push = (h, present) => ({ ...h, past: [...h.past, h.present], present: pruneFormed(present) });
 
 /** What the controls show for the active atom: selection analysis, excitation availability, mix availability. */
-export function describeActive(atom) {
+export function describeActive(atom, { beyondIB = true } = {}) {
   const unhybridised = atom.orbitals.filter((o) => !(atom.hybrid && atom.hybrid.consumed.includes(o.id)));
   const atomicSel = atom.selected.filter((id) => atom.orbitals.some((o) => o.id === id));
   const selOrbs = atomicSel.map((id) => atom.orbitals.find((o) => o.id === id));
@@ -46,17 +46,18 @@ export function describeActive(atom) {
   let mix = { enabled: false, reason: analysis.reason };
   if (atom.hybrid) mix = { enabled: false, reason: "This atom is already hybridised. Undo, or switch Ground/Excited, to start again." };
   else if (atom.selected.some((id) => !atom.orbitals.some((o) => o.id === id))) mix = { enabled: false, reason: "Hybrid orbitals cannot be mixed again; select atomic orbitals." };
+  else if (analysis.ok && !beyondIB && isBeyondIB(analysis.recipeId)) mix = { enabled: false, reason: BEYOND_IB_REASON };
   else if (analysis.ok) mix = { enabled: true, reason: "", recipeId: analysis.recipeId };
-  const list = promotionsFor(atom.symbol);
+  const list = promotionsFor(atom.symbol, beyondIB);
   return {
     selection: selOrbs, analysis, mix, unhybridised,
-    canExcite: canExcite(atom.symbol), noPromotionReason: canExcite(atom.symbol) ? "" : NO_PROMOTION_REASON[atom.symbol] ?? "No valence promotion is defined for this element.",
+    canExcite: canExcite(atom.symbol, beyondIB), noPromotionReason: canExcite(atom.symbol, beyondIB) ? "" : (!beyondIB && canExcite(atom.symbol, true) ? BEYOND_IB_REASON : NO_PROMOTION_REASON[atom.symbol] ?? "No valence promotion is defined for this element."),
     promotions: list,
   };
 }
 /** "2s + 2px + 2py → sp²" as {parts:[latex...], result: latex|null, ok}. */
-export function selectionSummary(atom) {
-  const d = describeActive(atom);
+export function selectionSummary(atom, opts) {
+  const d = describeActive(atom, opts);
   const sel = [...d.selection].sort((a, b) => ["s", "px", "py", "pz", "dz2", "dx2-y2", "dxy", "dxz", "dyz"].indexOf(a.kind) - ["s", "px", "py", "pz", "dz2", "dx2-y2", "dxy", "dxz", "dyz"].indexOf(b.kind));
   const hybridSel = atom.selected.filter((id) => !atom.orbitals.some((o) => o.id === id));
   return { parts: sel.map((o) => o.latex), hybridCount: hybridSel.length, result: d.analysis.ok ? RECIPES[d.analysis.recipeId].latex : null, ok: d.analysis.ok, reason: d.analysis.reason };
@@ -141,6 +142,11 @@ export function reduce(h, action) {
     case "load": return { past: [], present: action.present, gesture: null };
     default: return h;
   }
+}
+
+/** Does anything in the workspace use a d-orbital model (excited with a d promotion, or a d hybrid)? Used when "beyond the IB course" is switched off. */
+export function usesBeyondIB(atoms) {
+  return atoms.some((a) => (a.hybrid && isBeyondIB(a.hybrid.recipeId)) || a.orbitals.some((o) => o.type === "d" && o.electrons > 0) || a.symbol === "Xe");
 }
 
 /** Derived: oriented instances and detected bonds of the whole workspace. */

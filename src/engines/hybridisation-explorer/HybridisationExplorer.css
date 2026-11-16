@@ -230,3 +230,6 @@
 .hy-seg-btn { color: var(--hy-ink); }
 .hy-seg-btn[aria-checked="true"] { background: #1f4aa8; border-color: var(--hy-ctl-line-hover); box-shadow: inset 0 0 0 1px var(--hy-ctl-line-hover); color: #ffffff; }
 [data-testid="hybridisation-workspace"] :is(.hy-btn, .hy-vt, .hy-legend-btn, .hy-collapse, .hy-seg-btn, .hy-box, .hy-stage, .hy-field select, .sd-btn, .sd-tab, .sim-toolbar-btn):focus-visible { outline: 2px solid var(--hy-focus); outline-offset: 2px; }
+
+/* ---- Phone / narrow: the 3D stage comes first, the controls follow (BS-13) ---- */
+[data-testid="hybridisation-workspace"].sd-root[data-layout="stacked"] .sd-col--chamber { order: -1; }

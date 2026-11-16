@@ -1,11 +1,14 @@
+import { R_IB, STP, SATP, PRESSURE_UNITS, VOLUME_UNITS, KELVIN_OFFSET } from "../../lib/gas/gasUnits.js";
+
 // Gas Laws Explorer -- pure scientific model (no React, no DOM) so it can be
 // tested in Node (scripts/test-gas-laws-model.mjs). Rendering lives elsewhere.
 //
 // ---------------------------------------------------------------------------
 // ONE SOURCE OF TRUTH
 // ---------------------------------------------------------------------------
-// state = { mode, P (atm), V (L), T (K), n (mol) } with PV = nRT,
-// R = 0.082057 L atm mol^-1 K^-1. Everything displayed, plotted or drawn
+// state = { mode, P (kPa), V (dm^3), T (K), n (mol), calc? } with PV = nRT,
+// R = 8.31 J K^-1 mol^-1 = 8.31 kPa dm^3 K^-1 mol^-1 (IB data booklet 2025; no conversion factor appears).
+// Other pressure / volume units (atm, mmHg, L, cm^3) are DISPLAY conversions only (src/lib/gas/gasUnits.js). Everything displayed, plotted or drawn
 // (piston height, particle count, speeds) derives from this object.
 //
 // MODES (adjustable / locked / calculated):
@@ -13,10 +16,11 @@
 //   vt  T    / P, n / V        Charles   V ~ T
 //   pt  T    / V, n / P        Gay-Lussac P ~ T
 //   vn  n    / P, T / V        Avogadro  V ~ n
+//   comb  any three of P, V, T, n are free; state.calc ("P" default) names the calculated one: PV = nRT
 //
 // RANGES (every reachable state stays inside them):
-//   V 5-50 L (the piston's drawable range), T 100-800 K, n 0.5-2.0 mol,
-//   P 0.1-10 atm. A control's EFFECTIVE range is its hard range intersected
+//   V 5-50 dm^3 (the piston's drawable range), T 100-800 K (1 K steps; typed values may have decimals, e.g. 273.15),
+//   n 0.5-2.0 mol, P 10-1000 kPa. A control's EFFECTIVE range is its hard range intersected
 //   with the interval that keeps the calculated variable inside ITS range
 //   (effectiveRange); setVariable clamps to it, so the piston / particle
 //   mapping can never be driven out of bounds.
@@ -28,34 +32,46 @@
 //   CHAMBER.maxHeight * V / V_max, i.e. linear and exact in V (0 L = floor).
 // ---------------------------------------------------------------------------
 
-export const R_GAS = 0.082057; // L atm mol^-1 K^-1
+export const R_GAS = R_IB; // kPa dm^3 K^-1 mol^-1 (= J K^-1 mol^-1)
 export const AVOGADRO = 6.02214076e23; // mol^-1
+export { STP, SATP };
 
 export const RANGES = Object.freeze({
-  P: Object.freeze({ min: 0.1, max: 10, step: 0.05 }),
+  P: Object.freeze({ min: 10, max: 1000, step: 5 }),
   V: Object.freeze({ min: 5, max: 50, step: 0.5 }),
-  T: Object.freeze({ min: 100, max: 800, step: 5 }),
+  T: Object.freeze({ min: 100, max: 800, step: 1 }),
   n: Object.freeze({ min: 0.5, max: 2, step: 0.05 }),
 });
 
 export const VARS = Object.freeze({
-  P: { key: "P", name: "Pressure", unit: "atm", decimals: 2 },
-  V: { key: "V", name: "Volume", unit: "L", decimals: 1 },
+  P: { key: "P", name: "Pressure", unit: "kPa", decimals: 1 },
+  V: { key: "V", name: "Volume", unit: "dm\u00b3", decimals: 1 },
   T: { key: "T", name: "Temperature", unit: "K", decimals: 0 },
   n: { key: "n", name: "Amount of gas", unit: "mol", decimals: 2 },
 });
 
-export const MODE_IDS = Object.freeze(["pv", "vt", "pt", "vn"]);
+export const MODE_IDS = Object.freeze(["pv", "vt", "pt", "vn", "comb"]);
+/** The four single-relationship investigations (the All Graphs View compares these). */
+export const SINGLE_MODE_IDS = Object.freeze(["pv", "vt", "pt", "vn"]);
 
 export const MODES = Object.freeze({
   pv: { id: "pv", short: "P – V", title: "Pressure – Volume", law: "Boyle’s relationship", independent: "V", locked: ["T", "n"], dependent: "P", relation: "P ∝ 1/V", constantText: "at constant T and n", sentence: "As volume decreases, pressure increases." },
   vt: { id: "vt", short: "V – T", title: "Temperature – Volume", law: "Charles’s relationship", independent: "T", locked: ["P", "n"], dependent: "V", relation: "V ∝ T", constantText: "at constant P and n", sentence: "As temperature increases, volume increases." },
   pt: { id: "pt", short: "P – T", title: "Temperature – Pressure", law: "Gay-Lussac’s relationship", independent: "T", locked: ["V", "n"], dependent: "P", relation: "P ∝ T", constantText: "at constant V and n", sentence: "As temperature increases, pressure increases." },
   vn: { id: "vn", short: "V – n", title: "Amount of Gas", law: "Avogadro’s relationship", independent: "n", locked: ["P", "T"], dependent: "V", relation: "V ∝ n", constantText: "at constant P and T", sentence: "As the amount of gas increases, volume increases." },
+  comb: { id: "comb", short: "PV = nRT", title: "Ideal gas equation", law: "Ideal gas equation", independent: null, locked: [], dependent: "P", relation: "PV = nRT", constantText: "with R = 8.31 J K\u207b\u00b9 mol\u207b\u00b9", sentence: "Choose which variable to calculate; change the other three." },
 });
 
-// Baseline every mode (and Reset) starts from: n = 1.00 mol, T = 300 K, V = 20 L.
-export const DEFAULT_BASELINE = Object.freeze({ n: 1, T: 300, V: 20 });
+/** The calculated variable of a state (fixed per mode, chosen by the student in the combined mode). */
+export function depOf(state) { return state.mode === "comb" ? (state.calc && VARS[state.calc] ? state.calc : "P") : MODES[state.mode].dependent; }
+/** Variables the student may change in this state. */
+export function freeKeys(state) {
+  if (state.mode === "comb") return ["n", "T", "V", "P"].filter((k) => k !== depOf(state));
+  return [MODES[state.mode].independent];
+}
+
+// Baseline every mode (and Reset) starts from: n = 1.00 mol, T = 300 K, V = 25 dm^3 (P = 99.7 kPa).
+export const DEFAULT_BASELINE = Object.freeze({ n: 1, T: 300, V: 25 }); // P = 99.7 kPa: an everyday gas
 
 const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
 const side = (k) => (k === "P" || k === "V" ? 0 : 1); // PV | nRT
@@ -73,11 +89,20 @@ export function computeDependent(dep, s) {
 
 /** Build a full consistent state; `given` supplies the three non-dependent
  * variables, the dependent one is calculated from PV = nRT. */
-export function makeState(mode, given) {
-  const dep = MODES[mode].dependent;
+export function makeState(mode, given, calc) {
   const s = { mode, P: given.P, V: given.V, T: given.T, n: given.n };
+  if (mode === "comb") s.calc = calc ?? given.calc ?? "P";
+  const dep = depOf(s);
   s[dep] = computeDependent(dep, s);
   return s;
+}
+
+/** Standard-condition presets (IB data booklet 2025): STP 273.15 K and 100 kPa, SATP 298.15 K and 100 kPa, n = 1.00 mol.
+ *  Returns a full consistent state for `mode` (V then comes out as 22.70 / 24.78 dm^3). */
+export function presetState(mode, preset, calc) {
+  const c = preset === "satp" ? SATP : STP;
+  const V = (1 * R_GAS * c.T) / c.P_kPa;
+  return makeState(mode, { n: 1, T: c.T, P: c.P_kPa, V }, calc);
 }
 
 /** The default (reset) state for a mode. */
@@ -89,7 +114,7 @@ export function defaultState(mode) {
 /** Switching relationship keeps all four values (they are already consistent),
  * so nothing jumps; only which variable is adjustable / locked / calculated changes. */
 export function switchMode(state, mode) {
-  return makeState(mode, state);
+  return makeState(mode, state, mode === "comb" ? (state.calc ?? "P") : undefined);
 }
 
 export function residual(s) { return Math.abs(s.P * s.V - s.n * R_GAS * s.T); }
@@ -97,7 +122,7 @@ export function residual(s) { return Math.abs(s.P * s.V - s.n * R_GAS * s.T); }
 /** Hard range of `key`, narrowed so the calculated variable stays inside its own range. */
 export function effectiveRange(state, key) {
   const hard = RANGES[key];
-  const dep = MODES[state.mode].dependent;
+  const dep = depOf(state);
   if (key === dep) return { min: hard.min, max: hard.max, hard, limited: false, adjustable: false };
   const y0 = state[dep];
   const x0 = state[key];
@@ -108,13 +133,31 @@ export function effectiveRange(state, key) {
   else { lo = (x0 * ry.min) / y0; hi = (x0 * ry.max) / y0; } // y ~ x
   const min = Math.max(hard.min, lo);
   const max = Math.min(hard.max, hi);
-  return { min, max, hard, limited: min > hard.min + 1e-9 || max < hard.max - 1e-9, adjustable: true };
+  return { min, max, hard, limited: min > hard.min + 1e-9 || max < hard.max - 1e-9, adjustable: true, dep,
+    // which bound of the calculated variable stops the slider at each end (null = the control's own hard range does)
+    minBy: min > hard.min + 1e-9 ? (side(key) === side(dep) ? "max" : "min") : null,
+    maxBy: max < hard.max - 1e-9 ? (side(key) === side(dep) ? "min" : "max") : null };
+}
+
+/** Why a value sits at an end of its slider, in words that are true: names the calculated variable and the bound it would hit.
+ *  null when the value is not at an end or the end is the control's own range. */
+export function limitReason(state, key, units = {}, maxTol = 0) {
+  const r = effectiveRange(state, key);
+  if (!r.adjustable) return null;
+  const v = state[key];
+  const tag = v <= r.min + 1e-9 ? r.minBy : (v >= r.max - 1e-9 || (maxTol > 0 && v > r.max - maxTol + 1e-6)) ? r.maxBy : null;
+  if (!tag) return null;
+  const bound = RANGES[r.dep][tag];
+  const name = VARS[r.dep].name.toLowerCase();
+  const word = tag === "min" ? "below" : "above";
+  const shown = r.dep === "P" ? formatValue("P", bound, units) + " " + unitLabel("P", units) : formatValue(r.dep, bound, units) + " " + unitLabel(r.dep, units);
+  return `Limit reached: any further and the ${name} would go ${word} ${shown}, the range this simulation can draw.`;
 }
 
 /** Change one variable (clamped to its effective range) and recalculate the dependent one.
  * Locked variables are never touched. */
 export function setVariable(state, key, value) {
-  const dep = MODES[state.mode].dependent;
+  const dep = depOf(state);
   if (key === dep || !Number.isFinite(value)) return { state, clamped: false, changed: false };
   const r = effectiveRange(state, key);
   const v = clamp(value, r.min, r.max);
@@ -156,24 +199,49 @@ export function displayAmount(n, unit) {
   return { mantissa: n.toFixed(2), exponent: null, unit: "mol", text: `${n.toFixed(2)} mol` };
 }
 
-export function formatValue(key, x) { return x.toFixed(VARS[key].decimals); }
-export function formatWithUnit(key, x) { return `${formatValue(key, x)} ${VARS[key].unit}`; }
+/** Display units: { pressure: "kPa"|"atm"|"mmHg", volume: "dm3"|"L"|"cm3" } (default IB: kPa, dm3). The state itself is always kPa / dm^3. */
+export const IB_UNITS = Object.freeze({ pressure: "kPa", volume: "dm3" });
+const pu = (u) => PRESSURE_UNITS[u?.pressure] ?? PRESSURE_UNITS.kPa;
+const vu = (u) => VOLUME_UNITS[u?.volume] ?? VOLUME_UNITS.dm3;
+export function unitLabel(key, units) { return key === "P" ? pu(units).label : key === "V" ? vu(units).label : VARS[key].unit; }
+/** Value of `key` in the display unit. */
+export function displayValue(key, x, units) { return key === "P" ? x * pu(units).perKPa : key === "V" ? x * vu(units).perDm3 : x; }
+export function fromDisplayValue(key, x, units) { return key === "P" ? x / pu(units).perKPa : key === "V" ? x / vu(units).perDm3 : x; }
+export function decimalsFor(key, x, units) {
+  if (key === "P") return pu(units).decimals;
+  if (key === "V") return vu(units).decimals;
+  if (key === "T") return Math.abs(x - Math.round(x)) < 0.005 ? 0 : 2; // 273.15 K must read 273.15, not 273
+  return VARS[key].decimals;
+}
+export function formatValue(key, x, units) { return displayValue(key, x, units).toFixed(decimalsFor(key, x, units)); }
+export function formatWithUnit(key, x, units) { return `${formatValue(key, x, units)} ${unitLabel(key, units)}`; }
+/** "300 K (26.85 \u00b0C)" */
+export function temperatureBoth(T) { const c = T - KELVIN_OFFSET; return `${formatValue("T", T)} K (${(Math.abs(c) < 0.005 ? 0 : c).toFixed(Math.abs(c - Math.round(c)) < 0.005 ? 0 : 2).replace("-", "\u2212")} \u00b0C)`; }
 
 // ---------------------------------------------------------------------------
 // Graphs
 // ---------------------------------------------------------------------------
+// dims = exponents of P and V in the axis quantity, so display-unit factors can be applied (kPa -> atm, dm^3 -> L / cm^3).
 const AXES = {
-  V: { name: "V", title: "Volume, V (L)", unit: "L", dec: 1, f: (s) => s.V },
-  P: { name: "P", title: "Pressure, P (atm)", unit: "atm", dec: 2, f: (s) => s.P },
-  invV: { name: "1/V", title: "1/V (L⁻¹)", unit: "L⁻¹", dec: 3, f: (s) => 1 / s.V },
-  PV: { name: "PV", title: "PV (L·atm)", unit: "L·atm", dec: 2, f: (s) => s.P * s.V },
-  Tk: { name: "T", title: "Temperature, T (K)", unit: "K", dec: 0, f: (s) => s.T },
-  Tc: { name: "t", title: "Temperature, t (°C)", unit: "°C", dec: 1, f: (s) => s.T - 273.15 },
-  VoverT: { name: "V/T", title: "V/T (L K⁻¹)", unit: "L/K", dec: 4, f: (s) => s.V / s.T },
-  PoverT: { name: "P/T", title: "P/T (atm K⁻¹)", unit: "atm/K", dec: 4, f: (s) => s.P / s.T },
-  n: { name: "n", title: "Amount, n (mol)", unit: "mol", dec: 2, f: (s) => s.n },
-  VoverN: { name: "V/n", title: "V/n (L mol⁻¹)", unit: "L/mol", dec: 1, f: (s) => s.V / s.n },
+  V: { name: "V", base: "Volume, V", unit: (u) => unitLabel("V", u), dec: 1, dims: { V: 1 }, f: (s) => s.V },
+  P: { name: "P", base: "Pressure, P", unit: (u) => unitLabel("P", u), dec: 1, dims: { P: 1 }, f: (s) => s.P },
+  invV: { name: "1/V", base: "1/V", unit: (u) => `${unitLabel("V", u)}\u207b\u00b9`, dec: 4, dims: { V: -1 }, f: (s) => 1 / s.V },
+  PV: { name: "PV", base: "PV", unit: (u) => `${unitLabel("P", u)}\u00b7${unitLabel("V", u)}`, dec: 0, dims: { P: 1, V: 1 }, f: (s) => s.P * s.V },
+  Tk: { name: "T", base: "Temperature, T", unit: () => "K", dec: 0, dims: {}, f: (s) => s.T },
+  Tc: { name: "t", base: "Temperature, t", unit: () => "\u00b0C", dec: 1, dims: {}, f: (s) => s.T - 273.15 },
+  VoverT: { name: "V/T", base: "V/T", unit: (u) => `${unitLabel("V", u)} K\u207b\u00b9`, dec: 4, dims: { V: 1 }, f: (s) => s.V / s.T },
+  PoverT: { name: "P/T", base: "P/T", unit: (u) => `${unitLabel("P", u)} K\u207b\u00b9`, dec: 4, dims: { P: 1 }, f: (s) => s.P / s.T },
+  n: { name: "n", base: "Amount, n", unit: () => "mol", dec: 2, dims: {}, f: (s) => s.n },
+  VoverN: { name: "V/n", base: "V/n", unit: (u) => `${unitLabel("V", u)} mol\u207b\u00b9`, dec: 2, dims: { V: 1 }, f: (s) => s.V / s.n },
+  nT: { name: "nT", base: "nT", unit: () => "mol K", dec: 0, dims: {}, f: (s) => s.n * s.T },
+  PVoverNT: { name: "PV/nT", base: "PV/nT", unit: (u) => `${unitLabel("P", u)} ${unitLabel("V", u)} mol\u207b\u00b9 K\u207b\u00b9`, dec: 2, dims: { P: 1, V: 1 }, f: (s) => (s.P * s.V) / (s.n * s.T) },
 };
+/** Factor that converts an axis quantity from kPa / dm^3 to the display units. */
+export function axisFactor(ax, units) {
+  const pf = PRESSURE_UNITS[units?.pressure]?.perKPa ?? 1; const vf = VOLUME_UNITS[units?.volume]?.perDm3 ?? 1;
+  return pf ** (ax.dims.P ?? 0) * vf ** (ax.dims.V ?? 0);
+}
+export const axisDef = (id) => AXES[id];
 
 const EXTRAP_ORIGIN = "extrapolation to the origin (outside the accessible range)";
 export const CELSIUS_EXTRAPOLATION_NOTE = "extrapolation: real gases condense/liquefy before this; not physically accessible";
@@ -198,6 +266,10 @@ export const GRAPH_DEFS = Object.freeze({
     { id: "v-n", label: "V vs n", x: "n", y: "V", kind: "line", ext: "origin", formula: "V = (RT/P) · n", interp: "V is directly proportional to the amount of gas: a straight line through the origin." },
     { id: "v-over-n", label: "V/n vs n", x: "n", y: "VoverN", kind: "flat", ext: null, formula: "V/n = RT/P", interp: "V/n stays constant (= RT/P) for every amount: a horizontal line." },
   ],
+  comb: [
+    { id: "pv-nt", label: "PV vs nT", x: "nT", y: "PV", kind: "line", ext: "origin", formula: "PV = R · nT", interp: "PV against nT is a straight line through the origin whose gradient is R = 8.31 J K\u207b\u00b9 mol\u207b\u00b9." },
+    { id: "r-nt", label: "PV/nT vs T", x: "Tk", y: "PVoverNT", kind: "flat", ext: null, formula: "PV/nT = R", interp: "PV/nT is the same at every temperature: it equals the gas constant R = 8.31." },
+  ],
 });
 
 export function graphOptions(mode) { return GRAPH_DEFS[mode]; }
@@ -221,7 +293,7 @@ export function niceScale(lo, hi, target = 5) {
 /** The state reached when the independent variable takes value u (no clamping:
  * used for the accessible range and for the dashed extrapolation). */
 function stateAlong(state, u) {
-  const { independent, dependent } = MODES[state.mode];
+  const independent = MODES[state.mode].independent; const dependent = depOf(state);
   const s = { ...state, [independent]: u };
   s[dependent] = computeDependent(dependent, s);
   return s;
@@ -229,27 +301,38 @@ function stateAlong(state, u) {
 
 function linspace(a, b, k) { return Array.from({ length: k }, (_, i) => a + ((b - a) * i) / (k - 1)); }
 
-function constantsText(state) {
+function constantsText(state, units) {
+  if (state.mode === "comb") return "P, V, T and n are linked by PV = nRT (R = 8.31)";
   const locked = MODES[state.mode].locked;
-  return locked.map((k) => `${k} = ${formatWithUnit(k, state[k])} (constant)`).join(", ");
+  return locked.map((k) => `${k} = ${formatWithUnit(k, state[k], units)} (constant)`).join(", ");
 }
 
-/** Everything the graph needs, computed from the model using the
- * investigation's locked variables (taken from `state`). */
-export function buildGraph(state, graphId, { samples = 48, ticks = 5, marker = true } = {}) {
+/** Everything the graph needs, computed from the model using the investigation's locked variables (taken from `state`).
+ *  `units` converts the displayed axes (the model itself stays in kPa / dm^3). */
+export function buildGraph(state, graphId, { samples = 48, ticks = 5, marker = true, units = IB_UNITS } = {}) {
   const def = getGraphDef(state.mode, graphId);
   const ax = AXES[def.x];
   const ay = AXES[def.y];
-  const ind = MODES[state.mode].independent;
-  const r = effectiveRange(state, ind);
+  const fx = axisFactor(ax, units); const fy = axisFactor(ay, units);
+  const comb = state.mode === "comb";
+  const ind = comb ? null : MODES[state.mode].independent;
+  // combined mode: the line is PV = R nT over the reachable nT range, drawn from a sweep of T at the largest n and the smallest n.
+  const r = comb ? { min: RANGES.T.min, max: RANGES.T.max } : effectiveRange(state, ind);
   const n = def.kind === "curve" ? samples * 2 : samples;
-  const pt = (u) => { const s = stateAlong(state, u); return { x: ax.f(s), y: ay.f(s), u }; };
-  const accessible = linspace(r.min, r.max, n).map(pt);
+  const pt = (u) => {
+    const s = comb ? { ...state, n: 1, T: u, V: 1, P: R_GAS * u } : stateAlong(state, u);
+    if (comb && def.x === "nT") { const nt = state.n * 0 + u; return { x: nt * fx, y: R_GAS * nt * fy, u }; }
+    return { x: ax.f(s) * fx, y: ay.f(s) * fy, u };
+  };
+  const accessible = (comb && def.x === "nT"
+    ? linspace(RANGES.n.min * RANGES.T.min, RANGES.n.max * RANGES.T.max, n)
+    : linspace(r.min, r.max, n)).map(pt);
 
   let extension = null;
   let extensionNote = null;
   if (def.ext === "origin" || def.ext === "celsius") {
-    extension = linspace(0, r.min, 12).map(pt);
+    const lo = comb ? accessible[0].u : r.min;
+    extension = linspace(0, lo, 12).map(pt);
     extensionNote = def.ext === "celsius" ? CELSIUS_EXTRAPOLATION_NOTE : EXTRAP_ORIGIN;
   } else if (def.ext === "invV") {
     extension = [r.max, 1e12].map(pt); // V -> infinity: 1/V -> 0
@@ -257,24 +340,26 @@ export function buildGraph(state, graphId, { samples = 48, ticks = 5, marker = t
     extensionNote = EXTRAP_ORIGIN;
   }
 
+  const mk = { x: ax.f(state) * fx, y: ay.f(state) * fy };
   const all = extension ? accessible.concat(extension) : accessible;
   const xs = all.map((p) => p.x);
   const ys = all.map((p) => p.y);
-  if (marker) { xs.push(ax.f(state)); ys.push(ay.f(state)); }
+  if (marker) { xs.push(mk.x); ys.push(mk.y); }
   const xLo = def.ext === "celsius" ? Math.min(...xs) : 0;
   const xr = niceScale(xLo, Math.max(...xs), ticks);
   const yHi = def.kind === "flat" ? Math.max(...ys) * 1.5 : Math.max(...ys) * 1.05;
   const yr = niceScale(0, yHi, ticks);
+  const title = (a) => `${a.base} (${a.unit(units)})`;
 
   return {
-    id: def.id, mode: state.mode, label: def.label, kind: def.kind, extKind: def.ext,
+    id: def.id, mode: state.mode, label: def.label, kind: def.kind, extKind: def.ext, xKey: def.x, yKey: def.y,
     title: `${ay.name} vs ${ax.name}`,
-    xTitle: ax.title, yTitle: ay.title, xUnit: ax.unit, yUnit: ay.unit, xName: ax.name, yName: ay.name,
+    xTitle: title(ax), yTitle: title(ay), xUnit: ax.unit(units), yUnit: ay.unit(units), xName: ax.name, yName: ay.name,
     xDec: ax.dec, yDec: ay.dec,
     accessible, extension, extensionNote,
-    marker: marker ? { x: ax.f(state), y: ay.f(state) } : null,
+    marker: marker ? mk : null,
     xRange: [xr.min, xr.max], yRange: [yr.min, yr.max], xTicks: xr.ticks, yTicks: yr.ticks,
-    constants: constantsText(state), formula: def.formula, interpretation: def.interp,
+    constants: constantsText(state, units), formula: def.formula, interpretation: def.interp,
   };
 }
 
@@ -286,17 +371,17 @@ export function formatPoint(g, x, y) {
  * ACTIVE investigation's panel instead uses the live investigation constants
  * and carries the live marker. */
 export const REFERENCE_CONDITIONS = Object.freeze({
-  pv: { T: 300, n: 1, V: 20 },
-  vt: { P: 1, n: 1, T: 300 },
-  pt: { V: 20, n: 1, T: 300 },
-  vn: { P: 1, T: 300, n: 1 },
+  pv: { T: 300, n: 1, V: 25 },
+  vt: { P: 100, n: 1, T: 300 },
+  pt: { V: 25, n: 1, T: 300 },
+  vn: { P: 100, T: 300, n: 1 },
 });
 
-export function allGraphsView(state) {
-  return MODE_IDS.map((mode) => {
+export function allGraphsView(state, units = IB_UNITS) {
+  return SINGLE_MODE_IDS.map((mode) => {
     const active = mode === state.mode;
     const base = active ? switchMode(state, mode) : makeState(mode, REFERENCE_CONDITIONS[mode]);
-    const graph = buildGraph(base, defaultGraphId(mode), { samples: 24, ticks: 4, marker: active });
+    const graph = buildGraph(base, defaultGraphId(mode), { samples: 24, ticks: 4, marker: active, units });
     return { mode, active, state: base, graph, conditions: graph.constants, conditionsLabel: active ? "current investigation" : "reference conditions" };
   });
 }
@@ -320,6 +405,11 @@ export const EXPLANATIONS = Object.freeze({
     up: "Temperature increases \u2192 faster particles hit the walls harder \u2192 pressure increases.",
     down: "Temperature decreases \u2192 slower particles hit the walls less hard \u2192 pressure decreases.",
   },
+  comb: {
+    default: "Change any three variables; the fourth is calculated from PV = nRT with R = 8.31 J K\u207b\u00b9 mol\u207b\u00b9.",
+    up: "Changed: the calculated variable follows PV = nRT.",
+    down: "Changed: the calculated variable follows PV = nRT.",
+  },
   vn: {
     default: "Change the amount of gas: pressure and temperature are constant, so the piston sets the volume.",
     up: "More gas \u2192 the piston rises \u2192 volume increases at constant pressure.",
@@ -333,6 +423,12 @@ export function defaultExplanation(mode) { return { id: `${mode}-default`, text:
 export function selectExplanation(prev, next) {
   if (!next) return null;
   if (!prev || prev.mode !== next.mode) return defaultExplanation(next.mode);
+  if (next.mode === "comb") {
+    const changed = ["P", "V", "T", "n"].filter((k) => k !== depOf(next) && Math.abs(next[k] - prev[k]) > 1e-9 * Math.max(1, Math.abs(prev[k])));
+    if (!changed.length) return null;
+    const k = changed[0]; const dir = next[k] > prev[k] ? "up" : "down";
+    return { id: `comb-${k}-${dir}-${depOf(next)}`, text: `${VARS[k].name} ${dir === "up" ? "increases" : "decreases"} \u2192 ${VARS[depOf(next)].name.toLowerCase()} is recalculated from PV = nRT.` };
+  }
   const ind = MODES[next.mode].independent;
   const a = prev[ind];
   const b = next[ind];
@@ -344,17 +440,27 @@ export function selectExplanation(prev, next) {
 // ---------------------------------------------------------------------------
 // Predict / reveal
 // ---------------------------------------------------------------------------
-export function predictContent(state) {
+export function predictContent(state, units = IB_UNITS) {
   const mode = state.mode;
+  if (mode === "comb") {
+    const dep = depOf(state);
+    const others = ["P", "V", "T", "n"].filter((k) => k !== dep);
+    const given = others.map((k) => `${VARS[k].name.toLowerCase()} = ${formatWithUnit(k, state[k], units)}`).join(", ");
+    return {
+      question: `Use PV = nRT to predict the ${VARS[dep].name.toLowerCase()} when ${given}.`,
+      answer: `${VARS[dep].name} = ${formatWithUnit(dep, state[dep], units)}. With R = 8.31 J K\u207b\u00b9 mol\u207b\u00b9, use kPa with dm\u00b3 (or Pa with m\u00b3).`,
+      reachable: true,
+    };
+  }
   const ind = MODES[mode].independent;
   const r = effectiveRange(state, ind);
   const x0 = state[ind];
   const factor = mode === "pv" ? 0.5 : 2;
   const x1 = x0 * factor;
   const reachable = x1 >= r.min - 1e-9 && x1 <= r.max + 1e-9;
-  const dep = MODES[mode].dependent;
+  const dep = depOf(state);
   const after = reachable ? setVariable(state, ind, x1).state : null;
-  const from = (k, v) => formatWithUnit(k, v);
+  const from = (k, v) => formatWithUnit(k, v, units);
   const ex = reachable ? ` (from ${from(ind, x0)} to ${from(ind, x1)})` : "";
   const outcome = reachable ? ` In this example, ${VARS[dep].name.toLowerCase()} goes from ${from(dep, state[dep])} to ${from(dep, after[dep])}.` : "";
   const q = {
@@ -369,7 +475,7 @@ export function predictContent(state) {
 export const TEXT_ONE_LINER = "Change one variable. Observe the response while the other variables remain constant.";
 
 /** Graph coordinates of any state for a given graph (used for the marker and the visited-points trail). */
-export function graphPoint(state, graphId) {
+export function graphPoint(state, graphId, units = IB_UNITS) {
   const def = getGraphDef(state.mode, graphId);
-  return { x: AXES[def.x].f(state), y: AXES[def.y].f(state) };
+  return { x: AXES[def.x].f(state) * axisFactor(AXES[def.x], units), y: AXES[def.y].f(state) * axisFactor(AXES[def.y], units) };
 }

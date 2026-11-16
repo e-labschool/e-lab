@@ -14,7 +14,7 @@ const HEIGHT = 90;
  * magnified inset over a narrow wavelength window -- needed for lines
  * genuinely too close together to distinguish at full-spectrum scale
  * (the sodium doublet is under 1nm apart across a 370nm-wide axis). */
-export default function SpectrumDisplay({ lines, mode = "emission", selectedIndex, onSelectLine, elementLabel, rangeMin = VISIBLE_MIN_NM, rangeMax = VISIBLE_MAX_NM }) {
+export default function SpectrumDisplay({ lines, mode = "emission", selectedIndex, onSelectLine, elementLabel, rangeMin = VISIBLE_MIN_NM, rangeMax = VISIBLE_MAX_NM, ultraviolet = false }) {
   const [hoverIndex, setHoverIndex] = useState(null);
   const activeIndex = hoverIndex ?? selectedIndex;
   const active = activeIndex != null ? lines[activeIndex] : null;
@@ -30,15 +30,15 @@ export default function SpectrumDisplay({ lines, mode = "emission", selectedInde
         ) : (
           <>
             <defs>
-              <linearGradient id="continuum-gradient" x1="0" x2="1" y1="0" y2="0">
+              <linearGradient id={ultraviolet ? "continuum-gradient-uv" : "continuum-gradient"} x1="0" x2="1" y1="0" y2="0">
                 {Array.from({ length: 20 }, (_, i) => {
                   const t = i / 19;
                   const wl = rangeMin + t * (rangeMax - rangeMin);
-                  return <stop key={i} offset={t} stopColor={wavelengthToCSS(wl)} />;
+                  return <stop key={i} offset={t} stopColor={ultraviolet ? "#4b3b7a" : wavelengthToCSS(wl)} />;
                 })}
               </linearGradient>
             </defs>
-            <rect x="0" y="0" width={WIDTH} height={HEIGHT} fill="url(#continuum-gradient)" />
+            <rect x="0" y="0" width={WIDTH} height={HEIGHT} fill={ultraviolet ? "url(#continuum-gradient-uv)" : "url(#continuum-gradient)"} />
           </>
         )}
 
@@ -49,13 +49,19 @@ export default function SpectrumDisplay({ lines, mode = "emission", selectedInde
             <g key={i}>
               <line
                 x1={x} y1={mode === "emission" ? 4 : 2} x2={x} y2={mode === "emission" ? HEIGHT - 4 : HEIGHT - 2}
-                stroke={mode === "emission" ? wavelengthToCSS(line.wavelengthNm) : "#0A0A0C"}
+                stroke={mode === "emission" ? wavelengthToCSS(line.wavelengthNm) : (ultraviolet ? "#f3ecff" : "#0A0A0C")}
                 strokeWidth={isActive ? 3 : 1.6}
                 opacity={mode === "emission" ? (isActive ? 1 : 0.85) : (isActive ? 0.95 : 0.7)}
                 style={{ cursor: "pointer" }}
                 onMouseEnter={() => setHoverIndex(i)}
                 onMouseLeave={() => setHoverIndex(null)}
                 onClick={() => onSelectLine?.(i)}
+                tabIndex={0}
+                role="button"
+                aria-label={`${line.wavelengthNm.toFixed(1)} nanometre line${line.label ? ", " + line.label : ""}`}
+                onFocus={() => setHoverIndex(i)}
+                onBlur={() => setHoverIndex(null)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelectLine?.(i); } }}
               />
               {mode === "emission" && (
                 <line x1={x - 4} y1="1" x2={x + 4} y2="1" stroke={wavelengthToCSS(line.wavelengthNm)} strokeWidth="6" opacity={isActive ? 0.9 : 0.4} filter="blur(2px)" />
@@ -72,6 +78,8 @@ export default function SpectrumDisplay({ lines, mode = "emission", selectedInde
       {active && (
         <div className="mt-1.5 flex flex-wrap items-center justify-center gap-x-4 gap-y-0.5 rounded-md bg-[var(--color-paper-raised)] px-3 py-1.5 text-xs">
           <span className="font-semibold text-[var(--color-ink)]">{active.wavelengthNm.toFixed(1)} nm</span>
+          {active.transition && <span className="text-[var(--color-ink-soft)]">{`n = ${active.transition.from} \u2192 ${active.transition.to}`}</span>}
+          {ultraviolet && <span className="text-[var(--color-ink-faint)]">ultraviolet, not visible to the eye</span>}
           {active.label && <span className="text-[var(--color-ink-faint)]">{active.label}</span>}
           {active.relativeIntensity && <span className="text-[var(--color-ink-faint)]">Relative intensity {active.relativeIntensity}</span>}
         </div>

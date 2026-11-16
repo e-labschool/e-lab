@@ -86,7 +86,8 @@ export default function ExploreMatterAndStates({ compact = false, standalone = f
   function handleRandomExample() {
     const example = getRandomMatterExample(selectedExample?.id);
     setSelectedExample(example);
-    goTo(0);
+    // stay on the mass / volume tests when the student is in them; otherwise show the sample on the bench
+    if (scene.id !== "mass-test" && scene.id !== "volume-test") goTo(0);
   }
 
   function handleReset() {
@@ -105,7 +106,7 @@ export default function ExploreMatterAndStates({ compact = false, standalone = f
             <ChevronLeft size={13} /> Previous
           </ToolbarButton>
           <ToolbarButton onClick={() => goTo(sceneIndex + 1)} disabled={sceneIndex === SCENES.length - 1}>
-            Reveal next <ChevronRight size={13} />
+            Next <ChevronRight size={13} />
           </ToolbarButton>
           <span className="mx-1 h-4 w-px bg-[var(--color-line)]" />
           <ToolbarButton onClick={() => goTo(0)}>
@@ -151,6 +152,8 @@ export default function ExploreMatterAndStates({ compact = false, standalone = f
           onSelectExample={handleChooseExample}
           forceToken={revealToken}
           paused={paused}
+          onChooseSample={() => goTo(0)}
+          onRandomSample={handleRandomExample}
         />
       </div>
     </div>

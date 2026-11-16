@@ -194,9 +194,28 @@ test("[check 10] O2 is a double bond (2 shared pairs, 2 lone pairs each); N2 is 
     assert.equal(sc.atoms.reduce((n, x) => n + x.electrons.filter((e) => e.state === "shared").length, 0), pairs * 2);
   }
 });
-test("selector example sets are scientifically sound: Single={H2,Cl2,HCl,H2O,NH3,CH4}, Double={O2}, Triple={N2}", () => {
-  assert.deepEqual(CO.examplesForOrder(1).map((m) => m.id), ["H2", "Cl2", "HCl", "H2O", "NH3", "CH4"]);
-  assert.deepEqual(CO.examplesForOrder(2).map((m) => m.id), ["O2"]); assert.deepEqual(CO.examplesForOrder(3).map((m) => m.id), ["N2"]);
+test("selector example sets are scientifically sound: Single = octet molecules with only single bonds, Double = {O2, CO2}, Triple = {N2}", () => {
+  assert.deepEqual(CO.examplesForOrder(1).map((m) => m.id), ["H2", "Cl2", "HCl", "HF", "H2O", "H2S", "NH3", "PH3", "CH4", "CCl4"]);
+  assert.deepEqual(CO.examplesForOrder(2).map((m) => m.id), ["O2", "CO2"]); assert.deepEqual(CO.examplesForOrder(3).map((m) => m.id), ["N2"]);
+});
+test("broader library (BS-14): CO2, HCN, C2H4, C2H2, CO, NH4+, H3O+ validate with the right shared / lone pair counts", () => {
+  const exp = { CO2: [4, 4], HCN: [4, 1], C2H4: [6, 0], C2H2: [5, 0], CO: [3, 2], "NH4+": [4, 0], "H3O+": [3, 1], N2: [3, 2], O2: [2, 4] };
+  for (const [id, [shared, lone]] of Object.entries(exp)) { const m = CO.getMolecule(id); assert.ok(m, id); assert.deepEqual(CO.validateMolecule(m), [], id); assert.equal(CO.totalSharedPairs(m), shared, `${id} shared`); assert.equal(CO.totalLonePairs(m), lone, `${id} lone`); }
+  assert.equal(CO.getMolecule("NH4+").charge, 1); assert.equal(CO.getMolecule("CO").charge, 0);
+});
+test("coordinate (dative) bonds: the donor supplies both electrons, the acceptor none; the bookkeeping adds up", () => {
+  const co = CO.getMolecule("CO"); assert.deepEqual(CO.dativeBonds(co).map((d) => [d.donor, d.acceptor]), [[1, 0]]);
+  assert.equal(CO.suppliedElectrons(co, 1), 4, "O supplies 2 (own) + 2 (dative)"); assert.equal(CO.suppliedElectrons(co, 0), 2, "C supplies only its 2 own electrons");
+  const nh4 = CO.getMolecule("NH4+"); assert.equal(CO.suppliedElectrons(nh4, 0), 5); assert.equal(CO.suppliedElectrons(nh4, 4), 0);
+  const bad = { ...nh4, charges: [0, 0, 0, 0, 0], charge: 0 }; assert.ok(CO.validateMolecule(bad).length > 0, "NH4 without the +1 charge does not validate");
+});
+test("polarity at IB level (data-booklet electronegativities): bond table and net dipole from the drawn shape", async () => {
+  const PL = await import("../src/engines/bonding-visualizer/model/polarity.js"); const SS = await import("../src/engines/bonding-visualizer/scene/moleculeStructure.js");
+  assert.deepEqual([PL.bondPolarity("H", "Cl").delta, PL.bondPolarity("H", "Cl").negative], [1, "Cl"]); assert.equal(PL.bondPolarity("O", "O").kind, "non-polar"); assert.equal(PL.bondPolarity("C", "H").kind, "slightly polar"); assert.equal(PL.bondPolarity("O", "H").delta, 1.2);
+  const polar = (id) => { const m = CO.getMolecule(id); return PL.netDipole(m, SS.moleculeStructure(m)).polar; };
+  for (const id of ["H2O", "NH3", "HCl", "HF", "HCN", "CO"]) assert.equal(polar(id), true, `${id} polar`);
+  for (const id of ["CO2", "CH4", "CCl4", "BF3", "BeCl2", "SF6", "PCl5", "C2H4", "C2H2", "H2", "O2", "N2"]) assert.equal(polar(id), false, `${id} non-polar (dipoles cancel or no polar bonds)`);
+  assert.equal(PL.netDipole(CO.getMolecule("NH4+"), SS.moleculeStructure(CO.getMolecule("NH4+"))).ion, true);
 });
 test("H2O, NH3, CH4: shared and lone pairs", () => {
   const exp = { H2O: [2, 2], NH3: [3, 1], CH4: [4, 0], Cl2: [1, 6], HCl: [1, 3] };
@@ -220,8 +239,8 @@ test("electron sharing never changes the overall charge: electrons drawn = valen
   for (const m of CO.MOLECULES) {
     const sc = covalentScene({ atoms: atoms(...m.atoms), molecule: m, stage: "bonded", p: 1, world });
     const valenceDots = sc.atoms.reduce((n, x) => n + x.electrons.filter((e) => !e.core).length, 0);
-    assert.equal(valenceDots, m.atoms.reduce((n, s) => n + EL.getBondingElement(s).valence, 0), m.id);
-    assert.equal(sc.atoms.reduce((n, x) => n + x.electrons.length, 0), m.atoms.reduce((n, s) => n + EL.getBondingElement(s).Z, 0), `${m.id} total electrons = sum of Z`);
+    assert.equal(valenceDots, m.atoms.reduce((n, s) => n + EL.getBondingElement(s).valence, 0) - m.charge, `${m.id} (an ion has lost / gained exactly its charge in electrons)`);
+    assert.equal(sc.atoms.reduce((n, x) => n + x.electrons.length, 0), m.atoms.reduce((n, s) => n + EL.getBondingElement(s).Z, 0) - m.charge, `${m.id} total electrons = sum of Z minus the charge`);
   }
 });
 test("lookup and explanations for unsupported sets", () => {
@@ -379,8 +398,8 @@ test("engine allocates nothing per step (buffers are reused)", () => {
 });
 
 console.log("Covalent final structures");
-test("crowding is detected from geometry (full outer shells of non-bonded atoms overlap): exactly PCl5 and SF6", () => {
-  assert.deepEqual(CO.MOLECULES.filter(isCrowded).map((m) => m.id), ["PCl5", "SF6"]);
+test("crowding is detected from geometry (full outer shells of non-bonded atoms overlap): PCl5, SF6 and CCl4 (plus the chain molecules C2H4 / C2H2, which are always drawn compactly)", () => {
+  assert.deepEqual(CO.MOLECULES.filter(isCrowded).map((m) => m.id), ["CCl4", "PCl5", "SF6", "C2H4", "C2H2"]);
   assert.ok(DOT_RHO > 0);
 });
 test("crowded molecules use the valence-dot drawing: no shell rings, every electron kept, colours by atom of origin", () => {
@@ -426,8 +445,8 @@ test("every molecule's final structure matches the molecule table (atoms, bond o
     assert.deepEqual(CO.validateMolecule(m), [], m.id);
     const st = moleculeStructure(m);
     assert.deepEqual(st.atoms.map((a) => a.symbol), m.atoms, m.id);
-    assert.deepEqual(st.bonds.map((b) => [b.i, b.j, b.order]), m.bonds, m.id);
-    st.atoms.forEach((a, i) => { assert.equal(2 * m.lonePairs[i] + st.bonds.reduce((n, b) => n + (b.i === i || b.j === i ? b.order : 0), 0), EL.getBondingElement(a.symbol).valence, `${m.id} atom ${i}`); });
+    assert.deepEqual(st.bonds.map((b) => [b.i, b.j, b.order]), m.bonds.map((b) => b.slice(0, 3)), m.id);
+    st.atoms.forEach((a, i) => { assert.equal(2 * m.lonePairs[i] + CO.suppliedElectrons(m, i), EL.getBondingElement(a.symbol).valence - ((m.charges && m.charges[i]) || 0), `${m.id} atom ${i}: own valence electrons = lone pair + electrons it supplies to bonds (dative bonds counted for the donor)`); });
     assert.ok(minGap(st) > 0.1, `${m.id}: spheres overlap (gap ${minGap(st).toFixed(3)})`);
     for (const a of st.atoms) a.pos.forEach((c) => assert.ok(Number.isFinite(c)));
     const c = [0, 1, 2].map((ax) => (Math.min(...st.atoms.map((a) => a.pos[ax])) + Math.max(...st.atoms.map((a) => a.pos[ax]))) / 2); c.forEach((v) => assert.ok(Math.abs(v) < 1e-9, `${m.id} centred`));

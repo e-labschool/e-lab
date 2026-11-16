@@ -175,8 +175,12 @@ await unmount();
 console.log("Registry guard: every registered simulation is wrapped by the shell");
 const componentSrc = fs.readFileSync(new URL("../src/data/simulationEngineComponents.js", import.meta.url), "utf8");
 const entries = [...componentSrc.matchAll(/"([^"]+)": lazy\(\(\) => import\("\.\.\/([^"]+)"\)/g)].map((m) => ({ id: m[1], file: m[2] }));
-await test("component map and registry list the same simulations", () => {
-  assert.deepEqual(entries.map((e) => e.id).sort(), Object.keys(SIMULATION_REGISTRY).sort());
+// Hidden from students (catalogue status "planned": placeholder art) but still embeddable in lessons, so it stays in the component map only.
+// It has no /simulation/:id route, so its frame has no New Tab target by design.
+const HIDDEN_BUT_EMBEDDABLE = new Set(["mixture-separation-explorer"]);
+await test("component map and registry list the same simulations (apart from those hidden from students)", () => {
+  assert.deepEqual(entries.map((e) => e.id).filter((id) => !HIDDEN_BUT_EMBEDDABLE.has(id)).sort(), Object.keys(SIMULATION_REGISTRY).sort());
+  for (const id of HIDDEN_BUT_EMBEDDABLE) assert.ok(!(id in SIMULATION_REGISTRY), `${id} must not be in the student-facing registry`);
 });
 for (const { id, file } of entries) {
   await test(`${id}: entry file renders exactly one InteractiveFrame, never bypasses it when compact, resolves its New Tab id`, () => {
@@ -188,7 +192,7 @@ for (const { id, file } of entries) {
     assert.ok(/standalone=\{standalone\}/.test(frames[0][1]), "the frame must receive standalone");
     const explicit = frames[0][1].match(/simulationId="([^"]+)"/);
     if (explicit) assert.equal(explicit[1], id);
-    else {
+    else if (!HIDDEN_BUT_EMBEDDABLE.has(id)) {
       const t = frames[0][1].match(/title=(?:"([^"]*)"|\{("(?:[^"\\]|\\.)*")\})/);
       assert.ok(t, "frame title not found");
       assert.ok(!(t[1] && /\\u[0-9a-f]{4}/i.test(t[1])), "a JSX attribute string does not process \\u escapes; use title={\"...\"}");

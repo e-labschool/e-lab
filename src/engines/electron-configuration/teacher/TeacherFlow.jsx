@@ -52,7 +52,7 @@ export default function TeacherFlow({ config }) {
             <p className="font-[var(--font-mono)] text-sm text-[var(--color-ink)]">
               {config.subshellsFillingOrder
                 .slice(0, revealIndex)
-                .map((s) => `${s.n}${["s", "p", "d", "f"][s.l]}${s.electrons}`)
+                .map((s) => `${s.n}${["s", "p", "d", "f"][s.l]}${String(s.electrons).replace(/\d/g, (d) => "⁰¹²³⁴⁵⁶⁷⁸⁹"[d])}`)
                 .join(" ") || "\u2014"}
             </p>
           )}
@@ -80,6 +80,9 @@ export default function TeacherFlow({ config }) {
             </div>
           )}
         </div>
+
+        <p className="text-xs text-[var(--color-ink-soft)]" data-testid="ec-teacher-summary">{config.shorthandString ? `Shorthand: ${config.shorthandString} \u00b7 ` : ""}Written by shell: {config.configurationString}</p>
+        {config.notes.map((n, i) => <p key={i} className="text-xs text-[var(--color-ink-soft)]">{n}</p>)}
 
         {display.highlightValence && (
           <p className="text-xs text-[var(--color-amber)]">{config.valence.note}</p>

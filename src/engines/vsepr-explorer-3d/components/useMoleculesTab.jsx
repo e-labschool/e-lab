@@ -15,12 +15,13 @@ const modelOf = (id) => historyReducer(createHistory(), { type: "load", ...model
 export default function useMoleculesTab({ onOpenInBuild, optionItems }) {
   const [id, setId] = useState("ch4");
   const [query, setQuery] = useState("");
+  const [kind, setKind] = useState("all"); // all | neutral | ions
   const viewState = useViewState(MOLECULE_VIEW);
   const stageRef = useRef(null);
   const model = useMemo(() => modelOf(id), [id]);
   const cls = classify(model);
   const { view, patch } = viewState;
-  const hits = useMemo(() => new Set(searchPresets(query).map((p) => p.id)), [query]);
+  const hits = useMemo(() => new Set(searchPresets(query).filter((p) => kind === "all" || (kind === "ions") === (p.charge !== 0)).map((p) => p.id)), [query, kind]);
   const total = hits.size;
 
   const controls = (
@@ -29,6 +30,9 @@ export default function useMoleculesTab({ onOpenInBuild, optionItems }) {
       <label className="vx-search"><Search size={14} aria-hidden="true" />
         <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search molecules" aria-label="Search molecules" data-testid="molecule-search" autoComplete="off" />
       </label>
+      <div className="vx-filter" role="group" aria-label="Show">
+        {[["all", "All"], ["neutral", "Molecules"], ["ions", "Ions"]].map(([k, l]) => <button key={k} type="button" className="vx-chip" aria-pressed={kind === k} onClick={() => setKind(k)} data-testid={`filter-${k}`}>{l}</button>)}
+      </div>
       <div className="vx-lib-scroll">
         {PRESET_GROUPS.map((g) => {
           const items = g.presets.filter((p) => hits.has(p.id)); if (!items.length) return null;
@@ -63,5 +67,5 @@ export default function useMoleculesTab({ onOpenInBuild, optionItems }) {
   );
   const p = PRESET_BY_ID[id];
   const explain = `${p.display} (${p.name}): ${p.axe}, ${p.ed.toLowerCase()} electron domains, ${p.mg.toLowerCase()} molecular geometry.`;
-  return { controls, chamber, graph, explain, reset: () => { setId("ch4"); setQuery(""); viewState.reset(); }, selected: id };
+  return { controls, chamber, graph, explain, reset: () => { setId("ch4"); setQuery(""); setKind("all"); viewState.reset(); }, selected: id };
 }

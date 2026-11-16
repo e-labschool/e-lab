@@ -93,4 +93,35 @@ t("check_understanding / page_break are never placed in a cell", () => {
   assert.ok(rows.every((r) => r.cells.length === 1));
 });
 
+const C = await import("../src/lib/blockCanvas.js");
+t("canvas lessons render one 12-column grid: full content, columns / compacted rows as CSS variables, reading order in the DOM", () => {
+  let bs = noBreaks.slice(0, 4).map((b) => ({ ...b }));
+  bs = C.toCanvas(bs);
+  bs = C.resizeTo(bs, bs[0].id, { span: 6, rs: 8 }); bs = C.resizeTo(bs, bs[1].id, { span: 6 }); bs = C.moveTo(bs, bs[1].id, 7, 1);
+  const html = render(h(LearnBlocksLayout, { blocks: bs, renderBlock }));
+  const doc = new dom.window.DOMParser().parseFromString(`<body>${html}</body>`, "text/html");
+  const cells = [...doc.querySelectorAll(".lb-gcell")];
+  assert.equal(cells.length, 4); assert.ok(doc.querySelector(".lb-grid") && doc.querySelector('[data-layout="canvas"]'));
+  const plan = C.canvasGrid(bs);
+  assert.deepEqual(cells.map((c) => c.getAttribute("data-block-id")), plan.map((p) => p.block.id), "DOM order is reading order");
+  cells.forEach((c, i) => { assert.equal(c.style.getPropertyValue("--lb-col"), String(plan[i].col)); assert.equal(c.style.getPropertyValue("--lb-span"), String(plan[i].span)); assert.equal(c.style.getPropertyValue("--lb-r"), String(plan[i].r)); });
+  assert.ok(Number(cells[0].style.getPropertyValue("--lb-rs")) >= 2, "the tall block spans the rows of its neighbour");
+});
+t("canvas render shows the FULL block content (the editor tile is clamped, the student page is not)", () => {
+  const long = "Lorem ipsum dolor sit amet ".repeat(40);
+  const bs = C.toCanvas([{ id: "x", block_type: "rich_text", visible: true, position: 0, content: { html: `<p>${long}</p>`, title: "" } }]);
+  const html = render(h(LearnBlocksLayout, { blocks: bs, renderBlock }));
+  assert.ok(html.includes(long.trim().slice(0, 600)), "all text present");
+});
+t("canvas + page filtering: removing a block (HL-only / hidden) leaves no hole and no overlap in the plan", () => {
+  const bs = C.toCanvas(noBreaks.slice(0, 5).map((b) => ({ ...b })));
+  const fewer = bs.filter((_, i) => i !== 1);
+  const plan = C.canvasGrid(fewer);
+  assert.equal(plan.length, 4); assert.deepEqual(plan.map((p) => p.r), [1, 2, 3, 4]);
+});
+t("legacy lessons never take the canvas path", () => {
+  const html = render(h(LearnBlocksLayout, { blocks: noBreaks, renderBlock }));
+  assert.ok(!html.includes("lb-grid") && !html.includes("lb-gcell"));
+});
+
 console.log(`\n${n} learn layout render tests passed`);

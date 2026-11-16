@@ -27,4 +27,4 @@ export const TEACHING_ABUNDANCE = Object.freeze({
 });
 export const ISOTOPE_SOURCE = "Isotopic masses: AME2020 (Wang et al., Chin. Phys. C 45, 030003, 2021) as tabulated by NIST. Abundances: IUPAC (Meija et al., Pure Appl. Chem. 88, 293, 2016) / NIST. Entered from the tables; not re-checked online in this build.";
 export const TEACHING_NOTE = "Teaching model: chlorine 75 : 25 (³⁵Cl : ³⁷Cl) and bromine about 1 : 1 (⁷⁹Br : ⁸¹Br). Natural values: Cl 75.76 : 24.24, Br 50.69 : 49.31.";
-export const TERMS_NOTE = "Mass number (protons + neutrons, a whole number) is not the isotopic mass (the mass of one isotope in u, not a whole number), not the relative atomic mass Aᵣ (the abundance-weighted mean over the isotopes) and not m/z (an ion's mass in u divided by its charge number).";
+export const TERMS_NOTE = "Mass number (protons + neutrons, a whole number) is not the isotopic mass (the mass of one isotope in u, not a whole number), not the relative atomic mass Ar (the abundance-weighted mean over the isotopes) and not m/z (an ion's mass in u divided by its charge number).";

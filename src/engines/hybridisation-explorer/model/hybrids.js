@@ -15,6 +15,9 @@ export const RECIPES = {
   sp3d2: { id: "sp3d2", count: 6, s: 1, p: 3, d: 2, latex: "sp^{3}d^{2}", geometry: "Octahedral", angles: [90, 180], idealText: "90°, 180°", traditional: true, example: "SF₆" },
   dsp2: { id: "dsp2", count: 4, s: 1, p: 2, d: 1, latex: "dsp^{2}", geometry: "Square planar", angles: [90, 180], idealText: "90°, 180°", complex: true, example: "[Ni(CN)₄]²⁻, [PtCl₄]²⁻" },
 };
+/** The recipes of the IB course (S2.2): sp, sp2, sp3 only. */
+export const IB_RECIPE_IDS = ["sp", "sp2", "sp3"];
+export const isBeyondIB = (recipeId) => !IB_RECIPE_IDS.includes(recipeId);
 export const RECIPE_IDS = Object.keys(RECIPES);
 const RECIPE_UNICODE = { sp: "sp", sp2: "sp\u00b2", sp3: "sp\u00b3", sp3d: "sp\u00b3d", sp3d2: "sp\u00b3d\u00b2", dsp2: "dsp\u00b2" };
 /** Plain-text name with Unicode superscripts: "sp\u00b2", "sp\u00b3d\u00b2". */

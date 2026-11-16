@@ -1,7 +1,7 @@
 // Canvas 2D renderer for the Ideal Gas Simulation. Pure drawing: reads the
 // model (model.js) and never mutates it. Created once per canvas; holds only
 // render-side caches (sprites, trail history).
-import { CHAMBER } from "./model.js";
+import { CHAMBER, aboveScale, belowScale, scaleTicks } from "./model.js";
 
 const WALL_H = CHAMBER.maxHeight + 15; // glass wall height (units) -- piston sits inside at max volume
 const BASE_H = 12; // base plate thickness
@@ -13,7 +13,7 @@ const FLASH_LIFE = 0.22; // s of simulation time
 const PARTICLE_COLOURS = ["#4F6BFF", "#5F63F2", "#7058EE", "#8456F0"]; // blue -> purple
 
 export function computeLayout(cssW, cssH) {
-  const padX = 26;
+  const padX = 40; // room for the labelled volume scale on the left
   const padY = 12;
   const totalUnits = ROD_H + WALL_H + BASE_H + 8; // +8: soft floor shadow
   const s = Math.max(0.2, Math.min((cssW - 2 * padX) / (CHAMBER.width + 12), (cssH - 2 * padY) / totalUnits));
@@ -233,6 +233,33 @@ export function createRenderer() {
     ctx.beginPath();
     ctx.ellipse(cx, wallTop, widthPx / 2, ery, 0, 0, Math.PI * 2);
     ctx.stroke();
+
+    // labelled VOLUME SCALE on the left wall: linear 0..25 / 0..100 dm3 (or decades on the log scale)
+    {
+      const scale = sim.display.pistonScale ?? 25;
+      const fs = Math.max(10, Math.min(12.5, 10 + (s - 1) * 1.4));
+      ctx.font = `600 ${fs}px system-ui, sans-serif`;
+      ctx.textBaseline = "middle";
+      ctx.textAlign = "right";
+      ctx.fillStyle = "#33415F";
+      ctx.strokeStyle = "#33415F";
+      ctx.lineWidth = 1.2;
+      for (const t of scaleTicks(scale)) {
+        const y = floorY - t.h * s;
+        ctx.beginPath(); ctx.moveTo(x0 - 6, y); ctx.lineTo(x0 + 1, y); ctx.stroke();
+        ctx.fillText(t.label, x0 - 9, y);
+      }
+      ctx.textAlign = "left";
+      ctx.fillStyle = "#14226B";
+      ctx.fillText(`${sim.display.volumeLabel ?? "dm\u00b3"}${scale === "log" ? " (log)" : ""}`, Math.max(2, x0 - 36), wallTop - 6);
+      const V = sim.state.V;
+      if (aboveScale(V, scale) || belowScale(V, scale)) {
+        ctx.fillStyle = "#7a4d00";
+        ctx.textAlign = "left";
+        ctx.fillText(aboveScale(V, scale) ? "above the drawn scale" : "piston at its stop", x1 - widthPx * 0.62, aboveScale(V, scale) ? wallTop + 10 : floorY - 6 - ery);
+      }
+      ctx.textBaseline = "alphabetic";
+    }
 
     // rod (moves with the piston) then the steel piston/lid
     const rodW = Math.max(6, 11 * s);

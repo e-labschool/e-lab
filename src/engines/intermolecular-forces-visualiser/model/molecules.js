@@ -10,24 +10,26 @@
 // POLARIZABILITY `alpha` is the polarizability volume alpha' in A^3 (CRC Handbook, "Atomic and Molecular Polarizabilities",
 // orientation-averaged). It is used only for RELATIVE scaling of induced dipoles (p = alpha' * E, with E in e/A^2 -> p in e*A).
 import { ELEMENTS as VSEPR_ELEMENTS } from "../../vsepr-explorer-3d/model/elements.js";
+import { ELEMENT_STYLE } from "../../shared-3d/elementStyle.js";
 import { add, cross, dot, len, norm, qRot, scale, sub } from "./vec.js";
 
 export const DEBYE_IN_E_ANGSTROM = 0.20819434; // 1 D = 0.2082 e*A
 
 /** Per-element data: colour (shared with the VSEPR Explorer), mass (u), van der Waals radius (A, Bondi/Alvarez), ball-and-stick radius (A). */
+const pick = (sym) => ({ color: ELEMENT_STYLE[sym].color, text: ELEMENT_STYLE[sym].text });
 export const ELEM = {
   H: { ...VSEPR_ELEMENTS.H, mass: 1.008, vdw: 1.2, ball: 0.3 },
   C: { ...VSEPR_ELEMENTS.C, mass: 12.011, vdw: 1.7, ball: 0.42 },
   N: { ...VSEPR_ELEMENTS.N, mass: 14.007, vdw: 1.55, ball: 0.42 },
   O: { ...VSEPR_ELEMENTS.O, mass: 15.999, vdw: 1.52, ball: 0.41 },
-  F: { ...VSEPR_ELEMENTS.F, color: "#90e050", mass: 18.998, vdw: 1.47, ball: 0.38 },
+  F: { ...VSEPR_ELEMENTS.F, mass: 18.998, vdw: 1.47, ball: 0.38 },
   S: { ...VSEPR_ELEMENTS.S, mass: 32.06, vdw: 1.8, ball: 0.5 },
   Cl: { ...VSEPR_ELEMENTS.Cl, mass: 35.45, vdw: 1.75, ball: 0.5 },
   Br: { ...VSEPR_ELEMENTS.Br, mass: 79.904, vdw: 1.85, ball: 0.55 },
   I: { ...VSEPR_ELEMENTS.I, mass: 126.904, vdw: 1.98, ball: 0.6 },
-  Ar: { symbol: "Ar", name: "Argon", color: "#80d1e3", text: "#05303a", mass: 39.948, vdw: 1.88, ball: 0.9 },
-  Ne: { symbol: "Ne", name: "Neon", color: "#ff9bd2", text: "#3a1730", mass: 20.18, vdw: 1.54, ball: 0.72 },
-  Na: { symbol: "Na", name: "Sodium", color: "#ab5cf2", text: "#ffffff", mass: 22.99, vdw: 1.02, ball: 0.55 },
+  Ar: { symbol: "Ar", name: "Argon", ...pick("Ar"), mass: 39.948, vdw: 1.88, ball: 0.9 },
+  Ne: { symbol: "Ne", name: "Neon", ...pick("Ne"), mass: 20.18, vdw: 1.54, ball: 0.72 },
+  Na: { symbol: "Na", name: "Sodium", ...pick("Na"), mass: 22.99, vdw: 1.02, ball: 0.55 },
 };
 
 const RAD = Math.PI / 180;

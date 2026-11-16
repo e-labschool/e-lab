@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { GraduatedCylinder, RulerBlock, BalloonIcon, SyringeIcon } from "../components/ApparatusIcons.jsx";
 import ConclusionBadge from "../components/ConclusionBadge.jsx";
+import NeedSample from "../components/NeedSample.jsx";
 import SceneQuestion from "../components/SceneQuestion.jsx";
 
 function RegularSolid({ example, tested }) {
@@ -12,7 +13,7 @@ function RegularSolid({ example, tested }) {
         <span>l = {l} {unit}</span>
         <span>w = {w} {unit}</span>
         <span>h = {h} {unit}</span>
-        {tested && <span className="text-[var(--color-ink)]">V = l &times; w &times; h = {l * w * h} {unit}&sup3;</span>}
+        {tested && <span className="text-[var(--color-ink)]">V = l &times; w &times; h = {Number((l * w * h).toFixed(2))} {unit}&sup3;</span>}
       </div>
     </div>
   );
@@ -22,12 +23,12 @@ function IrregularSolid({ example, tested }) {
   const { before, after, unit } = example.volume;
   return (
     <div className="flex flex-wrap items-center gap-8">
-      <GraduatedCylinder levelPercent={tested ? 68 : 46} highlight={tested} />
+      <GraduatedCylinder volumeMl={tested ? after : before} highlight={tested} />
       <div className="flex flex-col gap-1 font-[var(--font-mono)] text-sm text-[var(--color-ink-soft)]">
-        <span>Initial level: {before} {unit}</span>
+        <span>Water level before: {before} {unit}</span>
         {tested && (
           <>
-            <span>Final level: {after} {unit}</span>
+            <span>Water level with the solid: {after} {unit}</span>
             <span className="text-[var(--color-ink)]">{after} &minus; {before} = {after - before} {unit}</span>
           </>
         )}
@@ -40,9 +41,9 @@ function Liquid({ example, tested }) {
   const { amount, unit } = example.volume;
   return (
     <div className="flex flex-wrap items-center gap-8">
-      <GraduatedCylinder levelPercent={tested ? 60 : 8} highlight={tested} />
+      <GraduatedCylinder volumeMl={tested ? amount : 0} highlight={tested} />
       <div className="flex flex-col gap-1 font-[var(--font-mono)] text-sm text-[var(--color-ink-soft)]">
-        {tested ? <span>Volume: {amount} {unit}</span> : <span>Pouring&hellip;</span>}
+        {tested ? <span>Reading: {amount} {unit}</span> : <span>Empty cylinder, 0 {unit}</span>}
       </div>
     </div>
   );
@@ -57,7 +58,7 @@ function Gas({ example, tested }) {
         <span className="text-xs text-[var(--color-ink-faint)]">{tested ? "Inflated" : "Deflated"}</span>
       </div>
       <div className="flex flex-col items-center gap-2">
-        <SyringeIcon fillPercent={tested ? 60 : 5} />
+        <SyringeIcon volumeMl={tested ? amount : 5} />
         {tested && <span className="font-[var(--font-mono)] text-sm text-[var(--color-ink)]">{amount} {unit}</span>}
       </div>
     </div>
@@ -66,7 +67,7 @@ function Gas({ example, tested }) {
 
 const METHOD_COMPONENT = { "regular-solid": RegularSolid, "irregular-solid": IrregularSolid, liquid: Liquid, gas: Gas };
 
-export default function VolumeTestScene({ example, forceToken }) {
+export default function VolumeTestScene({ example, forceToken, onChooseSample, onRandomSample }) {
   const [tested, setTested] = useState(false);
 
   useEffect(() => setTested(false), [example?.id]);
@@ -76,11 +77,7 @@ export default function VolumeTestScene({ example, forceToken }) {
   }, [forceToken]);
 
   if (!example || !example.volumeMethod) {
-    return (
-      <div className="rounded-md border border-dashed border-[var(--color-line)] p-8 text-center text-sm text-[var(--color-ink-faint)]">
-        Choose a matter sample from the tray first.
-      </div>
-    );
+    return <NeedSample example={example} what="volume" onChooseSample={onChooseSample} onRandomSample={onRandomSample} />;
   }
 
   const Method = METHOD_COMPONENT[example.volumeMethod];

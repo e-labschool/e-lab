@@ -1,1748 +1,221 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import InteractiveFrame from "../../components/interactive-shell/InteractiveFrame.jsx";
 import { useSimulationPresentation } from "../../components/interactive-shell/SimulationPresentation.js";
-import "./TitrationPHCurve.css";
 import { COPYRIGHT_TEXT_COMPACT } from "../../data/copyright.js";
+import "../../lib/acidbase/acidbase-ui.css";
+import "./TitrationPHCurve.css";
+import { REAGENTS, INDICATORS, INDICATOR_LIST, PKA_ETHANOIC, PKB_AMMONIA } from "../../lib/acidbase/constants.js";
+import { makeTitration, comparisonSet } from "../../lib/acidbase/titration.js";
+import { formatPH } from "../../lib/acidbase/format.js";
+import { indicatorColourName, recommendedIndicator, isSuitable } from "../../lib/acidbase/indicators.js";
+import { buildExperimentGraph, buildCompareGraph, describeExperiment } from "./lib/graphModel.js";
+import { explainPair, titrantNote, compareExplanations } from "./lib/explain.js";
+import { ExperimentGraph, CompareGraph } from "./components/TitrationGraph.jsx";
+import Apparatus, { PHMeter } from "./components/Apparatus.jsx";
 
-const KW = 1.0e-14;
+const DEFAULTS = { flask: "CH3COOH", burette: "NaOH", cFlask: 0.1, cBurette: 0.1 };
+const CONCS = [0.05, 0.1, 0.2];
+const ADD_STEPS = [0.1, 0.5, 1, 5];
+const optionText = (r) => `${r.label} — ${r.strong ? "strong" : "weak"} ${r.kind}`;
+const tOf = (cfg) => makeTitration({ flaskId: cfg.flask, buretteId: cfg.burette, cFlask: cfg.cFlask, cBurette: cfg.cBurette });
 
-const DEFAULT_FLASK_VOLUME_ML = 25.0;
-const DEFAULT_CONCENTRATION = 0.100;
+function initialRun(cfg) { const t = tOf(cfg); return { cfg, v: 0, points: [{ v: 0, pH: t.phAt(0) }], dropKey: 0 }; }
 
-const REAGENTS = {
-  HCl: {
-    id: "HCl",
-    label: "HCl",
-    displayName: "Hydrochloric acid",
-    type: "acid",
-    strength: "strong",
-    colorClass: "acid",
-  },
-
-  CH3COOH: {
-    id: "CH3COOH",
-    label: "CH₃COOH",
-    displayName: "Ethanoic acid",
-    type: "acid",
-    strength: "weak",
-    Ka: 1.8e-5,
-    colorClass: "acid",
-  },
-
-  NaOH: {
-    id: "NaOH",
-    label: "NaOH",
-    displayName: "Sodium hydroxide",
-    type: "base",
-    strength: "strong",
-    colorClass: "base",
-  },
-
-  NH3: {
-    id: "NH3",
-    label: "NH₃",
-    displayName: "Ammonia",
-    type: "base",
-    strength: "weak",
-    Kb: 1.8e-5,
-    colorClass: "base",
-  },
-};
-
-const ACIDS = ["HCl", "CH3COOH"];
-const BASES = ["NaOH", "NH3"];
-
-// ============================================================
-// Indicator selection + colour models.
-//
-// The indicator is chosen from the OVERALL acid/base STRENGTH
-// combination, never from which reagent happens to be in the flask --
-// this is what makes "HCl flask + NaOH burette" and "NaOH flask + HCl
-// burette" both correctly select Bromothymol blue, and what makes
-// reversing a weak/strong pair keep the SAME indicator while the colour
-// direction reverses naturally (because it's driven by pH, not by a
-// separately-encoded direction rule).
-// ============================================================
-function clamp01(t) {
-  return Math.max(0, Math.min(1, t));
-}
-function lerp(a, b, t) {
-  return a + (b - a) * t;
-}
-function lerpColor(c1, c2, t) {
-  return [Math.round(lerp(c1[0], c2[0], t)), Math.round(lerp(c1[1], c2[1], t)), Math.round(lerp(c1[2], c2[2], t))];
-}
-function rgbToCss([r, g, b], alpha = 1) {
-  return `rgba(${r},${g},${b},${alpha})`;
-}
-
-const INDICATORS = {
-  BTB: {
-    id: "BTB",
-    label: "Bromothymol blue",
-    rangeLow: 6.0,
-    rangeHigh: 7.6,
-    description: "Yellow \u2192 Green \u2192 Blue",
-    colorAt(pH) {
-      const YELLOW = [212, 186, 74], GREEN = [96, 178, 120], BLUE = [74, 132, 196];
-      const mid = (this.rangeLow + this.rangeHigh) / 2;
-      let rgb;
-      if (pH <= this.rangeLow) rgb = YELLOW;
-      else if (pH >= this.rangeHigh) rgb = BLUE;
-      else if (pH < mid) rgb = lerpColor(YELLOW, GREEN, clamp01((pH - this.rangeLow) / (mid - this.rangeLow)));
-      else rgb = lerpColor(GREEN, BLUE, clamp01((pH - mid) / (this.rangeHigh - mid)));
-      return { css: rgbToCss(rgb, 0.55), alpha: 0.55 };
-    },
-  },
-  Phenolphthalein: {
-    id: "Phenolphthalein",
-    label: "Phenolphthalein",
-    rangeLow: 8.2,
-    rangeHigh: 10.0,
-    description: "Colourless \u2192 Pink",
-    colorAt(pH) {
-      const CLEAR = [255, 255, 255], PINK = [224, 140, 178];
-      const t = pH <= this.rangeLow ? 0 : pH >= this.rangeHigh ? 1 : clamp01((pH - this.rangeLow) / (this.rangeHigh - this.rangeLow));
-      const rgb = lerpColor(CLEAR, PINK, t);
-      const alpha = lerp(0.08, 0.55, t); // "colourless" is a very faint tint of the flask liquid, not literally invisible
-      return { css: rgbToCss(rgb, alpha), alpha };
-    },
-  },
-  MethylOrange: {
-    id: "MethylOrange",
-    label: "Methyl orange",
-    rangeLow: 3.1,
-    rangeHigh: 4.4,
-    description: "Red \u2192 Orange \u2192 Yellow",
-    colorAt(pH) {
-      const RED = [196, 74, 74], ORANGE = [214, 140, 68], YELLOW = [210, 186, 84];
-      const mid = (this.rangeLow + this.rangeHigh) / 2;
-      let rgb;
-      if (pH <= this.rangeLow) rgb = RED;
-      else if (pH >= this.rangeHigh) rgb = YELLOW;
-      else if (pH < mid) rgb = lerpColor(RED, ORANGE, clamp01((pH - this.rangeLow) / (mid - this.rangeLow)));
-      else rgb = lerpColor(ORANGE, YELLOW, clamp01((pH - mid) / (this.rangeHigh - mid)));
-      return { css: rgbToCss(rgb, 0.55), alpha: 0.55 };
-    },
-  },
-};
-
-/** Chooses the indicator from the PAIR's strengths, independent of which
- * reagent is in the flask vs the burette -- see the comment above. */
-function getIndicatorForPair(flask, burette) {
-  const hasWeakAcid = (flask.type === "acid" && flask.strength === "weak") || (burette.type === "acid" && burette.strength === "weak");
-  const hasWeakBase = (flask.type === "base" && flask.strength === "weak") || (burette.type === "base" && burette.strength === "weak");
-  if (hasWeakAcid && hasWeakBase) return null; // weak acid + weak base -- no sufficiently sharp region for a normal indicator
-  if (hasWeakAcid) return INDICATORS.Phenolphthalein; // weak acid + strong base
-  if (hasWeakBase) return INDICATORS.MethylOrange; // strong acid + weak base
-  return INDICATORS.BTB; // strong acid + strong base
-}
-
-/** Finds the titrant volume at which the theoretical pH curve crosses
- * `targetPH`, by bisection over volume -- pH is monotonic in volume for
- * every titration this solver supports, in either direction, so this
- * works for both flask/burette orderings without a separate formula per
- * direction. Returns null if the target is never reached in range. */
-function findVolumeForPH(targetPH, pHAtVolumeFn, maxVolume = 60) {
-  let lo = 0;
-  let hi = maxVolume;
-  const pHLo = pHAtVolumeFn(lo);
-  const pHHi = pHAtVolumeFn(hi);
-  if ((pHLo - targetPH) * (pHHi - targetPH) > 0) return null;
-  const increasing = pHHi > pHLo;
-  for (let i = 0; i < 60; i++) {
-    const mid = (lo + hi) / 2;
-    const pHMid = pHAtVolumeFn(mid);
-    if (Math.abs(pHMid - targetPH) < 1e-4) return mid;
-    if (pHMid < targetPH === increasing) lo = mid;
-    else hi = mid;
+// Pure reducer: no side effects inside state updaters (safe under StrictMode).
+function reducer(state, a) {
+  if (a.type === "config") { let cfg = { ...state.cfg, ...a.patch }; const f = REAGENTS[cfg.flask]; const b = REAGENTS[cfg.burette]; if (f.kind === b.kind) cfg = { ...cfg, burette: f.kind === "acid" ? "NaOH" : "HCl" }; return initialRun(cfg); }
+  if (a.type === "reset") return initialRun(DEFAULTS);
+  const t = tOf(state.cfg);
+  if (a.type === "add" || a.type === "auto") {
+    if (state.v >= t.axisMax - 1e-9) return state;
+    let amount = a.amount;
+    if (a.type === "auto") amount = Math.abs(state.v - t.veq) < 0.08 * t.veq ? t.veq / 100 : t.veq / 25;
+    const v = Math.min(t.axisMax, Math.round((state.v + amount) * 1000) / 1000);
+    return { ...state, v, points: [...state.points, { v, pH: t.phAt(v) }], dropKey: state.dropKey + 1 };
   }
-  return (lo + hi) / 2;
+  return state;
 }
 
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
+function useSize(ref) {
+  const [size, setSize] = useState({ w: 640, h: 340 });
+  useEffect(() => {
+    const el = ref.current; if (!el || typeof ResizeObserver === "undefined") return undefined;
+    const measure = () => { const r = el.getBoundingClientRect(); if (r.width > 40 && r.height > 40) setSize({ w: Math.floor(r.width), h: Math.floor(r.height) }); };
+    measure(); const ro = new ResizeObserver(measure); ro.observe(el); return () => ro.disconnect();
+  }, [ref]);
+  return size;
 }
 
-/**
- * Generic monoprotic acid/base equilibrium solver.
- *
- * Handles:
- * HCl + NaOH
- * CH3COOH + NaOH
- * HCl + NH3
- * CH3COOH + NH3
- *
- * at 25 °C.
- *
- * We solve charge balance numerically:
- *
- * [H+] + fixed positive ions + [BH+]
- * =
- * [OH-] + fixed negative ions + [A-]
- */
-function solvePH({
-  acid,
-  acidMoles,
-  base,
-  baseMoles,
-  totalVolumeL,
-}) {
-  if (totalVolumeL <= 0) return 7;
-
-  const acidFormal = acidMoles / totalVolumeL;
-  const baseFormal = baseMoles / totalVolumeL;
-
-  const acidIsStrong = acid.strength === "strong";
-  const baseIsStrong = base.strength === "strong";
-
-  const KaAcid =
-    acid.strength === "weak"
-      ? acid.Ka
-      : null;
-
-  const KaConjugateBase =
-    base.strength === "weak"
-      ? KW / base.Kb
-      : null;
-
-  function chargeBalance(H) {
-    const OH = KW / H;
-
-    // Strong acid contributes its spectator anion, e.g. Cl-
-    const strongAcidAnion =
-      acidIsStrong ? acidFormal : 0;
-
-    // Weak acid:
-    // HA ⇌ H+ + A-
-    const weakAcidAnion =
-      !acidIsStrong
-        ? acidFormal *
-          (KaAcid / (KaAcid + H))
-        : 0;
-
-    // Strong base contributes spectator cation, e.g. Na+
-    const strongBaseCation =
-      baseIsStrong ? baseFormal : 0;
-
-    // Weak base is handled through its conjugate acid:
-    // BH+ ⇌ H+ + B
-    //
-    // fraction protonated =
-    // H / (H + Ka(BH+))
-    const weakBaseConjugateAcid =
-      !baseIsStrong
-        ? baseFormal *
-          (H / (H + KaConjugateBase))
-        : 0;
-
-    const positive =
-      H +
-      strongBaseCation +
-      weakBaseConjugateAcid;
-
-    const negative =
-      OH +
-      strongAcidAnion +
-      weakAcidAnion;
-
-    return positive - negative;
-  }
-
-  /**
-   * Solve in log concentration space.
-   * H from 10 M to 1e-16 M gives pH -1 to 16.
-   */
-  let lowLogH = -16;
-  let highLogH = 1;
-
-  let lowH = Math.pow(10, lowLogH);
-  let highH = Math.pow(10, highLogH);
-
-  let fLow = chargeBalance(lowH);
-  let fHigh = chargeBalance(highH);
-
-  // Normally this bracket contains the root.
-  // Defensive fallback if numerical extremes occur.
-  if (fLow * fHigh > 0) {
-    return 7;
-  }
-
-  for (let i = 0; i < 120; i++) {
-    const midLogH =
-      (lowLogH + highLogH) / 2;
-
-    const midH =
-      Math.pow(10, midLogH);
-
-    const fMid =
-      chargeBalance(midH);
-
-    if (Math.abs(fMid) < 1e-14) {
-      return -Math.log10(midH);
-    }
-
-    if (fLow * fMid <= 0) {
-      highLogH = midLogH;
-      fHigh = fMid;
-    } else {
-      lowLogH = midLogH;
-      fLow = fMid;
-    }
-  }
-
-  const finalLogH =
-    (lowLogH + highLogH) / 2;
-
-  return -Math.log10(
-    Math.pow(10, finalLogH)
-  );
-}
-
-function getChemistryState({
-  flaskReagent,
-  buretteReagent,
-  flaskVolumeMl,
-  titrantVolumeMl,
-  flaskConcentration,
-  buretteConcentration,
-}) {
-  const flaskVolumeL =
-    flaskVolumeMl / 1000;
-
-  const titrantVolumeL =
-    titrantVolumeMl / 1000;
-
-  const totalVolumeL =
-    flaskVolumeL + titrantVolumeL;
-
-  const flaskMoles =
-    flaskConcentration *
-    flaskVolumeL;
-
-  const titrantMoles =
-    buretteConcentration *
-    titrantVolumeL;
-
-  const flask =
-    REAGENTS[flaskReagent];
-
-  const burette =
-    REAGENTS[buretteReagent];
-
-  let acid;
-  let acidMoles;
-  let base;
-  let baseMoles;
-
-  if (flask.type === "acid") {
-    acid = flask;
-    acidMoles = flaskMoles;
-
-    base = burette;
-    baseMoles = titrantMoles;
-  } else {
-    base = flask;
-    baseMoles = flaskMoles;
-
-    acid = burette;
-    acidMoles = titrantMoles;
-  }
-
-  const pH = solvePH({
-    acid,
-    acidMoles,
-    base,
-    baseMoles,
-    totalVolumeL,
-  });
-
-  const stoichDifference =
-    acidMoles - baseMoles;
-
-  const tolerance = 1e-9;
-
-  let excess = "equivalence";
-
-  if (stoichDifference > tolerance) {
-    excess = "acid";
-  } else if (
-    stoichDifference < -tolerance
-  ) {
-    excess = "base";
-  }
-
-  const equivalenceTitrantVolumeMl =
-    flaskMoles /
-    buretteConcentration *
-    1000;
-
-  const distanceFromEq =
-    Math.abs(
-      titrantVolumeMl -
-        equivalenceTitrantVolumeMl
-    );
-
-  let stage;
-
-  if (
-    Math.abs(
-      titrantVolumeMl -
-        equivalenceTitrantVolumeMl
-    ) < 0.001
-  ) {
-    stage = "equivalence";
-  } else if (
-    distanceFromEq <= 1.0
-  ) {
-    stage = "approaching";
-  } else {
-    stage = excess;
-  }
-
-  return {
-    pH,
-    excess,
-    stage,
-    equivalenceTitrantVolumeMl,
-    totalVolumeL,
-  };
-}
-
-function formatPH(value) {
-  if (!Number.isFinite(value)) {
-    return "—";
-  }
-
-  return value.toFixed(2);
-}
-
-function TitrationPHCurveBody() {
+function Body() {
   const { isViewport } = useSimulationPresentation();
-  const [flaskReagent, setFlaskReagent] =
-    useState("NaOH");
+  const [run, dispatch] = useReducer(reducer, DEFAULTS, initialRun);
+  const { cfg } = run;
+  const [mode, setMode] = useState("experiment");
+  const [showExpected, setShowExpected] = useState(true);
+  const [showFeatures, setShowFeatures] = useState(true);
+  const [indChoice, setIndChoice] = useState(null); // null = recommended for the pair
+  const [side, setSide] = useState("acid");
+  const [weakWeak, setWeakWeak] = useState(false);
+  const [auto, setAuto] = useState(false);
+  const stageRef = useRef(null);
+  const size = useSize(stageRef);
 
-  const [buretteReagent, setBuretteReagent] =
-    useState("HCl");
-
-  const [
-    flaskConcentration,
-    setFlaskConcentration,
-  ] = useState(DEFAULT_CONCENTRATION);
-
-  const [
-    buretteConcentration,
-    setBuretteConcentration,
-  ] = useState(DEFAULT_CONCENTRATION);
-
-  const [flaskVolumeMl] =
-    useState(DEFAULT_FLASK_VOLUME_ML);
-
-  const [
-    titrantVolumeMl,
-    setTitrantVolumeMl,
-  ] = useState(0);
-
-  const [points, setPoints] = useState([]);
-
-  const [autoRunning, setAutoRunning] =
-    useState(false);
-
-  const [showFeatures, setShowFeatures] =
-    useState(false);
-
-  const [dropKey, setDropKey] = useState(0);
-
-  const [swirlKey, setSwirlKey] =
-    useState(0);
-
-  const autoTimer =
-    useRef(null);
-
-  const chemistry = useMemo(
-    () =>
-      getChemistryState({
-        flaskReagent,
-        buretteReagent,
-        flaskVolumeMl,
-        titrantVolumeMl,
-        flaskConcentration,
-        buretteConcentration,
-      }),
-    [
-      flaskReagent,
-      buretteReagent,
-      flaskVolumeMl,
-      titrantVolumeMl,
-      flaskConcentration,
-      buretteConcentration,
-    ]
-  );
-
-  // ============================================================
-  // Teaching-feature derivations (Show Features) -- all computed from
-  // the SAME solvePH()/getChemistryState() machinery already used for
-  // the live experimental curve, never a separate hardcoded formula.
-  // This is what keeps them scientifically correct if Ka/Kb ever change,
-  // and what makes the equivalence pH genuinely vary per combination
-  // instead of always being assumed as 7.
-  // ============================================================
-  const equivalenceState = useMemo(
-    () =>
-      getChemistryState({
-        flaskReagent,
-        buretteReagent,
-        flaskVolumeMl,
-        titrantVolumeMl: chemistry.equivalenceTitrantVolumeMl,
-        flaskConcentration,
-        buretteConcentration,
-      }),
-    [flaskReagent, buretteReagent, flaskVolumeMl, chemistry.equivalenceTitrantVolumeMl, flaskConcentration, buretteConcentration]
-  );
-  const equivalencePH = equivalenceState.pH;
-
-  // The pH-7 neutral reference and the equivalence line coincide (within
-  // a small numerical tolerance) for a strong acid/strong base system --
-  // drawing both as separate dashed lines in that case would just be two
-  // overlapping lines, so the equivalence line is only drawn distinctly
-  // when it's genuinely away from pH 7.
-  const equivalenceNearNeutral = Math.abs(equivalencePH - 7) < 0.05;
-
-  // Buffer region / half-equivalence apply ONLY when the flask holds the
-  // WEAK species and the burette delivers the STRONG opposite reagent --
-  // NOT merely because a weak reagent is selected somewhere. This is the
-  // direction-dependent chemistry the spec calls out explicitly: a weak
-  // reagent added FROM the burette into an initially-strong flask does
-  // not produce the same pre-equivalence buffer composition.
-  const flaskInfo = REAGENTS[flaskReagent];
-  const buretteInfo = REAGENTS[buretteReagent];
-  const showWeakStrongFeatures = flaskInfo.strength === "weak" && buretteInfo.strength === "strong";
-
-  // pH = pKa +/- 1 corresponds to a conjugate-pair ratio of 10:1 to
-  // 1:10, i.e. exactly 10/11 and 1/11 of the way to equivalence for a
-  // monoprotic system -- derived from the ratio bounds themselves, never
-  // hardcoded as fixed volumes.
-  const bufferLowerVolumeMl = showWeakStrongFeatures ? chemistry.equivalenceTitrantVolumeMl * (0.1 / 1.1) : null;
-  const bufferUpperVolumeMl = showWeakStrongFeatures ? chemistry.equivalenceTitrantVolumeMl * (10 / 11) : null;
-
-  const halfEquivalenceVolumeMl = showWeakStrongFeatures ? chemistry.equivalenceTitrantVolumeMl / 2 : null;
-  const halfEquivalenceState = useMemo(() => {
-    if (!showWeakStrongFeatures) return null;
-    return getChemistryState({
-      flaskReagent,
-      buretteReagent,
-      flaskVolumeMl,
-      titrantVolumeMl: chemistry.equivalenceTitrantVolumeMl / 2,
-      flaskConcentration,
-      buretteConcentration,
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showWeakStrongFeatures, flaskReagent, buretteReagent, flaskVolumeMl, chemistry.equivalenceTitrantVolumeMl, flaskConcentration, buretteConcentration]);
-  const halfEquivalencePH = halfEquivalenceState?.pH ?? null;
-  const halfEquivalenceLabel =
-    flaskInfo.type === "acid" ? "pH = pKa" : `pH = pKa(${flaskInfo.label.includes("NH") ? "NH\u2084\u207A" : "conjugate acid"})`;
-
-  function resetExperiment() {
-    setAutoRunning(false);
-
-    if (autoTimer.current) {
-      clearInterval(autoTimer.current);
-      autoTimer.current = null;
-    }
-
-    setTitrantVolumeMl(0);
-
-    const initial =
-      getChemistryState({
-        flaskReagent,
-        buretteReagent,
-        flaskVolumeMl,
-        titrantVolumeMl: 0,
-        flaskConcentration,
-        buretteConcentration,
-      });
-
-    setPoints([
-      {
-        volume: 0,
-        pH: initial.pH,
-      },
-    ]);
-
-    setDropKey((x) => x + 1);
-    setSwirlKey((x) => x + 1);
-  }
-
-  // Resets the whole experiment whenever the SELECTED reagents or
-  // concentrations change -- including on first mount. This replaces the
-  // earlier setTimeout(() => resetExperiment(), 0) pattern: that relied
-  // on a macrotask delay to "wait" for state to settle, which is
-  // fragile and doesn't actually guarantee ordering. An effect keyed on
-  // exactly the values resetExperiment depends on runs AFTER React has
-  // committed those values, so it always sees the fully-propagated
-  // selection -- no arbitrary timer needed.
-  useEffect(() => {
-    resetExperiment();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flaskReagent, buretteReagent, flaskConcentration, buretteConcentration]);
+  const t = useMemo(() => tOf(cfg), [cfg]);
+  const rec = recommendedIndicator(t);
+  const indicatorId = indChoice === null ? rec : indChoice === "none" ? null : indChoice;
+  const cur = run.points[run.points.length - 1];
+  const state = t.stateAt(run.v);
+  const stage = t.stageText(state);
+  const atMax = run.v >= t.axisMax - 1e-9;
 
   useEffect(() => {
-    return () => {
-      if (autoTimer.current) {
-        clearInterval(autoTimer.current);
-      }
-    };
-  }, []);
+    if (!auto) return undefined;
+    if (atMax) { setAuto(false); return undefined; }
+    const id = setInterval(() => dispatch({ type: "auto" }), 550);
+    return () => clearInterval(id);
+  }, [auto, atMax]);
 
-  function addTitrant(amountMl) {
-    const maxVolume = 60;
+  const setCfg = (patch) => { setAuto(false); setIndChoice(null); dispatch({ type: "config", patch }); };
+  const resetAll = () => { setAuto(false); setIndChoice(null); setMode("experiment"); setShowExpected(true); setShowFeatures(true); setSide("acid"); setWeakWeak(false); dispatch({ type: "reset" }); };
 
-    setTitrantVolumeMl((previous) => {
-      const next =
-        Math.min(
-          maxVolume,
-          Number(
-            (
-              previous +
-              amountMl
-            ).toFixed(3)
-          )
-        );
-
-      const nextState =
-        getChemistryState({
-          flaskReagent,
-          buretteReagent,
-          flaskVolumeMl,
-          titrantVolumeMl: next,
-          flaskConcentration,
-          buretteConcentration,
-        });
-
-      setPoints((current) => [
-        ...current,
-        {
-          volume: next,
-          pH: nextState.pH,
-        },
-      ]);
-
-      return next;
-    });
-
-    setDropKey((x) => x + 1);
-    setSwirlKey((x) => x + 1);
-  }
-
-  function toggleAuto() {
-    if (autoRunning) {
-      setAutoRunning(false);
-
-      if (autoTimer.current) {
-        clearInterval(
-          autoTimer.current
-        );
-
-        autoTimer.current = null;
-      }
-
-      return;
-    }
-
-    setAutoRunning(true);
-
-    autoTimer.current =
-      setInterval(() => {
-        setTitrantVolumeMl(
-          (previous) => {
-            if (previous >= 60) {
-              clearInterval(
-                autoTimer.current
-              );
-
-              autoTimer.current =
-                null;
-
-              setAutoRunning(false);
-
-              return previous;
-            }
-
-            const currentState =
-              getChemistryState({
-                flaskReagent,
-                buretteReagent,
-                flaskVolumeMl,
-                titrantVolumeMl:
-                  previous,
-                flaskConcentration,
-                buretteConcentration,
-              });
-
-            const distance =
-              Math.abs(
-                previous -
-                  currentState
-                    .equivalenceTitrantVolumeMl
-              );
-
-            const step =
-              distance < 2
-                ? 0.25
-                : 1;
-
-            const next =
-              Math.min(
-                60,
-                Number(
-                  (
-                    previous +
-                    step
-                  ).toFixed(3)
-                )
-              );
-
-            const nextState =
-              getChemistryState({
-                flaskReagent,
-                buretteReagent,
-                flaskVolumeMl,
-                titrantVolumeMl:
-                  next,
-                flaskConcentration,
-                buretteConcentration,
-              });
-
-            setPoints((current) => [
-              ...current,
-              {
-                volume: next,
-                pH: nextState.pH,
-              },
-            ]);
-
-            setDropKey((x) => x + 1);
-            setSwirlKey((x) => x + 1);
-
-            return next;
-          }
-        );
-      }, 550);
-  }
-
-  // Pure state-setters only -- the useEffect above handles resetting
-  // once React has actually committed the new selection, so these
-  // handlers no longer need to orchestrate timing themselves.
-  function changeFlask(value) {
-    const next = REAGENTS[value];
-
-    setFlaskReagent(value);
-
-    const currentBurette =
-      REAGENTS[buretteReagent];
-
-    if (
-      currentBurette.type ===
-      next.type
-    ) {
-      setBuretteReagent(
-        next.type === "acid"
-          ? "NaOH"
-          : "HCl"
-      );
-    }
-  }
-
-  function changeBurette(value) {
-    const next = REAGENTS[value];
-
-    setBuretteReagent(value);
-
-    const currentFlask =
-      REAGENTS[flaskReagent];
-
-    if (
-      currentFlask.type ===
-      next.type
-    ) {
-      setFlaskReagent(
-        next.type === "acid"
-          ? "NaOH"
-          : "HCl"
-      );
-    }
-  }
-
-  const buretteOptions =
-    REAGENTS[flaskReagent].type ===
-    "acid"
-      ? BASES
-      : ACIDS;
-
-  const flaskOptions =
-    Object.keys(REAGENTS);
-
-  const nearEquivalence =
-    Math.abs(
-      titrantVolumeMl -
-        chemistry
-          .equivalenceTitrantVolumeMl
-    ) < 2;
-
-  const graph = useMemo(() => {
-    const WIDTH = 520;
-    const HEIGHT = 330;
-
-    const padding = {
-      left: 52,
-      right: 20,
-      top: 18,
-      bottom: 46,
-    };
-
-    const xMax = 60;
-    const yMin = 0;
-    const yMax = 14;
-
-    function x(v) {
-      return (
-        padding.left +
-        (v / xMax) *
-          (WIDTH -
-            padding.left -
-            padding.right)
-      );
-    }
-
-    function y(pH) {
-      const clipped =
-        clamp(pH, yMin, yMax);
-
-      return (
-        padding.top +
-        ((yMax - clipped) /
-          (yMax - yMin)) *
-          (HEIGHT -
-            padding.top -
-            padding.bottom)
-      );
-    }
-
-    const polyline =
-      points
-        .map(
-          (point) =>
-            `${x(point.volume)},${y(
-              point.pH
-            )}`
-        )
-        .join(" ");
-
-    return {
-      WIDTH,
-      HEIGHT,
-      padding,
-      x,
-      y,
-      polyline,
-    };
-  }, [points]);
-
-  const flask =
-    REAGENTS[flaskReagent];
-
-  const burette =
-    REAGENTS[buretteReagent];
-
-  // The pedagogically RECOMMENDED indicator for the current pair --
-  // still computed the same way as before, used only as the default
-  // selection and for the info card's "Recommended" wording. The
-  // student's own choice (selectedIndicatorId) is what actually drives
-  // the flask colour and graph band below -- they are explicitly
-  // allowed to pick ANY indicator for ANY titration, including a
-  // "wrong" one, so they can discover for themselves why some choices
-  // give a reliable endpoint and others don't.
-  const recommendedIndicator = useMemo(() => getIndicatorForPair(flask, burette), [flask, burette]);
-
-  const [selectedIndicatorId, setSelectedIndicatorId] = useState(recommendedIndicator?.id ?? "None");
-
-  // Whenever the reagent PAIR changes, snap the selection back to the
-  // new pair's recommendation -- prevents a stale indicator choice from
-  // a previous, unrelated titration silently carrying over (e.g. still
-  // showing "Methyl orange" after switching to a weak-acid/strong-base
-  // run where it was never selected).
-  useEffect(() => {
-    setSelectedIndicatorId(recommendedIndicator?.id ?? "None");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flaskReagent, buretteReagent]);
-
-  const indicator = selectedIndicatorId === "None" ? null : INDICATORS[selectedIndicatorId];
-  const indicatorColor = indicator ? indicator.colorAt(chemistry.pH) : null;
-
-  // Only meaningful when an indicator applies -- the volume at which the
-  // theoretical curve crosses the CENTRE of the indicator's transition
-  // range, shown as "Indicator endpoint" and kept visually distinct from
-  // "Equivalence Point" (see requirement 10 -- they are not the same
-  // thing, even though a well-chosen indicator's endpoint sits close to
-  // it).
-  const indicatorEndpointVolume = useMemo(() => {
-    if (!indicator) return null;
-    const targetPH = (indicator.rangeLow + indicator.rangeHigh) / 2;
-    return findVolumeForPH(targetPH, (v) =>
-      getChemistryState({
-        flaskReagent,
-        buretteReagent,
-        flaskVolumeMl,
-        titrantVolumeMl: v,
-        flaskConcentration,
-        buretteConcentration,
-      }).pH
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [indicator, flaskReagent, buretteReagent, flaskVolumeMl, flaskConcentration, buretteConcentration]);
-
-  const statusText =
-    chemistry.stage ===
-    "equivalence"
-      ? "EQUIVALENCE POINT"
-      : chemistry.stage ===
-        "approaching"
-      ? "APPROACHING EQUIVALENCE"
-      : chemistry.excess ===
-        "acid"
-      ? "ACID IN EXCESS"
-      : "BASE IN EXCESS";
-
-  const flaskLiquidClass =
-    flask.type === "acid"
-      ? "liquid-acid"
-      : "liquid-base";
-
-  const buretteLiquidClass =
-    burette.type === "acid"
-      ? "liquid-acid"
-      : "liquid-base";
+  const set = useMemo(() => comparisonSet({ side, cFlask: cfg.cFlask, cBurette: cfg.cBurette, includeWeakWeak: weakWeak }), [side, cfg.cFlask, cfg.cBurette, weakWeak]);
+  const gw = Math.max(260, size.w); const gh = Math.max(200, size.h);
+  const expGraph = useMemo(() => (mode === "experiment" ? buildExperimentGraph(t, { W: gw, H: gh, points: run.points, showExpected, showFeatures, indicatorId }) : null), [mode, t, gw, gh, run.points, showExpected, showFeatures, indicatorId]);
+  const cmpGraph = useMemo(() => (mode === "compare" ? buildCompareGraph(set, { W: gw, H: gh }) : null), [mode, set, gw, gh]);
+  const explain = explainPair(t); const tnote = titrantNote(t);
+  const xTitle = `Volume of ${t.burette.label} added / cm³`;
+  const bufferCmp = (c) => (c.t.buffer ? `${c.t.buffer.vLow.toFixed(1)}–${c.t.buffer.vHigh.toFixed(1)} cm³ (pH ${(c.t.buffer.pKa - 1).toFixed(2)}–${(c.t.buffer.pKa + 1).toFixed(2)})` : "none");
+  const eqRel = (pH) => (Math.abs(pH - 7) < 0.05 ? "= 7" : pH > 7 ? "> 7" : "< 7");
+  const indSuit = indicatorId ? isSuitable(indicatorId, t) : null;
 
   return (
-    <section className={"titration-sim sim-surface-dark" + (isViewport ? " is-viewport" : "")}>
-      <header className="titration-title">
-        <div>
-          <h2>
-            pH Curve & Titration
-            Visualizer
-          </h2>
-
-          <p>
-            Add the titrant,
-            follow the pH meter,
-            and watch the curve
-            form in real time.
-          </p>
+    <section className={"ab-root ab-fixed tit sim-surface-dark" + (isViewport ? " is-viewport" : "")} data-testid="titration-root">
+      <div className="ab-row tit-setup">
+        <label className="ab-field"><span>Flask (25.0 cm{"³"})</span>
+          <select value={cfg.flask} disabled={mode === "compare"} onChange={(e) => setCfg({ flask: e.target.value })} aria-label="Flask solution">
+            {Object.values(REAGENTS).map((r) => <option key={r.id} value={r.id}>{optionText(r)}</option>)}
+          </select></label>
+        <label className="ab-field"><span>Burette</span>
+          <select value={cfg.burette} disabled={mode === "compare"} onChange={(e) => setCfg({ burette: e.target.value })} aria-label="Burette solution">
+            {Object.values(REAGENTS).filter((r) => r.kind !== REAGENTS[cfg.flask].kind).map((r) => <option key={r.id} value={r.id}>{optionText(r)}</option>)}
+          </select></label>
+        <label className="ab-field"><span>Flask conc.</span>
+          <select value={cfg.cFlask} onChange={(e) => setCfg({ cFlask: Number(e.target.value) })} aria-label="Flask concentration">{CONCS.map((c) => <option key={c} value={c}>{c.toFixed(3)} mol dm{"⁻³"}</option>)}</select></label>
+        <label className="ab-field"><span>Burette conc.</span>
+          <select value={cfg.cBurette} onChange={(e) => setCfg({ cBurette: Number(e.target.value) })} aria-label="Burette concentration">{CONCS.map((c) => <option key={c} value={c}>{c.toFixed(3)} mol dm{"⁻³"}</option>)}</select></label>
+        <label className="ab-field"><span>Indicator</span>
+          <select value={indChoice ?? "auto"} onChange={(e) => setIndChoice(e.target.value === "auto" ? null : e.target.value)} aria-label="Indicator" disabled={mode === "compare"}>
+            <option value="auto">{rec ? `Recommended: ${INDICATORS[rec].label}` : "Recommended: none (use pH meter)"}</option>
+            {INDICATOR_LIST.map((i) => <option key={i.id} value={i.id}>{i.label} (pH {i.low.toFixed(1)}{"–"}{i.high.toFixed(1)})</option>)}
+            <option value="none">No indicator (pH meter only)</option>
+          </select></label>
+        <div className="ab-btns tit-modes" role="group" aria-label="View">
+          <button type="button" className="sim-btn ab-btn" aria-pressed={mode === "experiment"} onClick={() => setMode("experiment")}>Experiment</button>
+          <button type="button" className="sim-btn ab-btn" aria-pressed={mode === "compare"} onClick={() => { setAuto(false); setMode("compare"); }}>Compare</button>
         </div>
-      </header>
-
-      <div className="experiment-options">
-        <label>
-          <span>
-            Flask solution
-          </span>
-
-          <select
-            value={flaskReagent}
-            onChange={(e) =>
-              changeFlask(
-                e.target.value
-              )
-            }
-          >
-            {flaskOptions.map(
-              (id) => {
-                const r =
-                  REAGENTS[id];
-
-                return (
-                  <option
-                    key={id}
-                    value={id}
-                  >
-                    {r.label} —{" "}
-                    {r.strength ===
-                    "strong"
-                      ? "Strong"
-                      : "Weak"}{" "}
-                    {r.type ===
-                    "acid"
-                      ? "Acid"
-                      : "Base"}
-                  </option>
-                );
-              }
-            )}
-          </select>
-        </label>
-
-        <label>
-          <span>
-            Burette solution
-          </span>
-
-          <select
-            value={
-              buretteReagent
-            }
-            onChange={(e) =>
-              changeBurette(
-                e.target.value
-              )
-            }
-          >
-            {buretteOptions.map(
-              (id) => {
-                const r =
-                  REAGENTS[id];
-
-                return (
-                  <option
-                    key={id}
-                    value={id}
-                  >
-                    {r.label} —{" "}
-                    {r.strength ===
-                    "strong"
-                      ? "Strong"
-                      : "Weak"}{" "}
-                    {r.type ===
-                    "acid"
-                      ? "Acid"
-                      : "Base"}
-                  </option>
-                );
-              }
-            )}
-          </select>
-        </label>
-
-        <label>
-          <span>
-            Flask concentration
-          </span>
-
-          <select
-            value={
-              flaskConcentration
-            }
-            onChange={(e) =>
-              setFlaskConcentration(
-                Number(
-                  e.target.value
-                )
-              )
-            }
-          >
-            <option value={0.05}>
-              0.050 mol dm⁻³
-            </option>
-            <option value={0.1}>
-              0.100 mol dm⁻³
-            </option>
-            <option value={0.2}>
-              0.200 mol dm⁻³
-            </option>
-          </select>
-        </label>
-
-        <label>
-          <span>
-            Burette concentration
-          </span>
-
-          <select
-            value={
-              buretteConcentration
-            }
-            onChange={(e) =>
-              setBuretteConcentration(
-                Number(
-                  e.target.value
-                )
-              )
-            }
-          >
-            <option value={0.05}>
-              0.050 mol dm⁻³
-            </option>
-            <option value={0.1}>
-              0.100 mol dm⁻³
-            </option>
-            <option value={0.2}>
-              0.200 mol dm⁻³
-            </option>
-          </select>
-        </label>
       </div>
 
-      <div className="indicator-card">
-        <div className="indicator-card-main">
-          <label htmlFor="indicator-select" className="indicator-card-label">Indicator</label>
-          <select
-            id="indicator-select"
-            value={selectedIndicatorId}
-            onChange={(e) => setSelectedIndicatorId(e.target.value)}
-            className="indicator-select"
-          >
-            <option value="BTB">Bromothymol blue</option>
-            <option value="Phenolphthalein">Phenolphthalein</option>
-            <option value="MethylOrange">Methyl orange</option>
-            <option value="None">No indicator / pH meter</option>
-          </select>
-        </div>
-        {indicator ? (
-          <div className="indicator-card-detail">
-            <span>{"Transition: pH " + indicator.rangeLow.toFixed(1) + "\u2013" + indicator.rangeHigh.toFixed(1)}</span>
-            <span>{indicator.description}</span>
-          </div>
-        ) : (
-          <div className="indicator-card-detail">
-            <span>Use the pH meter to locate the equivalence region.</span>
+      <div className={"tit-main" + (mode === "compare" ? " is-compare" : "")}>
+        {mode === "experiment" && (
+          <div className="ab-panel tit-lab">
+            <Apparatus t={t} v={run.v} pH={cur.pH} indicatorId={indicatorId} dropKey={run.dropKey} />
+            <PHMeter pH={cur.pH} />
+            {indicatorId && <p className="ab-note tit-ind-note">{INDICATORS[indicatorId].label}: <strong>{indicatorColourName(indicatorId, cur.pH)}</strong></p>}
           </div>
         )}
-        {recommendedIndicator?.id !== selectedIndicatorId && (
-          <p className="indicator-recommendation-note">
-            Recommended for this pair: {recommendedIndicator ? recommendedIndicator.label : "No suitable common indicator"}
-          </p>
-        )}
-      </div>
-
-      <div className="titration-main">
-        {/* LEFT — LAB APPARATUS */}
-        <div className="lab-panel">
-          <div className="apparatus">
-            <div className="retort-stand">
-              <div className="stand-pole" />
-              <div className="stand-foot" />
-              <div className="clamp-arm" />
-              <div className="clamp-head" />
-            </div>
-
-            <div className="burette-wrap">
-              <div className="burette-name">
-                {burette.label}
-              </div>
-
-              <div className="burette-conc">
-                {buretteConcentration.toFixed(
-                  3
-                )}{" "}
-                mol dm⁻³
-              </div>
-
-              <div className="burette-glass">
-                <div
-                  className={`burette-fluid ${buretteLiquidClass}`}
-                  style={{
-                    height: `${clamp(
-                      78 -
-                        titrantVolumeMl *
-                          0.9,
-                      8,
-                      78
-                    )}%`,
-                  }}
-                />
-
-                {Array.from({
-                  length: 14,
-                }).map((_, i) => (
-                  <span
-                    className="graduation"
-                    key={i}
-                    style={{
-                      top: `${
-                        5 +
-                        i * 6.5
-                      }%`,
-                    }}
-                  />
-                ))}
-
-                <div className="glass-shine" />
-              </div>
-
-              <div className="stopcock">
-                <div className="stopcock-bar" />
-              </div>
-
-              <div className="burette-tip" />
-
-              <div
-                key={dropKey}
-                className={`titrant-drop ${buretteLiquidClass}`}
-              />
-            </div>
-
-            <div
-              key={swirlKey}
-              className="flask-wrap"
-            >
-              <div className="flask-neck" />
-
-              <div className="flask-body">
-                <div
-                  className={`flask-liquid ${indicatorColor ? "" : flaskLiquidClass}`}
-                  style={indicatorColor ? { background: indicatorColor.css } : undefined}
-                >
-                  <div className="liquid-wave" />
+        <div className="ab-panel tit-chart">
+          <div className="ab-row tit-chart-head">
+            {mode === "experiment" ? (
+              <>
+                <h3 className="tit-h">pH curve: {t.burette.label} added to {t.flask.label}</h3>
+                <div className="ab-btns">
+                  <button type="button" className="sim-btn ab-btn" aria-pressed={showExpected} onClick={() => setShowExpected((x) => !x)} title="Dense theoretical curve from the exact solver">Expected curve</button>
+                  <button type="button" className="sim-btn ab-btn" aria-pressed={showFeatures} onClick={() => setShowFeatures((x) => !x)}>Features</button>
                 </div>
-
-                <div className="flask-highlight" />
-              </div>
-
-              <div className="flask-label">
-                <strong>
-                  {flask.label}
-                </strong>
-
-                <span>
-                  {flaskVolumeMl.toFixed(
-                    1
-                  )}{" "}
-                  cm³
-                </span>
-              </div>
-            </div>
-
-            <div className="ph-meter">
-              <span className="meter-label">
-                pH METER
-              </span>
-
-              <strong>
-                {formatPH(
-                  chemistry.pH
-                )}
-              </strong>
-            </div>
+              </>
+            ) : (
+              <>
+                <h3 className="tit-h">Compare strong and weak, same concentrations ({cfg.cFlask.toFixed(3)} into {cfg.cBurette.toFixed(3)} mol dm{"⁻³"})</h3>
+                <div className="ab-btns">
+                  <button type="button" className="sim-btn ab-btn" aria-pressed={side === "acid"} onClick={() => setSide("acid")}>Acid in flask</button>
+                  <button type="button" className="sim-btn ab-btn" aria-pressed={side === "base"} onClick={() => setSide("base")}>Base in flask</button>
+                  <button type="button" className="sim-btn ab-btn" aria-pressed={weakWeak} onClick={() => setWeakWeak((x) => !x)}>+ weak/weak</button>
+                </div>
+              </>
+            )}
           </div>
-        </div>
-
-        {/* RIGHT — GRAPH */}
-        <div className="graph-panel">
-          <div className="graph-heading">
-            <div>
-              <h3>pH Curve</h3>
-
-              <span>
-                {burette.label}{" "}
-                added to{" "}
-                {flask.label}
-              </span>
-            </div>
+          <div className="tit-stage" ref={stageRef}>
+            {mode === "experiment" && expGraph && <ExperimentGraph m={expGraph} showExpected={showExpected} xTitle={xTitle} description={describeExperiment(t, cur)} />}
+            {mode === "compare" && cmpGraph && <CompareGraph m={cmpGraph} xTitle={xTitle.replace(t.burette.label, side === "acid" ? "NaOH / HCl titrant" : "titrant")} description={`Comparison of ${set.map((s) => s.name).join(", ")}. ${set.map((s) => `${s.name}: initial pH ${formatPH(s.titration.initial.pH)}, equivalence pH ${formatPH(s.titration.eq.pH)}`).join(". ")}.`} />}
           </div>
-
-          <svg
-            viewBox={`0 0 ${graph.WIDTH} ${graph.HEIGHT}`}
-            className="ph-graph"
-          >
-            <defs>
-              <linearGradient
-                id="curveGradient"
-                x1="0"
-                y1="0"
-                x2="1"
-                y2="0"
-              >
-                <stop
-                  offset="0%"
-                  stopColor="#6ea8ff"
-                />
-                <stop
-                  offset="100%"
-                  stopColor="#ff728b"
-                />
-              </linearGradient>
-
-              <filter id="softGlow">
-                <feGaussianBlur
-                  stdDeviation="2"
-                  result="blur"
-                />
-                <feMerge>
-                  <feMergeNode
-                    in="blur"
-                  />
-                  <feMergeNode
-                    in="SourceGraphic"
-                  />
-                </feMerge>
-              </filter>
-            </defs>
-
-            {/* horizontal grid */}
-            {[
-              0, 2, 4, 6, 7, 8,
-              10, 12, 14,
-            ].map((pH) => (
-              <g key={pH}>
-                <line
-                  x1={
-                    graph.padding
-                      .left
-                  }
-                  x2={
-                    graph.WIDTH -
-                    graph.padding
-                      .right
-                  }
-                  y1={graph.y(pH)}
-                  y2={graph.y(pH)}
-                  className={
-                    pH === 7
-                      ? "neutral-line"
-                      : "grid-line"
-                  }
-                />
-
-                <text
-                  x={
-                    graph.padding
-                      .left - 12
-                  }
-                  y={
-                    graph.y(pH) +
-                    4
-                  }
-                  textAnchor="end"
-                  className="axis-number"
-                >
-                  {pH}
-                </text>
-              </g>
-            ))}
-
-            {/* vertical grid */}
-            {[
-              0, 10, 20, 30,
-              40, 50, 60,
-            ].map((volume) => (
-              <g key={volume}>
-                <line
-                  x1={graph.x(volume)}
-                  x2={graph.x(volume)}
-                  y1={graph.padding.top}
-                  y2={
-                    graph.HEIGHT -
-                    graph.padding
-                      .bottom
-                  }
-                  className="grid-line"
-                />
-
-                <text
-                  x={graph.x(volume)}
-                  y={
-                    graph.HEIGHT -
-                    21
-                  }
-                  textAnchor="middle"
-                  className="axis-number"
-                >
-                  {volume}
-                </text>
-              </g>
-            ))}
-
-            {/* axes */}
-            <line
-              x1={graph.padding.left}
-              y1={graph.padding.top}
-              x2={graph.padding.left}
-              y2={
-                graph.HEIGHT -
-                graph.padding.bottom
-              }
-              className="axis-line"
-            />
-
-            <line
-              x1={graph.padding.left}
-              y1={
-                graph.HEIGHT -
-                graph.padding.bottom
-              }
-              x2={
-                graph.WIDTH -
-                graph.padding.right
-              }
-              y2={
-                graph.HEIGHT -
-                graph.padding.bottom
-              }
-              className="axis-line"
-            />
-
-            {/* indicator transition range -- a very subtle horizontal
-                band, drawn behind the curve, so students can compare it
-                against the steep region of the curve and the
-                equivalence point. Not drawn when no suitable indicator
-                applies (weak acid + weak base). */}
-            {showFeatures && indicator && (
-              <>
-                <rect
-                  x={graph.padding.left}
-                  y={graph.y(indicator.rangeHigh)}
-                  width={graph.WIDTH - graph.padding.left - graph.padding.right}
-                  height={graph.y(indicator.rangeLow) - graph.y(indicator.rangeHigh)}
-                  className="indicator-range-band"
-                />
-                <text
-                  x={graph.WIDTH - graph.padding.right - 4}
-                  y={graph.y(indicator.rangeHigh) + 10}
-                  textAnchor="end"
-                  className="indicator-range-text"
-                >
-                  INDICATOR RANGE
-                </text>
-              </>
-            )}
-
-            {/* buffer region shading -- drawn BEHIND the curve, so it
-                never competes visually with the experimental line */}
-            {showFeatures && showWeakStrongFeatures && (
-              <>
-                <rect
-                  x={graph.x(bufferLowerVolumeMl)}
-                  y={graph.padding.top}
-                  width={graph.x(bufferUpperVolumeMl) - graph.x(bufferLowerVolumeMl)}
-                  height={graph.HEIGHT - graph.padding.top - graph.padding.bottom}
-                  className="buffer-region"
-                />
-                <text
-                  x={(graph.x(bufferLowerVolumeMl) + graph.x(bufferUpperVolumeMl)) / 2}
-                  y={graph.padding.top + 13}
-                  textAnchor="middle"
-                  className="buffer-region-text"
-                >
-                  BUFFER REGION
-                </text>
-              </>
-            )}
-
-            {/* equivalence guides -- vertical (volume) + horizontal
-                (the ACTUAL calculated equivalence pH, never assumed to
-                be 7) meeting at a single marker */}
-            {showFeatures && (
-              <>
-                <line
-                  x1={graph.x(chemistry.equivalenceTitrantVolumeMl)}
-                  x2={graph.x(chemistry.equivalenceTitrantVolumeMl)}
-                  y1={graph.y(equivalencePH)}
-                  y2={graph.HEIGHT - graph.padding.bottom}
-                  className="equivalence-guide"
-                />
-                <text
-                  x={graph.x(chemistry.equivalenceTitrantVolumeMl)}
-                  y={graph.HEIGHT - graph.padding.bottom + 32}
-                  textAnchor="middle"
-                  className="equivalence-axis-label"
-                >
-                  {chemistry.equivalenceTitrantVolumeMl.toFixed(1)} cm³
-                </text>
-
-                {/* Only drawn as its own line when it's genuinely away
-                    from pH 7 -- for strong/strong systems this would
-                    otherwise sit directly on top of the neutral
-                    reference line. */}
-                {!equivalenceNearNeutral && (
-                  <>
-                    <line
-                      x1={graph.padding.left}
-                      x2={graph.x(chemistry.equivalenceTitrantVolumeMl)}
-                      y1={graph.y(equivalencePH)}
-                      y2={graph.y(equivalencePH)}
-                      className="equivalence-guide"
-                    />
-                    <text
-                      x={graph.padding.left - 12}
-                      y={graph.y(equivalencePH) - 5}
-                      textAnchor="end"
-                      className="equivalence-axis-label"
-                    >
-                      {equivalencePH.toFixed(2)}
-                    </text>
-                  </>
-                )}
-
-                <circle
-                  cx={graph.x(chemistry.equivalenceTitrantVolumeMl)}
-                  cy={graph.y(equivalencePH)}
-                  r="6"
-                  className="equivalence-marker"
-                />
-                <text
-                  x={graph.x(chemistry.equivalenceTitrantVolumeMl)}
-                  y={graph.y(equivalencePH) - 12}
-                  textAnchor="middle"
-                  className="equivalence-text"
-                >
-                  Equivalence Point
-                </text>
-              </>
-            )}
-
-            {/* half-equivalence marker -- weak/strong systems only */}
-            {showFeatures && showWeakStrongFeatures && halfEquivalencePH != null && (
-              <>
-                <circle
-                  cx={graph.x(halfEquivalenceVolumeMl)}
-                  cy={graph.y(halfEquivalencePH)}
-                  r="4"
-                  className="half-equivalence-marker"
-                />
-                <text
-                  x={graph.x(halfEquivalenceVolumeMl)}
-                  y={graph.y(halfEquivalencePH) - 10}
-                  textAnchor="middle"
-                  className="half-equivalence-text"
-                >
-                  Half-equivalence
-                </text>
-                <text
-                  x={graph.x(halfEquivalenceVolumeMl)}
-                  y={graph.y(halfEquivalencePH) + 16}
-                  textAnchor="middle"
-                  className="half-equivalence-text"
-                >
-                  {halfEquivalenceLabel}
-                </text>
-              </>
-            )}
-
-            {/* indicator endpoint -- deliberately distinct from the
-                equivalence marker above: this is where the CHOSEN
-                indicator visibly changes colour, not the calculated
-                stoichiometric point. The two are related (a
-                well-chosen indicator's endpoint sits inside the steep
-                region near equivalence) but are never labelled as the
-                same thing. */}
-            {showFeatures && indicator && indicatorEndpointVolume != null && (
-              <>
-                <circle
-                  cx={graph.x(indicatorEndpointVolume)}
-                  cy={graph.y((indicator.rangeLow + indicator.rangeHigh) / 2)}
-                  r="3.5"
-                  className="indicator-endpoint-marker"
-                />
-                <text
-                  x={graph.x(indicatorEndpointVolume)}
-                  y={graph.y((indicator.rangeLow + indicator.rangeHigh) / 2) + 15}
-                  textAnchor="middle"
-                  className="indicator-endpoint-text"
-                >
-                  Indicator endpoint
-                </text>
-              </>
-            )}
-
-            {/* curve */}
-            {points.length > 1 && (
-              <polyline
-                points={
-                  graph.polyline
-                }
-                className="curve-line"
-              />
-            )}
-
-            {/* points */}
-            {points.map(
-              (point, index) => (
-                <circle
-
-                  key={`${point.volume}-${index}`}
-                  cx={graph.x(
-                    point.volume
-                  )}
-                  cy={graph.y(
-                    point.pH
-                  )}
-                  r={
-                    index ===
-                    points.length -
-                      1
-                      ? 5
-                      : 2.7
-                  }
-                  className={
-                    index ===
-                    points.length -
-                    1
-                      ? "current-point"
-                      : "curve-point"
-                  }
-                />
-              )
-            )}
-
-            <text
-              x="17"
-              y={
-                graph.HEIGHT / 2
-              }
-              transform={`rotate(-90 17 ${
-                graph.HEIGHT / 2
-              })`}
-              textAnchor="middle"
-              className="axis-title"
-            >
-              pH
-            </text>
-
-            <text
-              x={
-                graph.WIDTH / 2 +
-                18
-              }
-              y={
-                graph.HEIGHT - 3
-              }
-              textAnchor="middle"
-              className="axis-title"
-            >
-              Volume of{" "}
-              {burette.label}{" "}
-              added / cm³
-            </text>
-          </svg>
+          {mode === "experiment" ? (
+            <div className="tit-legend" data-testid="legend">
+              {showExpected && <span className="ab-chip"><i style={{ background: "#9db8e8", opacity: 0.7 }} />Expected curve (exact calculation)</span>}
+              <span className="ab-chip"><i style={{ background: "#ffd166" }} />Your readings</span>
+              {showFeatures && t.buffer && <span className="ab-chip"><i style={{ background: "#f59e0b" }} />Buffer region: {t.buffer.species.ratioText}, pH = pKa {"±"} 1 ({t.buffer.vLow.toFixed(1)}{"–"}{t.buffer.vHigh.toFixed(1)} cm{"³"})</span>}
+              {showFeatures && t.halfEq && <span className="ab-chip"><i style={{ background: "#d8b4fe" }} />Half-equivalence ({t.halfEq.v.toFixed(1)} cm{"³"}): pH = pKa = {t.buffer.pKa.toFixed(2)}</span>}
+              {showFeatures && <span className="ab-chip"><i style={{ background: "#5eead4" }} />Equivalence ({t.veq.toFixed(1)} cm{"³"}): pH {formatPH(t.eq.pH)} {eqRel(t.eq.pH)}</span>}
+              {showFeatures && <span className="ab-chip"><i style={{ background: "#fda4af" }} />Steep region: Veq {"±"} 1%, pH jumps {t.steep.jump.toFixed(1)}</span>}
+              {indicatorId && <span className="ab-chip"><i style={{ background: "#e2e8f0", opacity: 0.5 }} />{INDICATORS[indicatorId].short} = {INDICATORS[indicatorId].label} pH {INDICATORS[indicatorId].low.toFixed(1)}{"–"}{INDICATORS[indicatorId].high.toFixed(1)}{indSuit === false ? " (not suitable here)" : ""}</span>}
+            </div>
+          ) : (
+            <>
+            <div className="tit-legend" data-testid="legend">
+              <span className="ab-chip"><i style={{ background: "#e2e8f0", borderRadius: 5, width: 10 }} />Circle = initial pH</span>
+              <span className="ab-chip"><i style={{ background: "#e2e8f0", width: 10, transform: "rotate(45deg)" }} />Diamond = equivalence point</span>
+              <span className="ab-chip"><i style={{ background: "#f59e0b" }} />Buffer region (weak acid/base titrated by a strong one only): [salt]/[weak] between 1:10 and 10:1, pH = pKa {"\u00B1"} 1</span>
+              <span className="ab-chip"><i style={{ background: "#e2e8f0", opacity: 0.5 }} />Grey bands = indicator ranges</span>
+            </div>
+            <table className="ab-table tit-compare-table" data-testid="compare-table">
+              <thead><tr><th scope="col">Curve</th><th scope="col">Initial pH</th><th scope="col">Equivalence pH</th><th scope="col">Buffer region</th><th scope="col">pH jump</th></tr></thead>
+              <tbody>
+                {cmpGraph.curves.map((c) => (
+                  <tr key={c.id}><th scope="row"><span className="ab-chip"><i style={{ background: c.colour }} />{c.name}</span></th><td>{formatPH(c.t.initial.pH)}</td><td>{formatPH(c.t.eq.pH)} ({eqRel(c.t.eq.pH)})</td><td>{bufferCmp(c)}</td><td>{c.t.steep.jump.toFixed(1)}</td></tr>
+                ))}
+              </tbody>
+            </table>
+            </>
+          )}
+          {mode === "experiment" ? (
+            <p className="ab-note tit-explain" data-testid="explain"><strong>{explain.title}.</strong> {explain.text} {tnote}</p>
+          ) : (
+            <details className="ab-note tit-explain" open>
+              <summary>Indicator ranges (grey bands): {INDICATOR_LIST.map((i) => `${i.short} = ${i.label} ${i.low.toFixed(1)}–${i.high.toFixed(1)}`).join("; ")}. Why the curves differ</summary>
+              {compareExplanations(set).map((e) => <p key={e.id}><strong>{e.title}.</strong> {e.text}</p>)}
+            </details>
+          )}
+          {!showExpected && !showFeatures && mode === "experiment" && <p className="ab-note">Predict first: sketch the curve, then switch on {"“"}Expected curve{"”"} to check.</p>}
         </div>
       </div>
 
-      <div className="live-strip">
-        <div>
-          <span>
-            Titrant added
-          </span>
-
-          <strong>
-            {titrantVolumeMl.toFixed(
-              1
-            )}{" "}
-            cm³
-          </strong>
-        </div>
-
-        <div>
-          <span>pH</span>
-
-          <strong>
-            {formatPH(
-              chemistry.pH
-            )}
-          </strong>
-        </div>
-
-        <div
-          className={`live-state state-${chemistry.stage}`}
-        >
-          <span>
-            Current state
-          </span>
-
-          <strong>
-            {statusText}
-          </strong>
-        </div>
-      </div>
-
-      <div className="titration-controls">
-        {nearEquivalence && (
-          <button
-            type="button"
-            onClick={() =>
-              addTitrant(0.2)
-            }
-          >
-            +0.2 cm³
-          </button>
+      <div className="ab-strip tit-bottom">
+        {mode === "experiment" ? (
+          <>
+            <div className="ab-readout"><span>Added</span><strong>{run.v.toFixed(2)} cm{"³"}</strong></div>
+            <div className="ab-readout"><span>pH</span><strong data-testid="ph-readout">{formatPH(cur.pH)}</strong></div>
+            <div className="ab-readout tit-state" aria-live="polite"><span>State</span><strong data-testid="state-text">{stage.text}{t.regionAt(run.v) === "buffer" ? " · in buffer region" : ""}</strong></div>
+            <div className="ab-btns tit-adds" role="group" aria-label="Add titrant">
+              {ADD_STEPS.map((a) => <button key={a} type="button" className="sim-btn ab-btn" disabled={atMax} onClick={() => dispatch({ type: "add", amount: a })}>+{a.toFixed(1)} cm{"³"}</button>)}
+              <button type="button" className="sim-btn ab-btn" aria-pressed={auto} disabled={atMax} onClick={() => setAuto((x) => !x)}>{auto ? "Pause" : "Auto add"}</button>
+            </div>
+            {atMax && <span className="ab-note ab-warn">Axis limit {t.axisMax} cm{"³"} reached (about twice Veq); press Reset to start again.</span>}
+          </>
+        ) : (
+          <span className="ab-note">Concentrations come from the selectors above; all curves use 25.0 cm{"³"} in the flask at 298 K, pKa(CH{"₃"}COOH) = {PKA_ETHANOIC.toFixed(2)}, pKb(NH{"₃"}) = {PKB_AMMONIA.toFixed(2)}.</span>
         )}
-
-        <button
-          type="button"
-          onClick={() =>
-            addTitrant(0.5)
-          }
-        >
-          +0.5 cm³
-        </button>
-
-        <button
-          type="button"
-          onClick={() =>
-            addTitrant(1)
-          }
-        >
-          +1.0 cm³
-        </button>
-
-        <button
-          type="button"
-          onClick={() =>
-            addTitrant(5)
-          }
-        >
-          +5.0 cm³
-        </button>
-
-        <button
-          type="button"
-          className={
-            autoRunning
-              ? "auto active"
-              : "auto"
-          }
-          onClick={toggleAuto}
-        >
-          {autoRunning
-            ? "Pause"
-            : "Auto Add"}
-        </button>
-
-        <button
-          type="button"
-          className="feature-button"
-          onClick={() =>
-            setShowFeatures(
-              (value) => !value
-            )
-          }
-        >
-          {showFeatures
-            ? "Hide Features"
-            : "Show Features"}
-        </button>
-
-        <button
-          type="button"
-          className="reset-button"
-          onClick={() =>
-            resetExperiment()
-          }
-        >
-          Replay
-        </button>
+        <button type="button" className="sim-btn ab-btn tit-reset" onClick={resetAll}>Reset</button>
       </div>
-
-      <p className="titration-copyright">{COPYRIGHT_TEXT_COMPACT}</p>
+      <p className="ab-sr-only" aria-live="polite">{mode === "experiment" ? `${run.v.toFixed(2)} cubic centimetres added, pH ${formatPH(cur.pH)}. ${stage.text}.` : "Comparison view"}</p>
+      <table className="ab-sr-only"><caption>Recorded readings</caption><thead><tr><th>Volume added / cm3</th><th>pH</th></tr></thead><tbody>{run.points.map((p, i) => <tr key={i}><td>{p.v.toFixed(2)}</td><td>{formatPH(p.pH)}</td></tr>)}</tbody></table>
+      <p className="ab-note tit-copy">{COPYRIGHT_TEXT_COMPACT} {"·"} 298 K, pKa 4.76, pKb 4.75, ideal behaviour.</p>
     </section>
   );
 }
 
-// Wrapped in the shared simulation shell so this engine gets the same Fullscreen / Open in New Tab controls, CSS
-// fullscreen fallback and standalone/fullscreen viewport box as every other simulation. The shell's own title row is used
-// in fullscreen / new-tab mode (the engine hides its duplicate heading then, see `.is-viewport` in the stylesheet).
 export default function TitrationPHCurve({ compact = false, standalone = false }) {
   return (
-    <InteractiveFrame title="pH Curve & Titration Visualizer" subtitle={"A numerical acid/base equilibrium solver \u2014 build real titration curves for strong and weak monoprotic systems"} compact={compact} standalone={standalone}>
-      <TitrationPHCurveBody />
+    <InteractiveFrame title="pH Curve & Titration Visualizer" subtitle={"A numerical acid/base equilibrium solver — build real titration curves for strong and weak monoprotic systems"} compact={compact} standalone={standalone}>
+      <Body />
     </InteractiveFrame>
   );
 }

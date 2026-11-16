@@ -23,13 +23,22 @@ function isMobileViewport() {
  * bar can offer a single "Reset View" action instead of a second, floating
  * button duplicating the same job.
  */
-const ParticleChamber = forwardRef(function ParticleChamber({ children, height = 420, fallbackDescription }, ref) {
+const ParticleChamber = forwardRef(function ParticleChamber({ children, height = 420, fallbackDescription, label }, ref) {
   const webglAvailable = useMemo(() => detectWebGL(), []);
   const mobile = useMemo(() => isMobileViewport(), []);
   const controlsRef = useRef(null);
 
   useImperativeHandle(ref, () => ({
     reset: () => controlsRef.current?.reset(),
+    // keyboard / button alternatives to mouse drag and wheel
+    rotate: (dAzimuth, dPolar = 0) => {
+      const c = controlsRef.current; if (!c) return;
+      c.setAzimuthalAngle(c.getAzimuthalAngle() + dAzimuth); c.setPolarAngle(Math.min(2.35, Math.max(0.45, c.getPolarAngle() + dPolar))); c.update();
+    },
+    zoom: (factor) => {
+      const c = controlsRef.current; if (!c) return;
+      const cam = c.object; const d = Math.min(11, Math.max(5.5, cam.position.length() * factor)); cam.position.setLength(d); c.update();
+    },
   }));
 
   if (!webglAvailable) {
@@ -49,6 +58,9 @@ const ParticleChamber = forwardRef(function ParticleChamber({ children, height =
     <div
       className="relative overflow-hidden rounded-lg border"
       style={{ height, background: PALETTE.bgGradient, borderColor: PALETTE.border }}
+      role="img"
+      aria-label={label ?? "3D particle chamber"}
+      data-testid="particle-chamber"
     >
       <Canvas
         dpr={mobile ? [1, 1.25] : [1, 2]}
@@ -79,7 +91,7 @@ const ParticleChamber = forwardRef(function ParticleChamber({ children, height =
         className="pointer-events-none absolute left-2.5 top-2.5 rounded-md border px-2 py-1 text-[10px] tracking-wide backdrop-blur"
         style={{ borderColor: PALETTE.borderStrong, background: `${PALETTE.panelRaised}B3`, color: PALETTE.textSecondary }}
       >
-        Drag to rotate &middot; scroll to zoom
+        Drag to rotate &middot; scroll to zoom &middot; or use the buttons below
       </p>
     </div>
   );

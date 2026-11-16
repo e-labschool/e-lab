@@ -52,12 +52,22 @@ export const TOPIC_AREAS = Object.freeze([
  *  Coming-soon entries have no verified mapping, so theirs is empty.  Optional: consumers treat a missing field as []. */
 export const LIVE_SIMULATION_CURRICULA = Object.freeze(["ib-dp"]);
 
+/** FEATURE_WHEN_READY -- one switch for the landing page.  Entries below carry `featureWhenReady: true` (Build an Atom,
+ *  Collision Theory, Buffer Action, Bonding Visualizer): the owner wants them on the front page, but they are being rebuilt
+ *  and are not yet premium-grade (docs/sim-review/MASTER_PLAN.md).  While this is `false` they are NOT featured (they stay
+ *  fully available in the library); set it to `true` -- the only change needed -- once their rebuilds land and they are
+ *  featured in `featuredOrder` (Build an Atom 1, VSEPR 2, Heating Curve 3, Hybridisation 4, Collision 5, Buffer 6, Bonding 7).
+ *  Entries without `featureWhenReady` (VSEPR, Heating Curve, Hybridisation) are featured now.  The admin Featured star
+ *  (simulation_access overrides) still wins over both.  Electron Configuration is deliberately not featured (owner decision:
+ *  its animation needs work). */
+export const FEATURE_WHEN_READY = false;
+
 export const thumbnailPath = (id) => `/sim-thumbs/${id}.webp`;
 
 // Live simulations: every id here has an engine in simulationEngineComponents.js.  `label` MUST equal the engine's own
 // InteractiveFrame title (InteractiveFrame resolves "Open in New Tab" from it).
 const LIVE = [
-  { id: "electron-configuration", label: "Electron Configuration Explorer", topic: "Atomic structure", syllabus: ["S1.3"], resourceId: "electron-configuration-explorer", featured: true, featuredOrder: 4,
+  { id: "electron-configuration", label: "Electron Configuration Explorer", topic: "Atomic structure", syllabus: ["S1.3"], resourceId: "electron-configuration-explorer",
     description: "Fill shells, sublevels and orbitals for any of the 118 elements, one electron at a time." },
   { id: "vsepr-explorer-3d", label: "VSEPR Explorer (3D)", topic: "Bonding", syllabus: ["S2.2"], resourceId: "vsepr-explorer-3d", featured: true, featuredOrder: 2,
     description: "Rotate 3D molecules and see how electron domains set shapes and bond angles." },
@@ -77,15 +87,13 @@ const LIVE = [
     description: "A beam-balance analogy for stoichiometric neutralization." },
   { id: "titration-ph-curve", label: "pH Curve & Titration Visualizer", topic: "Acids & bases", syllabus: ["R3.1"],
     description: "Build titration curves for strong and weak acid and base systems." },
-  { id: "buffer-action-visualizer", label: "Buffer Action Visualizer", topic: "Acids & bases", syllabus: ["R3.1"],
+  { id: "buffer-action-visualizer", label: "Buffer Action Visualizer", topic: "Acids & bases", syllabus: ["R3.1"], featured: true, featuredOrder: 6, featureWhenReady: true,
     description: "See why a buffer resists pH change and what happens when its capacity runs out." },
   { id: "chocolate-wrapping-rate", label: "Chocolate Wrapping — Understanding Rate", topic: "Kinetics", syllabus: ["R2.2"],
     description: "A real-life analogy for rate of reaction, before any particle chemistry." },
-  { id: "collision-theory-visualizer", label: "Collision Theory Visualizer", topic: "Kinetics", syllabus: ["R2.2"],
+  { id: "collision-theory-visualizer", label: "Collision Theory Visualizer", topic: "Kinetics", syllabus: ["R2.2"], featured: true, featuredOrder: 5, featureWhenReady: true,
     description: "Collisions, activation energy, orientation and the Maxwell–Boltzmann distribution in one view." },
-  { id: "mixture-separation-explorer", label: "Mixture Separation Explorer", topic: "States of matter & gases", syllabus: ["S1.1"],
-    description: "Choose a mixture and a separation method and watch the apparatus work." },
-  { id: "build-an-atom", label: "Build an Atom", topic: "Atomic structure", syllabus: ["S1.2"], featured: true, featuredOrder: 1,
+  { id: "build-an-atom", label: "Build an Atom", topic: "Atomic structure", syllabus: ["S1.2"], featured: true, featuredOrder: 1, featureWhenReady: true,
     description: "Add protons, neutrons and electrons to explore isotopes, ions and nuclear notation." },
   { id: "wave-explorer", label: "Wave Explorer", topic: "Atomic structure", syllabus: ["S1.3"],
     description: "Transverse and longitudinal waves, and how wavelength, frequency and photon energy relate." },
@@ -99,9 +107,9 @@ const LIVE = [
     description: "Pressure, temperature, volume and amount of gas — ideal and real behaviour." },
   { id: "gas-laws-explorer", label: "Gas Laws Explorer", topic: "States of matter & gases", syllabus: ["S1.5"],
     description: "Investigate how pressure, volume, temperature and amount of gas are related." },
-  { id: "bonding-visualizer", label: "Bonding Visualizer", topic: "Bonding", syllabus: ["S2.1", "S2.2", "S2.3"],
+  { id: "bonding-visualizer", label: "Bonding Visualizer", topic: "Bonding", syllabus: ["S2.1", "S2.2", "S2.3"], featured: true, featuredOrder: 7, featureWhenReady: true,
     description: "Compare ionic, covalent and metallic bonding." },
-  { id: "hybridisation-explorer", label: "Hybridisation Explorer (3D)", topic: "Bonding", syllabus: ["S2.2"], resourceId: "hybridisation-explorer",
+  { id: "hybridisation-explorer", label: "Hybridisation Explorer (3D)", topic: "Bonding", syllabus: ["S2.2"], resourceId: "hybridisation-explorer", featured: true, featuredOrder: 4,
     description: "See sp, sp2 and sp3 hybrid orbitals form in 3D." },
   { id: "intermolecular-forces-visualiser", label: "Intermolecular Forces Visualiser", topic: "Bonding", syllabus: ["S2.2"], resourceId: "intermolecular-forces-visualiser",
     description: "Explore London, dipole–dipole and hydrogen-bond forces between molecules." },
@@ -112,7 +120,7 @@ const LIVE = [
 // Resource-registry ids that describe something a live simulation above already covers; they are not repeated as
 // separate "coming soon" cards.
 const COVERED_BY_LIVE = new Set([
-  "mixture-separation-explorer", "ideal-gas-simulator", "molecular-geometry-explorer", "collision-theory-lab",
+  "ideal-gas-simulator", "molecular-geometry-explorer", "collision-theory-lab",
   "titration-lab", "spectroscopy-studio", "mass-spectrometer-simulator",
 ]);
 
@@ -141,7 +149,7 @@ function liveEntry(e) {
     id: e.id, label: e.label, description: e.description, subject: "chemistry", topic: e.topic,
     syllabus: Object.freeze([...(e.syllabus || [])]),
     curriculum: Object.freeze([...(e.curriculum ?? LIVE_SIMULATION_CURRICULA)]),
-    status: SIM_STATUS.LIVE, tier: TIERS.FREE, featured: Boolean(e.featured), featuredOrder: e.featuredOrder ?? 99,
+    status: SIM_STATUS.LIVE, tier: TIERS.FREE, featured: Boolean(e.featured) && (!e.featureWhenReady || FEATURE_WHEN_READY), featuredOrder: e.featuredOrder ?? 99,
     thumbnail: thumbnailPath(e.id), resourceId: e.resourceId ?? null,
   });
 }

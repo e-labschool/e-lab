@@ -82,6 +82,7 @@ export default function AdminLearnContent() {
     <div className="mx-auto max-w-6xl px-6 py-10">
       <h1 className="font-[var(--font-display)] text-2xl font-semibold text-[var(--color-ink)]">Learn Content</h1>
       <p className="mt-1 text-sm text-[var(--color-ink-soft)]">Create and publish Student Learn lessons — changes go live immediately, no deployment needed.</p>
+      <button type="button" onClick={() => navigate("/admin/learn-content/overview")} className="mt-3 inline-flex min-h-9 items-center rounded-md border border-[var(--color-line)] px-3 text-xs font-semibold text-[var(--color-indigo)] hover:bg-[var(--color-indigo-soft)]">Content overview, search and review</button>
 
       <div className="mt-6 grid gap-6 md:grid-cols-[280px_1fr]">
         <nav className="space-y-3">

@@ -177,7 +177,7 @@ for (const size of SIZES) for (const theme of THEMES) {
   check(!S.chunkRequests.some((u) => /(BuildAtom|VSEPR|PhaseChange|ElectronConfiguration|SimulationDashboard)/.test(u)), `landing ${t}: no simulation engine chunk fetched before the demo is requested`);
   check(await page.locator("[data-live-demo][data-running=false]").count() === 1, `landing ${t}: demo shows the static screenshot until requested`);
   check(/IB Chemistry you can\s+see, move\s+and test\./.test(await page.locator("h1").innerText()), `landing ${t}: headline`);
-  check(await page.locator("#simulations li").count() === 4, `landing ${t}: showcase has 4 featured simulations`);
+  check(await page.locator("#simulations li").count() === 3, `landing ${t}: showcase has 3 featured simulations (VSEPR, Heating Curve, Hybridisation)`);
   check((await page.locator("[data-browse-all]").getAttribute("href")).startsWith("/auth?role=student&next="), `landing ${t}: Browse all -> log in first when signed out`);
   check((await page.title()).includes("IB Chemistry"), `landing ${t}: page title`);
   if (size[0] === 1366 && theme === "light") {
@@ -202,7 +202,7 @@ for (const size of SIZES) for (const theme of THEMES) {
     await page.waitForFunction(() => document.querySelector("[data-live-demo]")?.getAttribute("data-running") === "true");
     await page.waitForSelector("[data-demo-stage] .elab-sim, [data-demo-stage] .sd-frame", { timeout: 20000 });
     await sleep(2500);
-    check(true, "landing: 'Try a simulation' mounts the live demo (Build an Atom)");
+    check(true, "landing: 'Try a simulation' mounts the live demo (VSEPR Explorer 3D)");
     const stage = await page.evaluate(() => {
       const st = document.querySelector("[data-demo-stage]").getBoundingClientRect();
       const bad = [];
@@ -258,7 +258,7 @@ for (const role of ["student", "teacher"]) {
     await page.goto(`${base}/${role}/simulations`, { waitUntil: "load" });
     await page.waitForSelector("[data-sim-grid] article", { timeout: 20000 }); await sleep(800);
     await health(S, `${role} library ${t}`);
-    check(await page.locator("[data-sim-grid] article").count() === 25, `${role} library ${t}: 25 live simulations listed`);
+    check(await page.locator("[data-sim-grid] article").count() === 24, `${role} library ${t}: 24 live simulations listed`);
     check(!NO_PREMIUM.test(await bodyText(page)), `${role} library ${t}: no Premium chrome`);
     check(await page.locator("[data-chip^='tier'], [data-tier-badge], [data-lock-chip]").count() === 0, `${role} library ${t}: no tier chips / badges / locks`);
     const navLabels = await page.locator("nav a").allInnerTexts();
@@ -361,20 +361,20 @@ for (const size of SIZES) for (const theme of THEMES) {
   check(/Everything is currently free for everyone/.test(await bodyText(page)), `admin ${t}: banner "Everything is currently free for everyone"`);
   if (size[0] === 1366 && theme === "light") {
     await shot(S, "admin-simulations-1366-light");
-    check(await page.locator("[data-sim-row]").count() === 25, "admin: 25 live simulations listed");
+    check(await page.locator("[data-sim-row]").count() === 24, "admin: 24 live simulations listed");
     const sw = page.locator("[data-switch=premium-enabled]");
     check(await sw.getAttribute("aria-checked") === "false" && !(await sw.isDisabled()), "admin: Premium switch is OFF and enabled when the DB settings exist");
-    const lock = page.locator("#lock-build-an-atom");
+    const lock = page.locator("#lock-vsepr-explorer-3d");
     check(await lock.getAttribute("aria-pressed") === "false" && await lock.getAttribute("title") === "Lock for Premium", "admin: default is unlocked (free); tooltip says 'Lock for Premium'");
     check(await page.locator("select[id^='tier-']").count() === 0, "admin: the Access-level dropdowns are gone");
     check(await lock.evaluate((el) => { const r = el.getBoundingClientRect(); return r.width >= 32 && r.height >= 32; }), "admin: lock button is a usable tap target (>=32px)");
     await lock.click(); await sleep(500);
     const w = S.db.log.find((l) => l.table === "simulation_access");
-    check(w && w.body.sim_id === "build-an-atom" && w.body.tier === "premium" && w.body.featured === true, `admin: locking upserts {sim_id,tier:'premium',featured} (${JSON.stringify(w?.body)})`);
+    check(w && w.body.sim_id === "vsepr-explorer-3d" && w.body.tier === "premium" && w.body.featured === true, `admin: locking upserts {sim_id,tier:'premium',featured} (${JSON.stringify(w?.body)})`);
     check(await lock.getAttribute("aria-pressed") === "true" && await lock.getAttribute("title") === "Unlock (free)", "admin: pressed state + tooltip flip to 'Unlock (free)'");
     check(/Locks only take effect when Premium is switched on/.test(await bodyText(page)) && /open to everyone while Premium is off/.test(await bodyText(page)), "admin: helper says locks only matter once Premium is on / everything is free now");
     await shot(S, "admin-simulations-1366-light-locked");
-    await page.locator("button[aria-label^='Remove Build an Atom']").click(); await sleep(400);
+    await page.locator("button[aria-label^='Remove VSEPR Explorer']").click(); await sleep(400);
     const f = S.db.log.filter((l) => l.table === "simulation_access").at(-1);
     check(f.body.featured === false && f.body.tier === "premium", `admin: Featured star toggles and keeps the tier (${JSON.stringify(f.body)})`);
     await page.locator("[data-switch=require-login]").click(); await sleep(400);

@@ -111,10 +111,12 @@ export default function AtomBuilder({ compact }) {
           stacked below it on narrower ones, never shrunk to the point of
           uselessness. */}
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_260px]">
+        <div role="group" aria-label={`3D atom view for atomic number ${atomicNumber}, configuration ${configString}. Drag to rotate, scroll to zoom; use the Reset view button to recentre. The orbital legend lists every orbital shown.`}>
         <ThreeCanvas height={compact ? 420 : 560} cameraDistance={boundingRadiusFor(maxN) * 2.6} fallbackDescription="This device can't render the 3D atom view." fallbackLabel="Atom viewer">
           <color attach="background" args={["#070A12"]} />
           <AtomViewer occupiedIds={occupiedIds} visibleIds={visibleIds} highlightedId={highlightedId} pointsPerOrbital={pointsPerOrbital} />
         </ThreeCanvas>
+        </div>
 
         <div className="flex flex-col gap-3">
           <div className="rounded-xl border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-3">

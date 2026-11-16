@@ -8,9 +8,13 @@ import { SIMULATION_COMPONENTS } from "../../data/simulationEngineComponents.js"
 import { getFeaturedSimulations } from "../../data/simulationCatalogue.js";
 import { canAccess } from "../../lib/access/accessPolicy.js";
 import { useAccessConfig } from "../../lib/access/AccessConfigContext.jsx";
+import { detectWebGL } from "../../engines/shared-3d/webgl.js";
+
+/** Demos whose stage is WebGL.  Without WebGL the hero keeps the static screenshot and says so, instead of mounting an engine that can only show a notice. */
+const NEEDS_WEBGL = new Set(["vsepr-explorer-3d", "hybridisation-explorer", "bonding-visualizer", "intermolecular-forces-visualiser"]);
 
 /** Short chip names for the demo switcher (the full label is the panel title). */
-const CHIP = { "build-an-atom": "Build an Atom", "vsepr-explorer-3d": "VSEPR 3D", "phase-change-heating-curve": "Heating & cooling curve", "electron-configuration": "Electron configuration" };
+const CHIP = { "build-an-atom": "Build an Atom", "vsepr-explorer-3d": "VSEPR 3D", "phase-change-heating-curve": "Heating & cooling curve", "hybridisation-explorer": "Hybridisation 3D", "collision-theory-visualizer": "Collision theory", "buffer-action-visualizer": "Buffer action", "bonding-visualizer": "Bonding" };
 
 /**
  * The hero's live demo.  NOTHING from any simulation engine is loaded or mounted until the visitor asks for it:
@@ -32,9 +36,12 @@ export default function LiveDemo({ requested, onRequest }) {
 
   useEffect(() => { if (requested) setRunning(true); }, [requested]);
 
+  // WebGL is probed only once the visitor has asked for the demo (nothing 3D is touched while the page just sits there)
+  const gl = useMemo(() => (running ? detectWebGL() : true), [running]);
   const run = useCallback(() => { setRunning(true); onRequest?.(); }, [onRequest]);
   if (!current) return null;
   const Sim = SIMULATION_COMPONENTS[current.id];
+  const noGL = running && NEEDS_WEBGL.has(current.id) && !gl;
 
   return (
     <div className="overflow-hidden rounded-2xl border border-[var(--color-line)] bg-[var(--color-paper-raised)] shadow-[0_18px_50px_-18px_rgba(20,30,80,0.35)]" data-live-demo data-running={running ? "true" : "false"}>
@@ -47,7 +54,7 @@ export default function LiveDemo({ requested, onRequest }) {
       </div>
 
       <div className="relative h-[34rem] bg-[#0F172A] sm:h-[38rem] lg:h-[clamp(32rem,calc(100dvh-9rem),44rem)]" data-demo-stage>
-        {running ? (
+        {running && !noGL ? (
           <div className="h-full w-full overflow-hidden bg-[var(--color-paper)]">
             <SimulationSessionProvider value={`landing:${current.id}`}>
               <SimulationErrorBoundary resetKey={current.id} fallback={<DemoPoster entry={current} note="The live demo could not load here. Try the simulation library instead." />}>
@@ -58,7 +65,7 @@ export default function LiveDemo({ requested, onRequest }) {
             </SimulationSessionProvider>
           </div>
         ) : (
-          <DemoPoster entry={current} onRun={run} />
+          <DemoPoster entry={current} onRun={noGL ? undefined : run} note={noGL ? "This 3D demo needs WebGL, which this browser or device does not provide. Open the simulation library to use the 2D tools." : undefined} />
         )}
       </div>
 

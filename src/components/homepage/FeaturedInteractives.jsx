@@ -9,7 +9,7 @@ import Badge from "../ui/Badge.jsx";
 // from the resource registry — only this list of *which* resources to feature
 // is fixed here.
 const FEATURED_IDS = [
-  "electron-configuration-explorer",
+  "vsepr-explorer-3d",
   "periodic-trends-explorer",
   "molecular-geometry-explorer",
   "collision-theory-lab",

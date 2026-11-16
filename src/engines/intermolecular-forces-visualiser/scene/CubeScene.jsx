@@ -10,7 +10,7 @@ import { displayRadii, ionColors } from "../../bonding-visualizer/model/lattice.
 // dotted interaction lines one preallocated bead InstancedMesh. Nothing is created per frame. The particle dynamics themselves run
 // in the React clock (see components/useHeatSim.js) so they also work without WebGL; this component only draws them.
 const CUBE_VIEW = 5.4; // scene units across one cube
-const ATOM_SCALE = 1.4; // cube atoms are drawn a little larger than in the two-molecule workspace (small objects in a big box)
+const ATOM_SCALE = 1.9; // cube atoms are drawn a little larger than in the two-molecule workspace (small objects in a big box); 1.4 read as tiny specks in the heating view (BS-28)
 const MAX_BEADS = 1800; // dotted interaction lines are rows of small beads (one InstancedMesh, preallocated)
 const LINK_COLOR = { hbond: new THREE.Color("#5fd8ff"), dipole: new THREE.Color("#f2c36b"), dispersion: new THREE.Color("#b7c8ee"), ion: new THREE.Color("#f2c36b") };
 

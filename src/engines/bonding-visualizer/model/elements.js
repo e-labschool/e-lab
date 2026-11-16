@@ -11,6 +11,7 @@
 // Ion charges are DERIVED from the outer-shell electron count (metals lose all outer electrons,
 // non-metals gain up to a full octet), and scripts/test-bonding-model.mjs checks them against an
 // independent oracle table of textbook values.
+import { elementStyle } from "../../shared-3d/elementStyle.js";
 import { getElementBySymbol } from "../../../data/chemistry/elements.js";
 import { buildConfiguration, buildIonConfiguration } from "../../electron-configuration/logic/buildConfiguration.js";
 
@@ -68,7 +69,7 @@ export function getBondingElement(symbol) {
     ionShells = ion ? [...ion.shells] : null;
   }
   const rec = Object.freeze({
-    symbol, name: base.name, Z: base.atomicNumber, kind: def.kind, color: def.color,
+    symbol, name: base.name, Z: base.atomicNumber, kind: def.kind, color: elementStyle(symbol).color, text: elementStyle(symbol).text,
     shells, valence, ionCharge, ionShells, configuration: cfg.configurationString, isException: cfg.isException,
   });
   cache.set(symbol, rec);

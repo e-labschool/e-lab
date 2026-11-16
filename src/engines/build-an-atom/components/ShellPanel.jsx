@@ -1,6 +1,7 @@
 import { describeElectrons } from "../lib/electronConfiguration.js";
 
-const signed = (n) => `${n > 0 ? "+" : "−"}${Math.abs(n)}`;
+import { formatCharge } from "../../../lib/atomic/format.js";
+const signed = (n) => formatCharge(n, { explicit1: true });
 
 /** Compact "shells and configuration" panel shown directly below the atom drawing.
  * Everything comes from describeElectrons(electrons, protons): the configuration is for
@@ -60,9 +61,9 @@ export default function ShellPanel({ protons, electrons }) {
               </>
             )}
           </dl>
-          {protons === 0 && <p className="mt-1 text-[10px] text-[var(--color-ink-faint)]">No protons yet. Shown for this many electrons.</p>}
-          {d.isIon && <p className="mt-1 text-[10px] text-[var(--color-ink-faint)]" data-testid="atom-shells-ion-basis">Ground state for {d.electrons} electrons (the atom has {d.protons} protons).</p>}
-          {d.ionNote && <p className="mt-0.5 text-[10px] text-[var(--color-ink-faint)]" data-testid="atom-shells-ion-note">{d.ionNote}</p>}
+          
+          
+          {(d.notes ?? []).map((note, i) => <p key={i} className="mt-0.5 text-[11px] text-[var(--color-ink-soft)]" data-testid="atom-shells-note">{note}</p>)}
         </>
       )}
     </section>

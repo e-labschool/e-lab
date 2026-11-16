@@ -62,7 +62,7 @@ export default function useBuilderWorkspace({ hist, dispatch, viewState, model: 
 
   const controls = (
     <Toolbox
-      bondTool={bondTool} onActivate={activate} onDragMove={onDragMove} onDrop={onDrop} onDragEnd={() => stageRef.current?.clearPreview()}
+      bondTool={bondTool} charge={model.charge ?? 0} onCharge={editable ? (q) => act({ type: "setCharge", charge: q }) : undefined} onActivate={activate} onDragMove={onDragMove} onDrop={onDrop} onDragEnd={() => stageRef.current?.clearPreview()}
       hint={hint ?? "Drag atoms from the panel and drop onto the central atom. Use bonds or lone pairs."} disabledNote={!editable ? lockedNote : hist.note}
       canUndo={canUndo(hist) && editable} canRedo={canRedo(hist) && editable}
       onUndo={() => act({ type: "undo" })} onRedo={() => act({ type: "redo" })} onClear={() => act({ type: "clear" })} onReset={() => { act({ type: "reset" }); setSelected(null); setBondTool(1); onReset?.(); }}

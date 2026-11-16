@@ -1,82 +1,111 @@
-// The scientifically correct Maxwell-Boltzmann kinetic-energy
-// distribution for a 3D gas: f(E) proportional to sqrt(E) * exp(-E/kT).
-//
-// An earlier version of this file replaced this with E*exp(-E/kT) to
-// avoid the infinite slope at E=0 -- that was the WRONG fix. The
-// correct distribution's steep initial rise is a genuine physical
-// feature, not a rendering defect, and is restored here. The visual
-// concern (the rise looking cramped/near-vertical) is instead solved
-// through axis scaling: K_SCALE and ENERGY_MAX below were chosen and
-// verified numerically so that even at the highest slider temperature
-// (700 K) the peak sits well clear of the origin and the curve's tail
-// is reasonably visible before the axis edge, rather than compressing
-// most of the distribution into a sliver of the plot -- with NO change
-// to the underlying physics.
-//
-// Verified numerically before use: f(0)=0, the peak shifts to higher E
-// and lowers (area-normalized) as T increases, the fraction with
-// E >= a fixed Ea genuinely increases with T, and the default T1/T2/T3
-// (300/450/600 K) sit at 13%/19%/25% of the axis width respectively --
-// none compressed against the left edge, all showing a genuine curve
-// shape rather than a vertical sliver.
-export const K_SCALE = 0.15;
-export const ENERGY_MAX = 180;
-export const ENERGY_STEP = 0.75;
-export const DEFAULT_TEMPERATURE = 400;
-export const DEFAULT_EA = 45;
-export const MIN_TEMPERATURE = 250;
-export const MAX_TEMPERATURE = 700;
+// Maxwell-Boltzmann distribution of translational kinetic energy for a 3-D gas, in kJ mol^-1.
+//   f(E) = 2/sqrt(pi) * E^(1/2) * (kT)^(-3/2) * exp(-E/kT)      with kT = R T  (kJ mol^-1)
+// f is a probability DENSITY (per kJ mol^-1); the area under it is exactly 1 for any T.
+// Fractions come from the EXACT integral (regularised upper incomplete gamma function Q(3/2, Ea/kT)),
+// never from a truncated numerical sum, so the fraction >= Ea is right at every temperature.
+export const R_KJ = 0.008314462618; // kJ mol^-1 K^-1
 
-// Selectable temperatures for the Maxwell-Boltzmann tab's T1/T2/T3
-// pickers -- realistic chemistry-demonstration values, never an
-// unrealistic near-zero default.
-export const TEMPERATURE_OPTIONS = [250, 300, 350, 400, 450, 500, 550, 600, 650, 700];
-export const DEFAULT_TEMPERATURES = { T1: 300, T2: 450, T3: 600 };
+export const kT = (T) => R_KJ * T;
 
-function rawDensity(E, T) {
-  const kT = K_SCALE * T;
-  if (E <= 0) return 0;
-  return Math.sqrt(E) * Math.exp(-E / kT);
+export function mbDensity(E, T) {
+  if (!(E > 0)) return 0;
+  const k = kT(T);
+  return (2 / Math.sqrt(Math.PI)) * Math.sqrt(E) / (k * Math.sqrt(k)) * Math.exp(-E / k);
 }
 
-/** The full curve as {E, f} points, AREA-NORMALIZED so total probability
- * stays constant regardless of T -- this is what makes the peak
- * genuinely lower (not just visually squashed) as the distribution
- * broadens with increasing temperature. Sampled at ENERGY_STEP
- * intervals across the full ENERGY_MAX range -- fine enough (240+
- * points) for a smooth rendered curve, including through the initial
- * rise near the origin. */
-export function buildCurve(T) {
-  const raw = [];
-  for (let E = 0; E <= ENERGY_MAX; E += ENERGY_STEP) raw.push({ E, f: rawDensity(E, T) });
-  const area = raw.reduce((s, p) => s + p.f * ENERGY_STEP, 0);
-  return raw.map((p) => ({ E: p.E, f: area > 0 ? p.f / area : 0 }));
+// ln Gamma (Lanczos, g = 7)
+const LG = [0.99999999999980993, 676.5203681218851, -1259.1392167224028, 771.32342877765313, -176.61502916214059, 12.507343278686905, -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7];
+export function lnGamma(z) {
+  if (z < 0.5) return Math.log(Math.PI / Math.sin(Math.PI * z)) - lnGamma(1 - z);
+  z -= 1;
+  let s = LG[0];
+  const t = z + 7.5;
+  for (let i = 1; i < 9; i++) s += LG[i] / (z + i);
+  return 0.5 * Math.log(2 * Math.PI) + (z + 0.5) * Math.log(t) - t + Math.log(s);
 }
 
-/** Fraction of the (normalized) distribution with E >= Ea -- used for
- * the "higher temperature -> greater fraction with E >= Ea" statement,
- * computed from the SAME curve data the graph draws, never a separate
- * approximation. */
-export function fractionBeyond(curve, Ea) {
-  const total = curve.reduce((s, p) => s + p.f * ENERGY_STEP, 0);
-  const beyond = curve.filter((p) => p.E >= Ea).reduce((s, p) => s + p.f * ENERGY_STEP, 0);
-  return total > 0 ? beyond / total : 0;
-}
-
-/** Draws one random kinetic energy from the T-dependent distribution via
- * rejection sampling against the curve's own peak (at E=kT/2 for this
- * form) -- used to give each particle in the live vessel a genuinely
- * distributed (not uniform, not identical) energy/speed, verified to
- * produce a real slow/medium/fast spread rather than decorative
- * randomness. */
-export function sampleEnergy(T) {
-  const kT = K_SCALE * T;
-  const peakE = kT / 2;
-  const peakF = rawDensity(peakE, T) || 1e-6;
-  for (let tries = 0; tries < 60; tries++) {
-    const E = Math.random() * ENERGY_MAX;
-    const f = rawDensity(E, T);
-    if (Math.random() * peakF <= f) return E;
+/** Regularised upper incomplete gamma Q(a, x) = Gamma(a, x) / Gamma(a). Series for x < a+1, continued fraction otherwise. */
+export function gammaQ(a, x) {
+  if (x <= 0) return 1;
+  const gln = lnGamma(a);
+  if (x < a + 1) {
+    let ap = a; let sum = 1 / a; let del = sum;
+    for (let n = 0; n < 1000; n++) { ap += 1; del *= x / ap; sum += del; if (Math.abs(del) < Math.abs(sum) * 1e-16) break; }
+    return Math.max(0, 1 - sum * Math.exp(-x + a * Math.log(x) - gln));
   }
-  return peakE;
+  const FP = 1e-300;
+  let b = x + 1 - a; let c = 1 / FP; let d = 1 / b; let h = d;
+  for (let i = 1; i < 1000; i++) {
+    const an = -i * (i - a);
+    b += 2;
+    d = an * d + b; if (Math.abs(d) < FP) d = FP;
+    c = b + an / c; if (Math.abs(c) < FP) c = FP;
+    d = 1 / d;
+    const del = d * c; h *= del;
+    if (Math.abs(del - 1) < 1e-16) break;
+  }
+  return Math.exp(-x + a * Math.log(x) - gln) * h;
+}
+
+/** Exact fraction of molecules with kinetic energy >= Ea (kJ/mol) at temperature T (K). */
+export function fractionAbove(Ea, T) { return gammaQ(1.5, Ea / kT(T)); }
+/** Exact fraction with kinetic energy < Ea. (1 - fractionAbove loses nothing at these magnitudes.) */
+export function fractionBelow(Ea, T) { return 1 - fractionAbove(Ea, T); }
+
+export const peakEnergy = (T) => kT(T) / 2;
+export const meanEnergy = (T) => 1.5 * kT(T);
+export const peakDensity = (T) => mbDensity(peakEnergy(T), T);
+/** Arrhenius factor exp(-Ea/RT): fraction of collisions whose energy along the line of centres is >= Ea. */
+export const arrheniusFactor = (Ea, T) => Math.exp(-Ea / kT(T));
+
+/** Composite Simpson rule (n even). */
+export function simpson(f, a, b, n = 2000) {
+  if (n % 2) n += 1;
+  const h = (b - a) / n;
+  let s = f(a) + f(b);
+  for (let i = 1; i < n; i++) s += f(a + i * h) * (i % 2 ? 4 : 2);
+  return (s * h) / 3;
+}
+
+/**
+ * Independent numerical check (used by the tests): integrate over u = sqrt(E), which removes the sqrt singularity,
+ * out to where the tail is below 1e-30 of the area. Returns the fraction of the area with E >= Ea.
+ */
+export function numericFractionAbove(Ea, T, n = 20000) {
+  const k = kT(T);
+  const uMax = Math.sqrt(Math.max(Ea, 0) + 90 * k);
+  const g = (u) => mbDensity(u * u, T) * 2 * u;
+  const uEa = Math.sqrt(Math.max(Ea, 0));
+  return simpson(g, uEa, uMax, n);
+}
+export function numericArea(T, n = 20000) { return numericFractionAbove(0, T, n); }
+
+/** Kinetic energy (kJ/mol) of one molecule: three Gaussian velocity components -> exactly the 3-D MB energy distribution. */
+export function sampleEnergy(T, rng) {
+  const k = kT(T);
+  const a = rng.gauss(); const b = rng.gauss(); const c = rng.gauss();
+  return 0.5 * k * (a * a + b * b + c * c);
+}
+
+/** Sample points of the density for plotting: arrays of E and f. */
+export function densityCurve(T, xMax, n = 240) {
+  const E = new Float64Array(n + 1); const f = new Float64Array(n + 1);
+  for (let i = 0; i <= n; i++) { E[i] = (xMax * i) / n; f[i] = mbDensity(E[i], T); }
+  return { E, f };
+}
+
+/** Readable percentage: never rounds a small non-zero fraction to "0%". */
+export function formatFraction(fr) {
+  if (!(fr > 0)) return "0 %";
+  const p = fr * 100;
+  if (p >= 10) return `${p.toFixed(0)} %`;
+  if (p >= 1) return `${p.toFixed(1)} %`;
+  if (p >= 0.01) return `${p.toFixed(2)} %`;
+  const exp = Math.floor(Math.log10(p));
+  const man = p / 10 ** exp;
+  return `${man.toFixed(1)}×10${toSup(exp)} %`;
+}
+function toSup(n) {
+  const m = { 0: "⁰", 1: "¹", 2: "²", 3: "³", 4: "⁴", 5: "⁵", 6: "⁶", 7: "⁷", 8: "⁸", 9: "⁹", "-": "⁻" };
+  return String(n).split("").map((ch) => m[ch] ?? ch).join("");
 }

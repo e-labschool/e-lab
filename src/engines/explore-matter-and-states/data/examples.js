@@ -4,37 +4,43 @@
 // demonstration without hardcoding per-material logic elsewhere. Values are
 // explicitly illustrative, not measured data.
 
+// Mass and volume are CALCULATED from typical room-temperature densities (m = rho x V) so every sample is self-consistent:
+// rock (granite) 2.7 g/cm3, iron 7.87, ice 0.917, rock salt 2.16, copper 8.96, water 0.997, ethanol 0.789 g/cm3,
+// air 1.20, oxygen 1.43, carbon dioxide 1.98 g/dm3 (g/L). Rounded for display; they are typical values, not measurements.
+// Rock salt is used as a solid BLOCK (measured with a ruler) because ordinary salt would dissolve in a displacement test.
+const g = (x, d = 1) => `${x.toFixed(d)} g`;
+const DENSITY = { rock: 2.7, "iron-nail": 7.87, ice: 0.917, salt: 2.16, copper: 8.96, water: 0.997, ethanol: 0.789 }; // g/cm3
+const GAS_DENSITY = { air: 1.2, oxygen: 1.43, "carbon-dioxide": 1.98 }; // g/dm3 = mg/cm3
+const BALLOON = 2.4; // g, empty balloon
+const box = (id, label, l, w, h, hint = "solid") => ({
+  id, label, stateHint: hint, volumeMethod: "regular-solid",
+  mass: { before: "0.0 g", after: g(DENSITY[id] * l * w * h) },
+  volume: { l, w, h, unit: "cm" }, density: DENSITY[id],
+});
+const liquid = (id, label, mL, beaker) => ({
+  id, label, stateHint: "liquid", volumeMethod: "liquid",
+  mass: { before: `Empty beaker: ${g(beaker)}`, after: `Beaker + ${label.toLowerCase()}: ${g(beaker + DENSITY[id] * mL)}` },
+  volume: { amount: mL, unit: "mL" }, density: DENSITY[id],
+});
+const gas = (id, label, mL) => ({
+  id, label, stateHint: "gas", volumeMethod: "gas",
+  mass: { before: `Deflated balloon: ${g(BALLOON, 2)}`, after: `Inflated balloon: ${g(BALLOON + (GAS_DENSITY[id] * mL) / 1000, 2)}` },
+  volume: { amount: mL, unit: "mL" }, density: GAS_DENSITY[id] / 1000,
+});
+
 export const MATTER_EXAMPLES = [
   { id: "rock", label: "Rock", stateHint: "solid", volumeMethod: "irregular-solid",
-    mass: { before: "0.0 g", after: "58.4 g" },
-    volume: { before: 50, after: 68, unit: "mL" } },
-  { id: "iron-nail", label: "Iron nail", stateHint: "solid", volumeMethod: "regular-solid",
-    mass: { before: "0.0 g", after: "14.2 g" },
-    volume: { l: 6, w: 1, h: 1, unit: "cm" } },
-  { id: "ice", label: "Ice cube", stateHint: "solid", volumeMethod: "regular-solid",
-    mass: { before: "0.0 g", after: "27.0 g" },
-    volume: { l: 3, w: 3, h: 3, unit: "cm" } },
-  { id: "salt", label: "Salt", stateHint: "solid", volumeMethod: "irregular-solid",
-    mass: { before: "0.0 g", after: "12.6 g" },
-    volume: { before: 50, after: 55, unit: "mL" } },
-  { id: "copper", label: "Copper", stateHint: "solid", volumeMethod: "regular-solid",
-    mass: { before: "0.0 g", after: "44.8 g" },
-    volume: { l: 2, w: 2, h: 2, unit: "cm" } },
-  { id: "water", label: "Water", stateHint: "liquid", volumeMethod: "liquid",
-    mass: { before: "Empty beaker: 42.0 g", after: "Beaker + water: 92.0 g" },
-    volume: { amount: 50, unit: "mL" } },
-  { id: "ethanol", label: "Ethanol", stateHint: "liquid", volumeMethod: "liquid",
-    mass: { before: "Empty beaker: 38.5 g", after: "Beaker + ethanol: 78.1 g" },
-    volume: { amount: 50, unit: "mL" } },
-  { id: "air", label: "Air", stateHint: "gas", volumeMethod: "gas",
-    mass: { before: "Deflated balloon: 2.4 g", after: "Inflated balloon: 2.7 g" },
-    volume: { amount: 60, unit: "mL" } },
-  { id: "oxygen", label: "Oxygen", stateHint: "gas", volumeMethod: "gas",
-    mass: { before: "Deflated balloon: 2.4 g", after: "Inflated balloon: 2.8 g" },
-    volume: { amount: 60, unit: "mL" } },
-  { id: "carbon-dioxide", label: "Carbon dioxide", stateHint: "gas", volumeMethod: "gas",
-    mass: { before: "Deflated balloon: 2.4 g", after: "Inflated balloon: 3.0 g" },
-    volume: { amount: 60, unit: "mL" } },
+    mass: { before: "0.0 g", after: g(DENSITY.rock * 18) },
+    volume: { before: 50, after: 68, unit: "mL" }, density: DENSITY.rock },
+  box("iron-nail", "Iron nail", 5, 0.5, 0.5),
+  box("ice", "Ice cube", 3, 3, 3),
+  box("salt", "Rock salt", 2, 2, 2),
+  box("copper", "Copper", 2, 2, 2),
+  liquid("water", "Water", 50, 42.0),
+  liquid("ethanol", "Ethanol", 50, 38.5),
+  gas("air", "Air", 60),
+  gas("oxygen", "Oxygen", 60),
+  gas("carbon-dioxide", "Carbon dioxide", 60),
 ];
 
 export const NON_MATTER_EXAMPLES = [

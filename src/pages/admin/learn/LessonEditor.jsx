@@ -30,7 +30,11 @@ import { filterBlocksForStudent } from "../../../lib/learnLevelAccess.js";
 import LearnBlocksLayout from "../../../components/learn/LearnBlocksLayout.jsx";
 import BlockWorkspace from "./editor/BlockWorkspace.jsx";
 import * as BL from "../../../lib/blockLayout.js";
-import { runLayoutOp, applyDrop, blockLabel, snapshotLayouts, applySnapshot, diffForPersist, makePersisted, keepLayout } from "../../../lib/blockLayoutOps.js";
+import * as BC from "../../../lib/blockCanvas.js";
+import { runLayoutOp, applyDrop, blockLabel, snapshotLayouts, applySnapshot, diffForPersist, makePersisted, keepLayout, stripLayout, layoutKey, describeBlock } from "../../../lib/blockLayoutOps.js";
+import { extractMetaRow, setBlockMeta, normalizeMeta, normalizeCodes, markReviewed } from "../../../lib/learnMeta.js";
+import { makeTemplate, loadLibrary, saveLibrary } from "../../../lib/learnReuse.js";
+import { saveLessonMeta } from "../../../lib/learnReuseService.js";
 
 const inputCls = "w-full rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] px-3 py-2 text-sm text-[var(--color-ink)] focus:border-[var(--color-indigo)] focus:outline-none";
 const labelCls = "mb-1 block text-xs font-medium text-[var(--color-ink-soft)]";
@@ -86,7 +90,18 @@ export default function LessonEditor() {
   const layoutPending = useRef(false);
   const [live, setLive] = useState({ text: "", n: 0 });
   const [collapsedIds, setCollapsedIds] = useState(() => new Set());
-  const useClassic = searchParams.get("editor") === "classic";
+  const useClassic = ["classic", "list"].includes(searchParams.get("editor")); // the old plain list editor
+  const focusBlockId = searchParams.get("block");
+  const [viewPref, setViewPref] = useState(() => { try { return localStorage.getItem("elab:learn-editor-view") === "canvas" ? "canvas" : "classic"; } catch { return "classic"; } });
+  const [editSection, setEditSection] = useState(null);
+  const [lessonMeta, setLessonMeta] = useState(() => normalizeMeta({}));
+  const metaRowRef = useRef(null);
+  const metaTimer = useRef(null);
+  const [library, setLibrary] = useState(() => loadLibrary());
+  const canvasMode = blocks.length > 0 ? BC.isCanvas(blocks) : viewPref === "canvas";
+  // arrangement-aware helpers (canvas lessons use blockCanvas, classic lessons use blockLayout)
+  const insertAfterAny = (list, row, afterId) => (BC.isCanvas(list) ? BC.insertAfter(list, row, afterId) : BL.insertAfter(list, row, afterId));
+  const removeAny = (list, id) => (BC.isCanvas(list) ? BC.removeBlock(list, id) : BL.removeBlock(list, id));
   const announce = (text) => setLive((p) => ({ text, n: p.n + 1 }));
 
   useEffect(() => { setAuthorDefaults(loadLearnAuthorDefaults(user?.id)); }, [user?.id]);
@@ -133,9 +148,12 @@ export default function LessonEditor() {
           setForm(serverForm);
         }
         setStatus(lesson.status);
-        setBlocks(blockRows);
-        blocksRef.current = blockRows;
-        persistedRef.current = makePersisted(blockRows);
+        const split = extractMetaRow(blockRows);
+        metaRowRef.current = split.metaRow;
+        setLessonMeta(split.meta);
+        setBlocks(split.blocks);
+        blocksRef.current = split.blocks;
+        persistedRef.current = makePersisted(split.blocks);
         setCheckQuestions(checkRows);
         setFormHydrated(true);
       })
@@ -201,7 +219,7 @@ export default function LessonEditor() {
     setBlocks(next);
     scheduleFlush();
   }
-  const persistedAdd = (b) => { const p = persistedRef.current; p.order = [...p.order.filter((x) => x !== b.id), b.id]; p.layouts.set(b.id, JSON.stringify(b.content?.layout ?? null)); };
+  const persistedAdd = (b) => { const p = persistedRef.current; p.order = [...p.order.filter((x) => x !== b.id), b.id]; p.layouts.set(b.id, layoutKey(b)); };
   const persistedRemove = (id) => { const p = persistedRef.current; p.order = p.order.filter((x) => x !== id); p.layouts.delete(id); };
 
   async function ensurePageExists() {
@@ -216,12 +234,18 @@ export default function LessonEditor() {
     return created.id;
   }
 
+  async function flushLessonMeta(id) {
+    if (!metaTimer.current) return;
+    clearTimeout(metaTimer.current); metaTimer.current = null;
+    metaRowRef.current = await saveLessonMeta(id, lessonMeta, metaRowRef.current?.id ?? null);
+  }
   async function handleSaveDraft() {
     setSaving(true);
     setError(null);
     try {
       await flushLayout();
       const id = await ensurePageExists();
+      await flushLessonMeta(id);
       await saveLessonAsDraft(id);
       serverFormRef.current = form;
       setServerFormBase(form);
@@ -240,6 +264,7 @@ export default function LessonEditor() {
     try {
       await flushLayout();
       const id = await ensurePageExists();
+      await flushLessonMeta(id);
       const published = await publishLesson(id);
       serverFormRef.current = form;
       setServerFormBase(form);
@@ -261,7 +286,7 @@ export default function LessonEditor() {
 
   // Creates the blocks on the server (appended at the end, like always), then arranges them locally:
   // after `afterId`'s row, or at a drop `target` ({ id, zone }); layout + order are persisted by the debounced flush.
-  async function createAndPlace(types, { afterId = null, target = null, spans = null } = {}) {
+  async function createAndPlace(types, { afterId = null, target = null, spans = null, contents = null } = {}) {
     if (!currentPageId) { setError("Save this lesson as a draft first, then add blocks."); return null; }
     if (types.includes("check_understanding") && blocksRef.current.some((b) => b.block_type === "check_understanding")) {
       setError("This lesson already has a Check Your Understanding block. Move the existing block to the position you want.");
@@ -272,22 +297,30 @@ export default function LessonEditor() {
       const created = [];
       const group = `g${groupSeq.current += 1}`;
       for (const type of types) {
-        const row = await createBlock(currentPageId, { blockType: type, content: initialContentFor(type), position: blocksRef.current.length + created.length });
+        const row = await createBlock(currentPageId, { blockType: type, content: contents?.[created.length] ?? initialContentFor(type), position: blocksRef.current.length + created.length });
         created.push(row);
         persistedAdd(row);
         pushHistory({ type: "add", block: row, group: types.length > 1 ? group : undefined });
       }
       const before = blocksRef.current;
       let next = before; let anchor = afterId;
-      for (const row of created) { next = BL.insertAfter(next, row, anchor); anchor = row.id; }
+      for (const row of created) { next = insertAfterAny(next, row, anchor); anchor = row.id; }
       if (target && created.length) {
         const zone = target.zone === "left" || target.zone === "right" ? (spans ? "after" : target.zone) : target.zone;
         next = target.zone === "end" || !target.id ? next : applyDrop(next, created[0].id, target.id, zone);
       }
-      if (spans && created.length > 1) next = BL.applyPresetRow(next, created.map((r) => r.id), spans);
+      if (spans && created.length > 1) {
+        if (BC.isCanvas(next)) {
+          const ids = created.map((r) => r.id);
+          const gr0 = BC.placements(next).find((p) => p.id === ids[0]).gr;
+          ids.forEach((id, i) => { next = BC.resizeTo(next, id, { span: spans[i] }); });
+          let col = 1;
+          ids.forEach((id, i) => { next = BC.moveTo(next, id, col, gr0, { collision: "push" }); col += spans[i]; });
+        } else next = BL.applyPresetRow(next, created.map((r) => r.id), spans);
+      }
       commitBlocks(next);
-      setExpandedBlockId(created[0]?.id ?? null);
-      announce(`${created.length > 1 ? "Layout preset" : blockLabel(created[0])} added. ${BL.describePlacement(next, created[0]?.id)}.`);
+      if (!contents) setExpandedBlockId(created[0]?.id ?? null);
+      announce(`${created.length > 1 ? "Blocks" : blockLabel(created[0])} added. ${describeBlock(next, created[0]?.id)}.`);
       return created;
     } catch (err) {
       setError(err.message || "Couldn't add the block.");
@@ -300,11 +333,14 @@ export default function LessonEditor() {
     return preset ? createAndPlace(preset.types, { afterId, target, spans: preset.spans }) : null;
   };
 
-  async function handleUpdateBlockContent(blockId, content) {
+  async function handleUpdateBlockContent(blockId, incoming, opts = {}) {
     const before = blocks.find((b) => b.id === blockId)?.content;
+    // the block editors know nothing about arrangement: keep layout / preview height (and metadata unless the caller changed it)
+    const content = { ...incoming };
+    for (const key of opts.metaEdit ? ["layout", "ui"] : ["layout", "ui", "meta"]) if (!(key in incoming) && before?.[key] !== undefined) content[key] = before[key];
     if (before && JSON.stringify(before) !== JSON.stringify(content)) pushHistory({ type: "content", blockId, before, after: content });
     setBlocks((prev) => prev.map((b) => (b.id === blockId ? { ...b, content } : b)));
-    persistedRef.current.layouts.set(blockId, JSON.stringify(content?.layout ?? null));
+    persistedRef.current.layouts.set(blockId, layoutKey(content));
     await updateBlock(blockId, { content });
   }
 
@@ -327,18 +363,64 @@ export default function LessonEditor() {
       const created = await createBlock(currentPageId, { blockType: block.block_type, content: block.content, position: blocksRef.current.length });
       persistedAdd(created);
       pushHistory({ type: "add", block: created });
-      commitBlocks(BL.insertAfter(blocksRef.current, created, block.id));
+      commitBlocks(insertAfterAny(blocksRef.current, created, block.id));
       announce(`${blockLabel(block)} duplicated.`);
     } catch (err) {
       setError(err.message || "Couldn't duplicate the block.");
     }
   }
 
+  // ---- review / reuse metadata ----
+  function handleBlockMeta(blockId, patch) {
+    const block = blocksRef.current.find((b) => b.id === blockId);
+    if (!block) return;
+    const next = setBlockMeta(block, patch);
+    return handleUpdateBlockContent(blockId, next.content, { metaEdit: true });
+  }
+  function updateLessonMeta(patch) {
+    const next = normalizeMeta({ ...lessonMeta, ...patch });
+    setLessonMeta(next);
+    if (!currentPageId) return;
+    clearTimeout(metaTimer.current);
+    metaTimer.current = setTimeout(async () => {
+      metaTimer.current = null;
+      try { const row = await saveLessonMeta(currentPageId, next, metaRowRef.current?.id ?? null); metaRowRef.current = row; } catch (err) { setError(err.message || "Couldn't save the lesson tags."); }
+    }, 500);
+  }
+
+  // ---- arrangement view (Classic <-> Canvas): converts the whole lesson, content untouched, one undo step ----
+  function handleView(view) {
+    try { localStorage.setItem("elab:learn-editor-view", view); } catch { /* ignore */ }
+    setViewPref(view);
+    const cur = blocksRef.current;
+    if (!cur.length || (view === "canvas") === BC.isCanvas(cur)) return;
+    const next = view === "canvas" ? BC.toCanvas(cur) : BC.toClassic(cur);
+    pushHistory({ type: "layout", before: snapshotLayouts(cur), after: snapshotLayouts(next) });
+    commitBlocks(next);
+    announce(`${view === "canvas" ? "Canvas" : "Classic"} view. ${cur.length} blocks kept.`);
+  }
+
+  // ---- block library (templates kept in this browser; export/import moves them) ----
+  function saveTemplate(name, ids) {
+    try {
+      const list = ids.map((id) => blocksRef.current.find((b) => b.id === id)).filter(Boolean);
+      const ordered = BC.isCanvas(blocksRef.current) ? BC.readingOrder(list) : blocksRef.current.filter((b) => ids.includes(b.id));
+      const tpl = makeTemplate(name, ordered);
+      const next = [tpl, ...library]; setLibrary(next); saveLibrary(next);
+      announce(`Saved "${tpl.name}" to the block library.`);
+    } catch (err) { setError(err.message); }
+  }
+  const importTemplates = (tpls) => { const ids = new Set(library.map((t) => t.id)); const next = [...tpls.filter((t) => !ids.has(t.id)), ...library]; setLibrary(next); saveLibrary(next); };
+  const deleteTemplate = (id) => { const next = library.filter((t) => t.id !== id); setLibrary(next); saveLibrary(next); };
+  function insertTemplate(tpl, afterId) {
+    return createAndPlace(tpl.blocks.map((b) => b.block_type), { afterId, contents: tpl.blocks.map((b) => ({ ...JSON.parse(JSON.stringify(b.content)), audience: b.content.audience ?? "both" })) });
+  }
+
   async function handleDelete(blockId) {
     const index = blocksRef.current.findIndex((b) => b.id === blockId);
     const deleted = blocksRef.current[index];
-    if (deleted) pushHistory({ type: "delete", block: { ...deleted, content: keepLayout(deleted.content, null) }, index });
-    commitBlocks(BL.removeBlock(blocksRef.current, blockId));
+    if (deleted) pushHistory({ type: "delete", block: { ...deleted, content: stripLayout(deleted.content) }, index });
+    commitBlocks(removeAny(blocksRef.current, blockId));
     persistedRemove(blockId);
     if (expandedBlockId === blockId) setExpandedBlockId(null);
     await deleteBlock(blockId);
@@ -363,7 +445,7 @@ export default function LessonEditor() {
       if (next !== cur) {
         pushHistory({ type: "layout", before: snapshotLayouts(cur), after: snapshotLayouts(next) });
         commitBlocks(next);
-        announce(`${blockLabel(moved)} moved: ${BL.describePlacement(next, payload.id)}.`);
+        announce(`${blockLabel(moved)} moved: ${describeBlock(next, payload.id)}.`);
       } else announce(`${blockLabel(moved)} could not be placed there.`);
     } else if (payload.kind === "new") handleAddBlock(payload.type, null, target);
     else if (payload.kind === "preset") handleAddPreset(payload.key, null, target);
@@ -404,7 +486,7 @@ export default function LessonEditor() {
         if (direction === "undo") {
           await deleteBlock(entry.block.id);
           persistedRemove(entry.block.id);
-          commitBlocks(BL.removeBlock(blocksRef.current, entry.block.id));
+          commitBlocks(removeAny(blocksRef.current, entry.block.id));
         } else {
           const recreated = await createBlock(currentPageId, { blockType: entry.block.block_type, content: entry.block.content, position: entry.block.position ?? blocks.length });
           entry.block = recreated;
@@ -421,7 +503,7 @@ export default function LessonEditor() {
         } else {
           await deleteBlock(entry.block.id);
           persistedRemove(entry.block.id);
-          commitBlocks(BL.removeBlock(blocksRef.current, entry.block.id));
+          commitBlocks(removeAny(blocksRef.current, entry.block.id));
         }
       }
     } finally { suppressHistory.current = false; setHistoryTick((n) => n + 1); }
@@ -683,17 +765,33 @@ export default function LessonEditor() {
         </div>
       </div>
 
+      {/* Lesson tags (review / reuse) */}
+      {currentPageId && (
+        <details className="mt-4 max-w-3xl rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-3" data-testid="lesson-review-box">
+          <summary className="cursor-pointer text-xs font-semibold text-[var(--color-ink)]">Guide version and review {lessonMeta.needsReview ? <span className="ml-1 rounded bg-[var(--color-amber-soft)] px-1.5 py-0.5 text-[10px] text-[var(--color-amber)]">Needs review</span> : null}{lessonMeta.guide ? <span className="ml-1 text-[var(--color-ink-faint)]">guide {lessonMeta.guide}</span> : null}</summary>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <label className={labelCls}>Guide version<input className={inputCls} value={lessonMeta.guide} maxLength={24} placeholder="2025" onChange={(e) => updateLessonMeta({ guide: e.target.value })} /></label>
+            <label className={labelCls}>Extra syllabus codes (comma separated)<input className={inputCls} defaultValue={lessonMeta.codes.join(", ")} placeholder="S1.2.3" onBlur={(e) => updateLessonMeta({ codes: normalizeCodes(e.target.value) })} /></label>
+            <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--color-ink-soft)] sm:col-span-2">
+              <label className="inline-flex min-h-9 items-center gap-1.5"><input type="checkbox" checked={lessonMeta.needsReview} onChange={(e) => updateLessonMeta({ needsReview: e.target.checked })} /> Lesson needs review</label>
+              <button type="button" onClick={() => updateLessonMeta(markReviewed(lessonMeta))} className="min-h-9 rounded-md border border-[var(--color-line)] px-2.5 font-semibold">Mark reviewed</button>
+              <span>{lessonMeta.reviewedAt ? `Last reviewed ${lessonMeta.reviewedAt.slice(0, 10)}` : "Not reviewed yet"}</span>
+              {lessonMeta.derivedFrom && <span>Copied from guide {lessonMeta.derivedFrom.guide || "(untagged)"}</span>}
+            </div>
+          </div>
+        </details>
+      )}
+
       {/* Block canvas */}
       {currentPageId && (
         <div className="mt-6">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-sm font-semibold text-[var(--color-ink)]">Lesson Blocks</h2>
-            <div className="flex items-center gap-1.5">
-              {useClassic && <button type="button" onClick={handleUndo} disabled={!undoStack.current.length} title="Undo (Ctrl/Cmd+Z)" className="flex items-center gap-1 rounded-md border border-[var(--color-line)] px-2 py-1 text-xs text-[var(--color-ink-soft)] disabled:opacity-35"><Undo2 size={13}/> Undo</button>}
-              {useClassic && <button type="button" onClick={handleRedo} disabled={!redoStack.current.length} title="Redo (Ctrl/Cmd+Shift+Z)" className="flex items-center gap-1 rounded-md border border-[var(--color-line)] px-2 py-1 text-xs text-[var(--color-ink-soft)] disabled:opacity-35"><Redo2 size={13}/> Redo</button>}
-              <button type="button" onClick={() => setShowDesignDefaults((v)=>!v)} className="flex items-center gap-1 rounded-md border border-[var(--color-line)] px-2 py-1 text-xs text-[var(--color-ink-soft)]"><SlidersHorizontal size={13}/> Design Defaults</button>
-              <button type="button" onClick={() => { const q = new URLSearchParams(searchParams); if (useClassic) q.delete("editor"); else q.set("editor", "classic"); setSearchParams(q, { replace: true }); }} className="rounded-md border border-[var(--color-line)] px-2 py-1 text-xs text-[var(--color-ink-soft)]">{useClassic ? "Use layout editor" : "Classic list"}</button>
-            </div>
+            {useClassic && <div className="flex items-center gap-1.5">
+              <button type="button" onClick={handleUndo} disabled={!undoStack.current.length} title="Undo (Ctrl/Cmd+Z)" className="flex items-center gap-1 rounded-md border border-[var(--color-line)] px-2 py-1 text-xs text-[var(--color-ink-soft)] disabled:opacity-35"><Undo2 size={13}/> Undo</button>
+              <button type="button" onClick={handleRedo} disabled={!redoStack.current.length} title="Redo (Ctrl/Cmd+Shift+Z)" className="flex items-center gap-1 rounded-md border border-[var(--color-line)] px-2 py-1 text-xs text-[var(--color-ink-soft)] disabled:opacity-35"><Redo2 size={13}/> Redo</button>
+              <button type="button" onClick={() => { const q = new URLSearchParams(searchParams); q.delete("editor"); setSearchParams(q, { replace: true }); }} className="rounded-md border border-[var(--color-line)] px-2 py-1 text-xs text-[var(--color-ink-soft)]">Use the new editor</button>
+            </div>}
           </div>
           {showDesignDefaults && <div className="mb-3 rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] p-3">
             <p className="mb-2 text-xs font-semibold text-[var(--color-ink)]">Defaults for new Learn blocks</p>
@@ -706,37 +804,40 @@ export default function LessonEditor() {
             <p className="mt-2 text-[11px] text-[var(--color-ink-faint)]">Saved for this Admin profile. New media blocks use these values; individual blocks can override them.</p>
           </div>}
           {!useClassic ? (
-            <>
-              <BlockWorkspace
-                blocks={blocks}
-                editingId={expandedBlockId}
-                onEdit={(id) => setExpandedBlockId((cur) => (cur === id ? null : id))}
-                onOp={handleLayoutOp}
-                onDrop={handleDrop}
-                onAdd={handleAddBlock}
-                onPreset={handleAddPreset}
-                onDuplicate={(id) => handleDuplicate(blocks.find((b) => b.id === id))}
-                onDelete={handleDelete}
-                onToggleVisible={(id) => handleToggleVisible(blocks.find((b) => b.id === id))}
-                onUndo={handleUndo}
-                onRedo={handleRedo}
-                canUndo={undoStack.current.length > 0}
-                canRedo={redoStack.current.length > 0}
-                live={`${live.text}${live.n % 2 ? "\u200B" : ""}`}
-                renderPreview={() => renderLessonPreview({ withChrome: false })}
-                collapsedIds={collapsedIds}
-                onCollapsedChange={setCollapsedIds}
-              />
-              {expandedBlockId && blocks.find((b) => b.id === expandedBlockId) && (
-                <section id="block-content-editor" aria-label="Block content" data-testid="content-panel" className="mt-4 rounded-lg border border-[var(--color-amber)]/50 bg-[var(--color-paper-raised)]">
-                  <div className="flex items-center justify-between gap-2 border-b border-[var(--color-line)] px-4 py-2.5">
-                    <p className="text-sm font-semibold text-[var(--color-ink)]">Editing: {getLearnBlockDisplayLabel(blocks.find((b) => b.id === expandedBlockId)).typeLabel}</p>
-                    <button type="button" onClick={() => setExpandedBlockId(null)} className="rounded-md border border-[var(--color-line)] px-3 py-1.5 text-xs font-medium text-[var(--color-ink-soft)] hover:text-[var(--color-ink)]">Close</button>
-                  </div>
-                  <div className="max-w-4xl p-4">{renderBlockContentEditor(blocks.find((b) => b.id === expandedBlockId))}</div>
-                </section>
-              )}
-            </>
+            <BlockWorkspace
+              blocks={blocks}
+              view={canvasMode ? "canvas" : "classic"}
+              onView={handleView}
+              editingId={expandedBlockId}
+              editSection={editSection}
+              onEdit={(id, section) => { setEditSection(typeof section === "string" ? section : null); setExpandedBlockId(id); }}
+              onCloseEdit={() => setExpandedBlockId(null)}
+              onOp={handleLayoutOp}
+              onDrop={handleDrop}
+              onAdd={handleAddBlock}
+              onPreset={handleAddPreset}
+              onDuplicate={(id) => handleDuplicate(blocks.find((b) => b.id === id))}
+              onDelete={handleDelete}
+              onToggleVisible={(id) => handleToggleVisible(blocks.find((b) => b.id === id))}
+              onMeta={handleBlockMeta}
+              onUndo={handleUndo}
+              onRedo={handleRedo}
+              canUndo={undoStack.current.length > 0}
+              canRedo={redoStack.current.length > 0}
+              live={`${live.text}${live.n % 2 ? "\u200B" : ""}`}
+              renderPreview={() => renderLessonPreview({ withChrome: false })}
+              renderEditor={renderBlockContentEditor}
+              checkCount={checkQuestions.length}
+              collapsedIds={collapsedIds}
+              onCollapsedChange={setCollapsedIds}
+              focusBlockId={focusBlockId}
+              library={{ templates: library, onSave: saveTemplate, onInsert: insertTemplate, onDelete: deleteTemplate, onImport: importTemplates }}
+              extraMenu={[
+                { label: "Design defaults for new blocks", onClick: () => setShowDesignDefaults((v) => !v) },
+                { label: "Open the plain list editor", onClick: () => { const q = new URLSearchParams(searchParams); q.set("editor", "list"); setSearchParams(q, { replace: true }); } },
+                { label: "Content overview (all lessons)", onClick: () => { flushLayoutRef.current?.(); if (user?.id) clearLearnDraft(user.id); navigate("/admin/learn-content/overview"); } },
+              ]}
+            />
           ) : (<>
           <div className="space-y-2">
             {blocks.map((block, i) => (

@@ -28,7 +28,7 @@ export default function DiffusionScene({ forceToken }) {
 
       {tab === "gas" ? (
         <div className="flex flex-col gap-4">
-          <ParticleField mode="gas" twoSpecies mixed={mixed} particleCount={20} />
+          <ParticleField mode="gas" twoSpecies mixed={mixed} />
           {!mixed ? (
             <button type="button" onClick={() => setMixed(true)} className="self-start rounded-md bg-[var(--color-ink)] px-4 py-2 text-sm text-[var(--color-paper)]">
               Remove divider
@@ -41,7 +41,7 @@ export default function DiffusionScene({ forceToken }) {
         </div>
       ) : (
         <div className="flex flex-col gap-4">
-          <ParticleField mode="liquid" dyeCount={4} particleCount={30} />
+          <ParticleField mode="liquid" dyeCount={diffusing ? 4 : 0} />
           {!diffusing ? (
             <button type="button" onClick={() => setDiffusing(true)} className="self-start rounded-md bg-[var(--color-ink)] px-4 py-2 text-sm text-[var(--color-paper)]">
               Add coloured solute

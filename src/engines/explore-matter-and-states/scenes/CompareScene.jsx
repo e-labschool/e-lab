@@ -16,7 +16,7 @@ export default function CompareScene({ forceToken }) {
             <p className="mb-1.5 text-sm font-medium" style={{ color: STATE_COLOR[state] }}>
               {state[0].toUpperCase() + state.slice(1)}
             </p>
-            <ParticleField mode={state} particleCount={state === "solid" ? 16 : state === "liquid" ? 18 : 10} />
+            <ParticleField mode={state} />
           </div>
         ))}
       </div>

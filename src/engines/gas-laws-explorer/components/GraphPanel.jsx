@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowUpRight, CircleHelp, LayoutGrid, Maximize2, RotateCcw } from "lucide-react";
-import { MODES, allGraphsView, buildGraph, formatPoint, graphOptions, graphPoint } from "../model.js";
+import { IB_UNITS, MODES, allGraphsView, buildGraph, formatPoint, graphOptions, graphPoint } from "../model.js";
 import { ACCENTS as ACC } from "../theme.js";
-import { DashPanel } from "../../../components/simulation/SimulationDashboard.jsx";
+import { DashPanel, MiniSwitch } from "../../../components/simulation/SimulationDashboard.jsx";
 
 const NAVY = "#14226B";
 const fmtTick = (v) => String(Number(v.toPrecision(4)));
@@ -139,18 +139,19 @@ export function GraphSvg({ graph, accent, mini = false, hoverIdx = null, onHover
   );
 }
 
-const GRAPH_TITLES = { pv: "Pressure vs Volume", vt: "Volume vs Temperature", pt: "Pressure vs Temperature", vn: "Volume vs Amount" };
+const GRAPH_TITLES = { pv: "Pressure vs Volume", vt: "Volume vs Temperature", pt: "Pressure vs Temperature", vn: "Volume vs Amount", comb: "PV = nRT" };
 
 const iconBtn = "sd-btn sd-btn--sm";
 
 export default function GraphPanel({
   state, accent, graphId, onGraphId, allView, onToggleAll, onResetGraph, onOpenMode, trail,
+  units = IB_UNITS, view = "theory", onView, readingsCount = 0, readingsNode = null,
 }) {
   const [hoverIdx, setHoverIdx] = useState(null);
   const [enlarged, setEnlarged] = useState(null); // mode id of the enlarged All-Graphs panel
-  const graph = buildGraph(state, graphId);
+  const graph = buildGraph(state, graphId, { units });
   const opts = graphOptions(state.mode);
-  const trailPts = trail.map((t) => graphPoint(t, graphId));
+  const trailPts = trail.map((t) => graphPoint(t, graphId, units));
   const readout = hoverIdx != null && graph.accessible[hoverIdx]
     ? `Curve point: ${formatPoint(graph, graph.accessible[hoverIdx].x, graph.accessible[hoverIdx].y)}`
     : `Current state: ${formatPoint(graph, graph.marker.x, graph.marker.y)}`;
@@ -183,7 +184,7 @@ export default function GraphPanel({
   const heading = (text) => <h3 className="sd-panel-title" title={text}>{text}</h3>;
 
   if (allView && enlarged) {
-    const p = allGraphsView(state).find((x) => x.mode === enlarged);
+    const p = allGraphsView(state, units).find((x) => x.mode === enlarged);
     const a = ACC[p.mode];
     return (
       <DashPanel grow noBody ariaLabel="Interactive graph" id="gl-graph" testId="all-graphs-enlarged">
@@ -207,7 +208,7 @@ export default function GraphPanel({
   }
 
   if (allView) {
-    const panels = allGraphsView(state);
+    const panels = allGraphsView(state, units);
     return (
       <DashPanel grow noBody ariaLabel="Interactive graph" id="gl-graph" testId="all-graphs">
         <div className="sd-panel-head">{heading("All Graphs View")}<span className="inline-flex items-center gap-1">{buttons}{help}</span></div>
@@ -244,9 +245,24 @@ export default function GraphPanel({
     );
   }
 
+  const viewSwitch = onView ? (
+    <MiniSwitch fill options={[{ id: "theory", label: "Theory graph" }, { id: "readings", label: `My readings (${readingsCount})` }]} value={view} onChange={onView} ariaLabel="Graph source" testId="view-switch" />
+  ) : null;
+
+  if (view === "readings" && readingsNode) {
+    return (
+      <DashPanel grow noBody ariaLabel="Interactive graph" id="gl-graph" testId="readings-view">
+        <div className="sd-panel-head">{heading("My readings")}</div>
+        {viewSwitch}
+        <div className="min-h-0 flex-1 overflow-y-auto">{readingsNode}</div>
+      </DashPanel>
+    );
+  }
+
   return (
     <DashPanel grow noBody ariaLabel="Interactive graph" id="gl-graph" testId="graph-panel">
       <div className="sd-panel-head">{heading(GRAPH_TITLES[state.mode])}{buttons}</div>
+      {viewSwitch}
       <div role="radiogroup" aria-label="Graph type" className="grid shrink-0 overflow-hidden rounded-lg border border-[#DAE3F3] bg-[#F4F7FC]" style={{ gridTemplateColumns: `repeat(${opts.length}, minmax(0,1fr))` }}>
         {opts.map((o, i) => {
           const sel = o.id === graphId;

@@ -19,7 +19,7 @@ export default function TemperatureScene() {
         {STATES.map((state) => (
           <div key={state}>
             <p className="mb-1.5 text-sm font-medium" style={{ color: STATE_COLOR[state] }}>{state[0].toUpperCase() + state.slice(1)}</p>
-            <ParticleField mode={state} temperature={temperature} trackParticle={trailsOn} autoTrack={trailsOn} showTrail={trailsOn} particleCount={state === "gas" ? 12 : undefined} />
+            <ParticleField mode={state} temperature={temperature} trackParticle={trailsOn} autoTrack={trailsOn} showTrail={trailsOn} />
           </div>
         ))}
       </div>
@@ -28,6 +28,9 @@ export default function TemperatureScene() {
         <div className="flex flex-1 items-center gap-3">
           <span className="text-xs text-[var(--color-ink-faint)]">Cooler</span>
           <input
+            aria-label="Temperature setting, cooler to warmer"
+            aria-valuetext={`${temperature} out of 100`}
+            data-testid="temperature-slider"
             type="range"
             min={5}
             max={100}
@@ -36,6 +39,7 @@ export default function TemperatureScene() {
             className="flex-1 accent-[var(--color-indigo)]"
           />
           <span className="text-xs text-[var(--color-ink-faint)]">Warmer</span>
+          <output className="min-w-[8.5rem] text-xs tabular-nums text-[var(--color-ink-soft)]" data-testid="temperature-readout">Setting {temperature} / 100</output>
         </div>
         <button
           type="button"
@@ -48,7 +52,8 @@ export default function TemperatureScene() {
 
       <p className="max-w-xl text-sm text-[var(--color-ink-soft)]">
         Higher temperature corresponds to greater <em>average</em> particle kinetic energy &mdash; not every
-        particle moves at exactly the same speed.
+        particle moves at exactly the same speed. The setting is a relative scale (about 50 is room temperature), not degrees. The particles in each box are the same
+        particles whatever the setting: only their average energy changes, so a solid vibrates harder but its particles stay in place.
       </p>
     </div>
   );

@@ -23,7 +23,9 @@ function test(name, fn) {
 const rel = (a, b) => Math.abs(a - b) / Math.max(Math.abs(a), Math.abs(b), 1e-300);
 const near = (a, b, tol = 1e-9) => Math.abs(a - b) <= tol * Math.max(1, Math.abs(a), Math.abs(b));
 const nOf = (N) => M.amountOfSubstance(N);
-const st = (o) => M.resolveState({ ...M.DEFAULT_CONTROLS, ...o });
+// The pre-2026-11 opening state (30 atm CO2, V = 0.41 L): many tests deliberately exercise the strongly non-ideal region.
+const OLD_DEFAULT = Object.freeze({ mode: "ideal", N: 50, T: 300, V: 0.41, control: "pressure", P: 30, Phold: null, Vpin: null });
+const st = (o) => M.resolveState({ ...OLD_DEFAULT, ...o });
 const stV = (o) => st({ control: "volume", ...o }); // Volume control
 const stP = (o) => st({ control: "pressure", ...o }); // Pressure control
 // Independent re-implementation of the vdW equation with the literature constants (not imported from the model).
@@ -50,12 +52,17 @@ test("4. PV = nRT within 1e-9 relative over the whole slider grid", () => {
     assert.ok(rel(M.idealPressure(n, T, V) * V, n * M.R_GAS * T) < 1e-9);
   }
 });
-test("default state: ideal CO2-sample, N=50 -> n = 0.50 mol, T = 300 K, Change Pressure at 30 atm, volume nRT/P", () => {
-  const s = st({});
+test("default state (GS-02): ideal CO2-sample, n = 0.50 mol, T = 300 K, Change Pressure at 100 kPa, V = nRT/P = 12.47 dm3, near ideal", () => {
+  const d = M.resolveState(M.DEFAULT_CONTROLS);
   assert.equal(M.DEFAULT_CONTROLS.control, "pressure"); assert.equal(M.DEFAULT_CONTROLS.mode, "ideal");
-  assert.ok(near(s.n, 0.5) && s.T === 300 && s.pressure === 30);
+  assert.ok(near(d.n, 0.5) && d.T === 300 && near(d.pressure * 101.325, 100, 1e-12), "100 kPa");
+  assert.ok(near(d.V, 0.5 * R * 300 / (100 / 101.325), 1e-9));
+  assert.ok(Math.abs(M.DEFAULT_CONTROLS.V - d.V) < 5e-3, "stored V matches the solved V");
+  const real = M.resolveState({ ...M.DEFAULT_CONTROLS, mode: "real" });
+  assert.equal(real.cls.id, "near", `the opening real-gas state is near ideal, not strongly deviating (Z = ${real.Z})`);
+  assert.equal(d.ref.cls.id, "near", "the ideal-mode badge may not say 'strong deviation' at the opening state");
+  const s = st({}); assert.ok(near(s.n, 0.5) && s.T === 300 && s.pressure === 30); // the old 30 atm state stays reachable
   assert.ok(near(s.V, 0.5 * R * 300 / 30, 1e-9));
-  assert.ok(Math.abs(M.DEFAULT_CONTROLS.V - s.V) < 5e-3, "stored V matches the solved V");
 });
 test("mode switch preserves N, T, V/P and the control selector", () => {
   const sim = M.createSimulation({ seed: 1 });
@@ -202,7 +209,7 @@ test("5. Volume control: P and Z are recomputed from the vdW equation (independe
 
 console.log("== Spec case 6: Ideal <-> Real at unchanged conditions differ meaningfully ==");
 test("6. switching Ideal <-> Real keeps N, T, control and its value; at 30 atm / 300 K the volume differs by > 10 % and Z by > 0.1", () => {
-  const ci = { ...M.DEFAULT_CONTROLS }; // ideal, Change Pressure 30 atm
+  const ci = { ...OLD_DEFAULT }; // ideal, Change Pressure 30 atm
   const cr = M.applyControlChange(ci, { mode: "real" });
   assert.deepEqual({ N: cr.N, T: cr.T, P: cr.P, control: cr.control }, { N: ci.N, T: ci.T, P: ci.P, control: ci.control });
   const si = M.resolveState(ci), sr = M.resolveState(cr);
@@ -214,12 +221,12 @@ test("6. switching Ideal <-> Real keeps N, T, control and its value; at 30 atm /
   // the ideal state already reports what the real gas would do
   assert.ok(near(si.ref.Z, sr.Z, 1e-9) && near(si.ref.V, sr.V, 1e-9));
   // Volume control: same V, different P
-  const vi = M.resolveState(M.applyControlChange({ ...M.DEFAULT_CONTROLS, mode: "ideal", control: "volume", V: 0.4 }, {}));
-  const vr = M.resolveState(M.applyControlChange({ ...M.DEFAULT_CONTROLS, mode: "ideal", control: "volume", V: 0.4 }, { mode: "real" }));
+  const vi = M.resolveState(M.applyControlChange({ ...OLD_DEFAULT, mode: "ideal", control: "volume", V: 0.4 }, {}));
+  const vr = M.resolveState(M.applyControlChange({ ...OLD_DEFAULT, mode: "ideal", control: "volume", V: 0.4 }, { mode: "real" }));
   assert.equal(vr.V, vi.V); assert.ok(vr.pressure < vi.pressure * 0.9, `${vr.pressure} vs ${vi.pressure}`);
   assert.ok(near(vi.ref.Z, vr.Z, 1e-9) && near(vi.ref.P, vr.pressure, 1e-9));
   // at low P the two models agree (< 1 % apart)
-  const lo = M.resolveState({ ...M.DEFAULT_CONTROLS, P: 1, mode: "real" });
+  const lo = M.resolveState({ ...OLD_DEFAULT, P: 1, mode: "real" });
   assert.ok(Math.abs(lo.Z - 1) < 0.01 && lo.cls.id === "near");
   // everywhere in a Volume/Pressure grid the real-vs-ideal contrast is large somewhere and small elsewhere
   let strong = 0, near1 = 0;
@@ -311,7 +318,7 @@ test("8b. Volume control inside the two-phase region: pressure is the saturation
 test("8c. extreme / invalid inputs never produce NaN or non-physical numbers", () => {
   for (const bad of [{ N: 1e9, T: 1e9, V: 0 }, { N: -5, T: -1, V: -1 }, { N: NaN, T: 300, V: 1 }, { N: 50, T: 300, V: NaN }, { P: NaN }, { P: 1e9, control: "pressure" }]) {
     for (const mode of ["ideal", "real"]) {
-      const s = M.resolveState({ ...M.DEFAULT_CONTROLS, mode, ...bad });
+      const s = M.resolveState({ ...OLD_DEFAULT, mode, ...bad });
       assert.ok(Number.isFinite(s.pressure) && s.pressure >= 0 && Number.isFinite(s.V) && s.V >= M.LIMITS.V.min && s.V <= M.LIMITS.V.max, JSON.stringify(bad));
       assert.ok(Number.isFinite(s.Z));
       const m = M.zMarker(s); assert.ok(Number.isFinite(m.P) && Number.isFinite(m.plotP));
@@ -381,7 +388,7 @@ test("scenario: at fixed T and P, n up => V up (ideal and real)", () => {
 });
 test("Volume->Pressure switch: no jump (V unchanged, target P = current P), ideal and real; back keeps V", () => {
   for (const mode of ["ideal", "real"]) for (const V of [0.12, 0.5, 2, 9]) {
-    const c0 = { ...M.DEFAULT_CONTROLS, control: "volume", mode, V, T: 350, N: 63 };
+    const c0 = { ...OLD_DEFAULT, control: "volume", mode, V, T: 350, N: 63 };
     const s0 = M.resolveState(c0);
     const c1 = M.applyControlChange(c0, { control: "pressure" });
     const s1 = M.resolveState(c1);
@@ -393,7 +400,7 @@ test("Volume->Pressure switch: no jump (V unchanged, target P = current P), idea
   }
 });
 test("switch with current P outside 1-500 atm: slider clamped, exact pressure held, piston does not move", () => {
-  const c0 = { ...M.DEFAULT_CONTROLS, control: "volume", V: 0.02, T: 700, N: 100 };
+  const c0 = { ...OLD_DEFAULT, control: "volume", V: 0.02, T: 700, N: 100 };
   const s0 = M.resolveState(c0);
   assert.ok(s0.pressure > 500);
   const c1 = M.applyControlChange(c0, { control: "pressure" });
@@ -406,14 +413,14 @@ test("switch with current P outside 1-500 atm: slider clamped, exact pressure he
 test("switch from a state that cannot be solved (real gas beyond P_sat) holds the volume instead of jumping", () => {
   const sat = M.vdwSaturation(280);
   const V = 0.2 * nOf(50) * sat.xg;
-  const c0 = { ...M.DEFAULT_CONTROLS, mode: "real", control: "volume", T: 280, V };
+  const c0 = { ...OLD_DEFAULT, mode: "real", control: "volume", T: 280, V };
   const c1 = M.applyControlChange(c0, { control: "pressure" });
   assert.ok(c1.Vpin != null && Math.abs(M.resolveState(c1).V - V) < 1e-12);
   const c2 = M.applyControlChange(c1, { P: 5 });
   assert.equal(c2.Vpin, null);
 });
 test("Pressure control: T or N change re-solves V at the held P; P slider moves the piston; Volume control recalculates P", () => {
-  let c = { ...M.DEFAULT_CONTROLS };
+  let c = { ...OLD_DEFAULT };
   const s0 = M.resolveState(c);
   c = M.applyControlChange(c, { T: 450 });
   let s = M.resolveState(c);
@@ -421,7 +428,7 @@ test("Pressure control: T or N change re-solves V at the held P; P slider moves 
   assert.ok(M.resolveState(M.applyControlChange(c, { N: 25 })).V < s.V);
   assert.ok(M.resolveState(M.applyControlChange(c, { P: 100 })).V < M.resolveState(M.applyControlChange(c, { P: 10 })).V);
   assert.equal(M.applyControlChange(c, { V: 7 }).V, c.V, "V patch ignored in Pressure control");
-  const v = M.applyControlChange({ ...M.DEFAULT_CONTROLS, control: "volume", V: 0.5 }, { T: 450 });
+  const v = M.applyControlChange({ ...OLD_DEFAULT, control: "volume", V: 0.5 }, { T: 450 });
   assert.ok(near(M.resolveState(v).pressure, 0.5 * M.R_GAS * 450 / 0.5, 1e-9));
 });
 test("simulation piston follows the SOLVED volume (and reset restores the default Change Pressure state)", () => {
@@ -430,15 +437,15 @@ test("simulation piston follows the SOLVED volume (and reset restores the defaul
   sim.setControls(c);
   const want = M.resolveState(c).V;
   sim.settle(6);
-  assert.ok(Math.abs(sim.pistonH - M.pistonHeight(want)) < 0.01);
+  assert.ok(Math.abs(sim.pistonH - M.pistonHeightFor(want, sim.display.pistonScale)) < 0.01);
   assert.ok(near(sim.getReadings().pressure, 100, 1e-9));
   sim.reset();
   assert.deepEqual(sim.controls, M.DEFAULT_CONTROLS);
-  assert.ok(Math.abs(sim.pistonH - M.pistonHeight(M.resolveState(M.DEFAULT_CONTROLS).V)) < 1e-9);
+  assert.ok(Math.abs(sim.pistonH - M.pistonHeightFor(M.resolveState(M.DEFAULT_CONTROLS).V, M.DEFAULT_DISPLAY.pistonScale)) < 1e-9);
 });
 
 console.log("== What Is Happening explanations ==");
-const E = (a, b) => M.selectExplanation({ ...M.DEFAULT_CONTROLS, ...a }, { ...M.DEFAULT_CONTROLS, ...b });
+const E = (a, b) => M.selectExplanation({ ...OLD_DEFAULT, ...a }, { ...OLD_DEFAULT, ...b });
 test("explanations correspond to the change (Volume control)", () => {
   const v = { control: "volume", V: 1 };
   assert.equal(E(v, { ...v, T: 400 }).id, "tempUpV"); assert.equal(E(v, { ...v, T: 270 }).id, "tempDownV");
@@ -448,7 +455,7 @@ test("explanations correspond to the change (Volume control)", () => {
   assert.equal(E({}, { control: "volume" }).id, "controlVolume"); assert.equal(E({ control: "volume" }, { control: "pressure" }).id, "controlPressure");
   assert.equal(E({}, {}), null);
   assert.equal(M.selectExplanation(null, M.DEFAULT_CONTROLS).id, "initial");
-  assert.equal(M.selectExplanation(null, { ...M.DEFAULT_CONTROLS, mode: "real" }).id, "initialReal");
+  assert.equal(M.selectExplanation(null, { ...OLD_DEFAULT, mode: "real" }).id, "initialReal");
 });
 test("explanations in Pressure control state the held-constant relationship and the pressure cases", () => {
   const p = { control: "pressure", P: 10 };
@@ -462,7 +469,7 @@ test("explanations in Pressure control state the held-constant relationship and 
 });
 test("'approaches ideal' and 'deviation increasing' only when the computed state warrants them", () => {
   const r = { mode: "real", control: "pressure", P: 40, T: 320 };
-  const far = M.resolveState({ ...M.DEFAULT_CONTROLS, ...r }).ref;
+  const far = M.resolveState({ ...OLD_DEFAULT, ...r }).ref;
   assert.equal(far.cls.index, 2);
   assert.equal(E(r, { ...r, T: 700 }).id, "approachIdeal"); // hotter, same P: closer to ideal
   assert.equal(E({ ...r, P: 2 }, { ...r, P: 20 }).id, "deviationUp");
@@ -619,11 +626,12 @@ test("9. piston squeezes quickly from 100 L to 0.05 L with 100 particles: nobody
     sim.settle(4);
     sim.setControls({ V: 0.05 });
     for (let i = 0; i < 60 * 8; i++) { sim.advance(1 / 60); assertInside(sim, `${mode} ${i}`); }
-    assert.ok(Math.abs(sim.pistonH - M.pistonHeight(0.05)) < 0.5);
+    assert.ok(Math.abs(sim.pistonH - M.pistonHeightFor(0.05, sim.display.pistonScale)) < 0.5);
   }
 });
-test("piston height follows log(V) (monotone, fixed ends) and moves smoothly, not teleporting", () => {
+test("LOG piston scale (option): height follows log(V) (monotone, fixed ends) and moves smoothly, not teleporting", () => {
   const sim = M.createSimulation({ seed: 4 });
+  sim.setDisplay({ pistonScale: "log" }); sim.reset(); sim.setDisplay({ pistonScale: "log" }); sim.settle(6);
   assert.ok(Math.abs(M.pistonHeight(M.LIMITS.V.max) - M.CHAMBER.maxHeight) < 1e-9);
   assert.ok(Math.abs(M.pistonHeight(M.LIMITS.V.min) - M.CHAMBER.maxHeight * M.MIN_HEIGHT_FRACTION) < 1e-9);
   assert.ok(Math.abs(M.pistonHeight(1) - M.pistonHeight(0.1) - (M.pistonHeight(10) - M.pistonHeight(1))) < 1e-9, "equal ratios give equal steps");
@@ -675,11 +683,11 @@ test("8. while paused, control changes apply instantly (piston, count, T) with n
   sim.setPaused(true);
   sim.setControls({ control: "volume", V: 0.05, N: 20, T: 700, mode: "real" });
   assert.equal(sim.particles.length, 20);
-  assert.ok(Math.abs(sim.pistonH - M.pistonHeight(0.05)) < 1e-9);
+  assert.ok(Math.abs(sim.pistonH - M.pistonHeightFor(0.05, sim.display.pistonScale)) < 1e-9);
   assertInside(sim, "paused");
   assert.ok(Math.abs(sim.getStats().kineticTemperature - 700) < 1e-6);
 });
-test("8. reset restores N=50, T=300 K, Change Pressure at 30 atm, ideal, default display, playing", () => {
+test("8. reset restores N=50, T=300 K, Change Pressure at 100 kPa, ideal, default display, playing", () => {
   const sim = M.createSimulation({ seed: 6 });
   sim.setControls({ N: 90, T: 650, V: 8, mode: "real", control: "volume" });
   sim.setDisplay({ trails: false, collisions: true, forces: true });
@@ -689,7 +697,7 @@ test("8. reset restores N=50, T=300 K, Change Pressure at 30 atm, ideal, default
   assert.deepEqual(sim.display, M.DEFAULT_DISPLAY);
   assert.equal(sim.paused, false);
   assert.equal(sim.particles.length, 50);
-  assert.ok(Math.abs(sim.getReadings().pressure - 30) < 1e-9);
+  assert.ok(near(sim.getReadings().pressure * 101.325, 100, 1e-9));
   assertInside(sim, "reset");
 });
 test("8. collision events are only recorded when the display option is on", () => {
@@ -732,6 +740,60 @@ test("long random run in BOTH control modes: nobody leaves the chamber, no NaN, 
     sim.advance(1 / 60);
     assertInside(sim, `frame ${frame}`);
   }
+});
+
+console.log("== IB units, linear labelled piston scale, collision pressure, labelled limits (this round) ==");
+test("LINEAR piston scale: height is exactly proportional to V between the stop and the top; ticks are equally spaced and labelled", () => {
+  const H = M.CHAMBER.maxHeight;
+  assert.ok(near(M.pistonHeightLinear(25, 25), H)); assert.ok(near(M.pistonHeightLinear(12.5, 25), H / 2)); assert.ok(near(M.pistonHeightLinear(6.25, 25), H / 4));
+  assert.ok(near(M.pistonHeightLinear(50, 100), H / 2));
+  for (const V of [4, 6, 8, 10, 12]) assert.ok(near(M.pistonHeightFor(V * 2, 25), 2 * M.pistonHeightFor(V, 25), 1e-9), `doubling V doubles the height at ${V}`);
+  const t = M.scaleTicks(25); assert.equal(t.length, 6); assert.deepEqual(t.map((x) => x.label), ["0", "5", "10", "15", "20", "25"]);
+  const d = t.slice(1).map((x, i) => x.h - t[i].h); assert.ok(d.slice(1).every((x) => near(x, d[1], 1e-9)), "equal steps");
+  assert.deepEqual(M.scaleTicks("log").map((x) => x.label), ["0.01", "0.1", "1", "10", "100"]);
+});
+test("above / below the drawn linear scale is reported (the piston stops, the numbers stay exact)", () => {
+  assert.equal(M.aboveScale(30, 25), true); assert.equal(M.aboveScale(25, 25), false); assert.equal(M.aboveScale(30, 100), false); assert.equal(M.aboveScale(500, "log"), false);
+  assert.equal(M.belowScale(1, 25), true); assert.equal(M.belowScale(12.4, 25), false); assert.equal(M.belowScale(0.01, "log"), false);
+  assert.ok(M.pistonHeightLinear(0.001, 25) >= M.CHAMBER.maxHeight * M.MIN_HEIGHT_FRACTION - 1e-9, "never below the particle stop");
+});
+test("default piston is drawn on the linear 0-25 dm3 scale and sits at V/25 of the cylinder", () => {
+  assert.equal(M.DEFAULT_DISPLAY.pistonScale, 25);
+  const sim = M.createSimulation({ seed: 1 }); assert.ok(near(sim.pistonH, M.CHAMBER.maxHeight * sim.state.V / 25, 1e-9));
+});
+test("IB units: notes and predict text use kPa / dm3 when asked, atm / L by default, same physics", () => {
+  const lim = { ...OLD_DEFAULT, control: "pressure", P: 500, T: 250, N: 100 };
+  const nat = M.resolveState({ ...lim, V: 100 }); const ib = M.resolveState({ ...lim, V: 100 }, M.IB_UNITS);
+  assert.equal(nat.pressure, ib.pressure); assert.equal(nat.V, ib.V);
+  const a = M.resolveState({ ...OLD_DEFAULT, N: 5, T: 700, P: 1 }); const b = M.resolveState({ ...OLD_DEFAULT, N: 5, T: 700, P: 1 }, M.IB_UNITS);
+  assert.equal(a.status, b.status);
+  if (a.note) { assert.match(a.note, /atm/); assert.match(b.note, /kPa/); assert.doesNotMatch(b.note, /atm/); assert.match(b.note, /dm\u00b3/); }
+  assert.equal(M.fmtPressure(1, M.IB_UNITS), "101"); assert.equal(M.fmtPressure(100 / 101.325, M.IB_UNITS), "100"); assert.equal(M.unitLabelV(M.IB_UNITS), "dm\u00b3");
+  assert.ok(near(M.pFromDisplay(M.pToDisplay(2.5, M.IB_UNITS), M.IB_UNITS), 2.5, 1e-12));
+});
+test("condensation limit messages carry the van der Waals accuracy label (GS-06)", () => {
+  assert.match(M.UNRELIABLE_TEXT.condensation, /qualitative/); assert.match(M.UNRELIABLE_TEXT["two-phase"], /70 %/);
+  const sat250 = M.vdwSaturationPressure(250); assert.ok(sat250 > 28 && sat250 < 33, `model value ${sat250}`); // documented in the header comment as 30.3 atm vs about 17.9 experimental
+});
+test("pressure from collisions: the piston impulse per second matches the kinetic reference within sampling noise (ideal, steady)", () => {
+  const sim = M.createSimulation({ seed: 42 });
+  sim.settle(2); sim.setControls({ N: 100 }); sim.settle(6);
+  const ratios = [];
+  for (let k = 0; k < 12; k++) { sim.settle(0.5); const w = sim.getWallStats(); if (w.ratio != null) ratios.push(w.ratio); }
+  const mean = ratios.reduce((a, b) => a + b, 0) / ratios.length;
+  assert.ok(mean > 0.85 && mean < 1.25, `measured / kinetic = ${mean.toFixed(3)} (hits/s ${sim.getWallStats().hitsPerSec.toFixed(0)})`);
+  assert.ok(sim.getWallStats().hitsPerSec > 5);
+});
+test("pressure from collisions: halving the volume at constant T roughly doubles the measured collision pressure (Boyle from impacts)", () => {
+  const meas = (V) => {
+    const sim = M.createSimulation({ seed: 7 });
+    sim.setControls({ N: 100, control: "volume", V });
+    sim.settle(6); const out = [];
+    for (let k = 0; k < 16; k++) { sim.settle(0.5); out.push(sim.wall.rate); }
+    return out.reduce((a, b) => a + b, 0) / out.length;
+  };
+  const p1 = meas(24), p2 = meas(12), r = p2 / p1;
+  assert.ok(r > 1.6 && r < 2.6, `P(12)/P(24) = ${r.toFixed(2)}`);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

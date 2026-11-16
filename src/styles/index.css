@@ -297,6 +297,14 @@ body {
   .lb-row { grid-template-columns: repeat(12, minmax(0, 1fr)); }
   .lb-cell, .lb-cell[data-mobile] { grid-column: var(--lb-start, auto) / span var(--lb-span, 12); order: 0; }
 }
+/* Canvas lessons: a 12-column grid with natural row heights. Below 640px (container width) cells stack in reading order. */
+.lb-grid { display: flex; flex-direction: column; gap: var(--lb-gap, 1.25rem); }
+.lb-gcell { min-width: 0; }
+.lb-gcell img, .lb-gcell video, .lb-gcell iframe, .lb-gcell table { max-width: 100%; }
+@container lb (min-width: 640px) {
+  .lb-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); }
+  .lb-gcell { grid-column: var(--lb-col, 1) / span var(--lb-span, 12); grid-row: var(--lb-r, auto) / span var(--lb-rs, 1); align-self: start; }
+}
 .lb-guides {
   background-image: linear-gradient(to right, color-mix(in srgb, var(--color-indigo) 14%, transparent) 1px, transparent 1px);
   background-size: calc(100% / 12) 100%;

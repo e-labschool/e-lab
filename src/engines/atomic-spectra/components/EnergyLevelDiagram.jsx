@@ -69,19 +69,19 @@ export default function EnergyLevelDiagram({ markerLevel, highlightFrom, highlig
           <g key={n}>
             <line
               x1={LINE_LEFT} y1={trueY} x2={LINE_RIGHT} y2={trueY}
-              stroke={n === markerLevel ? "var(--color-indigo)" : "var(--color-line)"}
+              stroke={n === highlightTo || n === highlightFrom ? "var(--color-amber)" : n === markerLevel ? "var(--color-indigo)" : "var(--color-ink-faint)"}
               strokeWidth={n === markerLevel ? 2 : 1.2}
               opacity={n === markerLevel ? 1 : 0.7}
               style={isSelectable ? { cursor: "pointer" } : undefined}
               onClick={isSelectable ? () => onSelectLevel(n) : undefined}
             />
             {labelShifted && (
-              <line x1={LINE_LEFT - 3} y1={trueY} x2={LINE_LEFT - 3} y2={labelY} stroke="var(--color-ink-faint)" strokeWidth="0.5" opacity="0.5" />
+              <polyline points={`${LINE_LEFT},${trueY} ${LINE_LEFT - 3},${trueY} ${LINE_LEFT - 3},${labelY}`} fill="none" stroke="var(--color-ink-soft)" strokeWidth="0.6" opacity="0.7" />
             )}
-            <text x={LINE_LEFT - 4} y={labelY + 2.5} textAnchor="end" fontSize="7.5" fontWeight="600" fill="var(--color-ink-soft)">
+            <text x={LINE_LEFT - 4} y={labelY + 2.5} textAnchor="end" fontSize="7.5" fontWeight={n === highlightFrom || n === highlightTo || n === markerLevel ? 800 : 600} fill={n === highlightFrom || n === highlightTo ? "var(--color-amber)" : "var(--color-ink-soft)"}>
               {n === Infinity ? "n = \u221E" : `n = ${n}`}
             </text>
-            <text x={LINE_RIGHT + 4} y={labelY + 2.5} fontSize="7" fill="var(--color-ink-faint)">
+            <text x={LINE_RIGHT + 4} y={labelY + 2.5} fontSize="7" fill="var(--color-ink-soft)">
               {E.toFixed(n === Infinity ? 0 : 2)} eV
             </text>
           </g>

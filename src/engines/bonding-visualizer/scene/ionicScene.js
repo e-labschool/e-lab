@@ -5,6 +5,7 @@
 //   0.88-1.00  the metal's emptied shell fades away and the charges appear
 // Attraction is a SEPARATE second stage (progress q of the "attracting" stage): ions slide from the
 // slightly-separated positions to contact.
+import { elementEdge, elementStyle } from "../../shared-3d/elementStyle.js";
 import { getBondingElement, CORE_ELECTRON_COLOR, ELECTRON_PALETTE, chargeText } from "../model/elements.js";
 import { ELECTRON_R, NUCLEUS_R, arrangementText, clamp01, easeInOut, electronsOfShells, lerp, polar, ringRadius, slotAngle, slotCount, slotIndexFor } from "./atomGeometry.js";
 
@@ -93,7 +94,7 @@ export function ionicScene({ atoms, system, stage, p = 0, time = 0, world, offse
   // ---- electrons
   const drawables = atoms.map((a) => {
     const el = getBondingElement(a.symbol);
-    return { id: a.id, symbol: a.symbol, x: pos[a.id].x, y: pos[a.id].y, color: el.color, shells: el.shells, electrons: [], rings: [], label: "", charge: 0, chargeOpacity: 0, outerR: 0, colorIdx: a.colorIdx };
+    return { id: a.id, symbol: a.symbol, x: pos[a.id].x, y: pos[a.id].y, color: el.color, edge: elementEdge(a.symbol), text: elementStyle(a.symbol).text, shells: el.shells, electrons: [], rings: [], label: "", charge: 0, chargeOpacity: 0, outerR: 0, colorIdx: a.colorIdx };
   });
   const byId = Object.fromEntries(drawables.map((d) => [d.id, d]));
 

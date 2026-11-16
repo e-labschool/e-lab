@@ -61,7 +61,7 @@ export default function AtomVisualizer({ protons, neutrons, electrons, highlight
       aria-label={`Atom model with ${protons} protons, ${neutrons} neutrons, and ${electrons} electrons, with the electron arrangement ${shells.join(",") || "none"}`}
     >
       <svg viewBox="-230 -230 460 460" preserveAspectRatio="xMidYMid meet" className="block h-full w-full" data-testid="atom-svg">
-        <title>Electron motion and spin are represented visually. Electrons do not literally orbit or spin like small spheres.</title>
+        <title>A model: electrons do not literally orbit the nucleus like planets, and the nucleus is not drawn to scale.</title>
         {shells.map((_, shellIndex) => (
           <circle key={`guide-${shellIndex}`} cx="0" cy="0" r={radii[shellIndex]} fill="none" stroke="var(--color-indigo)" strokeWidth="0.6" strokeDasharray="2 4" opacity="0.35" />
         ))}
@@ -85,8 +85,7 @@ export default function AtomVisualizer({ protons, neutrons, electrons, highlight
                 const rad = (angleDeg * Math.PI) / 180;
                 const x = radius * Math.cos(rad);
                 const y = radius * Math.sin(rad);
-                const spin = spinFor(i, countOnShell);
-                return (
+                                return (
                   <g key={`e-${shellIndex}-${i}`} transform={`translate(${x} ${y})`} className={highlightCharge ? "atom-highlight-pulse" : undefined}>
                     {/* Counter-rotates at the SAME rate, opposite
                         direction, as the parent shell -- this exactly
@@ -95,15 +94,6 @@ export default function AtomVisualizer({ protons, neutrons, electrons, highlight
                         POSITION (set by the translate above, outside
                         this counter-rotation) still genuinely orbits. */}
                     <g style={{ transformOrigin: "0px 0px", animation: reducedMotion ? "none" : `atom-shell-spin ${duration}ms linear infinite reverse` }}>
-                      {/* Spin-state visual: a small ring with one bright
-                          tick, rotating independently and much faster
-                          than the orbit -- this is what shows opposite
-                          "spin" for paired electrons, never the minus
-                          symbol itself, which stays perfectly upright
-                          inside this same upright frame. */}
-                      <g style={{ transformOrigin: "0px 0px", animation: reducedMotion ? "none" : `atom-shell-spin ${SPIN_RING_MS}ms linear infinite ${spin === "cw" ? "" : "reverse"}` }}>
-                        <circle r={ELECTRON_SPHERE_SIZE / 2 + 2.5} fill="none" stroke="#7FAEFF" strokeWidth="1" strokeDasharray="3 8" opacity="0.55" />
-                      </g>
                       <foreignObject x={-ELECTRON_SPHERE_SIZE / 2} y={-ELECTRON_SPHERE_SIZE / 2} width={ELECTRON_SPHERE_SIZE} height={ELECTRON_SPHERE_SIZE}>
                         <Particle type="electron" size={ELECTRON_SPHERE_SIZE} showSymbol symbolOverride="−" />
                       </foreignObject>

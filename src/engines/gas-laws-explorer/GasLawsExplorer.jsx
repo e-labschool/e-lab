@@ -1,9 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import InteractiveFrame from "../../components/interactive-shell/InteractiveFrame.jsx";
 import SimulationDashboard, { DashboardTabs, ExplainLine } from "../../components/simulation/SimulationDashboard.jsx";
 import {
-  MODES, MODE_IDS, defaultExplanation, defaultGraphId, defaultState, selectExplanation, setVariable, switchMode,
+  IB_UNITS, MODES, MODE_IDS, VARS, buildGraph, defaultExplanation, defaultGraphId, defaultState, depOf, formatValue, freeKeys, makeState, presetState, selectExplanation, setVariable, switchMode,
 } from "./model.js";
+import { UNIT_SYSTEMS, PRESSURE_UNITS, VOLUME_UNITS } from "../../lib/gas/gasUnits.js";
+import ReadingsPanel from "../../components/interactive-shell/readings/ReadingsPanel.jsx";
+import { addReading, clearReadings, createReadings, removeReading } from "../../components/interactive-shell/readings/readingsModel.js";
+import { readingColumns, readingValues, theoryFor, plotDefaultsFor, originFor } from "./readings.js";
 import { createSimulation } from "./physics.js";
 import { ACCENTS } from "./theme.js";
 import { LAW_INFO, lawHeading } from "./lawInfo.js";
@@ -51,6 +55,10 @@ function Workspace() {
   const [state, setState] = useState(() => defaultState("pv"));
   const [phase, setPhase] = useState("ready");
   const [unit, setUnit] = useState("mol");
+  const [unitSystem, setUnitSystem] = useState("ib");
+  const [view, setView] = useState("theory");
+  const [readings, setReadings] = useState(() => Object.fromEntries(MODE_IDS.map((id) => [id, createReadings()])));
+  const units = useMemo(() => ({ pressure: UNIT_SYSTEMS[unitSystem].pressure, volume: UNIT_SYSTEMS[unitSystem].volume }), [unitSystem]);
   const [display, setDisplay] = useState({ trails: true, collisions: false });
   const [playing, setPlaying] = useState(true);
   const [showGraph, setShowGraph] = useState(false);
@@ -91,7 +99,7 @@ function Workspace() {
 
   // The student moves the independent variable (the only slider on the main panel).
   const handleChange = useCallback((key, value) => {
-    if (key !== MODES[state.mode].independent) return;
+    if (!freeKeys(state).includes(key)) return;
     const r = setVariable(state, key, value);
     if (!r.changed) return;
     if (phase === "ready") { baselineRef.current = state; setPhase("running"); }
@@ -101,7 +109,7 @@ function Workspace() {
 
   // Settings > Initial conditions: any non-calculated variable; becomes the new baseline.
   const handleSetInitial = useCallback((key, value) => {
-    if (key === MODES[state.mode].dependent) return;
+    if (key === depOf(state)) return;
     const r = setVariable(state, key, value);
     if (!r.changed) return;
     baselineRef.current = r.state;
@@ -131,6 +139,30 @@ function Workspace() {
     if (mode !== state.mode) handleMode(mode);
   }, [state.mode, handleMode]);
 
+  const handlePreset = useCallback((which) => {
+    const next = presetState(state.mode, which, state.calc);
+    baselineRef.current = next;
+    setState(next);
+    setPhase("ready");
+    setHistory([]);
+    setRevealed(false);
+  }, [state.mode, state.calc]);
+
+  const handleCalc = useCallback((k) => {
+    if (state.mode !== "comb" || k === state.calc) return;
+    const next = makeState("comb", state, k);
+    baselineRef.current = next;
+    setState(next);
+    setPhase("ready");
+  }, [state]);
+
+  const columns = useMemo(() => readingColumns(units), [units]);
+  const handleRecord = useCallback(() => {
+    const r = addReading(readings[state.mode], readingValues(state), columns);
+    if (r.ok) setReadings((all) => ({ ...all, [state.mode]: r.state }));
+    return r;
+  }, [state, columns, readings]);
+
   const handleReset = useCallback(() => {
     const next = defaultState(state.mode);
     baselineRef.current = next;
@@ -140,6 +172,8 @@ function Workspace() {
     setAllView(false);
     setDisplay({ trails: true, collisions: false });
     setPlaying(true);
+    setReadings((all) => ({ ...all, [state.mode]: createReadings() }));
+    setView("theory");
     settledRef.current = next;
     setExplain(defaultExplanation(state.mode));
   }, [state.mode, sim, resetInvestigationUi]);
@@ -151,6 +185,24 @@ function Workspace() {
     setRevealed(false);
   }, []);
   const handleResetGraph = useCallback(() => { setGraphId(defaultGraphId(state.mode)); setAllView(false); setHistory([]); }, [state.mode]);
+
+  const modeReadings = readings[state.mode];
+  const graphDef = buildGraph(state, graphId, { units, marker: false });
+  const readingsNode = (
+    <ReadingsPanel
+      key={state.mode}
+      title={`Gas Laws: ${MODES[state.mode].title}`} stem={`gas-laws-${state.mode}`}
+      columns={columns} rows={modeReadings.rows}
+      onRecord={handleRecord}
+      onDelete={(id) => setReadings((all) => ({ ...all, [state.mode]: removeReading(all[state.mode], id) }))}
+      onClear={() => setReadings((all) => ({ ...all, [state.mode]: clearReadings(all[state.mode]) }))}
+      axes={plotDefaultsFor(graphDef)}
+      theory={(x, y) => theoryFor(state, x, y, units)}
+      includeOrigin={(x, y) => originFor(x, y)}
+      meta={[`Relationship: ${MODES[state.mode].title} (${MODES[state.mode].law})`, `Units: ${PRESSURE_UNITS[units.pressure].label} and ${VOLUME_UNITS[units.volume].label}; R = 8.31 J K-1 mol-1`, "Values are the simulation's own PV = nRT readings (no measurement error)."]}
+      recordHint="Add the current P, V, T and n"
+    />
+  );
 
   const tabs = MODE_IDS.map((id) => {
     const md = MODES[id];
@@ -174,20 +226,21 @@ function Workspace() {
       graphId="gl-graph"
       graphWide={showGraph && allView}
       settings={
-        <GasLawsSettings state={state} phase={phase} unit={unit} onUnit={setUnit} display={display}
+        <GasLawsSettings state={state} phase={phase} unit={unit} onUnit={setUnit} units={units} unitSystem={unitSystem} onUnitSystem={setUnitSystem} onPreset={handlePreset} display={display}
           onDisplay={(d) => setDisplay((x) => ({ ...x, ...d }))} onSetInitial={handleSetInitial} onBackToStart={handleBackToStart} accent={accent} />
       }
       tabs={<DashboardTabs segmented tabs={tabs} value={state.mode} onChange={handleMode} ariaLabel="Gas law relationship" idPrefix="gl-tab" controls="gl-workspace" testId="mode-tabs" />}
-      controls={<ControlPanel state={state} unit={unit} onChange={handleChange} accent={accent} />}
+      controls={<ControlPanel state={state} unit={unit} units={units} onChange={handleChange} accent={accent} onRecord={handleRecord} readingCount={modeReadings.rows.length} onCalc={handleCalc} />}
       chamber={
-        <ChamberPanel sim={sim} state={state} accent={accent} playing={playing} onTogglePlay={() => setPlaying((p) => !p)} reducedMotion={reducedMotion} />
+        <ChamberPanel sim={sim} state={state} accent={accent} playing={playing} onTogglePlay={() => setPlaying((p) => !p)} reducedMotion={reducedMotion} units={units} />
       }
       graph={
         <GraphPanel state={state} accent={accent} graphId={graphId} onGraphId={setGraphId} allView={allView}
-          onToggleAll={() => setAllView((v) => !v)} onResetGraph={handleResetGraph} onOpenMode={handleOpenFromGrid} trail={history} />
+          onToggleAll={() => setAllView((v) => !v)} onResetGraph={handleResetGraph} onOpenMode={handleOpenFromGrid} trail={history}
+          units={units} view={view} onView={setView} readingsCount={modeReadings.rows.length} readingsNode={readingsNode} />
       }
-      live={<LiveValues state={state} unit={unit} note={explain.text} />}
-      predict={<PredictPanel state={state} revealed={revealed} onToggle={() => setRevealed((r) => !r)} />}
+      live={<LiveValues state={state} unit={unit} note={explain.text} units={units} />}
+      predict={<PredictPanel state={state} revealed={revealed} onToggle={() => setRevealed((r) => !r)} units={units} />}
       explain={<ExplainLine text={LAW_INFO[state.mode].sentence} testId="law-statement" details={<ExplanationDetails mode={state.mode} note={explain.text} />} />}
     />
   );

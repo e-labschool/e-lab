@@ -41,11 +41,18 @@ test("OFF: every +/- changes only its own count by exactly 1, for many starting 
   for (const atom of starts) {
     for (const type of TYPES) {
       for (const delta of [1, -1]) {
-        const next = C.applyChange(atom, type, delta, { autoBalance: false });
+        // CHANGED (behaviour was wrong): a press may now be REFUSED with an explanation when the result could not exist
+        // (no neutrons without protons, no isotope beyond the known range, no charges outside chemistry).
+        const r = C.tryChange(atom, type, delta, { autoBalance: false });
         const key = KEY[type];
-        for (const other of OTHERS(type)) assert.equal(next[other], atom[other], `${type}${delta > 0 ? "+" : "-"} changed ${other} for ${JSON.stringify(atom)}`);
-        const expected = Math.max(0, Math.min(C.LIMITS[key], atom[key] + delta));
-        assert.equal(next[key], expected, `${type} ${delta} from ${JSON.stringify(atom)}`);
+        if (r.refused) { assert.equal(r.atom, atom); assert.ok(r.reason.length > 15, "refusal explains itself"); checked += 1; continue; }
+        const next = r.atom;
+        if (type === "neutron" && atom.protons > 0 && !N.findNuclide(atom.protons, atom.neutrons)) { checked += 1; continue; } // impossible start: snaps into the known range
+        for (const other of OTHERS(type)) {
+          if (type === "proton" && other === "neutrons" && r.notes.length) continue; // reported neutron move to a known isotope
+          assert.equal(next[other], atom[other], `${type}${delta > 0 ? "+" : "-"} changed ${other} for ${JSON.stringify(atom)}`);
+        }
+        if (!(type === "proton" && r.notes.length) && next !== atom) assert.equal(next[key], atom[key] + delta, `${type} ${delta} from ${JSON.stringify(atom)}`);
         checked += 1;
       }
     }
@@ -71,9 +78,17 @@ test("lower bounds: no negative counts, and the same object is returned when not
   assert.deepEqual(a, zero);
 });
 test("upper bounds are respected, never exceeded", () => {
-  let a = { protons: 35, neutrons: 59, electrons: 39 };
-  for (let i = 0; i < 5; i++) for (const t of TYPES) a = C.applyChange(a, t, 1);
-  assert.deepEqual(a, { protons: C.LIMITS.protons, neutrons: C.LIMITS.neutrons, electrons: C.LIMITS.electrons });
+  // CHANGED: limits are physical now. Hammer every + button: hydrogen stops at H-7, krypton at Kr-100 with no anion, never more.
+  let h = { protons: 1, neutrons: 0, electrons: 1 };
+  let refusal = null;
+  for (let i = 0; i < 100; i++) { const r = C.tryChange(h, "neutron", 1); if (r.refused) refusal = r.reason; h = r.atom; }
+  assert.deepEqual(h, { protons: 1, neutrons: 6, electrons: 1 });
+  assert.match(refusal, /hydrogen-7/);
+  let k = { protons: 36, neutrons: 48, electrons: 36 };
+  let kr = null;
+  for (let i = 0; i < 200; i++) for (const t of ["proton", "neutron", "electron"]) { const r = C.tryChange(k, t, 1); if (r.refused && t === "electron") kr = r.reason; k = r.atom; }
+  assert.deepEqual(k, { protons: C.LIMITS.protons, neutrons: 64, electrons: 36 });
+  assert.match(kr, /full outer shell/);
 });
 test("OFF: periodic-table selection sets protons only", () => {
   assert.deepEqual(C.setProtons({ protons: 6, neutrons: 6, electrons: 6 }, 11), { protons: 11, neutrons: 6, electrons: 6 });
@@ -104,10 +119,8 @@ test("ON: electrons locked; neutrons locked where a reference exists and free wh
   assert.equal(C.isLocked("proton", c, true), false);
   const zero = { protons: 0, neutrons: 2, electrons: 0 }; // no element, no reference
   assert.equal(C.referenceIsotope(0), null);
-  assert.equal(C.applyChange(zero, "neutron", 1, { autoBalance: true }).neutrons, 3);
-  const big = { protons: 40, neutrons: 51, electrons: 40 }; // Z > 36: no data -> neutrons are never changed automatically
-  assert.equal(C.referenceIsotope(40), null);
-  assert.deepEqual(C.balance({ protons: 40, neutrons: 51, electrons: 3 }), big);
+  assert.equal(C.tryChange(zero, "neutron", 1, { autoBalance: true }).refused, true); // CHANGED: neutrons need a proton
+  assert.deepEqual(C.balance({ protons: 40, neutrons: 51, electrons: 3 }), { protons: 40, neutrons: 50, electrons: 40 }); // data now exists beyond Z = 36 (Zr-90)
 });
 test("ON: going up from hydrogen to carbon follows the reference isotopes (1H, 4He, 7Li, 9Be, 11B, 12C)", () => {
   let a = { protons: 1, neutrons: 0, electrons: 1 };
@@ -135,19 +148,20 @@ test("stable isotope counts per element match the IUPAC natural isotopes minus t
   const stableCount = { 1: 2, 2: 2, 3: 2, 4: 1, 5: 2, 6: 2, 7: 2, 8: 3, 9: 1, 10: 3, 11: 1, 12: 3, 13: 1, 14: 3, 15: 1, 16: 4, 17: 2, 18: 3, 19: 2, 20: 5, 21: 1, 22: 5, 23: 1, 24: 4, 25: 1, 26: 4, 27: 1, 28: 5, 29: 2, 30: 5, 31: 2, 32: 4, 33: 1, 34: 5, 35: 2, 36: 5 };
   for (const [z, count] of Object.entries(stableCount)) {
     const n = N.curatedIsotopesFor(+z).filter((i) => i.stability === "stable").length;
-    assert.equal(n, count, `stable isotopes of Z=${z}`);
+    assert.equal(n, z === "36" ? 6 : count, `stable isotopes of Z=${z}`); // NUBASE2020 lists Kr-78 as stable (earlier hand table called it radioactive)
   }
 });
 test("nuclide status: reference / stable / radioactive / not stable / no data", () => {
   assert.equal(C.nuclideStatus(6, 6).status, "reference");
   assert.equal(C.nuclideStatus(6, 7).status, "stable");       // carbon-13
   assert.equal(C.nuclideStatus(6, 8).status, "radioactive");  // carbon-14
-  assert.equal(C.nuclideStatus(6, 2).status, "not-stable");   // carbon-8
-  assert.equal(C.nuclideStatus(7, 6).status, "not-stable");   // nitrogen-13 (the +1 proton example)
+  assert.equal(C.nuclideStatus(6, 2).status, "unbound");      // carbon-8: observed only as a fleeting resonance (CHANGED from "not-stable")
+  assert.equal(C.nuclideStatus(7, 6).status, "radioactive");  // nitrogen-13 is a real radioactive nuclide (9.97 min), CHANGED from "not-stable"
   assert.equal(C.nuclideStatus(1, 0).status, "reference");
-  assert.equal(C.nuclideStatus(40, 50).status, "no-data");
+  assert.equal(C.nuclideStatus(40, 50).status, "reference"); // zirconium-90 (data now exists for every element)
   assert.equal(C.nuclideStatus(0, 5).status, "no-data");
-  assert.equal(C.nuclideStatus(1, 5).status, "not-stable");
+  assert.equal(C.nuclideStatus(1, 5).status, "unbound");     // hydrogen-6
+  assert.equal(C.nuclideStatus(1, 60).status, "unknown");    // hydrogen-61 has never been observed
 });
 test("derived quantities and isotope naming", () => {
   const d = deriveAtom({ protons: 6, neutrons: 7, electrons: 6 });
@@ -208,10 +222,10 @@ test("UI (OFF): + proton changes only protons; readouts follow", async () => {
   assert.deepEqual(counts(), { p: 7, n: 6, e: 6 });
   assert.equal($('[data-testid="atom-Z"]').textContent, "7");
   assert.equal($('[data-testid="atom-A"]').textContent, "13");
-  assert.equal($('[data-testid="atom-charge"]').textContent, "+1");
+  assert.equal($('[data-testid="atom-charge"]').textContent, "1+"); // IB notation (CHANGED from "+1")
   assert.equal($('[data-testid="atom-isotope-name"]').textContent, "Nitrogen-13");
   assert.equal($('[data-testid="atom-element"]').textContent, "Nitrogen");
-  assert.match($('[data-testid="atom-stability"]').textContent, /Not a stable nuclide/);
+  assert.match($('[data-testid="atom-stability"]').textContent, /Radioactive nuclide/); // N-13 is real but radioactive (CHANGED from "Not a stable nuclide")
   assert.match($('[data-testid="atom-reference-isotope"]').textContent, /¹⁴N/); // reference is N-14, the atom is N-13
 });
 test("UI (OFF): neutron + and electron + each change only themselves; minus too", async () => {
@@ -219,13 +233,13 @@ test("UI (OFF): neutron + and electron + each change only themselves; minus too"
   assert.deepEqual(counts(), { p: 7, n: 7, e: 6 });
   await click('[data-testid="atom-add-electron"]');
   assert.deepEqual(counts(), { p: 7, n: 7, e: 7 });
-  await click('[data-testid="atom-remove-electron"]');
-  await click('[data-testid="atom-remove-electron"]');
-  assert.deepEqual(counts(), { p: 7, n: 7, e: 5 });
-  assert.equal($('[data-testid="atom-charge"]').textContent, "+2");
+  await click('[data-testid="atom-remove-electron"]'); // CHANGED: nitrogen forms no positive ion -> refused, with a visible explanation
+  assert.deepEqual(counts(), { p: 7, n: 7, e: 7 });
+  assert.match($('[data-testid="atom-notice"]').textContent, /does not form a positive ion/);
   await click('[data-testid="atom-remove-neutron"]');
   await click('[data-testid="atom-remove-proton"]');
-  assert.deepEqual(counts(), { p: 6, n: 6, e: 5 });
+  assert.deepEqual(counts(), { p: 6, n: 6, e: 7 });
+  await click('[data-testid="atom-remove-electron"]');
 });
 test("UI: minus buttons disabled at 0 (no negative counts)", async () => {
   await click('[data-testid="atom-start-empty"]');
@@ -237,9 +251,9 @@ test("UI: minus buttons disabled at 0 (no negative counts)", async () => {
   await click('[data-testid="atom-reset-carbon"]');
 });
 test("UI (ON): checking balances once, locks electrons + neutrons, and a proton press follows the reference isotope", async () => {
-  await click('[data-testid="atom-remove-electron"]');
+  await click('[data-testid="atom-add-electron"]');
   await click('[data-testid="atom-add-neutron"]');
-  assert.deepEqual(counts(), { p: 6, n: 7, e: 5 });
+  assert.deepEqual(counts(), { p: 6, n: 7, e: 7 });
   await click('[data-testid="atom-auto-balance"]');
   assert.equal($('[data-testid="atom-auto-balance"]').checked, true);
   assert.deepEqual(counts(), { p: 6, n: 6, e: 6 }); // balanced to carbon-12

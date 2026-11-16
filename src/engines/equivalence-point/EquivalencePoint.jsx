@@ -1,260 +1,97 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import InteractiveFrame from "../../components/interactive-shell/InteractiveFrame.jsx";
 import { useSimulationPresentation } from "../../components/interactive-shell/SimulationPresentation.js";
+import "../../lib/acidbase/acidbase-ui.css";
 import "./EquivalencePoint.css";
+import "./EquivalencePoint.layout.css";
 import { COPYRIGHT_TEXT_COMPACT } from "../../data/copyright.js";
-
-// ============================================================
-// Reagent definitions — equivalent factors drive the stoichiometry
-// automatically (see calculateNeutralization). HCl/NaOH (both factor 1)
-// remain the default; H2SO4/Ca(OH)2 are an optional "explore
-// stoichiometry" extension only.
-// ============================================================
-const ACIDS = {
-  HCl: { label: "HCl", formula: "HCl", equivalentFactor: 1, type: "monoprotic", ratioNote: "1 mol HCl \u2192 1 mol H\u207A" },
-  H2SO4: { label: "H\u2082SO\u2084", formula: "H2SO4", equivalentFactor: 2, type: "diprotic", ratioNote: "1 mol H\u2082SO\u2084 \u2192 up to 2 mol H\u207A equivalents" },
-};
-
-const BASES = {
-  NaOH: { label: "NaOH", formula: "NaOH", equivalentFactor: 1, ratioNote: "1 mol NaOH \u2192 1 mol OH\u207B" },
-  CaOH2: { label: "Ca(OH)\u2082", formula: "Ca(OH)2", equivalentFactor: 2, ratioNote: "1 mol Ca(OH)\u2082 \u2192 2 mol OH\u207B" },
-};
-
-const INITIAL_BASE_VOLUME_ML = 25.0;
-const ACID_CONCENTRATION = 0.1;
-const BASE_CONCENTRATION = 0.1;
-const ACID_STEP_ML = 2.5;
-const BASE_STEP_ML = 2.5;
-const MAX_REAGENT_VOLUME_ML = 500; // a sensible ceiling only — never small enough to block crossing equivalence in either direction
+import { ACIDS, BASES, ACID_CONCS, BASE_CONCS, EQUATIONS, FLASK_CM3, state as chem, statusText, validate, equivalenceAcidVolume, axisFor } from "./lib/model.js";
+import { formatPH } from "../../lib/acidbase/format.js";
 
 const MAX_VISIBLE_SPHERES = 10;
 const MAX_BEAM_ANGLE = 10;
 const MAX_POINTER_ANGLE = 22;
-const APPROACHING_THRESHOLD = 0.15;
-const EPSILON = 1e-10;
-
-function clamp(value, min, max) {
-  return Math.min(Math.max(value, min), max);
-}
-
-/**
- * ONE central chemistry function — everything else (pH, status, beam,
- * pointer, spheres) is derived from its output. Uses acid/base
- * EQUIVALENTS, not a bare 1:1 mole assumption, so H2SO4 (2 H+ per mole)
- * and Ca(OH)2 (2 OH- per formula unit) fall out of the same formula
- * automatically rather than needing special-cased logic.
- */
-function calculateNeutralization({ acidVolumeMl, acidConcentration, acidFactor, baseVolumeMl, baseConcentration, baseFactor }) {
-  const acidVolumeL = acidVolumeMl / 1000;
-  const baseVolumeL = baseVolumeMl / 1000;
-
-  const acidMoles = acidConcentration * acidVolumeL;
-  const baseMoles = baseConcentration * baseVolumeL;
-
-  const acidEquivalents = acidMoles * acidFactor;
-  const baseEquivalents = baseMoles * baseFactor;
-
-  const difference = acidEquivalents - baseEquivalents;
-  const totalVolumeL = acidVolumeL + baseVolumeL;
-
-  return { acidMoles, baseMoles, acidEquivalents, baseEquivalents, difference, totalVolumeL };
-}
-
-/**
- * pH for the default strong-acid/strong-base system, valid at 25 degC.
- * In "explore stoichiometry" mode this same simple strong-acid/strong-base
- * formula is still used for H2SO4/Ca(OH)2 -- deliberately NOT a rigorous
- * polyprotic equilibrium model (that's flagged to the student separately,
- * see the explore-mode warning note in the component below).
- */
-function calculatePH({ acidEquivalents, baseEquivalents, difference, totalVolumeL }) {
-  if (Math.abs(difference) < EPSILON) {
-    return { pH: 7, status: "equivalence" };
-  }
-  if (difference < 0) {
-    const excessOH = baseEquivalents - acidEquivalents;
-    const OH = excessOH / totalVolumeL;
-    const pOH = -Math.log10(OH);
-    return { pH: 14 - pOH, status: "base" };
-  }
-  const excessH = acidEquivalents - baseEquivalents;
-  const H = excessH / totalVolumeL;
-  return { pH: -Math.log10(H), status: "acid" };
-}
-
-function getApproaching({ acidEquivalents, baseEquivalents, difference, status }) {
-  if (status === "equivalence") return false;
-  const totalReference = Math.max(acidEquivalents, baseEquivalents, 1e-12);
-  const relativeExcess = Math.abs(difference) / totalReference;
-  return relativeExcess < APPROACHING_THRESHOLD;
-}
-
-/**
- * Spheres represent ONLY the excess species -- before equivalence only
- * excess OH- is ever shown, after equivalence only excess H+, and never
- * both populations at once (they've reacted: H+ + OH- -> H2O).
- */
-function getSphereCount({ difference, status }, initialReferenceEquivalents) {
-  if (status === "equivalence") return { oh: 0, h: 0 };
-  const fraction = clamp(Math.abs(difference) / initialReferenceEquivalents, 0, 1);
-  const count = Math.max(1, Math.round(fraction * MAX_VISIBLE_SPHERES));
-  return status === "base" ? { oh: count, h: 0 } : { oh: 0, h: count };
-}
+const ART_W = 720;
+const ART_H = 440;
+const clamp = (v, a, b) => Math.min(Math.max(v, a), b);
+const DEFAULTS = { acidId: "HCl", baseId: "NaOH", cAcid: 0.1, cBase: 0.1 };
 
 function IonSphere({ type, index }) {
   const isOH = type === "OH";
-  return (
-    <div className={`ion-sphere ${isOH ? "oh-sphere" : "h-sphere"}`} style={{ "--delay": `${index * 40}ms` }}>
-      {isOH ? "OH\u207B" : "H\u207A"}
-    </div>
-  );
+  return <div className={`ion-sphere ${isOH ? "oh-sphere" : "h-sphere"}`} style={{ "--delay": `${index * 40}ms` }}>{isOH ? "OH⁻" : "H⁺"}</div>;
+}
+function SphereGroup({ type, count }) {
+  return <div className="sphere-group">{Array.from({ length: count }).map((_, i) => <IonSphere key={`${type}-${i}`} type={type} index={i} />)}</div>;
 }
 
-function SphereGroup({ type, count }) {
+// Pure reducer: volumes and the recorded (volume, pH) points; no side effects in updaters.
+function reducer(st, a) {
+  const cap = axisFor(equivalenceAcidVolume({ ...st.cfg, baseVolume: st.baseVolume }));
+  if (a.type === "cfg") return init({ ...st.cfg, ...a.patch });
+  if (a.type === "reset") return init(DEFAULTS);
+  if (a.type === "acid") { const v = Math.min(cap, Math.round((st.acidVolume + a.amount) * 1000) / 1000); if (v === st.acidVolume) return st; return { ...st, acidVolume: v, acidDrop: st.acidDrop + 1, points: [...st.points, { v, pH: chem({ ...st.cfg, acidVolume: v, baseVolume: st.baseVolume }).pH }] }; }
+  if (a.type === "base") { const bv = Math.min(100, st.baseVolume + a.amount); return { ...st, baseVolume: bv, baseDrop: st.baseDrop + 1, points: [{ v: 0, pH: chem({ ...st.cfg, acidVolume: 0, baseVolume: bv }).pH }] , acidVolume: 0, acidDrop: st.acidDrop + 1 }; }
+  return st;
+}
+function init(cfg) {
+  const s = { cfg, acidVolume: 0, baseVolume: FLASK_CM3, acidDrop: 0, baseDrop: 0, points: [] };
+  s.points = [{ v: 0, pH: chem({ ...cfg, acidVolume: 0, baseVolume: FLASK_CM3 }).pH }];
+  return s;
+}
+
+function MiniTrace({ points, veq, axis }) {
+  const W = 280, H = 120, L = 28, B = 20, T = 6, R = 8;
+  const x = (v) => L + (v / axis) * (W - L - R); const y = (pH) => T + ((14 - clamp(pH, 0, 14)) / 14) * (H - T - B);
   return (
-    <div className="sphere-group">
-      {Array.from({ length: count }).map((_, index) => (
-        <IonSphere key={`${type}-${index}`} type={type} index={index} />
-      ))}
-    </div>
+    <svg viewBox={`0 0 ${W} ${H}`} className="ab-svg eq2-trace" role="img" aria-label={`pH against volume of acid added, ${points.length} readings, equivalence at ${veq.toFixed(1)} cubic centimetres`}>
+      {[0, 7, 14].map((p) => <g key={p}><line x1={L} x2={W - R} y1={y(p)} y2={y(p)} stroke="#2b3a50" strokeDasharray={p === 7 ? "4 3" : ""} /><text x={L - 4} y={y(p) + 4} textAnchor="end" fontSize="10" fill="#d3dcea">{p}</text></g>)}
+      <line x1={x(veq)} x2={x(veq)} y1={T} y2={H - B} stroke="#5eead4" strokeDasharray="4 3" />
+      <text x={x(veq)} y={H - 7} textAnchor="middle" fontSize="10" fill="#5eead4" fontWeight="700">{veq.toFixed(1)}</text>
+      <text x={L + 2} y={H - 7} fontSize="10" fill="#d3dcea">0</text><text x={W - R} y={H - 7} textAnchor="end" fontSize="10" fill="#d3dcea">{axis} cm{"³"}</text>
+      <path d={points.map((p, i) => `${i ? "L" : "M"}${x(p.v).toFixed(1)} ${y(p.pH).toFixed(1)}`).join("")} fill="none" stroke="#ffd166" strokeWidth="1.5" />
+      {points.map((p, i) => <circle key={i} cx={x(p.v)} cy={y(p.pH)} r={i === points.length - 1 ? 4.5 : 2.5} fill="#ffd166" />)}
+    </svg>
   );
 }
 
 function EquivalencePointBody() {
   const { isViewport } = useSimulationPresentation();
-  // The beam, pans and burettes are fixed-geometry artwork (570 px beam, about 720 px with the pans). Measure the stage (not the window) and scale the
-  // artwork down only as far as needed to keep it fully visible, so it never clips in the Learn column, fullscreen or a phone.
-  const stageRef = useRef(null);
-  const [stageScale, setStageScale] = useState(1);
+  const [st, dispatch] = useReducer(reducer, DEFAULTS, init);
+  const { cfg } = st;
+  const rootRef = useRef(null); const boxRef = useRef(null);
+  const [scale, setScale] = useState(0.8);
+  const [explore, setExplore] = useState(false);
   useEffect(() => {
-    const el = stageRef.current;
-    if (!el || typeof ResizeObserver === "undefined") return undefined;
-    const measure = () => setStageScale(Math.max(0.42, Math.min(1, (el.clientWidth - 12) / 720)));
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
+    const root = rootRef.current; const box = boxRef.current; if (!root || !box || typeof ResizeObserver === "undefined") return undefined;
+    const measure = () => { const narrow = root.clientWidth < 760; const w = box.clientWidth; const h = box.clientHeight; setScale(clamp(narrow ? w / ART_W : Math.min(w / ART_W, h / ART_H), 0.4, 1.15)); };
+    measure(); const ro = new ResizeObserver(measure); ro.observe(root); ro.observe(box); return () => ro.disconnect();
   }, []);
-  const [acidVolumeMl, setAcidVolumeMl] = useState(0);
-  const [baseVolumeMl, setBaseVolumeMl] = useState(INITIAL_BASE_VOLUME_ML);
-  const [acidDropKey, setAcidDropKey] = useState(0);
-  const [baseDropKey, setBaseDropKey] = useState(0);
-  const [exploreMode, setExploreMode] = useState(false);
-  const [selectedAcid, setSelectedAcid] = useState("HCl");
-  const [selectedBase, setSelectedBase] = useState("NaOH");
 
-  const acidFactor = ACIDS[selectedAcid].equivalentFactor;
-  const baseFactor = BASES[selectedBase].equivalentFactor;
-
-  const neutralization = useMemo(
-    () =>
-      calculateNeutralization({
-        acidVolumeMl,
-        acidConcentration: ACID_CONCENTRATION,
-        acidFactor,
-        baseVolumeMl,
-        baseConcentration: BASE_CONCENTRATION,
-        baseFactor,
-      }),
-    [acidVolumeMl, baseVolumeMl, acidFactor, baseFactor]
-  );
-
-  const { pH, status } = calculatePH(neutralization);
-  const approaching = getApproaching({ ...neutralization, status });
-
-  // Fixed reference (the INITIAL base charge, at the currently-selected
-  // base's equivalent factor) -- stable throughout a run regardless of
-  // how much reagent gets added later, so the beam/pointer/sphere scale
-  // doesn't drift as volumes grow.
-  const initialReferenceEquivalents = (INITIAL_BASE_VOLUME_ML / 1000) * BASE_CONCENTRATION * baseFactor;
-
-  // negative = base/OH- excess, zero = equivalence, positive = acid/H+ excess
-  const balanceState = neutralization.difference / initialReferenceEquivalents;
-  const normalizedBalance = clamp(balanceState, -1, 1);
-
-  // Beam and pointer are BOTH driven by the exact same signed value, in
-  // the SAME direction -- verified against the actual CSS rotation
-  // mechanics (browser positive rotation is clockwise; the beam's right
-  // side/H+ pan and the pointer's tip both swing toward +x for a
-  // positive angle), so they can never visually contradict each other.
-  const beamAngle = normalizedBalance * MAX_BEAM_ANGLE;
-  const pointerAngle = normalizedBalance * MAX_POINTER_ANGLE;
-
-  const sphereCount = getSphereCount({ ...neutralization, status }, initialReferenceEquivalents);
-
-  const isEquivalent = status === "equivalence";
-  const isExploring = selectedAcid !== "HCl" || selectedBase !== "NaOH";
-
-  function addAcid() {
-    setAcidDropKey((k) => k + 1);
-    setAcidVolumeMl((v) => Math.min(v + ACID_STEP_ML, MAX_REAGENT_VOLUME_ML));
-  }
-
-  function addBase() {
-    setBaseDropKey((k) => k + 1);
-    setBaseVolumeMl((v) => Math.min(v + BASE_STEP_ML, MAX_REAGENT_VOLUME_ML));
-  }
-
-  function reset() {
-    setAcidVolumeMl(0);
-    setBaseVolumeMl(INITIAL_BASE_VOLUME_ML);
-    setAcidDropKey((k) => k + 1);
-    setBaseDropKey((k) => k + 1);
-    // Explore mode's chosen reagents are intentionally NOT reset here --
-    // Replay resets volumes/spheres/pH/beam/pointer/status/drops, but may
-    // retain the currently-selected acid/base per the spec.
-  }
-
-  function handleAcidChange(e) {
-    setSelectedAcid(e.target.value);
-    setAcidVolumeMl(0);
-    setBaseVolumeMl(INITIAL_BASE_VOLUME_ML);
-  }
-
-  function handleBaseChange(e) {
-    setSelectedBase(e.target.value);
-    setAcidVolumeMl(0);
-    setBaseVolumeMl(INITIAL_BASE_VOLUME_ML);
-  }
-
-  let statusTitle;
-  let statusClass;
-  if (isEquivalent) {
-    statusTitle = "EQUIVALENCE POINT";
-    statusClass = "status-equivalence";
-  } else if (approaching) {
-    statusTitle = "Approaching equivalence...";
-    statusClass = "status-approaching";
-  } else if (status === "acid") {
-    statusTitle = "H\u207A in excess";
-    statusClass = "status-acidic";
-  } else {
-    statusTitle = "OH\u207B in excess";
-    statusClass = "status-basic";
-  }
+  const s = useMemo(() => chem({ ...cfg, acidVolume: st.acidVolume, baseVolume: st.baseVolume }), [cfg, st.acidVolume, st.baseVolume]);
+  const ref = (FLASK_CM3 / 1000) * cfg.cBase * BASES[cfg.baseId].factor;
+  const stat = statusText(s, st.acidVolume, ref);
+  const normalized = clamp(s.diff / ref, -1, 1);
+  const frac = clamp(Math.abs(s.diff) / ref, 0, 1);
+  const count = s.status === "equivalence" ? 0 : Math.max(1, Math.round(frac * MAX_VISIBLE_SPHERES));
+  const spheres = { oh: s.status === "base" ? count : 0, h: s.status === "acid" ? count : 0 };
+  const veq = equivalenceAcidVolume({ ...cfg, baseVolume: st.baseVolume });
+  const axis = axisFor(veq);
+  const atMax = st.acidVolume >= axis - 1e-9;
+  const valid = validate(cfg.baseId, cfg.cBase);
+  const acid = ACIDS[cfg.acidId], base = BASES[cfg.baseId];
+  const changeCfg = (patch) => {
+    const next = { ...cfg, ...patch };
+    if (patch.baseId === "CaOH2" && next.cBase > BASES.CaOH2.maxConc) next.cBase = 0.01; // pick a physically possible concentration
+    dispatch({ type: "cfg", patch: next });
+  };
+  const nBaseMmol = s.nBase * 1000 * base.factor; const nAcidMmol = s.nAcid * 1000 * acid.factor;
+  const isDefaultCfg = cfg.acidId === "HCl" && cfg.baseId === "NaOH";
 
   return (
-    <section className={"equivalence-simulation sim-surface-dark" + (isViewport ? " is-viewport" : "")}>
-      <div className="equivalence-header">
-        <div>
-          <h2>Equivalence Point</h2>
-          <p>Add HCl little by little and observe what happens as the solution approaches the equivalence point.</p>
-        </div>
-
-        <div className="ph-display">
-          <span>pH</span>
-          <strong>{Number.isFinite(pH) ? pH.toFixed(2) : "\u2014"}</strong>
-        </div>
-      </div>
-
-      <div className="simulation-stage" ref={stageRef} style={{ "--eq-scale": stageScale }}>
-        <div className={`status-card ${statusClass}`}>
-          <strong>{statusTitle}</strong>
-          {status === "base" && !isEquivalent && <span>BASIC</span>}
-          {status === "acid" && !isEquivalent && <span>ACIDIC</span>}
-          {isEquivalent && <span>{"Neither H\u207A nor OH\u207B is in excess"}</span>}
-        </div>
-
+    <section ref={rootRef} className={"ab-root ab-fixed equivalence-simulation eq2 sim-surface-dark" + (isViewport ? " is-viewport" : "")}>
+      <div className="eq2-grid">
+        <div className="eq2-artbox" ref={boxRef} style={{ "--art-h": `${ART_H * scale}px` }}>
+          <div className="simulation-stage eq2-art" style={{ width: ART_W, height: ART_H, transform: `scale(${scale})`, "--eq-scale": 1 }} role="img" aria-label={`Balance: ${stat.title}. ${stat.detail}. pH ${formatPH(s.pH)}.`}>
         {/* NaOH dropper -- left/OH- side */}
         <div className="naoh-unit">
           <div className="burette">
@@ -262,8 +99,8 @@ function EquivalencePointBody() {
             <div className="burette-lines"><i /><i /><i /><i /><i /></div>
             <div className="burette-tip" />
           </div>
-          <div key={baseDropKey} className={baseDropKey > 0 ? "acid-drop acid-drop-active" : "acid-drop"} />
-          <span className="hcl-label">{BASES[selectedBase].label}</span>
+          <div key={st.baseDrop} className={st.baseDrop > 0 ? "acid-drop acid-drop-active" : "acid-drop"} />
+          <span className="hcl-label">{base.label}</span>
         </div>
 
         {/* HCl dropper -- right/H+ side */}
@@ -273,8 +110,8 @@ function EquivalencePointBody() {
             <div className="burette-lines"><i /><i /><i /><i /><i /></div>
             <div className="burette-tip" />
           </div>
-          <div key={acidDropKey} className={acidDropKey > 0 ? "acid-drop acid-drop-active" : "acid-drop"} />
-          <span className="hcl-label">{ACIDS[selectedAcid].label}</span>
+          <div key={st.acidDrop} className={st.acidDrop > 0 ? "acid-drop acid-drop-active" : "acid-drop"} />
+          <span className="hcl-label">{acid.label}</span>
         </div>
 
         <div className="balance-wrapper">
@@ -286,7 +123,7 @@ function EquivalencePointBody() {
               <span className="tick tick-4" />
               <span className="tick tick-5" />
             </div>
-            <div className="balance-pointer" style={{ transform: `translateX(-50%) rotate(${pointerAngle}deg)` }} />
+            <div className="balance-pointer" style={{ transform: `translateX(-50%) rotate(${normalized * MAX_POINTER_ANGLE}deg)` }} />
           </div>
 
           <div className="balance-stand">
@@ -294,13 +131,13 @@ function EquivalencePointBody() {
             <div className="stand-base" />
           </div>
 
-          <div className="balance-beam" style={{ transform: `translate(-50%, -50%) rotate(${beamAngle}deg)` }}>
+          <div className="balance-beam" style={{ transform: `translate(-50%, -50%) rotate(${normalized * MAX_BEAM_ANGLE}deg)` }}>
             <div className="beam-body" />
 
             <div className="pan-unit pan-unit-left">
               <div className="pan-support" />
               <div className="balance-pan">
-                <SphereGroup type="OH" count={sphereCount.oh} />
+                <SphereGroup type="OH" count={spheres.oh} />
               </div>
               <div className="pan-label oh-label">{"OH\u207B"}</div>
             </div>
@@ -308,7 +145,7 @@ function EquivalencePointBody() {
             <div className="pan-unit pan-unit-right">
               <div className="pan-support" />
               <div className="balance-pan">
-                <SphereGroup type="H" count={sphereCount.h} />
+                <SphereGroup type="H" count={spheres.h} />
               </div>
               <div className="pan-label h-label">{"H\u207A"}</div>
             </div>
@@ -316,71 +153,46 @@ function EquivalencePointBody() {
             <div className="beam-pivot-dot" />
           </div>
         </div>
-      </div>
-
-      <div className="reaction-row">
-        <strong>{"H\u207A + OH\u207B \u2192 H\u2082O"}</strong>
-      </div>
-
-      <div className="volume-row">
-        <span>{BASES[selectedBase].label}: <strong>{baseVolumeMl.toFixed(1)} {"cm\u00b3"}</strong></span>
-        <span>{ACIDS[selectedAcid].label}: <strong>{acidVolumeMl.toFixed(1)} {"cm\u00b3"}</strong></span>
-      </div>
-
-      <label className="explore-toggle-row">
-        <input type="checkbox" checked={exploreMode} onChange={(e) => setExploreMode(e.target.checked)} />
-        Explore stoichiometry
-      </label>
-
-      {exploreMode && (
-        <div className="explore-panel">
-          <div className="explore-field">
-            <label htmlFor="eq-acid-select">Acid</label>
-            <select id="eq-acid-select" value={selectedAcid} onChange={handleAcidChange}>
-              {Object.entries(ACIDS).map(([key, acid]) => (
-                <option key={key} value={key}>{acid.label}</option>
-              ))}
-            </select>
           </div>
-          <div className="explore-field">
-            <label htmlFor="eq-base-select">Base</label>
-            <select id="eq-base-select" value={selectedBase} onChange={handleBaseChange}>
-              {Object.entries(BASES).map(([key, base]) => (
-                <option key={key} value={key}>{base.label}</option>
-              ))}
-            </select>
+        </div>
+        <div className="eq2-panel">
+          <div className="eq2-head">
+            <div className={`eq2-status status-card-x ${stat.key}`} aria-live="polite" data-testid="status"><strong>{stat.title}</strong><span>{stat.detail}</span></div>
+            <div className="eq2-ph"><span>pH</span><strong data-testid="ph">{formatPH(s.pH)}</strong></div>
           </div>
-          <p className="explore-ratio-note">
-            {ACIDS[selectedAcid].ratioNote} {"\u00b7"} {BASES[selectedBase].ratioNote}
-          </p>
-          {isExploring && (
-            <p className="explore-warning-note">
-              Explore mode focuses on stoichiometric acid/base equivalents. Detailed polyprotic equilibria are not represented.
-            </p>
+          <p className="eq2-setup" data-testid="setup">Flask: <strong>{st.baseVolume.toFixed(1)} cm{"³"} of {cfg.cBase.toFixed(3)} mol dm{"⁻³"} {base.label}</strong> ({nBaseMmol.toFixed(2)} mmol OH{"⁻"}). Burette: <strong>{cfg.cAcid.toFixed(3)} mol dm{"⁻³"} {acid.label}</strong>, <strong>{st.acidVolume.toFixed(1)} cm{"³"}</strong> added ({nAcidMmol.toFixed(2)} mmol H{"⁺"}). Equivalence at {veq.toFixed(1)} cm{"³"}.</p>
+          <p className="eq2-eq">{EQUATIONS[`${cfg.acidId}+${cfg.baseId}`]} {"·"} net: H{"⁺"} + OH{"⁻"} {"→"} H{"₂"}O</p>
+          <div className="eq2-btns">
+            <button type="button" className="sim-btn sim-btn--primary ab-btn" disabled={atMax} onClick={() => dispatch({ type: "acid", amount: 2.5 })}>Add 2.5 cm{"³"} {acid.label}</button>
+            <button type="button" className="sim-btn ab-btn" disabled={atMax} onClick={() => dispatch({ type: "acid", amount: 0.5 })}>Add 0.5 cm{"³"}</button>
+            <button type="button" className="sim-btn ab-btn" onClick={() => dispatch({ type: "base", amount: 2.5 })}>Add 2.5 cm{"³"} {base.label}</button>
+            <button type="button" className="sim-btn ab-btn" onClick={() => dispatch({ type: "reset" })}>Reset</button>
+          </div>
+          {atMax && <p className="ab-note ab-warn">Limit: {axis} cm{"³"} of acid (about twice the equivalence volume) is added. Reset to start again.</p>}
+          <MiniTrace points={st.points} veq={veq} axis={axis} />
+          <p className="ab-note">Each ion sphere stands for about one tenth of the starting OH{"⁻"}, an analogy, not a count. The trace shows how little the pH moves until the equivalence point, then how fast it jumps.</p>
+          <label className="eq2-toggle"><input type="checkbox" checked={explore} onChange={(e) => { setExplore(e.target.checked); if (!e.target.checked) dispatch({ type: "reset" }); }} /> Explore stoichiometry (other acids, bases, concentrations)</label>
+          {explore && (
+            <div className="eq2-explore">
+              <label className="ab-field">Acid<select value={cfg.acidId} onChange={(e) => changeCfg({ acidId: e.target.value })}>{Object.values(ACIDS).map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}</select></label>
+              <label className="ab-field">Acid conc.<select value={cfg.cAcid} onChange={(e) => changeCfg({ cAcid: Number(e.target.value) })}>{ACID_CONCS.map((c) => <option key={c} value={c}>{c.toFixed(3)}</option>)}</select></label>
+              <label className="ab-field">Base<select value={cfg.baseId} onChange={(e) => changeCfg({ baseId: e.target.value })}>{Object.values(BASES).map((b) => <option key={b.id} value={b.id}>{b.label}</option>)}</select></label>
+              <label className="ab-field">Base conc.<select value={cfg.cBase} onChange={(e) => changeCfg({ cBase: Number(e.target.value) })}>{BASE_CONCS.map((c) => <option key={c} value={c} disabled={!validate(cfg.baseId, c).ok}>{c.toFixed(3)}{validate(cfg.baseId, c).ok ? "" : " (above solubility)"}</option>)}</select></label>
+              <p className="ab-note">{acid.ratio}. {base.ratio}.</p>
+              {!valid.ok && <p className="ab-note ab-warn">{valid.message}</p>}
+              {cfg.baseId === "CaOH2" && <p className="ab-note">Ca(OH){"₂"} dissolves only to about 0.02 mol dm{"⁻³"} at 25 {"°"}C, so higher concentrations are not offered.</p>}
+              {cfg.acidId === "H2SO4" && <p className="ab-note">H{"₂"}SO{"₄"}: the first H{"⁺"} is fully released, HSO{"₄⁻"} has pKa 1.99 and is solved exactly, so equivalence for NaOH is a little above pH 7.</p>}
+              {s.precipitate && <p className="ab-note ab-warn">Calcium sulfate is sparingly soluble: here it would start to precipitate, so the pH shown is approximate.</p>}
+              {!isDefaultCfg && <p className="ab-note">Ideal behaviour assumed (activities = concentrations).</p>}
+            </div>
           )}
         </div>
-      )}
-
-      <div className="simulation-controls">
-        <button type="button" className="secondary-control" onClick={addBase}>
-          Add {BASES[selectedBase].label}
-        </button>
-        <button type="button" className="primary-control" onClick={addAcid}>
-          Add {ACIDS[selectedAcid].label}
-        </button>
-        <button type="button" className="secondary-control" onClick={reset}>
-          Replay
-        </button>
       </div>
-
-      <p className="equivalence-copyright">{COPYRIGHT_TEXT_COMPACT}</p>
+      <p className="ab-note eq2-copy">{COPYRIGHT_TEXT_COMPACT}</p>
     </section>
   );
 }
 
-// Wrapped in the shared simulation shell so this engine gets the same Fullscreen / Open in New Tab controls, CSS
-// fullscreen fallback and standalone/fullscreen viewport box as every other simulation. The shell's own title row is used
-// in fullscreen / new-tab mode (the engine hides its duplicate heading then, see `.is-viewport` in the stylesheet).
 export default function EquivalencePoint({ compact = false, standalone = false }) {
   return (
     <InteractiveFrame title="Equivalence Point" subtitle={"A beam-balance analogy for stoichiometric neutralization"} compact={compact} standalone={standalone}>

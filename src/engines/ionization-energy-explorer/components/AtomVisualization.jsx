@@ -47,12 +47,12 @@ function useElementSize(ref) {
 // Nucleus glow strengthens briefly (a conceptual visual cue only -- no
 // fabricated atomic-radius numbers are ever displayed) whenever the
 // outermost shell has just disappeared entirely.
-function Nucleus({ cx, cy, r, fontSize, speciesSymbol, pulse }) {
+function Nucleus({ cx, cy, r, fontSize, label, pulse }) {
   return (
     <g>
       <circle cx={cx} cy={cy} r={r + Math.max(8, r * 0.4)} fill="url(#ie-nucleus-glow)" className={pulse ? "ie-nucleus-pulse" : ""} data-glow-r={r + Math.max(8, r * 0.4)} />
       <circle cx={cx} cy={cy} r={r} fill="#0d1a33" stroke="#5ad1ff" strokeWidth="1.5" />
-      <text x={cx} y={cy + fontSize * 0.34} textAnchor="middle" fontSize={fontSize} fontWeight="700" fill="#eaf6ff">{speciesSymbol}</text>
+      <text x={cx} y={cy + fontSize * 0.34} textAnchor="middle" fontSize={fontSize} fontWeight="700" fill="#eaf6ff">{label}</text>
     </g>
   );
 }
@@ -63,7 +63,7 @@ function ShellRing({ n, occupancy, cx, cy, r, electronR, isTarget }) {
   return (
     <g>
       <circle cx={cx} cy={cy} r={r} fill="none" stroke={isTarget ? "#5ad1ff" : "#274063"} strokeWidth="1" strokeDasharray="2 4" />
-      <text x={cx + r + 6} y={cy - r + 4} fontSize="10" fill="#7fa8d9">n={n} &middot; {occupancy}/{capacity}</text>
+      <text x={cx + r + 6} y={cy - r + 4} fontSize="11" fill="#9db8dc">n={n} &middot; {occupancy}/{capacity}</text>
       {positions.map((p, i) => (
         <circle key={i} cx={p.x} cy={p.y} r={electronR} fill="#5ad1ff" stroke="#eaf6ff" strokeWidth="0.75">
           <title>{`Shell n=${n}, electron ${i + 1} of ${occupancy}`}</title>
@@ -140,7 +140,8 @@ export default function AtomVisualization({ atomState, removing, reducedMotion, 
 
   const shellEntries = Object.entries(atomState.shells).map(([n, occ]) => [Number(n), occ]).sort((a, b) => a[0] - b[0]);
   const shellNumbers = shellEntries.map(([n]) => n);
-  const ringCount = Math.max(shellNumbers.length ? Math.max(...shellNumbers) : 1, 1);
+  // Ring radii are fixed by the NEUTRAL atom: removing electrons never re-spaces the rings, so a cation (Mg2+) is visibly smaller than its atom.
+  const ringCount = Math.max(atomState.neutralMaxShell ?? 1, shellNumbers.length ? Math.max(...shellNumbers) : 1, 1);
 
   const padding = Math.max(PADDING_MIN, Math.min(PADDING_MAX, Math.min(W, H) * 0.09));
   const labelAllowance = Math.max(LABEL_ALLOWANCE_MIN, Math.min(LABEL_ALLOWANCE_MAX, W * 0.16));
@@ -189,7 +190,7 @@ export default function AtomVisualization({ atomState, removing, reducedMotion, 
           {shellEntries.map(([n, occ]) => (
             <ShellRing key={n} n={n} occupancy={occ} cx={cx} cy={cy} r={shellRadius(n)} electronR={electronR} isTarget={removing?.shell === n} />
           ))}
-          <Nucleus cx={cx} cy={cy} r={nucleusR} fontSize={nucleusFontSize} speciesSymbol={atomState.speciesSymbol} pulse={innerShellPulse} />
+          <Nucleus cx={cx} cy={cy} r={nucleusR} fontSize={nucleusFontSize} label={`+${atomState.element.atomicNumber}`} pulse={innerShellPulse} />
           {removing && (
             <RemovingElectron
               index={removing.indexInShell}
@@ -205,8 +206,8 @@ export default function AtomVisualization({ atomState, removing, reducedMotion, 
           )}
         </svg>
       </div>
-      <p className="mt-1 max-w-xs shrink-0 text-center text-[9px] leading-snug text-[var(--color-ink-faint)] opacity-70">
-        Shells are shown as a simplified energy-level representation. Electrons do not travel in fixed circular orbits.
+      <p className="mt-1 max-w-xs shrink-0 text-center text-[11px] leading-snug text-[#9db8dc]">
+        Simplified shell model: ring spacing is fixed, so a positive ion keeps the atom's rings and loses the empty outer one. Nuclear charge shown as +Z. Electrons do not travel in circular orbits.
       </p>
       <style>{`
         .ie-nucleus-pulse { animation: ie-pulse 900ms ease-out 1; }

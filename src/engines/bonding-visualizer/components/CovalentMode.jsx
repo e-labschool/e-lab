@@ -8,9 +8,9 @@ import { spawnPosition, useAtomDrag, useFrameLoop, useReducedMotion, useWorld } 
 import { COVALENT_ATOMS } from "../model/elements.js";
 import {
   BOND_ORDERS, COVALENT_GROUPS, electronsAround, examplesForGroup, examplesForOrder, explainUnsupported, findMolecule, getMolecule,
-  totalLonePairs, totalSharedPairs, uniformBondOrder,
+  dativeBonds, totalLonePairs, totalSharedPairs, uniformBondOrder,
 } from "../model/covalent.js";
-import { atomsAreClose, covalentScene, covalentSize, gatherTargets } from "../scene/covalentScene.js";
+import { atomsAreClose, covalentScene, covalentSize, gatherTargets, layoutMolecule } from "../scene/covalentScene.js";
 import { ringRadius } from "../scene/atomGeometry.js";
 import { getBondingElement } from "../model/elements.js";
 
@@ -39,13 +39,19 @@ const GROUPS = [
   { id: "nonmetals", title: "Non-metals", symbols: COVALENT_ATOMS.filter((s) => !["Be", "B"].includes(s)) },
   { id: "exceptions", title: "Octet exceptions", symbols: ["Be", "B"] },
 ];
-const DEFAULT_EXAMPLE = { normal: "CH4", incomplete: "BF3", expanded: "SF6" };
+const DEFAULT_EXAMPLE = { normal: "CH4", incomplete: "BF3", expanded: "SF6", carbon: "C2H4", coordinate: "NH4+" };
 
-const octetWord = { normal: "octet", incomplete: "incomplete octet", expanded: "expanded octet" };
+const octetWord = { normal: "octet", incomplete: "incomplete octet", expanded: "expanded octet", carbon: "octet", coordinate: "octet" };
 
 function explainBonded(m) {
   const pairs = totalSharedPairs(m);
   const base = `${m.formula}: ${pairs} shared pair${pairs > 1 ? "s" : ""}, ${totalLonePairs(m)} lone pair${totalLonePairs(m) === 1 ? "" : "s"}. Electrons are shared, not transferred.`;
+  if (m.note) return `${m.formula}: ${m.note}`;
+  if (m.id === "CO") return "CO: a triple bond, 3 shared pairs. Two pairs have one electron from each atom; the third pair is a coordinate (dative) bond, both electrons from O. Each atom ends with an octet.";
+  if (m.id === "CO2") return "CO₂: two double bonds, 4 shared pairs. Each oxygen has 2 lone pairs, so every atom has an octet.";
+  if (m.id === "HCN") return "HCN: one single bond (C–H) and one triple bond (C≡N): 4 shared pairs, 1 lone pair on N.";
+  if (m.id === "C2H4") return "C₂H₄: C=C double bond and four C–H single bonds: 6 shared pairs, no lone pairs; each carbon has an octet.";
+  if (m.id === "C2H2") return "C₂H₂: C≡C triple bond and two C–H single bonds: 5 shared pairs; each carbon has an octet.";
   if (m.id === "H2") return "H₂: one shared pair = 2 electrons, one from each H. Shared, not transferred.";
   if (m.group === "incomplete") return `${m.formula}: ${m.atoms[m.central]} has only ${electronsAround(m, m.central)} electrons (incomplete octet).`;
   if (m.group === "expanded") return `${m.formula}: ${m.atoms[m.central]} has ${electronsAround(m, m.central)} electrons (expanded octet, period 3).`;
@@ -118,13 +124,17 @@ export default function CovalentMode({ tabs, onReset }) {
     if (n === 2) {
       const d = Math.min(world.W * 0.3, 260);
       m.atoms.forEach((sym, i) => list.push({ symbol: sym, x: c.x + (i ? d : -d), y: c.y }));
+    } else if (m.layout) {
+      const Sm = covalentSize(world, m); const lay = layoutMolecule(m);
+      m.atoms.forEach((sym, i) => list.push({ symbol: sym, x: Math.min(world.W - 40, Math.max(40, c.x + lay.pos[i].x * Sm * 1.7)), y: Math.min(world.H - 60, Math.max(40, c.y + lay.pos[i].y * Sm * 1.7)) }));
     } else {
       const Sm = covalentSize(world, m);
       const lim = Math.max(...m.atoms.slice(1).map((s) => (ringRadius(getBondingElement(m.atoms[0]).shells.length) + ringRadius(getBondingElement(s).shells.length) + 36) * Sm));
       const R = Math.min(250, Math.max(world.H * 0.34, lim * 1.2));
       list.push({ symbol: m.atoms[0], x: c.x, y: c.y });
       m.atoms.slice(1).forEach((sym, i) => {
-        const ang = -Math.PI / 2 + (2 * Math.PI * i) / (n - 1);
+        // an even number of ligands starts half a step round, so none sits exactly above / below the centre: the canvas is wider than tall, and the top / bottom atoms were clipped (4 ligands) or touched the edge (2)
+        const cnt = n - 1; const ang = -Math.PI / 2 + (cnt % 2 === 0 ? Math.PI / cnt : 0) + (2 * Math.PI * i) / cnt;
         list.push({ symbol: sym, x: Math.min(world.W - 40, Math.max(40, c.x + R * 1.25 * Math.cos(ang))), y: c.y + R * Math.sin(ang) });
       });
     }
@@ -195,7 +205,7 @@ export default function CovalentMode({ tabs, onReset }) {
     { id: "shared", label: "Shared pairs", value: done ? String(totalSharedPairs(molecule)) : "–", bg: "#eaf1ff", testId: "live-shared" },
     { id: "lone", label: "Lone pairs", value: done ? String(totalLonePairs(molecule)) : "–", bg: "#fff1e0", testId: "live-lone" },
     { id: "centre", label: molecule?.central !== null && molecule ? `e⁻ around ${molecule.atoms[molecule.central]}` : "e⁻ per atom", value: done && stage === "bonded" ? (molecule.central !== null ? String(electronsAround(molecule, molecule.central)) : [...new Set(molecule.atoms)].map((s) => electronsAround(molecule, molecule.atoms.indexOf(s))).join(", ")) : "–", bg: "#f1ebfb", testId: "live-central" },
-    { id: "charge", label: "Net charge", value: done && stage === "bonded" ? "0" : "–", bg: "#f3f4f8", testId: "live-charge" },
+    { id: "charge", label: "Net charge", value: done && stage === "bonded" ? (molecule.charge === 0 ? "0" : molecule.charge > 0 ? `+${molecule.charge}` : `−${-molecule.charge}`) : "–", bg: "#f3f4f8", testId: "live-charge" },
   ];
 
   const lockReason = !inSetup ? "Reset to add more atoms." : null;
@@ -242,6 +252,16 @@ export default function CovalentMode({ tabs, onReset }) {
           <circle key={`l${i}`} cx={l.bx} cy={l.by} r={l.br} fill={`url(#bv-grad-${i})`} fillOpacity={0.38 * l.opacity} clipPath={`url(#bv-clip-${i})`} data-testid="overlap" pointerEvents="none" />
         ))}
         {settle < 1 && <Electrons atoms={scene.atoms} />}
+        {settle < 1 && scene.dative.map((d, i) => {
+          const dx = d.to.x - d.from.x; const dy = d.to.y - d.from.y; const l = Math.hypot(dx, dy) || 1; const ux = dx / l; const uy = dy / l;
+          const x1 = d.from.x + ux * l * 0.2; const y1 = d.from.y + uy * l * 0.2; const x2 = d.from.x + ux * l * 0.8; const y2 = d.from.y + uy * l * 0.8;
+          return (
+            <g key={`dat${i}`} pointerEvents="none" opacity={d.opacity} data-testid="dative-arrow">
+              <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#d97706" strokeWidth="3" strokeLinecap="round" />
+              <polygon points={`${x2},${y2} ${x2 - ux * 12 - uy * 7},${y2 - uy * 12 + ux * 7} ${x2 - ux * 12 + uy * 7},${y2 - uy * 12 - ux * 7}`} fill="#d97706" />
+            </g>
+          );
+        })}
         {stage === "bonded" && molecule && settle < 1 && (
           <g pointerEvents="none" data-testid="molecule-label">
             <text x={scene.centroid.x} y={Math.min(world.H - 30, scene.bottom + 38)} textAnchor="middle" fontSize="26" fontWeight="800" fill="#14226b"><SvgSubs text={molecule.formula} size={26} /></text>
@@ -258,6 +278,7 @@ export default function CovalentMode({ tabs, onReset }) {
       {atoms.length === 0 && <p className="bv-placeholder">Click or drag an atom from the library</p>}
       {centralText && <span className="bv-pill" data-testid="central-count">{centralText}</span>}
       {stage === "bonding" && <span className="bv-badge bv-badge--green" data-testid="stage-badge">{scene.crowded ? "Sharing electrons (valence dots only)" : "Sharing electrons"}</span>}
+      {stage === "bonded" && molecule && dativeBonds(molecule).length > 0 && <span className="bv-badge bv-badge--amber" data-testid="dative-note" style={{ top: 46 }}>Orange arrow: coordinate (dative) bond. Both electrons come from the donor atom.</span>}
       {stage === "bonded" && (settle < 1
         ? <p className="bv-note" data-testid="lewis-note">Each shared pair has one electron from each atom (colours kept). Lewis diagram: electrons only, not molecular shape.</p>
         : <p className="bv-note" data-testid="structure-note">Final structure: spheres are atoms, bonds are shared pairs (2 or 3 lines for double or triple). Drag to rotate.</p>)}

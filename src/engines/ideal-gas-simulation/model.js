@@ -1,3 +1,5 @@
+import { PRESSURE_UNITS, VOLUME_UNITS } from "../../lib/gas/gasUnits.js";
+
 // Ideal vs Real Gas -- pure model (no React, no DOM) so it can be tested in
 // Node (scripts/test-ideal-gas-model.mjs). Rendering lives elsewhere.
 //
@@ -12,14 +14,20 @@
 //   Real gas    (P + a n^2 / V^2) (V - n b) = n R T  Z = P V / (n R T)
 //
 // All quantities use ONE unit system: P in atm, V in L, n in mol, T in K,
-// R = 0.082057 L atm mol^-1 K^-1, a in L^2 atm mol^-2, b in L mol^-1.
+// R = 0.082057 L atm mol^-1 K^-1 (= 8.3145 J K^-1 mol^-1, shown as 8.31 like the IB data booklet; the 0.05 % difference
+// is invisible at 3 significant figures), a in L^2 atm mol^-2, b in L mol^-1. The model is ALWAYS atm / L internally;
+// kPa / dm^3 (IB default in the UI) are DISPLAY conversions: pass `units` to resolveState / predictContent for the texts.
+// 1 L = 1 dm^3 exactly and 1 atm = 101.325 kPa exactly.
 //
 // VAN DER WAALS CONSTANTS (documented gas, NOT tuned)
 //   CO2:  a = 3.640 L^2 atm mol^-2,  b = 0.04267 L mol^-1
 //   (standard tabulated values). They imply
 //   Tc = 8a/(27 R b) = 308 K (experiment 304.1 K), Pc = a/(27 b^2) = 74.0 atm
 //   (experiment 72.8 atm), T_Boyle = a/(R b) = 1040 K, so the model is
-//   quantitatively reasonable for CO2 below ~100 atm and qualitative above.
+//   QUALITATIVE: van der Waals reproduces the SHAPE of Z(P) but not real CO2 numbers. Its saturation (condensation)
+//   pressure is far from the literature value at low T (model vs experiment: 250 K 30.3 vs about 17.9 atm, 273 K 44.9 vs
+//   about 34.4 atm, 300 K 66.6 vs about 65.9 atm; experiment from the Wikipedia CO2 data page). Every on-screen
+//   condensation message says so (CONDENSATION_ACCURACY).
 //
 // WHY THE OLD GRAPH SHOWED "NO MEANINGFUL DEVIATION" (root cause)
 //   The previous version used invented constants (a = 15, b = 0.40 in "internal
@@ -79,10 +87,30 @@ export const VDW_B = GAS.b;
 // decades, so their sliders are logarithmic (see sliderScale in the UI).
 export const LIMITS = {
   N: { min: 5, max: 100, step: 1 },
-  T: { min: 250, max: 700, step: 5 },
+  T: { min: 250, max: 700, step: 1 },
   V: { min: 0.01, max: 100, step: 0.01 },
-  P: { min: 1, max: 500, step: 0.1 },
+  P: { min: 0.1, max: 500, step: 0.1 },
 };
+/** Texts default to the model's native atm / L; the UI passes IB units (kPa / dm3) or the owner's choice. */
+export const NATIVE_UNITS = Object.freeze({ pressure: "atm", volume: "L" });
+export const IB_UNITS = Object.freeze({ pressure: "kPa", volume: "dm3" });
+export const unitLabelP = (u = NATIVE_UNITS) => (PRESSURE_UNITS[u.pressure] ?? PRESSURE_UNITS.atm).label;
+export const unitLabelV = (u = NATIVE_UNITS) => (VOLUME_UNITS[u.volume] ?? VOLUME_UNITS.L).label;
+const KPA_PER_ATM_ = 101.325;
+/** atm -> display number text with sensible significant figures. */
+export function fmtPressure(atm, u = NATIVE_UNITS) {
+  const x = atm * (PRESSURE_UNITS[u.pressure] ?? PRESSURE_UNITS.atm).perKPa * KPA_PER_ATM_;
+  return x >= 1000 ? x.toFixed(0) : x >= 100 ? x.toFixed(0) : x >= 10 ? x.toFixed(1) : x >= 1 ? x.toFixed(2) : x.toFixed(3);
+}
+export function fmtVolume(L, u = NATIVE_UNITS) {
+  const x = L * (VOLUME_UNITS[u.volume] ?? VOLUME_UNITS.L).perDm3;
+  return x >= 100 ? x.toFixed(0) : x >= 10 ? x.toFixed(1) : x >= 1 ? x.toFixed(2) : x.toFixed(3);
+}
+/** value (atm / L) -> number in the display unit; and back. */
+export const pToDisplay = (atm, u = NATIVE_UNITS) => atm * (PRESSURE_UNITS[u.pressure] ?? PRESSURE_UNITS.atm).perKPa * KPA_PER_ATM_;
+export const pFromDisplay = (x, u = NATIVE_UNITS) => x / ((PRESSURE_UNITS[u.pressure] ?? PRESSURE_UNITS.atm).perKPa * KPA_PER_ATM_);
+export const vToDisplay = (L, u = NATIVE_UNITS) => L * (VOLUME_UNITS[u.volume] ?? VOLUME_UNITS.L).perDm3;
+export const vFromDisplay = (x, u = NATIVE_UNITS) => x / (VOLUME_UNITS[u.volume] ?? VOLUME_UNITS.L).perDm3;
 
 // control: "pressure" (default) or "volume".
 // P     target pressure (atm), kept inside LIMITS.P (slider value).
@@ -91,9 +119,13 @@ export const LIMITS = {
 // Vpin  volume (L) held when the current state cannot be reproduced by the
 //       solver (e.g. beyond the gas branch); else null. Cleared by any change.
 export const DEFAULT_CONTROLS = Object.freeze({
-  mode: "ideal", N: 50, T: 300, V: 0.41, control: "pressure", P: 30, Phold: null, Vpin: null,
+  // OPENING STATE: 0.50 mol at 300 K and 100 kPa (0.98692 atm) -> V = 12.47 dm3. An everyday, near-ideal gas (Z about 0.995);
+  // the strongly non-ideal region is reached by the student, not shown under the "Ideal" label (GS-02).
+  mode: "ideal", N: 50, T: 300, V: 12.471, control: "pressure", P: 100 / 101.325, Phold: null, Vpin: null,
 });
-export const DEFAULT_DISPLAY = Object.freeze({ trails: true, collisions: false, forces: false });
+// pistonScale: 25 | 100 = LINEAR drawn range 0-25 / 0-100 dm3 (labelled ticks on the cylinder); "log" = the old logarithmic scale.
+// wallGauge: show the "pressure from collisions" readout.
+export const DEFAULT_DISPLAY = Object.freeze({ trails: true, collisions: false, forces: false, wallGauge: true, pistonScale: 25 });
 
 export const N_REF = 50;
 export const MOL_PER_PARTICLE = 0.01;
@@ -357,13 +389,15 @@ export function compareWithIdeal(n, T, V) {
   };
 }
 
+/** Appended to every condensation message: the vdW saturation curve is qualitative (see the header comment). */
+export const CONDENSATION_ACCURACY = " (van der Waals is qualitative here: for CO\u2082 it puts the condensation pressure about 70 % too high at 250 K and within about 1 % at 300 K.)";
 export const UNRELIABLE_TEXT = Object.freeze({
   "invalid-state": "The simplified model is unreliable for this state.",
   "ideal-pressure-near-zero": "The pressure is too close to zero for a meaningful comparison.",
   "excluded-volume": "Model limit: the molecules' own volume fills too much of the container, so the van der Waals equation is unreliable here.",
   "unstable-region": "Model limit: the van der Waals model predicts an unstable state here, so the comparison is unreliable.",
-  "two-phase": "Model limit: at this temperature and volume CO₂ would condense (gas and liquid coexist), so the van der Waals gas model does not apply.",
-  condensation: "Model limit: above the saturation pressure at this temperature CO₂ condenses, so the van der Waals gas model does not apply.",
+  "two-phase": "Model limit: at this temperature and volume CO₂ would condense (gas and liquid coexist), so the van der Waals gas model does not apply." + CONDENSATION_ACCURACY,
+  condensation: "Model limit: above the saturation pressure at this temperature CO₂ condenses, so the van der Waals gas model does not apply." + CONDENSATION_ACCURACY,
   "non-positive-pressure": "The model gives a non-physical pressure here, so the comparison is unreliable.",
 });
 
@@ -413,7 +447,10 @@ export function realGasReference(c, n, V, pTarget) {
  * is the slider value; in Pressure control V is solved from the target P for the
  * selected gas model. Also provides everything the Live Values / indicator /
  * graph need. */
-export function resolveState(controls) {
+export function resolveState(controls, units = NATIVE_UNITS) {
+  const fmtAtm = (x) => fmtPressure(x, units); const fmtL = (x) => fmtVolume(x, units);
+  const uP = unitLabelP(units); const uV = unitLabelV(units);
+  const lim = (x, f) => f(x);
   const c = clampControls(controls);
   const n = amountOfSubstance(c.N);
   const real = c.mode === "real";
@@ -434,11 +471,11 @@ export function resolveState(controls) {
       const sol = solveVolumeForPressure(n, c.T, target, c.mode);
       V = sol.V; status = sol.status; vRequired = sol.vRequired;
       const pNow = real ? vdwPressure(n, c.T, V) : idealPressure(n, c.T, V);
-      if (status === "below-range") note = `Target ${fmtAtm(target)} atm needs ${fmtL(vRequired)} L, below the ${LIMITS.V.min} L minimum. Volume limited to ${LIMITS.V.min} L, so P = ${fmtAtm(pNow)} atm (target unreachable).`;
-      else if (status === "above-range") note = `Target ${fmtAtm(target)} atm needs ${vRequired >= 1000 ? ">1000" : fmtL(vRequired)} L, above the ${LIMITS.V.max} L maximum. Volume limited to ${LIMITS.V.max} L, so P = ${fmtAtm(pNow)} atm (target unreachable).`;
-      else if (status === "no-gas-solution") { limitReason = sol.reason; note = `${UNRELIABLE_TEXT[sol.reason === "condensation" ? "condensation" : "excluded-volume"]} Volume held at ${fmtL(V)} L.`; }
+      if (status === "below-range") note = `Target ${fmtAtm(target)} ${uP} needs ${fmtL(vRequired)} ${uV}, below the ${lim(LIMITS.V.min, fmtL)} ${uV} minimum. Volume limited to ${lim(LIMITS.V.min, fmtL)} ${uV}, so P = ${fmtAtm(pNow)} ${uP} (target unreachable).`;
+      else if (status === "above-range") note = `Target ${fmtAtm(target)} ${uP} needs ${vRequired >= 1000 ? ">1000" : fmtL(vRequired)} ${uV}, above the ${lim(LIMITS.V.max, fmtL)} ${uV} maximum. Volume limited to ${lim(LIMITS.V.max, fmtL)} ${uV}, so P = ${fmtAtm(pNow)} ${uP} (target unreachable).`;
+      else if (status === "no-gas-solution") { limitReason = sol.reason; note = `${UNRELIABLE_TEXT[sol.reason === "condensation" ? "condensation" : "excluded-volume"]} Volume held at ${fmtL(V)} ${uV}.`; }
       else if (status === "invalid") note = "The target pressure is not valid for this state.";
-      if (c.Phold != null && status === "ok") note = `Pressure ${fmtAtm(c.Phold)} atm is outside the slider range (${LIMITS.P.min}-${LIMITS.P.max} atm); the state is held at that pressure.`;
+      if (c.Phold != null && status === "ok") note = `Pressure ${fmtAtm(c.Phold)} ${uP} is outside the slider range (${fmtAtm(LIMITS.P.min)}-${fmtAtm(LIMITS.P.max)} ${uP}); the state is held at that pressure.`;
     }
   }
   const pIdeal = idealPressure(n, c.T, V);
@@ -764,6 +801,7 @@ const RADIUS_RATE = 5; // 1/s
 const FADE_TIME = 0.45; // s
 const COUNT_RATE = 60; // particles/s added or removed
 const MAX_EVENTS = 80;
+const WALL_WINDOW = 0.25; // s of simulation time per wall-impulse sample
 
 // Real-mode attraction: hard core (collision radius) + short-range attractive
 // tail, force-shifted so it goes to zero at the cutoff:
@@ -782,6 +820,29 @@ export function pistonHeight(V) {
   const f = Math.log(v / LIMITS.V.min) / Math.log(LIMITS.V.max / LIMITS.V.min);
   return CHAMBER.maxHeight * (MIN_HEIGHT_FRACTION + (1 - MIN_HEIGHT_FRACTION) * f);
 }
+
+// The drawn piston never goes below 14 % of the cylinder (same floor as the log scale): the particles need room, so the picture
+// would otherwise squeeze them through the piston. Below that volume the number is still exact; the UI says the piston is at its stop.
+export const LINEAR_MIN_FRACTION = MIN_HEIGHT_FRACTION;
+/** Piston height for a LINEAR drawn scale 0..vMax (L = dm3): exactly proportional to V; clamped at the top (see scaleState). */
+export function pistonHeightLinear(V, vMax) {
+  const f = clamp((Number(V) || 0) / vMax, LINEAR_MIN_FRACTION, 1);
+  return CHAMBER.maxHeight * f;
+}
+/** Height for the current display scale (display.pistonScale: 25 | 100 | "log"). */
+export function pistonHeightFor(V, scale) {
+  return scale === "log" ? pistonHeight(V) : pistonHeightLinear(V, scale === 100 ? 100 : 25);
+}
+/** Where the labelled ticks go: [{ V (L), h (chamber units), label }]. Linear: 5 equal steps; log: decades. */
+export function scaleTicks(scale) {
+  if (scale === "log") return [0.01, 0.1, 1, 10, 100].map((V) => ({ V, h: pistonHeight(V), label: String(V) }));
+  const vMax = scale === 100 ? 100 : 25;
+  return [0, 1, 2, 3, 4, 5].map((i) => { const V = (vMax * i) / 5; return { V, h: i === 0 ? 0 : pistonHeightLinear(V, vMax), label: String(V) }; });
+}
+/** True when the volume is drawn clamped (above a linear scale); the UI says so. */
+export const aboveScale = (V, scale) => scale !== "log" && V > (scale === 100 ? 100 : 25) * (1 + 1e-9);
+/** True when a LINEAR scale cannot draw the volume because the piston is at its lower stop. */
+export const belowScale = (V, scale) => scale !== "log" && V < (scale === 100 ? 100 : 25) * LINEAR_MIN_FRACTION * (1 - 1e-9);
 
 export function sigmaForT(T) {
   return SIGMA_REF * Math.sqrt(T / T_REF);
@@ -861,8 +922,9 @@ export function createSimulation({ seed = 12345 } = {}) {
     paused: false,
     instant: false, // reduced motion: piston/radius/fades snap
     time: 0,
-    pistonH: pistonHeight(resolveState(DEFAULT_CONTROLS).V),
+    pistonH: pistonHeightFor(resolveState(DEFAULT_CONTROLS).V, DEFAULT_DISPLAY.pistonScale),
     pistonV: 0,
+    wall: { impulse: 0, hits: 0, t: 0, rate: 0, hitsPerSec: 0, kin: 0, ratio: null, window: 0 },
     radius: R_IDEAL,
     events: [],
     _acc: 0,
@@ -980,7 +1042,7 @@ export function createSimulation({ seed = 12345 } = {}) {
   function substep() {
     const dt = DT;
     // piston
-    const targetH = pistonHeight(sim.state.V);
+    const targetH = pistonHeightFor(sim.state.V, sim.display.pistonScale);
     const prevH = sim.pistonH;
     if (sim.instant) {
       sim.pistonH = targetH;
@@ -1006,8 +1068,15 @@ export function createSimulation({ seed = 12345 } = {}) {
       else if (p.fade < 0) p.alpha -= dt / FADE_TIME;
     }
     for (const p of ps) {
-      if (confine(p, r, sim.pistonH, sim.pistonV)) pushEvent(p.x, p.y, "wall");
+      const vyBefore = p.vy;
+      if (confine(p, r, sim.pistonH, sim.pistonV)) {
+        pushEvent(p.x, p.y, "wall");
+        // momentum handed to the PISTON by this hit (m = 1): the pressure the picture really produces
+        if (p.fade >= 0 && p.y >= sim.pistonH - r - 1e-6 && p.vy < vyBefore) { sim.wall.impulse += vyBefore - p.vy; sim.wall.hits += 1; }
+      }
     }
+    sim.wall.window += dt;
+    if (sim.wall.window >= WALL_WINDOW) accumulateWall();
     // particle-particle (equal mass, elastic); fading-out ghosts do not collide
     const D = 2 * r;
     for (let i = 0; i < ps.length; i++) {
@@ -1034,6 +1103,27 @@ export function createSimulation({ seed = 12345 } = {}) {
     sim.time += dt;
   }
 
+  // 2D "pressure" on the piston = momentum per second per unit length of piston. The reference is the kinetic value
+  // sum(m vy^2) / (W h) of the SAME particles (ideal gas of points); the ratio is what the student compares with 1.
+  function accumulateWall() {
+    const w = sim.wall;
+    const act = activeParticles();
+    const W = CHAMBER.width; const h = Math.max(1e-6, sim.pistonH);
+    let kin = 0;
+    for (const p of act) kin += p.vy * p.vy;
+    const meas = w.impulse / w.window / W;
+    const ref = kin / (W * h);
+    const a = w.ratio == null ? 1 : 0.35; // smoothing: newest window weighs 35 %
+    const ratio = ref > 0 ? meas / ref : null;
+    w.rate = w.rate === 0 ? meas : w.rate * (1 - a) + meas * a;
+    w.kin = w.kin === 0 ? ref : w.kin * (1 - a) + ref * a;
+    w.hitsPerSec = w.hitsPerSec === 0 ? w.hits / w.window : w.hitsPerSec * (1 - a) + (w.hits / w.window) * a;
+    w.ratio = ratio == null ? w.ratio : w.ratio == null ? ratio : w.ratio * (1 - a) + ratio * a;
+    w.impulse = 0; w.hits = 0; w.window = 0;
+  }
+  /** Pressure produced by wall collisions: { hitsPerSec, ratio (measured / kinetic reference, about 1), steady }. */
+  sim.getWallStats = () => ({ hitsPerSec: sim.wall.hitsPerSec, ratio: sim.wall.ratio, steady: Math.abs(sim.pistonV) < 2 && !sim.paused, count: activeParticles().length });
+
   /** Advance by wall-clock dt seconds (no-op while paused). */
   sim.advance = function advance(dt) {
     if (sim.paused) return;
@@ -1052,7 +1142,7 @@ export function createSimulation({ seed = 12345 } = {}) {
   /** Snap everything to the current controls without advancing motion
    * (used while paused so the display never lags the sliders). */
   function syncInstant() {
-    sim.pistonH = pistonHeight(sim.state.V);
+    sim.pistonH = pistonHeightFor(sim.state.V, sim.display.pistonScale);
     sim.pistonV = 0;
     sim.radius = targetRadius();
     syncCount(true);
@@ -1070,6 +1160,7 @@ export function createSimulation({ seed = 12345 } = {}) {
   sim.setDisplay = function setDisplay(next) {
     sim.display = { ...sim.display, ...next };
     if (!sim.display.collisions) sim.events.length = 0;
+    if (sim.paused) syncInstant();
   };
 
   sim.setPaused = function setPaused(p) {
@@ -1092,8 +1183,9 @@ export function createSimulation({ seed = 12345 } = {}) {
     sim.time = 0;
     sim._acc = 0;
     sim._countAcc = 0;
-    sim.pistonH = pistonHeight(sim.state.V);
+    sim.pistonH = pistonHeightFor(sim.state.V, sim.display.pistonScale);
     sim.pistonV = 0;
+    sim.wall = { impulse: 0, hits: 0, t: 0, rate: 0, hitsPerSec: 0, kin: 0, ratio: null, window: 0 };
     sim.radius = R_IDEAL;
     syncCount(true);
     for (const p of sim.particles) confine(p, sim.radius, sim.pistonH, 0);

@@ -1,0 +1,44 @@
+/* Shared look for the acid-base simulations (dark panel; controls take their colours from the shared --sim-btn-* tokens). */
+.ab-root {
+  --ab-bg: #0e1520; --ab-panel: #141e2c; --ab-line: #5d6b82; --ab-line-soft: #2b3a50;
+  --ab-ink: #f1f5f9; --ab-muted: #b9c4d4; --ab-accent: #8ab4ff; --ab-teal: #5eead4; --ab-amber: #fbbf24; --ab-coral: #fda4af; --ab-violet: #d8b4fe;
+  box-sizing: border-box; width: 100%; max-width: 1180px; margin: 0 auto; padding: 10px 12px;
+  display: grid; gap: 8px; border: 1px solid var(--ab-line-soft); border-radius: 12px; background: var(--ab-bg); color: var(--ab-ink);
+  font-size: 13px; line-height: 1.35; container-type: inline-size; min-width: 0;
+}
+.ab-root *, .ab-root *::before, .ab-root *::after { box-sizing: border-box; }
+.ab-root.is-viewport { height: 100%; max-width: none; border-radius: 8px; }
+.ab-root:not(.is-viewport).ab-fixed { min-height: clamp(600px, calc(100dvh - 4.5rem), 820px); }
+@media (max-width: 760px) { .ab-root.is-viewport, .ab-root.ab-fixed { height: auto; min-height: 0; } }
+.ab-root h2, .ab-root h3, .ab-root p { margin: 0; }
+.ab-muted { color: var(--ab-muted); }
+.ab-sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.ab-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; min-width: 0; }
+.ab-field { display: grid; gap: 2px; min-width: 0; font-size: 11px; font-weight: 600; color: var(--ab-muted); letter-spacing: .02em; }
+.ab-field > select, .ab-field > input { font-size: 13px; font-weight: 500; min-height: 34px; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--sim-btn-border); background: var(--sim-btn-fill); color: var(--sim-btn-ink); min-width: 0; max-width: 100%; }
+.ab-btn { min-height: 36px; padding: 0 12px; font-size: 13px; font-weight: 600; border-radius: 8px; cursor: pointer; }
+.ab-btn:disabled { cursor: not-allowed; }
+.ab-btns { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; }
+.ab-strip { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; padding: 6px 10px; border: 1px solid var(--ab-line-soft); border-radius: 10px; background: var(--ab-panel); min-width: 0; }
+.ab-readout { display: grid; gap: 0; min-width: 0; }
+.ab-readout > span { font-size: 11px; color: var(--ab-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.ab-readout > strong { font-size: 17px; font-variant-numeric: tabular-nums; }
+.ab-panel { border: 1px solid var(--ab-line-soft); border-radius: 10px; background: var(--ab-panel); padding: 8px 10px; min-width: 0; min-height: 0; }
+.ab-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--ab-ink); }
+.ab-chip > i { display: inline-block; width: 18px; height: 10px; border-radius: 2px; flex: 0 0 auto; }
+.ab-note { font-size: 12px; color: var(--ab-muted); }
+.ab-warn { color: #fde68a; }
+.ab-table { border-collapse: collapse; font-size: 12px; width: 100%; }
+.ab-table th, .ab-table td { text-align: left; padding: 3px 8px; border-bottom: 1px solid var(--ab-line-soft); font-weight: 500; }
+.ab-table th { color: var(--ab-muted); font-size: 11px; font-weight: 700; }
+.ab-svg text { font-family: inherit; }
+@media (prefers-reduced-motion: reduce) { .ab-root *, .ab-root *::before, .ab-root *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; } }
+/* Panels inside a scrolling column must never shrink below their content (that made them overlap) */
+.buf-side > .ab-panel, .eq2-panel > *, .neu-side > .ab-panel { min-height: auto; flex-shrink: 0; }
+/* Short windows (e.g. 910x512): the panel grows to its content and the shell scrolls, instead of squeezing and overlapping */
+@media (max-height: 660px) {
+  .ab-root.is-viewport, .ab-root.ab-fixed { height: auto; min-height: 100%; grid-template-rows: none; grid-auto-rows: auto; }
+  .buf-side, .eq2-panel { overflow: visible; }
+  .eq2-artbox { height: var(--art-h); min-height: 200px; }
+  .hoh-chart { min-height: 220px; }
+}

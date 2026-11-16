@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Html, Line, OrbitControls } from "@react-three/drei";
-import WebGLGate from "./WebGLGate.jsx";
+import GuardedFrame from "../../shared-3d/GuardedFrame.jsx";
+import CameraKeyApi from "../../shared-3d/CameraKeyApi.jsx";
 import CellGrid from "./CellGrid.jsx";
 import { STRUCTURES, computeCoordination, displayRadii, generateIonicBlock, ionColors } from "../model/lattice.js";
 import { IONIC_COUNT_NOTE } from "./latticeNotes.js";
@@ -96,9 +97,11 @@ export default function LatticeStage({ structureId, cat, an, playing, runKey, re
   const size = Math.max(...ions.map((i) => Math.abs(i.x)));
   const s = STRUCTURES[structureId];
   return (
-    <div className="bv-3d" data-testid="lattice-stage" data-structure={structureId} data-ions={ions.length}>
-      <WebGLGate fallback={`${s.label}: each interior cation has ${coord.cation} nearest anions and each interior anion has ${coord.anion} nearest cations.`}>
-        <Canvas camera={{ position: [size * 3.3, size * 2.3, size * 4.1], fov: 40 }} dpr={[1, 1.75]} gl={{ antialias: true, powerPreference: "low-power" }}>
+    <GuardedFrame className="bv-3d" testId="lattice-stage" ariaLabel="3D ionic lattice. Arrow keys rotate, plus and minus zoom, zero resets the view." data-structure={structureId} data-ions={ions.length}
+      fallback={`${s.label}: each interior cation has ${coord.cation} nearest anions and each interior anion has ${coord.anion} nearest cations.`}
+      render={({ canvasKey, aa, camRef }) => (
+        <Canvas key={canvasKey} camera={{ position: [size * 3.3, size * 2.3, size * 4.1], fov: 40 }} dpr={[1, 1.75]} gl={{ antialias: aa, powerPreference: "low-power" }}>
+          <CameraKeyApi apiRef={camRef} />
           <ambientLight intensity={0.7} />
           <directionalLight position={[6, 8, 5]} intensity={1.15} />
           <directionalLight position={[-6, -3, -4]} intensity={0.35} />
@@ -107,7 +110,7 @@ export default function LatticeStage({ structureId, cat, an, playing, runKey, re
           <Ions ions={ions} radii={radii} colors={colors} playing={playing} runKey={runKey} step={reduced ? 0.004 : STEP} onProgress={onProgress} />
           <ControlsWithReset resetKey={resetKey} autoRotate={playing} />
         </Canvas>
-      </WebGLGate>
+      )}>
       <div className="bv-legend" data-testid="lattice-legend">
         <span><i style={{ background: colors.cation }} />{cat} cation</span>
         <span><i style={{ background: colors.anion }} />{an} anion</span>
@@ -115,6 +118,6 @@ export default function LatticeStage({ structureId, cat, an, playing, runKey, re
       <p className="bv-3d-note" data-testid="lattice-note">
         {s.label}. Interior ions: each {cat} has {coord.cation} nearest {an}; each {an} has {coord.anion} nearest {cat} ({coord.cation}:{coord.anion}). {IONIC_COUNT_NOTE}
       </p>
-    </div>
+    </GuardedFrame>
   );
 }

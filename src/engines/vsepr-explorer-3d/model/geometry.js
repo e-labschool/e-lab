@@ -67,15 +67,15 @@ const rad = (d) => (d * Math.PI) / 180;
 const sph = (polarDeg, azDeg) => { const p = rad(polarDeg); const a = rad(azDeg); return [Math.sin(p) * Math.cos(a), Math.sin(p) * Math.sin(a), Math.cos(p)]; };
 
 /** Illustrative reference angles used to compress the bonding slots away from lone pairs (they match the usual experimental values). */
-export const MODEL_ANGLES = { trigonalPyramidal: 107, bent4: 104.5, lpLp4: 115, bent3: 118, seesawAxial: 173.1, seesawEq: 101.6, tShapeAxEq: 87.5, sqPyramidBasal: 84.8 };
+export const MODEL_ANGLES = { trigonalPyramidal: 107, bent4: 104.5, lpLp4: 115, bent3: 119.5, seesawAxial: 173.1, seesawEq: 101.6, tShapeAxEq: 87.5, sqPyramidBasal: 84.8 };
 
 /**
  * Slot set for b bonding + l lone-pair domains: { dirs, roles }, roles[i] = "bond" | "lp".
  * Lone pairs take the VSEPR-preferred positions of the ideal set, then the bonding slots are bent away from them.
  */
-export function buildSlots(b, l) {
+export function buildSlots(b, l, overrides = null) {
   const n = b + l;
-  const A = MODEL_ANGLES;
+  const A = overrides ? { ...MODEL_ANGLES, ...overrides } : MODEL_ANGLES;
   if (n === 3 && l === 1) {
     const a = A.bent3 / 2;
     return { dirs: [[-Math.cos(rad(a)), Math.sin(rad(a)), 0], [-Math.cos(rad(a)), -Math.sin(rad(a)), 0], [1, 0, 0]], roles: ["bond", "bond", "lp"] };
@@ -282,7 +282,7 @@ function refreshTargets(sim) {
  * Replace the domain list. `ids` / `kinds` describe the NEW list in order; existing ids keep their direction and velocity,
  * `hints` ({id: [x,y,z]}) gives a starting direction for new ids, otherwise the direction farthest from the others is used.
  */
-export function syncDomains(sim, ids, kinds, hints = {}) {
+export function syncDomains(sim, ids, kinds, hints = {}, angles = null) {
   const oldIdx = new Map(sim.ids.map((id, i) => [id, i]));
   const dir = new Float64Array(18); const vel = new Float64Array(18); let placed = 0;
   const staged = [];
@@ -305,7 +305,7 @@ export function syncDomains(sim, ids, kinds, hints = {}) {
     have.add(i); placed += 1;
   });
   const b = kinds.filter((k) => k === "bond").length; const l = kinds.length - b;
-  const s = buildSlots(b, l);
+  const s = buildSlots(b, l, angles);
   sim.roles = s.roles.slice(); sim.slots = new Float64Array(18);
   s.dirs.forEach((v, i) => { sim.slots[i * 3] = v[0]; sim.slots[i * 3 + 1] = v[1]; sim.slots[i * 3 + 2] = v[2]; });
   sim.pi = [0, 1, 2, 3, 4, 5];

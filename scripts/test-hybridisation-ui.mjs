@@ -56,7 +56,7 @@ console.log("Orbital Lab");
 await mount();
 await test("exactly two tabs; Orbital Lab first", () => { const tabs = $$(`${T("hybridisation-tabs")} [role="tab"], ${T("hybridisation-tabs")} button`); assert.equal(tabs.length, 2); assert.ok($(T("tab-lab")) && $(T("tab-molecules"))); });
 await test("without WebGL the fallback message shows and the controls still work", () => { assert.ok($(T("webgl-fallback")), "fallback"); assert.ok($(T("select-element"))); });
-await test("element dropdown lists the 12 required elements", () => { assert.deepEqual($$(`${T("select-element")} option`).map((o) => o.value), ["H", "Be", "B", "C", "N", "O", "F", "Si", "P", "S", "Cl", "Xe"]); });
+await test("element dropdown lists the 11 IB-level elements (Xe, which only has d-orbital models, appears with the Beyond-the-IB-course switch; behaviour changed on purpose, BS-21)", () => { assert.deepEqual($$(`${T("select-element")} option`).map((o) => o.value), ["H", "Be", "B", "C", "N", "O", "F", "Si", "P", "S", "Cl"]); });
 await test("carbon ground state: 2s2 2p2 boxes, config line, specific orbital boxes", () => {
   assert.equal($(T("select-element")).value, "C"); assert.match(txt(T("config-line")), /2s.*2p/);
   for (const id of ["2s", "2px", "2py", "2pz"]) assert.ok($(T(`box-${id}`)), id);
@@ -84,9 +84,25 @@ await test("N, O, F, H cannot be excited: the button is disabled or explains why
   await setSelect(T("select-element"), "C");
 });
 
+await test("[BS-21] d-orbital hybrids are behind 'Beyond the IB course' (off by default): Xe hidden, S/P/Cl cannot be excited, d row hidden; switching it on restores them", async () => {
+  const sw = () => $(T("opt-beyond-ib")); assert.equal(sw().checked, false);
+  const opts = () => $$(`${T("select-element")} option`).map((o) => o.value);
+  assert.ok(!opts().includes("Xe") && opts().includes("S"));
+  await setSelect(T("select-element"), "S"); assert.ok($(T("state-excited")).disabled); assert.match(txt(T("excited-note")), /beyond the IB course/); assert.equal($(T("box-3dz2")), null);
+  await click(sw()); assert.equal(sw().checked, true); assert.ok(opts().includes("Xe")); assert.ok(!$(T("state-excited")).disabled); assert.ok($(T("box-3dz2")));
+  await click(sw()); assert.equal($(T("box-3dz2")), null); await setSelect(T("select-element"), "C");
+});
+await test("[BS-22] ground-state carbon explains why promotion is needed; excited carbon explains the energy trade-off", async () => {
+  await click(T("state-ground")); assert.match(txt(T("promotion-hint")), /only two unpaired electrons, yet carbon forms four bonds/);
+  await click(T("state-excited")); assert.match(txt(T("promotion-hint")), /costs energy/); await click(T("state-ground"));
+});
+await test("[BS-13] the 3D stage is keyboard operable: focusable application region, key help present when WebGL exists", () => {
+  const st = $(T("hy-stage")); assert.equal(st.getAttribute("tabindex"), "0"); assert.equal(st.getAttribute("role"), "application"); assert.ok(st.hasAttribute("data-s3d-stage"));
+});
+
 console.log("Molecule Explorer");
-await test("tab switch keeps Orbital Lab state; dropdown has 11 molecules", async () => {
-  await click(T("tab-molecules")); assert.equal($$(`${T("select-molecule")} option`).length, 11);
+await test("tab switch keeps Orbital Lab state; dropdown has 15 molecules", async () => {
+  await click(T("tab-molecules")); assert.equal($$(`${T("select-molecule")} option`).length, 15);
 });
 await test("ethene steps Next to 5/5 with 5 sigma and 1 pi; Previous and Reset work", async () => {
   await setSelect(T("select-molecule"), "C2H4"); assert.match(txt(T("step-count")), /1 \/ 5/);

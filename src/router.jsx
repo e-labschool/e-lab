@@ -45,6 +45,7 @@ import AdminResources from "./pages/admin/resources/AdminResources.jsx";
 import AdminFolders from "./pages/admin/folders/AdminFolders.jsx";
 import AdminLearnContent from "./pages/admin/learn/AdminLearnContent.jsx";
 import LessonEditor from "./pages/admin/learn/LessonEditor.jsx";
+import ContentOverview from "./pages/admin/learn/ContentOverview.jsx";
 import AdminQuestionBank from "./pages/admin/questions/AdminQuestionBank.jsx";
 import QuestionEditor from "./pages/admin/questions/QuestionEditor.jsx";
 import ImportQuestions from "./pages/admin/questions/ImportQuestions.jsx";
@@ -212,6 +213,7 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <RoleIndexResume role="admin" fallbackElement={<AdminDashboard />} /> },
       { path: "learn-content", element: <AdminLearnContent /> },
+      { path: "learn-content/overview", element: <ContentOverview /> },
       { path: "learn-content/new", element: <LessonEditor /> },
       { path: "learn-content/:pageId", element: <LessonEditor /> },
       { path: "resources", element: <AdminResources /> },

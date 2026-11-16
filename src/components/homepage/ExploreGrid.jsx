@@ -9,9 +9,9 @@ import Card from "../ui/Card.jsx";
 // more than the two role buttons above.
 const ITEMS = [
   {
-    title: "Electron Configuration",
-    description: "Atomic structure, visualized",
-    to: "/interactives/electron-configuration-explorer",
+    title: "VSEPR Explorer (3D)",
+    description: "Molecular shapes, visualized",
+    to: "/interactives/vsepr-explorer-3d",
     icon: Atom,
     accent: "var(--color-role-interactive)",
   },

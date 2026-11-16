@@ -26,7 +26,7 @@ export default function SimulationShowcase() {
             Browse all simulations <ArrowRight size={14} aria-hidden="true" />
           </Link>
         </div>
-        <ul className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        <ul className={`mt-8 grid gap-5 sm:grid-cols-2 ${featured.length === 3 ? "lg:grid-cols-3" : "lg:grid-cols-4"}`}>
           {featured.map((e) => {
             const badge = tierBadge(e, config);
             return (

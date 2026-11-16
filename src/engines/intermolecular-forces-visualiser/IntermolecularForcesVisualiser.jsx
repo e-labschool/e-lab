@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BookOpen, ChevronsLeftRight, ChevronsRightLeft, Compass, FlipHorizontal2, Flame, Pause, Play, RotateCcw, RotateCw, Rotate3d, SkipBack, SkipForward, Snowflake, Thermometer, Trash2, ArrowLeft, Camera, Repeat } from "lucide-react";
+import { BookOpen, ArrowDownUp, ChevronsLeftRight, ChevronsRightLeft, Compass, FlipHorizontal2, Flame, Pause, Play, RotateCcw, RotateCw, Rotate3d, SkipBack, SkipForward, Snowflake, Thermometer, Trash2, ArrowLeft, Camera, Repeat } from "lucide-react";
 import InteractiveFrame from "../../components/interactive-shell/InteractiveFrame.jsx";
 import SimulationDashboard, { DashPanel, DashboardTabs, ExplainLine, LiveStrip, MiniSwitch, PopoverSection, SettingToggle, SliderRow } from "../../components/simulation/SimulationDashboard.jsx";
 import { useSimulationSessionState } from "../../components/interactive-shell/simulationSession.js";
@@ -8,6 +8,8 @@ import ImfStage from "./scene/ImfStage.jsx";
 import CubeStage from "./scene/CubeStage.jsx";
 import { warmClouds } from "./scene/cloudGeometry.js";
 import MoleculeTray from "./components/MoleculeTray.jsx";
+import BoilingPointTask, { AlkaneSeries, RankSetList } from "./components/BoilingPointTask.jsx";
+import { RANK_SETS, RANK_SET_BY_ID, scoreRanking, shuffledOrder } from "./model/ranking.js";
 import IntraInterPopover from "./components/IntraInterPopover.jsx";
 import HeatingGraph from "./components/HeatingGraph.jsx";
 import useHeatSim from "./components/useHeatSim.js";
@@ -31,13 +33,14 @@ const TAB_STYLE = { soft: "#1a2b5b", border: "#2e4a90", text: "#d4e3ff", solid: 
 const TABS = [
   { id: "explore", label: "Explore", sub: "Drag, rotate and investigate", icon: Compass, title: "Drag molecules into the workspace and investigate how they attract each other", ...TAB_STYLE },
   { id: "learn", label: "Learn", sub: "Guided demonstrations", icon: BookOpen, title: "Watch a short guided demonstration of one intermolecular force", ...TAB_STYLE },
+  { id: "rank", label: "Boiling points", sub: "Predict, then reveal", icon: ArrowDownUp, title: "Predict the order of boiling points from the intermolecular forces, then check", ...TAB_STYLE },
 ];
 const reducedMotion = () => { try { return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false; } catch { return false; } };
 const isFinitePos = (v) => Number.isFinite(v);
 const oneOf = (list) => (v) => list.includes(v);
 
 function Workspace() {
-  const [mode, setMode] = useSimulationSessionState("mode", "explore", oneOf(["explore", "learn"]));
+  const [mode, setMode] = useSimulationSessionState("mode", "explore", oneOf(["explore", "learn", "rank"]));
   const [force, setForce] = useSimulationSessionState("force", "ldf", oneOf(FORCES));
   const [view, setView] = useSimulationSessionState("view", "ball", oneOf(["ball", "cloud"]));
   const [showDelta, setShowDelta] = useSimulationSessionState("delta", false, (v) => typeof v === "boolean");
@@ -49,6 +52,12 @@ function Workspace() {
   const [heat, setHeat] = useSimulationSessionState("heat", false, (v) => typeof v === "boolean");
   const [substanceId, setSubstanceId] = useSimulationSessionState("substance", "H2O", oneOf(MOLECULAR_SUBSTANCES));
   const [compare, setCompare] = useSimulationSessionState("compareIonic", false, (v) => typeof v === "boolean");
+  const [rankSetId, setRankSetId] = useState(RANK_SETS[0].id);
+  const [rankOrder, setRankOrder] = useState(() => shuffledOrder(RANK_SETS[0].id, 1));
+  const [rankRevealed, setRankRevealed] = useState(false);
+  const [rankAttempt, setRankAttempt] = useState(0);
+  const [rankResults, setRankResults] = useState({}); // session only: { [setId]: { perfect, correct, total, attempts } }
+  const [alkN, setAlkN] = useState(3);
   const [graphShown, setGraphShown] = useState(true);
   const [heatSpeed, setHeatSpeed] = useSimulationSessionState("heatSpeed", 1, (v) => isFinitePos(v) && v >= 0.5 && v <= 4);
   const [interactMode, setInteractMode] = useState("move");
@@ -195,6 +204,7 @@ function Workspace() {
 
   const resetCurrent = () => {
     if (heat) { heatSim.reset(); return; }
+    if (mode === "rank") { setRankRevealed(false); setRankOrder(shuffledOrder(rankSetId, 1)); setRankAttempt(0); return; }
     if (mode === "learn") { resetLesson(); return; }
     simRef.current.t = 0; setFrozen(false); stageRef.current?.resetView();
     commitExplore(layoutRow(molsRef.current)); setSelectedUid(null);
@@ -280,6 +290,27 @@ function Workspace() {
     graph = main ? <HeatingGraph sub={sub} E={main.E} label={sub.name} /> : null;
     live = <LiveStrip items={[{ id: "t", label: "Temperature", value: main ? `${main.T.toFixed(0)} K` : "–", bg: "#e6efff", testId: "live-temp" }, { id: "p", label: "Phase", value: main ? PHASE_LABEL[main.phase].split(" (")[0] : "–", bg: "#e8f6ec", testId: "live-phase" }, { id: "e", label: "Energy added", value: main ? `${main.E.toFixed(1)} kJ/mol` : "–", bg: "#fff2d8", testId: "live-energy" }]} />;
     explain = <ExplainLine text={heatText(main, sub, compare, ion)} testId="what-is-happening" />;
+  } else if (mode === "rank") {
+    const set = RANK_SET_BY_ID[rankSetId]; const sc = rankRevealed ? scoreRanking(rankSetId, rankOrder) : null;
+    const pick = (id) => { setRankSetId(id); setRankOrder(shuffledOrder(id, 1 + rankAttempt)); setRankRevealed(false); setRankAttempt(0); };
+    const reveal = () => { const r = scoreRanking(rankSetId, rankOrder); setRankRevealed(true); setRankResults((m) => ({ ...m, [rankSetId]: { perfect: r.perfect || m[rankSetId]?.perfect, correct: r.correct, total: r.total, attempts: (m[rankSetId]?.attempts ?? 0) + 1 } })); };
+    const again = () => { setRankRevealed(false); setRankAttempt((a) => a + 1); setRankOrder(shuffledOrder(rankSetId, 2 + rankAttempt)); };
+    chamber = (
+      <div className="imf-chamber imf-chamber--rank" data-testid="rank-chamber">
+        <div className="imf-rankscroll">
+          <BoilingPointTask setId={rankSetId} order={rankOrder} onOrder={setRankOrder} revealed={rankRevealed} onReveal={reveal} onAgain={again} onShuffle={() => setRankOrder(shuffledOrder(rankSetId, 7 + Math.floor(rankOrder.length * 13 + rankAttempt * 5)))} attempt={rankAttempt} />
+          {rankSetId === "alkanes" && <AlkaneSeries n={alkN} onChange={setAlkN} />}
+        </div>
+      </div>
+    );
+    controls = (
+      <DashPanel title="Boiling-point sets" grow className="imf-panel" testId="rankset-panel">
+        <RankSetList setId={rankSetId} onPick={pick} results={rankResults} />
+        <p className="imf-sub-note">Boiling points are at 1 atm. The point of each set is to apply the idea, not to memorise numbers.</p>
+      </DashPanel>
+    );
+    live = <LiveStrip items={[{ id: "set", label: "Set", value: set.title, bg: "#e6efff", testId: "live-rankset" }, { id: "score", label: "Result", value: sc ? `${sc.correct} / ${sc.total}` : "predict first", bg: "#e8f6ec", testId: "live-rankscore" }]} />;
+    explain = <ExplainLine text={rankRevealed ? set.idea : "Think about which intermolecular forces act and how strong they are, then put the substances in order and press Check my order."} testId="what-is-happening" />;
   } else if (mode === "learn") {
     const f = lessonFx; void f;
     chamber = (

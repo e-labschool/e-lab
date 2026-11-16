@@ -5,14 +5,15 @@ import EnergyPanel, { ExpandButton } from "./EnergyPanel.jsx";
 import ViewerStage from "./ViewerStage.jsx";
 import PhaseLegend from "./PhaseLegend.jsx";
 import { clockOverride } from "../scene/Scene3D.jsx";
-import { SELECTABLE_SYMBOLS, condensedLatex } from "../model/elements.js";
+import { SELECTABLE_SYMBOLS, IB_SELECTABLE_SYMBOLS, condensedLatex, groundStateHint } from "../model/elements.js";
 import { getElementBySymbol } from "../../../data/chemistry/elements.js";
 import { RECIPES, mixOrbitals } from "../model/hybrids.js";
 import { workspaceOverlaps } from "../model/overlapVolume.js";
-import { createHistory, reduce, describeActive, selectionSummary, analyseWorkspace, atomLabel } from "../model/workspace.js";
+import { createHistory, reduce, describeActive, selectionSummary, analyseWorkspace, atomLabel, usesBeyondIB } from "../model/workspace.js";
 import { planSnap } from "../model/snap.js";
 import { bondSummary, REASON_TEXT, labelText } from "../model/overlap.js";
 import { orbitalSpecs, requestsFromSpecs, highlightFor } from "../scene/viewModel.js";
+import useReducedMotion from "../../shared-3d/useReducedMotion.js";
 import { qSlerp, lerp, len, sub, add } from "../model/vec.js";
 
 export const MIX_MS = 1800; // Mix animation: ~0.25 s highlight, ~1.3 s morph, ~0.15 s settle
@@ -42,10 +43,12 @@ export default function useOrbitalLab() {
   const [panelOpen, setPanelOpen] = useState(true); const [focus, setFocus] = useState(false); const [showPhase, setShowPhase] = useState(false);
   const [hover, setHover] = useState(null); const [mixAnim, setMixAnim] = useState(null);
   const [resetCount, setResetCount] = useState(0);
+  const reduced = useReducedMotion();
+  const [beyondIB, setBeyondIB] = useState(false); // d-orbital hybrids (sp3d, sp3d2) are beyond the IB course: off by default
   const histRef = useRef(hist); histRef.current = hist;
   const snapRef = useRef(0); const timers = useRef([]);
   const present = hist.present; const active = present.atoms.find((a) => a.id === present.activeId) ?? present.atoms[0];
-  const info = describeActive(active); const summary = selectionSummary(active);
+  const info = describeActive(active, { beyondIB }); const summary = selectionSummary(active, { beyondIB });
 
   useEffect(() => () => { snapRef.current += 1; timers.current.forEach(clearTimeout); }, []);
   // safety net: the mix animation always ends (also where WebGL is unavailable and nothing renders it)
@@ -59,10 +62,14 @@ export default function useOrbitalLab() {
   const onMix = () => {
     const before = histRef.current; const next = reduce(before, { type: "mix" });
     const a = next.present.atoms.find((x) => x.id === next.present.activeId); const was = before.present.atoms.find((x) => x.id === a.id);
-    if (a.hybrid && !was.hybrid) setMixAnim({ atomId: a.id, startMs: performance.now(), durMs: MIX_MS });
+    if (a.hybrid && !was.hybrid && !reduced) setMixAnim({ atomId: a.id, startMs: performance.now(), durMs: MIX_MS });
     dispatch({ type: "mix" });
   };
   const onUndo = () => { snapRef.current += 1; setMixAnim(null); dispatch({ type: "undo" }); };
+  const onBeyondIB = (on) => {
+    if (!on && usesBeyondIB(histRef.current.present.atoms)) { snapRef.current += 1; setMixAnim(null); setHover(null); dispatch({ type: "reset" }); dispatch({ type: "note", note: "The workspace used a d-orbital model, which is beyond the IB course, so it was reset to a single carbon atom." }); }
+    setBeyondIB(on);
+  };
   const onReset = () => { snapRef.current += 1; setMixAnim(null); setHover(null); setTool("move"); setShowSigma(true); setShowPi(true); setAutoSnap(false); setFocus(false); setShowPhase(false); setResetCount((c) => c + 1); dispatch({ type: "reset" }); };
 
   // ---- snap (animated; one undo step)
@@ -171,7 +178,7 @@ export default function useOrbitalLab() {
       <section className="hy-ctl" aria-label="Atom">
         <label className="hy-field">Select Element
           <select value={active.symbol} onChange={(e) => onSymbol(e.target.value)} data-testid="select-element" aria-label="Select Element">
-            {SELECTABLE_SYMBOLS.map((s) => <option key={s} value={s}>{s} {"–"} {getElementBySymbol(s).name}</option>)}
+            {(beyondIB ? SELECTABLE_SYMBOLS : IB_SELECTABLE_SYMBOLS).map((s) => <option key={s} value={s}>{s} {"–"} {getElementBySymbol(s).name}</option>)}
           </select>
         </label>
         <p className="hy-config" data-testid="config-line"><b>Z = {el.atomicNumber} {"·"} {active.kind === "excited" ? "excited state (illustrative promotion)" : "ground state"}</b><Sci src={condensedLatex(active.state)} /></p>
@@ -180,6 +187,7 @@ export default function useOrbitalLab() {
           <SegBtn checked={active.kind === "excited"} onClick={() => info.canExcite && onKind("excited", active.promotionId ?? info.promotions[0]?.id)} disabled={!info.canExcite} title={info.canExcite ? "Show the illustrative promotion used in the valence-bond model" : info.noPromotionReason} testId="state-excited">Excited State</SegBtn>
         </Seg>
         {!info.canExcite && <p className="hy-small" data-testid="excited-note">{info.noPromotionReason}</p>}
+        {groundStateHint(active.symbol, active.kind) && info.canExcite && <p className="hy-note" data-testid="promotion-hint">{groundStateHint(active.symbol, active.kind)}</p>}
         {info.promotions.length > 1 && (
           <label className="hy-field">Promotion (illustrative)
             <select value={active.promotionId ?? ""} onChange={(e) => onKind("excited", e.target.value)} disabled={active.kind !== "excited"} data-testid="select-promotion" aria-label="Illustrative promotion">
@@ -189,6 +197,7 @@ export default function useOrbitalLab() {
         )}
       </section>
       <section className="hy-ctl" aria-label="Hybridisation">
+        <Switch checked={beyondIB} onChange={onBeyondIB} testId="opt-beyond-ib" title="Show the traditional d-orbital models sp3d and sp3d2 (PCl5, SF6, XeF4). They are not part of the IB DP course.">Beyond the IB course (d-orbital hybrids)</Switch>
         <p className="hy-summary" data-testid="selection-summary" data-ok={summary.ok} aria-live="polite">
           {summary.parts.length ? <><b>Selected: </b>{summary.parts.map((p, i) => <span key={p}>{i ? " + " : ""}<Sci src={p} /></span>)}{summary.ok ? <> {"→"} <Sci src={summary.result} /></> : summary.hybridCount ? ` (+ ${summary.hybridCount} hybrid)` : ""}</> : summary.hybridCount ? <><b>Selected: </b>{summary.hybridCount} hybrid orbital{summary.hybridCount > 1 ? "s" : ""} (highlight only)</> : <><b>Selected: </b>none</>}
         </p>
@@ -241,7 +250,7 @@ export default function useOrbitalLab() {
 
   const toggleOrbital = (id) => dispatch({ type: "toggleOrbital", orbId: id });
   const graph = panelOpen
-    ? <div className="hy-right" data-tab="lab"><EnergyPanel atom={active} selectable onToggle={toggleOrbital} hoverId={hover && hover.atomId === active.id ? hover.orbId : null} onCollapse={() => setPanelOpen(false)} label={atomLabel(present.atoms, active)} /></div>
+    ? <div className="hy-right" data-tab="lab"><EnergyPanel atom={active} selectable onToggle={toggleOrbital} hoverId={hover && hover.atomId === active.id ? hover.orbId : null} onCollapse={() => setPanelOpen(false)} label={atomLabel(present.atoms, active)} showD={beyondIB} /></div>
     : null;
 
   return { controls, chamber, graph, graphShown: panelOpen, explain, onReset, expandButton: panelOpen ? null : <ExpandButton onClick={() => setPanelOpen(true)} />, state: { hist, analysis, active, mixAnim } };

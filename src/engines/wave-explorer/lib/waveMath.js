@@ -7,8 +7,10 @@
 // conversion right is the single most error-prone part of this kind of
 // calculation, so it is verified numerically below before use anywhere
 // in the UI.
-export const SPEED_OF_LIGHT = 3.0e8; // m s^-1
-export const PLANCK_CONSTANT = 6.626e-34; // J s
+// Shared CODATA values (src/lib/atomic/constants.js) -- previously 3.0e8 and 6.626e-34 here, which disagreed with the other atomic sims.
+import { C, H } from "../../../lib/atomic/constants.js";
+export const SPEED_OF_LIGHT = C; // m s^-1
+export const PLANCK_CONSTANT = H; // J s
 
 const NM_PER_M = 1e9;
 

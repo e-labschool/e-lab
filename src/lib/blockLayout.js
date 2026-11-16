@@ -28,6 +28,9 @@ export const MAX_ROW_CELLS = 4;
 // side-by-side and every phone stacked.
 export const COLLAPSE_WIDTH = 640;
 export const LAYOUT_VERSION = 1;
+export const CANVAS_VERSION = 2;
+export const MAX_ROW_SPAN = 40; // canvas / preview height, in editor units
+export const DEFAULT_ROW_SPAN = 4;
 
 const ALIGNS = ["start", "center", "end"];
 const POSITIONS = ["left", "center", "right"];
@@ -48,6 +51,17 @@ const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
  * result carries no information (=> block is a plain full-width block). */
 export function normalizeLayout(raw, type) {
   if (!isObj(raw)) return null;
+  // Canvas placement (v2): { col, gr, rs } on the 12-column grid. Full-only types keep span 12 but DO carry a position.
+  if (Number.isFinite(Number(raw.col)) && Number.isFinite(Number(raw.gr)) && raw.col !== null && raw.gr !== null) {
+    const cmin = minSpanFor(type);
+    let cspan = Number(raw.span);
+    cspan = FULL_ONLY.has(type) ? GRID_COLUMNS : Number.isFinite(cspan) ? clamp(Math.round(cspan), cmin, GRID_COLUMNS) : GRID_COLUMNS;
+    const col = FULL_ONLY.has(type) ? 1 : clamp(Math.round(Number(raw.col)), 1, GRID_COLUMNS - cspan + 1);
+    const gr = Math.max(1, Math.round(Number(raw.gr)));
+    let rs = Number(raw.rs);
+    rs = Number.isFinite(rs) ? clamp(Math.round(rs), 1, MAX_ROW_SPAN) : DEFAULT_ROW_SPAN;
+    return { v: CANVAS_VERSION, span: cspan, col, gr, rs, align: ALIGNS.includes(raw.align) ? raw.align : "start", position: "left", mobile: MOBILES.includes(raw.mobile) ? raw.mobile : "default" };
+  }
   if (FULL_ONLY.has(type)) return null;
   const min = minSpanFor(type);
   let span = Number(raw.span);
@@ -61,6 +75,7 @@ export function normalizeLayout(raw, type) {
 }
 
 function isDefault(l) {
+  if (l && l.col) return false;
   return !l || (l.span === GRID_COLUMNS && !l.row && l.align === "start" && l.position === "left" && l.mobile === "default");
 }
 
@@ -72,9 +87,11 @@ export function getLayout(block) {
 export const hasLayout = (block) => getLayout(block) !== null;
 export const hasAnyLayout = (blocks) => (blocks || []).some(hasLayout);
 
-function withLayout(block, layout) {
+export function withLayout(block, layout) {
   const content = isObj(block.content) ? { ...block.content } : {};
-  const clean = layout && !isDefault(layout) ? { v: LAYOUT_VERSION, span: layout.span, ...(layout.row ? { row: layout.row } : {}), align: layout.align, position: layout.position, mobile: layout.mobile } : null;
+  const clean = layout && layout.col
+    ? { v: CANVAS_VERSION, span: layout.span, col: layout.col, gr: layout.gr, rs: layout.rs, align: layout.align ?? "start", position: "left", mobile: layout.mobile ?? "default" }
+    : layout && !isDefault(layout) ? { v: LAYOUT_VERSION, span: layout.span, ...(layout.row ? { row: layout.row } : {}), align: layout.align, position: layout.position, mobile: layout.mobile } : null;
   if (clean) content.layout = clean; else delete content.layout;
   return { ...block, content };
 }
@@ -276,6 +293,47 @@ export function setSpan(blocks, id, span, { fill = true } = {}) {
     sink.span += GRID_COLUMNS - total;
   }
   return commit(blocks, rows);
+}
+
+/** Classic "drag the right edge" resize. Like setSpan, plus FLOW: when a solo block gets narrow enough for the next
+ * solo block to fit beside it, that block joins the row (taking the free columns); when a block in a row is widened
+ * beyond what its neighbours' minimum widths allow, trailing neighbours leave the row (they drop to their own row below). */
+export function setSpanFlow(blocks, id, span) {
+  const rows = toRows(blocks);
+  const loc = locate(rows, id);
+  if (!loc) return blocks;
+  const row = rows[loc.r];
+  const cell = row.cells[loc.c];
+  const min = minSpanFor(cell.block.block_type);
+  const want = clamp(Math.round(Number(span)), min, GRID_COLUMNS);
+  if (!Number.isFinite(want)) return blocks;
+  // eject trailing neighbours until the wanted width fits next to the remaining minimums
+  let guard = 8;
+  while (guard-- > 0 && row.cells.length > 1) {
+    const othersMin = row.cells.filter((c) => c !== cell).reduce((s, c) => s + minSpanFor(c.block.block_type), 0);
+    if (want <= GRID_COLUMNS - othersMin) break;
+    const victim = row.cells[row.cells.length - 1] !== cell ? row.cells[row.cells.length - 1] : row.cells[0];
+    const vi = row.cells.indexOf(victim);
+    row.cells.splice(vi, 1);
+    victim.span = GRID_COLUMNS; victim.rowId = null;
+    rows.splice(rows.indexOf(row) + 1, 0, { rowId: null, position: "left", cells: [victim] });
+    if (row.cells.length === 1) { row.cells[0].rowId = null; }
+  }
+  const at = rows.indexOf(row);
+  if (row.cells.length === 1) {
+    cell.span = want;
+    const nextRow = rows[at + 1];
+    const next = nextRow && nextRow.cells.length === 1 ? nextRow.cells[0] : null;
+    const free = GRID_COLUMNS - want;
+    if (next && !isFullOnly(next.block.block_type) && !isFullOnly(cell.block.block_type) && free >= minSpanFor(next.block.block_type)) {
+      rows.splice(at + 1, 1);
+      next.span = free; next.rowId = null;
+      row.cells.push(next);
+    }
+    return commit(blocks, rows);
+  }
+  const committed = commit(blocks, rows);
+  return setSpan(committed, id, want);
 }
 
 function stepSpan(current, dir, snap, min) {
@@ -564,3 +622,6 @@ export function validateLayout(blocks) {
   }
   return { valid: errors.length === 0, errors };
 }
+
+/** Internals shared with blockCanvas.js (classic <-> canvas conversion). Not part of the public layout API. */
+export const _internals = { toRows, rowsToBlocks, cellOf, isDefault, locate, signature };

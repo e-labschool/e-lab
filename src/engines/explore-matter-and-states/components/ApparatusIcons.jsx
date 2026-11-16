@@ -21,22 +21,25 @@ export function BalanceIcon({ highlighted }) {
   );
 }
 
-export function GraduatedCylinder({ levelPercent = 30, highlight }) {
+/** 100 mL graduated cylinder. `volumeMl` (0-100) sets the liquid level: the graduations are real (every 20 mL labelled), so the
+ *  level the student reads is the number shown. */
+export function GraduatedCylinder({ volumeMl = 30, highlight, label }) {
+  const v = Math.min(100, Math.max(0, volumeMl));
   return (
-    <svg viewBox="0 0 60 120" className="h-28 w-16" aria-hidden="true">
-      <rect x="16" y="10" width="28" height="100" rx="3" fill="none" stroke="var(--color-ink)" strokeWidth="1.5" />
-      {[20, 40, 60, 80].map((y) => (
-        <line key={y} x1="16" y1={y} x2="21" y2={y} stroke="var(--color-ink-faint)" strokeWidth="1" />
+    <svg viewBox="0 0 70 124" className="h-32 w-[4.5rem]" role="img" aria-label={label ?? `Graduated cylinder reading ${Math.round(v)} millilitres`}>
+      <rect x="22" y="10" width="28" height="100" rx="3" fill="none" stroke="var(--color-ink)" strokeWidth="1.5" />
+      {[0, 20, 40, 60, 80, 100].map((m) => (
+        <g key={m}>
+          <line x1="22" y1={110 - m} x2="28" y2={110 - m} stroke="var(--color-ink-soft)" strokeWidth="1" />
+          <text x="19" y={110 - m + 2.5} textAnchor="end" fontSize="7" fontFamily="var(--font-mono)" fill="var(--color-ink-soft)">{m}</text>
+        </g>
       ))}
       <rect
-        x="17.5"
-        y={110 - levelPercent}
-        width="25"
-        height={levelPercent}
-        fill={highlight ? "var(--color-teal)" : "var(--color-indigo)"}
-        opacity="0.55"
+        x="23.5" y={110 - v} width="25" height={v}
+        fill={highlight ? "var(--color-teal)" : "var(--color-indigo)"} opacity="0.55"
         style={{ transition: "y 0.5s ease, height 0.5s ease, fill 0.3s ease" }}
       />
+      <text x="36" y="121" textAnchor="middle" fontSize="7" fontFamily="var(--font-mono)" fill="var(--color-ink-soft)">mL</text>
     </svg>
   );
 }
@@ -70,11 +73,20 @@ export function BalloonIcon({ inflated }) {
   );
 }
 
-export function SyringeIcon({ fillPercent = 40 }) {
+/** 100 mL gas syringe; the plunger position is the gas volume. */
+export function SyringeIcon({ volumeMl = 40 }) {
+  const v = Math.min(100, Math.max(0, volumeMl));
   return (
-    <svg viewBox="0 0 140 60" className="h-14 w-36" aria-hidden="true">
+    <svg viewBox="0 0 140 70" className="h-16 w-36" role="img" aria-label={`Gas syringe reading ${Math.round(v)} millilitres`}>
       <rect x="10" y="18" width="90" height="24" rx="3" fill="none" stroke="var(--color-ink)" strokeWidth="1.5" />
-      <rect x="12" y="20" width={86 * (fillPercent / 100)} height="20" fill="var(--color-block-f)" opacity="0.4" style={{ transition: "width 0.5s ease" }} />
+      <rect x="12" y="20" width={86 * (v / 100)} height="20" fill="var(--color-block-f)" opacity="0.4" style={{ transition: "width 0.5s ease" }} />
+      {[0, 50, 100].map((m) => (
+        <g key={m}>
+          <line x1={12 + 0.86 * m} y1="42" x2={12 + 0.86 * m} y2="47" stroke="var(--color-ink-soft)" strokeWidth="1" />
+          <text x={12 + 0.86 * m} y="56" textAnchor="middle" fontSize="7" fontFamily="var(--font-mono)" fill="var(--color-ink-soft)">{m}</text>
+        </g>
+      ))}
+      <text x="106" y="56" fontSize="7" fontFamily="var(--font-mono)" fill="var(--color-ink-soft)">mL</text>
       <rect x="100" y="26" width="26" height="8" fill="var(--color-ink-faint)" />
       <rect x="126" y="22" width="8" height="16" fill="var(--color-ink-soft)" />
     </svg>

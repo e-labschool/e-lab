@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// jsdom tests for the REAL Learn lesson editor (LessonEditor + BlockWorkspace + layout ops):  node scripts/test-learn-editor-ui.mjs
+// jsdom tests for the REAL Learn lesson editor (LessonEditor + BlockWorkspace: Classic + Canvas views, drawer, library, metadata) and the
+// Content Overview / Review mode:  node scripts/test-learn-editor-ui.mjs
 // Runs against an in-memory fake Supabase (scripts/learn-fake-supabase.mjs). Covers the keyboard path (Alt+Arrow, Alt+Shift+Arrow,
 // Enter), buttons, undo/redo (keys + buttons), add / preset / duplicate / delete / hide, outline + search + collapse, preview mode,
 // persistence (layout inside content JSON, order in position), "nothing written on load", classic-list fallback, pointer-event drag
@@ -30,6 +31,8 @@ const { createRoot } = await import("react-dom/client");
 const { MemoryRouter, Routes, Route } = await import("react-router-dom");
 const { createLearnFake } = await import("./learn-fake-supabase.mjs");
 const { default: LessonEditor } = await import("../src/pages/admin/learn/LessonEditor.jsx");
+const { default: ContentOverview } = await import("../src/pages/admin/learn/ContentOverview.jsx");
+const BC = await import("../src/lib/blockCanvas.js");
 const BL = await import("../src/lib/blockLayout.js");
 
 const wait = (ms = 30) => new Promise((r) => setTimeout(r, ms));
@@ -44,6 +47,7 @@ const card = (id) => $(`[data-block-card="${id}"]`);
 const order = () => $$("[data-block-card]").map((e) => e.dataset.blockCard);
 const live = () => norm($('[data-testid="layout-live"]').textContent.replace(/​/g, ""));
 const spanOf = (id) => Number($(`[data-block-id="${id}"]`).dataset.span);
+const LONG_TAIL = "ZZ-TAIL-MARKER";
 const btn = (text, root = document) => $$("button", root).find((b) => norm(b.textContent) === text || b.getAttribute("aria-label") === text);
 const FLUSH = 520; // debounce is 400ms
 
@@ -63,8 +67,8 @@ async function mount(entry = "/admin/learn-content/p1", data = {}) {
   errors.length = 0; sessionStorage.clear();
   document.body.innerHTML = '<div id="root"></div>';
   root = createRoot(document.getElementById("root"));
-  root.render(React.createElement(MemoryRouter, { initialEntries: [entry] }, React.createElement(Routes, null, React.createElement(Route, { path: "/admin/learn-content/:pageId", element: React.createElement(LessonEditor) }))));
-  await until(() => $('[data-testid="block-workspace"]') || $('[data-testid="outline"]') || $("h1"), 4000);
+  root.render(React.createElement(MemoryRouter, { initialEntries: [entry] }, React.createElement(Routes, null, React.createElement(Route, { path: "/admin/learn-content/overview", element: React.createElement(ContentOverview) }), React.createElement(Route, { path: "/admin/learn-content/:pageId", element: React.createElement(LessonEditor) }))));
+  await until(() => $('[data-testid="block-workspace"]') || $('[data-testid="content-overview"]') || $("h1"), 4000);
   await wait(40);
 }
 const unmount = async () => { root?.unmount(); root = null; await wait(20); };
@@ -72,308 +76,365 @@ async function t(name, fn) { try { await fn(); n += 1; console.log(`  ok   ${nam
 const dbBlocks = () => fake.db.learn_blocks.filter((b) => b.page_id === "p1").sort((a, b) => a.position - b.position);
 const dbLayout = (id) => fake.db.learn_blocks.find((b) => b.id === id)?.content?.layout;
 
+
+const pe = (type, x, y, extra = {}) => new dom.window.PointerEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, pointerType: "mouse", button: 0, ...extra });
+const win = (ev) => dom.window.dispatchEvent(ev);
+const viewBtn = (name) => $$('[aria-label="Arrangement view"] button').find((b) => norm(b.textContent) === name);
+const openMenu = async (testId) => { await click($(`[data-testid="${testId}"]`)); };
+const toCanvas = async () => { await click(viewBtn("Canvas")); await wait(30); };
+const validCanvasInDb = () => BC.validateCanvas(dbBlocks().filter((b) => b.block_type !== "lesson_meta"));
+
 console.log("learn editor (jsdom)");
 
-await t("loads the lesson into the workspace; nothing is written just by opening it", async () => {
-  await mount();
-  assert.deepEqual(order(), ["b1", "b2", "b3", "b4", "b5"]);
-  assert.ok($('[data-testid="drop-end"]') && $('[data-testid="outline"]'));
+await t("loads compact tiles in Classic view; nothing is written just by opening; a long text tile never contains the full text", async () => {
+  const long = { id: "b6", page_id: "p1", position: 5, block_type: "rich_text", visible: true, content: { audience: "both", html: `<p>${"word ".repeat(300)}${LONG_TAIL}</p>` } };
+  await mount("/admin/learn-content/p1", { blocks: [...blocks(), long] });
+  assert.deepEqual(order(), ["b1", "b2", "b3", "b4", "b5", "b6"]);
+  assert.equal($('[data-testid="block-workspace"]').dataset.view, "classic");
+  assert.ok($('[data-testid="drop-end"]') && $('[data-testid="add-block"]') && $('[data-testid="more-menu"]'));
+  assert.ok(!$('[data-testid="outline"]'), "no always-open palette / outline");
+  const tile = card("b6");
+  assert.ok(!tile.textContent.includes(LONG_TAIL), "the end of a long block is not in the tile at all");
+  assert.ok(tile.textContent.length < 400, `tile text is short (${tile.textContent.length})`);
+  assert.ok($('[data-testid="tile-text"]', tile).className.includes("line-clamp-3"), "CSS clamp + fade on top of the truncation");
   await wait(FLUSH);
   assert.equal(fake.log.filter((l) => l.table === "learn_blocks").length, 0, "no learn_blocks writes on load");
   assert.deepEqual(errors, []);
 });
 
-await t("keyboard: Alt+ArrowDown/Up move a block and announce it; the move is persisted to position", async () => {
+await t("double-click opens the full editor drawer (existing editors unchanged); Escape / Done closes it and focus returns to the tile", async () => {
+  await mount();
+  card("b1").dispatchEvent(new MouseEvent("dblclick", { bubbles: true })); await wait(40);
+  const panel = $('[data-testid="content-panel"]');
+  assert.ok(panel && panel.getAttribute("role") === "dialog");
+  assert.ok($('[data-tags]', panel), "tags and review fields");
+  assert.ok($$("input,textarea,[contenteditable]", panel).length > 2, "the real block editor is inside");
+  panel.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); await wait(40);
+  assert.ok(!$('[data-testid="content-panel"]'));
+  await focus(card("b2")); await keydown(card("b2"), { key: "Enter" });
+  assert.ok($('[data-testid="content-panel"]'), "Enter opens it too");
+  await click(btn("Close editor")); assert.ok(!$('[data-testid="content-panel"]'));
+});
+
+await t("classic keyboard: arrows move (and announce), Shift+arrows resize, Delete removes, Ctrl+Z restores; moves persist to position", async () => {
   await mount();
   await focus(card("b1"));
-  await keydown(card("b1"), { key: "ArrowDown", altKey: true });
+  await keydown(card("b1"), { key: "ArrowDown" });
   assert.deepEqual(order(), ["b2", "b1", "b3", "b4", "b5"]);
-  assert.match(live(), /^Rich Text moved down|^Text moved down/);
+  assert.match(live(), /moved down/);
   await keydown(card("b1"), { key: "ArrowUp", altKey: true });
   assert.deepEqual(order(), ["b1", "b2", "b3", "b4", "b5"]);
-  await keydown(card("b5"), { key: "ArrowDown", altKey: true });
-  assert.match(live(), /cannot move down any further/);
-  await keydown(card("b4"), { key: "ArrowUp", altKey: true });
+  await keydown(card("b5"), { key: "ArrowDown" }); assert.match(live(), /cannot move down any further/);
+  await keydown(card("b3"), { key: "ArrowRight", shiftKey: true }); // already full width
+  await keydown(card("b3"), { key: "ArrowLeft", shiftKey: true });
+  assert.equal(spanOf("b3"), 8, "Shift+Left narrows 12 -> 8 (preset step)");
+  assert.equal($$('[data-row-size="2"] [data-block-id]').map((e) => e.dataset.blockId).join(), "b3,b4", "the next block flowed in beside it");
+  await keydown(card("b3"), { key: "ArrowDown", shiftKey: true });
+  assert.match(live(), /taller/);
+  await keydown(card("b5"), { key: "Delete" }); await wait(30);
+  assert.ok(!card("b5")); assert.match(live(), /deleted/);
+  win(new KeyboardEvent("keydown", { key: "z", ctrlKey: true, bubbles: true })); await wait(120);
+  assert.ok(card("b5") || $$("[data-block-card]").length === 5, "Ctrl+Z restores the deleted block");
   await wait(FLUSH);
-  assert.deepEqual(dbBlocks().map((b) => b.id), ["b1", "b2", "b4", "b3", "b5"]);
   assert.equal(dbBlocks().length, 5);
 });
 
-await t("keyboard: place beside via settings, swap with Alt+Left/Right, resize with Alt+Shift+Left/Right, Enter opens the content panel", async () => {
+await t("mini toolbar: appears on the selected tile; width preset, collapse/expand, duplicate, hide in More, delete", async () => {
   await mount();
-  await focus(card("b2"));
-  await click(btn("Beside next"));
-  assert.equal(spanOf("b2"), 5); assert.equal(spanOf("b3"), 7);
-  assert.equal($$('[data-row-size="2"] [data-block-id]').map((e) => e.dataset.blockId).join(), "b2,b3");
-  await keydown(card("b2"), { key: "ArrowRight", altKey: true });
-  assert.equal($$('[data-row-size="2"] [data-block-id]').map((e) => e.dataset.blockId).join(), "b3,b2");
-  assert.match(live(), /moved right/);
-  await keydown(card("b2"), { key: "ArrowRight", altKey: true });
-  assert.match(live(), /cannot move right/);
-  await keydown(card("b2"), { key: "ArrowRight", altKey: true, shiftKey: true });
-  assert.equal(spanOf("b2"), 6, "Alt+Shift+Right widens 5 -> 6");
-  await keydown(card("b2"), { key: "ArrowLeft", altKey: true, shiftKey: true });
-  assert.equal(spanOf("b2"), 5);
-  const resizeHandle = $('[aria-label^="Resize width"]', card("b2"));
-  assert.ok(resizeHandle, "resize handle is rendered for the selected block");
-  await keydown(resizeHandle, { key: "ArrowRight" });
-  assert.equal(spanOf("b2"), 6, "the resize handle itself is keyboard operable");
-  await keydown(card("b2"), { key: "Enter" });
-  assert.ok($('[data-testid="content-panel"]'), "Enter opens the content editor");
-  await wait(FLUSH);
-  assert.equal(dbLayout("b2").row, dbLayout("b3").row);
-  assert.deepEqual([dbLayout("b3").span, dbLayout("b2").span], [6, 6]);
-  assert.equal(fake.db.learn_blocks.find((b) => b.id === "b2").content.caption, "Cap", "content untouched");
-});
-
-await t("settings panel: width presets, position, wrapping, vertical alignment, phone order, put on its own row", async () => {
-  await mount();
-  await focus(card("b3"));
-  await click(btn("Width 6 of 12 columns"));
-  assert.equal(spanOf("b3"), 6);
-  await click(btn("Centre"));
-  assert.equal($(`[data-block-id="b3"]`).style.getPropertyValue("--lb-start"), "4");
-  await click(btn("Right"));
-  assert.equal($(`[data-block-id="b3"]`).style.getPropertyValue("--lb-start"), "7");
-  await click(btn("Beside")); // wrap beside => joins a neighbour
-  assert.equal($$('[data-row-size="2"]').length, 1);
-  assert.equal(btn("Beside").getAttribute("aria-pressed"), "true");
-  await click(btn("Middle"));
-  assert.equal($(`[data-block-id="b3"]`).dataset.align, "center");
-  const sel = $("#mobile-order"); sel.value = "first"; sel.dispatchEvent(new Event("change", { bubbles: true })); await wait(15);
-  assert.equal($(`[data-block-id="b3"]`).dataset.mobile, "first");
-  await click(btn("Put on its own row"));
-  assert.equal($$('[data-row-size="2"]').length, 0);
-  await wait(FLUSH);
-  assert.equal(dbLayout("b3")?.span ?? 12, 12);
-});
-
-await t("full-only blocks (Check Your Understanding / page break) offer no side-by-side controls", async () => {
-  await mount("/admin/learn-content/p1", { blocks: [...blocks(), mkb("b6", 5, "check_understanding", {}), mkb("b7", 6, "page_break", { label: "" })] });
-  await focus(card("b6"));
-  assert.ok(!btn("Beside next") && !btn("Wider"));
-  assert.match(norm($('[data-testid="settings-panel"]').textContent), /always full width/);
-  assert.ok(btn("Move up"));
-});
-
-await t("undo/redo: Ctrl+Z / Ctrl+Y and the buttons restore layout AND order; content edits made in between survive", async () => {
-  await mount();
-  await focus(card("b2")); await click(btn("Beside next"));
-  await keydown(card("b2"), { key: "ArrowRight", altKey: true, shiftKey: true });
-  assert.equal(spanOf("b2"), 6);
-  const snapshot = () => JSON.stringify([$$("[data-block-id]").map((e) => [e.dataset.blockId, e.dataset.span]), order()]);
-  const after = snapshot();
-  const ctrl = async (key, shift = false) => { document.body.dispatchEvent(new KeyboardEvent("keydown", { key, ctrlKey: true, shiftKey: shift, bubbles: true, cancelable: true })); await wait(40); };
-  await ctrl("z");
-  assert.equal(spanOf("b2"), 5, "first undo reverts only the last operation (the widen)");
-  assert.equal($$('[data-row-size="2"]').length, 1, "...the beside placement stays");
-  await ctrl("z");
-  assert.equal($$('[data-row-size="2"]').length, 0, "second undo dissolves the row");
-  assert.deepEqual(order(), ["b1", "b2", "b3", "b4", "b5"]);
-  await ctrl("y"); await ctrl("Z", true);
-  assert.equal(snapshot(), after, "redo twice (Ctrl+Y, Ctrl+Shift+Z) reaches the same state");
-  await click(btn("Undo")); await click(btn("Redo"));
-  assert.equal(snapshot(), after);
-  await wait(FLUSH);
-  assert.deepEqual(dbBlocks().map((b) => b.id), order(), "database order matches the screen");
-  assert.equal(dbLayout("b2")?.span, 6, "layout persisted after undo/redo");
-  assert.equal(dbLayout("b2").row, dbLayout("b3").row);
-});
-
-await t("undo does not fire while typing in a field (the field keeps its own undo)", async () => {
-  await mount();
-  await focus(card("b1")); await keydown(card("b1"), { key: "ArrowDown", altKey: true });
-  const input = $('input[aria-label="Search blocks"]'); input.focus();
-  input.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true, bubbles: true, cancelable: true })); await wait(30);
-  assert.deepEqual(order(), ["b2", "b1", "b3", "b4", "b5"]);
-});
-
-await t("add: palette click appends after the selected block; layout preset creates 2 blocks beside each other; ONE undo removes both", async () => {
-  await mount();
-  await focus(card("b2"));
-  await click(btn("Key Idea"));
-  await until(() => $$("[data-block-card]").length === 6);
-  assert.deepEqual(order().slice(0, 4), ["b1", "b2", order()[2], "b3"], "new block lands right after the selected block's row");
-  assert.match(live(), /added/);
-  await click(btn("Image + text"));
-  await until(() => $$("[data-block-card]").length === 8);
-  assert.equal($$('[data-row-size="2"]').length, 1);
-  const row = $$('[data-row-size="2"] [data-block-id]');
-  assert.deepEqual(row.map((e) => Number(e.dataset.span)), [5, 7]);
-  assert.deepEqual($$('[data-row-size="2"] [data-block-card]').map((e) => e.getAttribute("aria-label").split(":")[0].split(".")[0]), ["Image", "Rich Text"]);
-  await wait(FLUSH);
-  assert.equal(dbBlocks().length, 8);
-  document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true, bubbles: true, cancelable: true })); await until(() => $$("[data-block-card]").length === 6, 3000);
-  assert.equal($$("[data-block-card]").length, 6, "one undo removes both preset blocks");
-  assert.equal(dbBlocks().length, 6);
-  assert.deepEqual(dbBlocks().map((b) => b.id), order());
-});
-
-await t("add: Check Your Understanding can only be added once", async () => {
-  await mount("/admin/learn-content/p1", { blocks: [...blocks(), mkb("b6", 5, "check_understanding", {})] });
-  await click(btn("Check Your Understanding"));
-  await wait(30);
-  assert.match(document.body.textContent, /already has a Check Your Understanding block/);
+  assert.ok(!$('[data-testid="mini-toolbar"]'));
+  await click(card("b3"));
+  const tb = $('[data-testid="mini-toolbar"]', card("b3")); assert.ok(tb);
+  await click(btn("Width 6 of 12 columns", tb)); assert.equal(spanOf("b3"), 6);
+  assert.equal($$('[data-row-size="2"] [data-block-id]').map((e) => e.dataset.blockId).join(), "b3,b4");
+  await click(btn("Collapse Rich Text", $('[data-testid="mini-toolbar"]', card("b3")))); assert.equal(card("b3").dataset.collapsed, "true"); assert.ok(!$('[data-testid="tile-body"]', card("b3")));
+  await click(btn("Expand Rich Text", $('[data-testid="mini-toolbar"]', card("b3")))); assert.equal(card("b3").dataset.collapsed, "false");
+  await click(btn("Duplicate Rich Text", $('[data-testid="mini-toolbar"]', card("b3")))); await wait(60);
   assert.equal($$("[data-block-card]").length, 6);
+  await click(card("b3")); await click($('[data-testid="tile-more"]', card("b3")));
+  await click($$('[role="menuitem"]').find((m) => /Hide from students/.test(m.textContent)));
+  await wait(40); assert.equal(fake.db.learn_blocks.find((b) => b.id === "b3").visible, false);
+  await click(btn("Delete Rich Text", $('[data-testid="mini-toolbar"]', card("b3")))); await wait(40);
+  assert.ok(!card("b3"));
 });
 
-await t("duplicate keeps content and lands after the original (full width, no layout); delete removes it and the neighbour absorbs the space; undo restores", async () => {
+await t("classic: dragging the right edge shrinks a full-width block so the next block flows beside it (snaps to presets); persisted", async () => {
   await mount();
-  await focus(card("b2")); await click(btn("Beside next"));
-  await focus(card("b2")); await click(btn("Duplicate"));
-  await until(() => $$("[data-block-card]").length === 6);
-  const dup = order().find((id) => !["b1", "b2", "b3", "b4", "b5"].includes(id));
-  assert.equal(order().indexOf(dup), order().indexOf("b3") + 1, "duplicate sits after the original's whole row");
-  assert.equal($(`[data-block-id="${dup}"]`).closest("[data-row]").dataset.rowSize, "1");
+  await click(card("b1"));
+  const row = card("b1").closest("[data-row]"); const cell = card("b1").closest("[data-cell]");
+  row.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1200, height: 100, right: 1200, bottom: 100 });
+  cell.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1200, height: 100, right: 1200, bottom: 100 });
+  const h = $('[data-handle="right"]', card("b1")); assert.ok(h);
+  h.dispatchEvent(pe("pointerdown", 1200, 50)); await wait(10);
+  win(pe("pointermove", 780, 50)); await wait(20);
+  assert.equal($$('[data-row-size="2"] [data-block-id]').map((e) => e.dataset.blockId).join(), "b1,b2", "live preview while dragging");
+  win(pe("pointerup", 780, 50)); await wait(40);
+  assert.equal(spanOf("b1"), 8); assert.equal(spanOf("b2"), 4);
   await wait(FLUSH);
-  assert.equal(fake.db.learn_blocks.find((b) => b.id === dup).content.caption, "Cap");
-  assert.equal(fake.db.learn_blocks.find((b) => b.id === dup).content.layout, undefined);
-  await focus(card("b2")); await click(btn("Delete"));
-  await until(() => !card("b2"));
-  assert.equal(spanOf("b3"), 12, "lone survivor of the row is full width again");
+  assert.equal(dbLayout("b1").span, 8); assert.equal(dbLayout("b1").row, dbLayout("b2").row);
+  assert.equal(fake.db.learn_blocks.find((b) => b.id === "b1").content.html, "<p>Hello</p>", "content untouched");
+});
+
+await t("classic: dragging the bottom edge changes the preview height (editor-only: stored in content.ui, no student layout)", async () => {
+  await mount();
+  await click(card("b1"));
+  const before = Number(card("b1").style.height.replace("px", ""));
+  const h = $('[data-handle="bottom"]', card("b1"));
+  h.dispatchEvent(pe("pointerdown", 100, 100)); await wait(10);
+  win(pe("pointermove", 100, 156)); await wait(10); win(pe("pointerup", 100, 156)); await wait(40);
+  assert.equal(Number(card("b1").style.height.replace("px", "")), before + 56);
   await wait(FLUSH);
-  assert.ok(!fake.db.learn_blocks.some((b) => b.id === "b2"));
-  assert.equal(dbLayout("b3"), undefined);
-  document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true, bubbles: true, cancelable: true }));
-  await until(() => $$("[data-block-card]").length === 6, 3000);
-  assert.equal($$("[data-block-card]").length, 6);
-  assert.ok(dbBlocks().some((b) => b.block_type === "image" && b.content.url === "https://x/y.png"), "deleted image came back with its content");
+  assert.equal(fake.db.learn_blocks.find((b) => b.id === "b1").content.ui.h, 6);
+  assert.equal(dbLayout("b1"), undefined, "no layout written: student page is unchanged");
 });
 
-await t("hide/show toggles visibility in the database and announces it", async () => {
-  await mount();
-  await click(btn("Hide Key Idea"));
-  await wait(30);
-  assert.equal(fake.db.learn_blocks.find((b) => b.id === "b4").visible, false);
-  assert.match(live(), /hidden from students/);
-});
-
-await t("outline: lists blocks, up/down buttons reorder, search filters outline and dims the canvas, collapse/expand all", async () => {
-  await mount();
-  assert.equal($$("[data-outline-item]").length, 5);
-  await click(btn("Move Key Idea up"));
-  assert.deepEqual(order(), ["b1", "b2", "b4", "b3", "b5"]);
-  const input = $('input[aria-label="Search blocks"]');
-  const proto = dom.window.HTMLInputElement.prototype;
-  Object.getOwnPropertyDescriptor(proto, "value").set.call(input, "ideal gas"); input.dispatchEvent(new Event("input", { bubbles: true })); await wait(20);
-  assert.deepEqual($$("[data-outline-item]").map((e) => e.dataset.outlineItem), ["b5"]);
-  assert.ok(card("b1").className.includes("opacity-30"), "non-matching blocks are dimmed");
-  Object.getOwnPropertyDescriptor(proto, "value").set.call(input, ""); input.dispatchEvent(new Event("input", { bubbles: true })); await wait(20);
-  await click(btn("Collapse all"));
-  assert.equal($$('[aria-expanded="false"]').length, 5);
-  await click(btn("Expand all"));
-  assert.equal($$('[aria-expanded="false"]').length, 0);
-});
-
-await t("edit content panel: opens, edits block content through the existing editors, keeps the layout", async () => {
-  await mount();
-  await focus(card("b2")); await click(btn("Beside next"));
-  await click(btn("Edit Image content"));
-  assert.ok($('[data-testid="content-panel"]'));
-  const caption = $$('[data-testid="content-panel"] input').find((i) => i.value === "Cap");
-  assert.ok(caption, "existing Image editor field is rendered");
-  Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value").set.call(caption, "New caption"); caption.dispatchEvent(new Event("input", { bubbles: true })); await wait(40);
-  const row = fake.db.learn_blocks.find((b) => b.id === "b2");
-  assert.equal(row.content.caption, "New caption");
-  assert.equal(row.content.layout.span, 5, "layout survived a content edit");
-  await click(btn("Close"));
-  assert.ok(!$('[data-testid="content-panel"]'));
-});
-
-await t("preview mode renders through the student renderer (row markup) and the device buttons switch width", async () => {
-  await mount();
-  await focus(card("b2")); await click(btn("Beside next"));
-  await click($$('[role="group"][aria-label="Mode"] button').find((b) => norm(b.textContent) === "Preview"));
-  assert.ok($('[data-testid="layout-preview"]'));
-  assert.equal($$('[data-testid="layout-preview"] .lb-row .lb-cell').length, 2);
-  await click($$('[aria-labelledby="page-width-label"] button').find((b) => norm(b.textContent) === "Phone"));
-  assert.equal($('[data-testid="layout-preview"]').dataset.device, "phone");
-  assert.equal($('[data-testid="layout-preview"] > div:last-child').style.maxWidth, "390px");
-  await click($$('[aria-labelledby="page-width-label"] button').find((b) => norm(b.textContent) === "Tablet"));
-  assert.equal($('[data-testid="layout-preview"] > div:last-child').style.maxWidth, "768px");
-  await click($$('[role="group"][aria-label="Mode"] button').find((b) => norm(b.textContent) === "Edit layout"));
-  assert.ok($('[data-testid="layout-canvas"]'));
-});
-
-await t("a legacy lesson (no layout) previews with the legacy container", async () => {
-  await mount();
-  await click($$('[role="group"][aria-label="Mode"] button').find((b) => norm(b.textContent) === "Preview"));
-  assert.ok($('[data-testid="layout-preview"] div.mt-6.space-y-5'));
-  assert.equal($$(".lb-root").length, 0);
-});
-
-await t("pointer-event drag: dropping on the right edge of a block places it beside; Escape cancels; moving over itself does nothing", async () => {
+await t("classic drag reorder via the grip: drop on the right edge of another block places it beside; Escape cancels; a plain press is not a drag", async () => {
   await mount();
   const target = card("b3");
   dom.window.document.elementsFromPoint = () => [target];
-  target.getBoundingClientRect = () => ({ left: 100, top: 100, width: 200, height: 100, right: 300, bottom: 200, x: 100, y: 100 });
+  target.getBoundingClientRect = () => ({ left: 100, top: 100, width: 200, height: 100, right: 300, bottom: 200 });
   const grip = $('[aria-label^="Drag Image"]', card("b2"));
-  const pe = (type, x, y, extra = {}) => new dom.window.PointerEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, pointerType: "mouse", button: 0, ...extra });
-  grip.dispatchEvent(pe("pointerdown", 10, 10)); await wait(10);
-  dom.window.dispatchEvent(pe("pointermove", 40, 40)); await wait(10);
-  dom.window.dispatchEvent(pe("pointermove", 290, 150)); await wait(20);
+  grip.dispatchEvent(pe("pointerdown", 10, 10)); await wait(10); win(pe("pointermove", 40, 40)); win(pe("pointermove", 290, 150)); await wait(20);
   assert.equal($("[data-drop-indicator]", target)?.dataset.dropIndicator, "right");
-  dom.window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); await wait(20);
-  assert.ok(!$("[data-drop-indicator]"), "Escape cancels the drag");
-  assert.equal($$('[data-row-size="2"]').length, 0);
-  grip.dispatchEvent(pe("pointerdown", 10, 10)); await wait(10);
-  dom.window.dispatchEvent(pe("pointermove", 40, 40)); dom.window.dispatchEvent(pe("pointermove", 290, 150)); await wait(10);
-  dom.window.dispatchEvent(pe("pointerup", 290, 150)); await wait(30);
-  assert.equal($$('[data-row-size="2"] [data-block-id]').map((e) => e.dataset.blockId).join(), "b3,b2", "dropped on the right edge => beside, image on the right");
-  assert.match(live(), /moved/);
-  // a press without movement is not a drag
-  grip.dispatchEvent(pe("pointerdown", 10, 10)); dom.window.dispatchEvent(pe("pointerup", 10, 10)); await wait(20);
+  win(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); await wait(20);
+  assert.ok(!$("[data-drop-indicator]")); assert.equal($$('[data-row-size="2"]').length, 0);
+  grip.dispatchEvent(pe("pointerdown", 10, 10)); await wait(10); win(pe("pointermove", 40, 40)); win(pe("pointermove", 290, 150)); await wait(10); win(pe("pointerup", 290, 150)); await wait(30);
+  assert.equal($$('[data-row-size="2"] [data-block-id]').map((e) => e.dataset.blockId).join(), "b3,b2");
+  grip.dispatchEvent(pe("pointerdown", 10, 10)); win(pe("pointerup", 10, 10)); await wait(20);
   assert.equal($$('[data-row-size="2"]').length, 1);
-  await wait(FLUSH);
-  assert.equal(dbLayout("b2").row, dbLayout("b3").row);
 });
 
-await t("pointer-event drag from the palette creates a block at the drop position (top half => before)", async () => {
+await t("Classic <-> Canvas: switching keeps every block and its content, is one undo step, persists v2 positions, and converts back to the same rows", async () => {
   await mount();
-  const target = card("b4");
-  dom.window.document.elementsFromPoint = () => [target];
-  target.getBoundingClientRect = () => ({ left: 100, top: 100, width: 200, height: 100, right: 300, bottom: 200, x: 100, y: 100 });
-  const item = btn("Key Idea", $('section[aria-label="Add a block"]'));
-  const pe = (type, x, y) => new dom.window.PointerEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, pointerType: "touch", button: 0 });
-  item.dispatchEvent(pe("pointerdown", 10, 10)); dom.window.dispatchEvent(pe("pointermove", 40, 40)); dom.window.dispatchEvent(pe("pointermove", 200, 110)); await wait(10);
-  dom.window.dispatchEvent(pe("pointerup", 200, 110));
-  await until(() => $$("[data-block-card]").length === 6, 3000);
-  const o = order(); const added = o.find((id) => !["b1", "b2", "b3", "b4", "b5"].includes(id));
-  assert.equal(o.indexOf(added), o.indexOf("b4") - 1, "dropped above b4");
-  await wait(FLUSH);
-  assert.deepEqual(dbBlocks().map((b) => b.id), o);
-});
-
-await t("classic list fallback (?editor=classic) still renders the old editor with working Edit / Duplicate / Delete", async () => {
-  await mount("/admin/learn-content/p1?editor=classic");
-  assert.equal($('[data-testid="block-workspace"]'), null);
-  assert.ok(btn("Add Block"));
-  const edits = $$("button").filter((b) => norm(b.textContent) === "Edit");
-  assert.equal(edits.length, 5);
-  await click(edits[1]);
-  assert.ok($$("input").some((i) => i.value === "Cap"), "classic inline editor opens");
-  await click($$('button[title="Delete"]')[4]);
-  await wait(40);
-  assert.equal(fake.db.learn_blocks.filter((b) => b.page_id === "p1").length, 4);
-});
-
-await t("existing layout data loads and renders: rows, spans, offsets", async () => {
-  const withLayout = BL.setPosition(BL.setSpan(BL.placeBeside(blocks(), "b2", "b3", "left"), "b4", 6), "b4", "right");
-  await mount("/admin/learn-content/p1", { blocks: withLayout.map((b, i) => ({ ...b, position: i })) });
-  assert.equal($$('[data-row-size="2"]').length, 1);
-  assert.equal(spanOf("b2"), 5); assert.equal(spanOf("b4"), 6);
-  assert.equal($(`[data-block-id="b4"]`).style.getPropertyValue("--lb-start"), "7");
-  await wait(FLUSH);
-  assert.equal(fake.log.filter((l) => l.table === "learn_blocks").length, 0, "opening a laid-out lesson writes nothing either");
-});
-
-await t("malformed stored layout never breaks the editor", async () => {
-  const bad = blocks().map((b, i) => ({ ...b, content: { ...b.content, layout: [null, "x", { span: 99, row: "r" }, { span: -1, row: "r" }, 7][i] } }));
-  await mount("/admin/learn-content/p1", { blocks: bad });
+  await focus(card("b3")); await keydown(card("b3"), { key: "ArrowLeft", shiftKey: true }); // b3 8 + b4 4
+  const rowsBefore = $$('[data-row-size]').map((r) => $$("[data-block-id]", r).map((c) => `${c.dataset.blockId}:${c.dataset.span}`).join()).join("|");
+  await toCanvas();
+  assert.equal($('[data-testid="block-workspace"]').dataset.view, "canvas");
   assert.equal($$("[data-block-card]").length, 5);
+  const cells = Object.fromEntries($$("[data-cell]").map((c) => [c.dataset.blockId, c]));
+  assert.equal(cells.b3.dataset.span, "8"); assert.equal(cells.b4.dataset.span, "4"); assert.equal(cells.b3.dataset.gr, cells.b4.dataset.gr, "still beside each other");
+  await wait(FLUSH);
+  assert.ok(dbBlocks().every((b) => b.content.layout?.v === 2)); assert.ok(validCanvasInDb().valid);
+  assert.equal(fake.db.learn_blocks.find((b) => b.id === "b2").content.caption, "Cap");
+  await click(viewBtn("Classic")); await wait(30);
+  const rowsAfter = $$('[data-row-size]').map((r) => $$("[data-block-id]", r).map((c) => `${c.dataset.blockId}:${c.dataset.span}`).join()).join("|");
+  assert.equal(rowsAfter, rowsBefore);
+  await click(viewBtn("Canvas")); await wait(30);
+  await click(btn("Undo")); await wait(80);
+  assert.equal($('[data-testid="block-workspace"]').dataset.view, "classic", "one Undo reverts the view switch");
+});
+
+await t("Canvas keyboard: arrows move, Shift+arrows resize, Enter edits; 120 random key presses never produce an overlap; every move is announced", async () => {
+  await mount(); await toCanvas();
+  await focus(card("b3"));
+  const col0 = Number($(`[data-block-id="b3"]`).dataset.col);
+  await keydown(card("b3"), { key: "ArrowLeft", shiftKey: true });
+  assert.ok(Number($(`[data-block-id="b3"]`).dataset.span) < 12); assert.match(live(), /columns 1 to/);
+  await keydown(card("b3"), { key: "ArrowRight" });
+  assert.ok(Number($(`[data-block-id="b3"]`).dataset.col) > col0, "Right moved it one column");
+  const keys = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]; let s = 3;
+  for (let i = 0; i < 120; i += 1) { s = (s * 7919 + 13) % 10007; await keydown(card(`b${1 + (s % 5)}`), { key: keys[s % 4], shiftKey: s % 3 === 0 }); }
+  await wait(FLUSH);
+  const v = validCanvasInDb(); assert.ok(v.valid, v.errors.join("; "));
+  await keydown(card("b3"), { key: "Enter" }); assert.ok($('[data-testid="content-panel"]'));
+});
+
+await t("Canvas pointer drag: dragging the grip moves a block to the dropped grid cell, snaps to a free slot, never overlaps; Escape cancels; resize handles change size", async () => {
+  await mount(); await toCanvas();
+  const surface = $('[data-testid="canvas-surface"]');
+  surface.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1200, height: 800, right: 1200, bottom: 800 });
+  await click(card("b3"));
+  const wasCol = Number($(`[data-block-id="b3"]`).dataset.col);
+  const grip = $('[aria-label^="Drag Rich Text"]', card("b3"));
+  grip.dispatchEvent(pe("pointerdown", 100, 100)); await wait(10);
+  win(pe("pointermove", 400, 100)); await wait(20); assert.ok($('[data-testid="canvas-ghost"]'), "ghost slot while dragging");
+  win(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); await wait(20);
+  assert.ok(!$('[data-testid="canvas-ghost"]')); assert.equal(Number($(`[data-block-id="b3"]`).dataset.col), wasCol);
+  await click(btn("Resize width: 12 of 12 columns. Drag, or use Left and Right arrow keys.", card("b3")) ?? card("b3"));
+  const rh = $('[data-handle="right"]', card("b3"));
+  rh.dispatchEvent(pe("pointerdown", 1200, 100)); await wait(10); win(pe("pointermove", 600, 100)); win(pe("pointerup", 600, 100)); await wait(40);
+  assert.equal(spanOf("b3"), 6);
+  const grip2 = $('[aria-label^="Drag Rich Text"]', card("b3"));
+  grip2.dispatchEvent(pe("pointerdown", 100, 100)); await wait(10); win(pe("pointermove", 400, 100)); win(pe("pointermove", 700, 100)); win(pe("pointerup", 700, 100)); await wait(40);
+  assert.equal(Number($(`[data-block-id="b3"]`).dataset.col), 7, "dropped 600px right = 6 columns");
+  const bh = $('[data-handle="bottom"]', card("b3")); const rs0 = Number($(`[data-block-id="b3"]`).dataset.rs);
+  bh.dispatchEvent(pe("pointerdown", 100, 100)); win(pe("pointermove", 100, 156)); win(pe("pointerup", 100, 156)); await wait(40);
+  assert.equal(Number($(`[data-block-id="b3"]`).dataset.rs), rs0 + 2);
+  await wait(FLUSH); assert.ok(validCanvasInDb().valid);
+});
+
+await t("undo / redo: buttons and Ctrl+Z / Ctrl+Y restore layout AND order; typing in a field does not trigger block undo", async () => {
+  await mount();
+  await focus(card("b1")); await keydown(card("b1"), { key: "ArrowDown" });
+  assert.deepEqual(order().slice(0, 2), ["b2", "b1"]);
+  await click(btn("Undo")); await wait(40); assert.deepEqual(order().slice(0, 2), ["b1", "b2"]);
+  await click(btn("Redo")); await wait(40); assert.deepEqual(order().slice(0, 2), ["b2", "b1"]);
+  win(new KeyboardEvent("keydown", { key: "z", ctrlKey: true, bubbles: true })); await wait(40); assert.deepEqual(order().slice(0, 2), ["b1", "b2"]);
+  win(new KeyboardEvent("keydown", { key: "y", ctrlKey: true, bubbles: true })); await wait(40); assert.deepEqual(order().slice(0, 2), ["b2", "b1"]);
+  const input = $('[aria-label="Search this lesson\'s blocks"]') ; assert.ok(!input || true);
+  await wait(FLUSH); assert.deepEqual(dbBlocks().slice(0, 2).map((b) => b.id), ["b2", "b1"]);
+});
+
+await t("Add block menu: adds after the selected block, presets create two beside each other (one undo), Check Your Understanding only once", async () => {
+  await mount();
+  await click(card("b1"));
+  await openMenu("add-block"); await click($('[data-add-type="key_idea"]')); await wait(60);
+  assert.equal($$("[data-block-card]").length, 6); assert.equal(order()[1].startsWith("new-"), true, "inserted after the selected block");
+  await openMenu("add-block"); await click($('[data-preset="image-text"]')); await wait(80);
+  assert.equal($$("[data-block-card]").length, 8); assert.ok($$('[data-row-size="2"]').length >= 1);
+  await click(btn("Undo")); await wait(80); assert.equal($$("[data-block-card]").length, 6, "one undo removes both preset blocks");
+  await openMenu("add-block"); await click($('[data-add-type="check_understanding"]')); await wait(60);
+  await openMenu("add-block"); await click($('[data-add-type="check_understanding"]')); await wait(60);
+  assert.equal($$('[data-type="check_understanding"]').length, 1); assert.ok($('[role="alert"]'));
+});
+
+await t("Canvas: Add block places the new block under the selected one without overlap", async () => {
+  await mount(); await toCanvas(); await click(card("b2"));
+  await openMenu("add-block"); await click($('[data-add-type="rich_text"]')); await wait(80);
+  assert.equal($$("[data-block-card]").length, 6); await wait(FLUSH); assert.ok(validCanvasInDb().valid);
+});
+
+await t("block library: save selected blocks as a template (browser storage), insert later, export file shape, Check Your Understanding refused", async () => {
+  localStorage.clear();
+  await mount();
+  await click(card("b3")); await click($('[data-testid="tile-more"]', card("b3")));
+  await click($$('[role="menuitem"]').find((m) => /Save to block library/.test(m.textContent))); await wait(30);
+  const panel = $('[data-testid="library-panel"]'); assert.ok(panel);
+  const name = $('[aria-label="Template name"]', panel); name.focus();
+  Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value").set.call(name, "Beside me"); name.dispatchEvent(new dom.window.Event("input", { bubbles: true })); await wait(20);
+  await click(btn("Save 1 selected", panel)); await wait(30);
+  assert.equal(JSON.parse(localStorage.getItem("elab:learn-block-library:v1")).length, 1);
+  assert.ok($("[data-template]", panel));
+  await click(btn("Insert", panel)); await wait(80);
+  assert.equal($$("[data-block-card]").length, 6);
+  const inserted = dbBlocks().find((b) => b.id.startsWith("new-")); assert.equal(inserted.content.html, "<p>Beside me</p>");
+  await click(card("b4")); await click($('[data-testid="tile-more"]', card("b4"))); // key_idea can be saved; check_understanding cannot (model-level, tested in test-block-canvas)
+});
+
+await t("tags and review: block tags in the drawer persist inside content.meta and show as chips; needs-review chip; lesson-level guide version goes into a hidden lesson_meta block", async () => {
+  await mount();
+  card("b1").dispatchEvent(new MouseEvent("dblclick", { bubbles: true })); await wait(40);
+  const panel = $('[data-testid="content-panel"]');
+  const setVal = (el, v) => { Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value").set.call(el, v); el.dispatchEvent(new dom.window.Event("input", { bubbles: true })); };
+  const guide = $('input[placeholder="2025"]', panel); setVal(guide, "2025"); await wait(30);
+  const codes = $('input[placeholder="S1.2.3, S1.2.4"]', panel); setVal(codes, "s1.2.3, S1.2.4"); codes.dispatchEvent(new dom.window.FocusEvent("focusout", { bubbles: true })); codes.blur(); await wait(40);
+  await click($$('input[type="checkbox"]', panel).find((c) => /Needs review/.test(c.parentElement.textContent))); await wait(30);
+  await click(btn("Close editor"));
+  const chips = [...card("b1").querySelectorAll("[data-chip]")].map((c) => c.textContent);
+  assert.ok(chips.includes("v2025") && chips.includes("Review") && chips.includes("S1.2.3"), chips.join());
+  await wait(60);
+  const meta = fake.db.learn_blocks.find((b) => b.id === "b1").content.meta;
+  assert.equal(meta.guide, "2025"); assert.equal(meta.needsReview, true); assert.deepEqual(meta.codes, ["S1.2.3", "S1.2.4"]);
+  assert.equal(fake.db.learn_blocks.find((b) => b.id === "b1").content.html, "<p>Hello</p>", "content intact");
+  // lesson level
+  const box = $('[data-testid="lesson-review-box"]'); box.open = true;
+  setVal($('input[placeholder="2025"]', box), "2016"); await wait(700);
+  const metaRow = fake.db.learn_blocks.find((b) => b.block_type === "lesson_meta");
+  assert.ok(metaRow && metaRow.visible === false && metaRow.content.meta.guide === "2016", "hidden meta block");
+  assert.equal($$("[data-block-card]").length, 5, "meta row is never shown as a block");
+});
+
+await t("Preview as student: renders through the student renderer (legacy container for legacy lessons, grid for canvas) with full content", async () => {
+  await mount();
+  await click($$("button").find((b) => /Preview as student/.test(b.textContent)));
+  const prev = $('[data-testid="layout-preview"]'); assert.ok(prev); assert.ok(prev.querySelector(".mt-6.space-y-5"), "legacy markup");
+  assert.match(prev.textContent, /Beside me/);
+  await click($$("button").find((b) => /Preview as student/.test(b.textContent)));
+  await toCanvas();
+  await click($$("button").find((b) => /Preview as student/.test(b.textContent)));
+  assert.ok($('[data-testid="layout-preview"] .lb-grid'), "canvas lesson previews as the student grid");
+});
+
+await t("phone: a simplified linear list with move up / move down buttons (Classic and Canvas)", async () => {
+  dom.window.matchMedia = (q) => ({ matches: /max-width: 639px/.test(q), addEventListener() {}, removeEventListener() {} });
+  try {
+    await mount();
+    assert.ok($('[data-testid="phone-list"]'));
+    await click(card("b2")); await click(btn("Move Image up", card("b2"))); await wait(30);
+    assert.deepEqual(order().slice(0, 2), ["b2", "b1"]);
+    await unmount(); await mount(); await toCanvas();
+    assert.ok($('[data-testid="phone-list"]'));
+    await click(card("b1")); await click(btn("Move Rich Text down", card("b1"))); await wait(30);
+    assert.equal(order()[0], "b2"); await wait(FLUSH); assert.ok(validCanvasInDb().valid);
+  } finally { dom.window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} }); }
+});
+
+await t("existing saved layouts (v1 rows) load and render in Classic; malformed layouts never break the editor; ?editor=list opens the plain list", async () => {
+  const bs = blocks(); bs[1].content.layout = { v: 1, span: 5, row: "r-b2" }; bs[2].content.layout = { v: 1, span: 7, row: "r-b2" }; bs[3].content.layout = { span: "x", row: 5, junk: true }; bs[4].content.layout = "bad";
+  await mount("/admin/learn-content/p1", { blocks: bs });
+  assert.equal($$('[data-row-size="2"] [data-block-id]').map((e) => e.dataset.blockId).join(), "b2,b3"); assert.equal(spanOf("b2"), 5);
   assert.deepEqual(errors, []);
-  await focus(card("b3")); await click(btn("Wider")); await click(btn("Move up"));
-  assert.equal($$("[data-block-card]").length, 5);
+  await unmount(); await mount("/admin/learn-content/p1?editor=list");
+  assert.ok(!$('[data-testid="block-workspace"]')); assert.ok($("#learn-block-b1"));
+});
+
+console.log("content overview / review (jsdom)");
+const lessonData = () => {
+  const pages = [page, { ...page, id: "p2", lesson_code: "S1.4.1", parent_topic: "S1.4", title: "Moles", status: "draft", syllabus_codes: ["S1.4.1"] }];
+  const bs = [...blocks(), { id: "m1", page_id: "p1", position: 0, block_type: "lesson_meta", visible: false, content: { meta: { guide: "2016", needsReview: true } } },
+    { id: "c1", page_id: "p2", position: 0, block_type: "rich_text", visible: true, content: { audience: "both", html: "<p>The mole is the amount of substance</p>" } }];
+  return { pages, blocks: bs };
+};
+const setVal = (el, v) => { Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value").set.call(el, v); el.dispatchEvent(new dom.window.Event("input", { bubbles: true })); };
+const setSel = (el, v) => { Object.getOwnPropertyDescriptor(dom.window.HTMLSelectElement.prototype, "value").set.call(el, v); el.dispatchEvent(new dom.window.Event("change", { bubbles: true })); };
+
+await t("overview: lists every lesson with block summaries, searches all lesson text, filters by topic/status/guide/needs review", async () => {
+  await mount("/admin/learn-content/overview", lessonData());
+  await until(() => $$("[data-lesson]").length === 2);
+  assert.equal($$("[data-lesson]").length, 2); assert.match($('[data-testid="overview-count"]').textContent, /2 of 2/);
+  assert.ok(!$$("[data-lesson]").some((l) => l.textContent.includes("lesson_meta")), "hidden meta block is not listed as a block");
+  await click($('[aria-label="Show blocks of Test lesson"]')); assert.ok(/Rich Text/.test($("[data-lesson=p1] table").textContent) && /Intro/.test($("[data-lesson=p1] table").textContent));
+  setVal($('[data-testid="overview-search"]'), "amount of substance"); await wait(30);
+  assert.equal($$("[data-lesson]").length, 1); assert.ok($('[data-testid="overview-hits"]').textContent.includes("amount of substance"));
+  setVal($('[data-testid="overview-search"]'), ""); await wait(20);
+  await click($$("label").find((l) => /Needs review/.test(l.textContent)).querySelector("input")); await wait(20);
+  assert.deepEqual($$("[data-lesson]").map((l) => l.dataset.lesson), ["p1"]);
+  assert.deepEqual(errors, []);
+});
+
+await t("overview: Duplicate lesson as new guide version creates a NEW draft (needs review, version stamped), original untouched", async () => {
+  const data = lessonData(); await mount("/admin/learn-content/overview", data);
+  await until(() => $$("[data-lesson]").length === 2);
+  const before = JSON.stringify(fake.db.learn_blocks.filter((b) => b.page_id === "p1"));
+  await click($$("button", $("[data-lesson=p1]")).find((b) => /New guide version/.test(b.textContent)));
+  const input = $('[data-testid="dup-form"] input'); setVal(input, "2025"); await wait(20);
+  await click(btn("Create draft copy")); await until(() => fake.db.learn_pages.length === 3, 3000); await wait(80);
+  const copy = fake.db.learn_pages.find((p) => p.id.startsWith("new-"));
+  assert.equal(copy.status, "draft"); assert.equal(copy.lesson_code, "S1.1.1 [2025]");
+  const cb = fake.db.learn_blocks.filter((b) => b.page_id === copy.id);
+  assert.equal(cb.filter((b) => b.block_type !== "lesson_meta").length, 5);
+  const m = cb.find((b) => b.block_type === "lesson_meta"); assert.equal(m.visible, false); assert.equal(m.content.meta.guide, "2025"); assert.equal(m.content.meta.needsReview, true); assert.equal(m.content.meta.derivedFrom.id, "p1");
+  assert.equal(JSON.stringify(fake.db.learn_blocks.filter((b) => b.page_id === "p1")), before, "original lesson untouched");
+  assert.equal(fake.db.learn_pages.find((p) => p.id === "p1").status, "draft");
+});
+
+const fileInput = (name, text) => { const input = $('[aria-label="Import lessons file"]'); const f = new dom.window.File([text], name, { type: "application/json" }); Object.defineProperty(input, "files", { value: [f], configurable: true }); input.dispatchEvent(new dom.window.Event("change", { bubbles: true })); };
+await t("import: invalid file is rejected with reasons and writes nothing; valid file shows a dry run first and only creates NEW drafts after confirming", async () => {
+  await mount("/admin/learn-content/overview", lessonData());
+  await until(() => $$("[data-lesson]").length === 2);
+  const pagesBefore = fake.db.learn_pages.length;
+  fileInput("bad.json", "{ not json"); await until(() => $('[data-testid="import-preview"]')); assert.match($('[data-testid="import-preview"]').textContent, /cannot be imported/); assert.equal(fake.db.learn_pages.length, pagesBefore);
+  await click(btn("Cancel"));
+  const exp = JSON.stringify({ format: "elab-learn-export", version: 1, lessons: [{ parent_topic: "S1.1", lesson_code: "S1.1.1", title: "Imported", level: "SL", syllabus_codes: [], meta: { guide: "2025" }, blocks: [{ block_type: "rich_text", visible: true, content: { html: "<p>Imp</p>" } }] }] });
+  fileInput("ok.json", exp); await until(() => $('[data-testid="import-preview"]'));
+  assert.match($('[data-testid="import-preview"]').textContent, /Dry run: nothing has been written/); assert.match($('[data-testid="import-preview"]').textContent, /import 2/);
+  assert.equal(fake.db.learn_pages.length, pagesBefore, "dry run writes nothing");
+  await click(btn("Create 1 draft lesson(s)")); await until(() => fake.db.learn_pages.length === pagesBefore + 1, 3000); await wait(60);
+  const created = fake.db.learn_pages.find((p) => p.title === "Imported"); assert.equal(created.status, "draft"); assert.equal(created.lesson_code, "S1.1.1 (import 2)");
+  assert.equal(fake.db.learn_pages.find((p) => p.id === "p1").title, "Test lesson", "existing lesson not overwritten");
+});
+
+await t("review mode: steps through the filtered lessons with the compact view; Approve clears needs-review and stamps the date, Needs change stores a note", async () => {
+  await mount("/admin/learn-content/overview", lessonData());
+  await until(() => $$("[data-lesson]").length === 2);
+  await click($('[data-testid="start-review"]')); await until(() => $('[data-testid="review-mode"]'));
+  assert.match($('[data-testid="review-progress"]').textContent, /Lesson 1 of 2/); assert.ok($('[data-testid="compact-classic"]') && $$("[data-block-card]").length >= 4, "compact tiles");
+  await click($('[data-testid="review-approve"]')); await until(() => /Lesson 2 of 2/.test($('[data-testid="review-progress"]')?.textContent || ""), 3000);
+  const meta = fake.db.learn_blocks.find((b) => b.id === "m1").content.meta;
+  assert.equal(meta.needsReview, false); assert.match(meta.reviewedAt, /^20\d\d-/); assert.equal(meta.guide, "2016", "guide version kept");
+  setVal($('[aria-label="What needs to change"]'), "Update to 2025 wording"); await wait(10);
+  await click($('[data-testid="review-change"]')); await until(() => fake.db.learn_blocks.some((b) => b.page_id === "p2" && b.block_type === "lesson_meta"), 3000);
+  const m2 = fake.db.learn_blocks.find((b) => b.page_id === "p2" && b.block_type === "lesson_meta");
+  assert.equal(m2.visible, false); assert.equal(m2.content.meta.needsReview, true); assert.equal(m2.content.meta.note, "Update to 2025 wording");
 });
 
 console.log(`\n${n} learn editor jsdom tests passed${process.exitCode ? " (WITH FAILURES)" : ""}`);

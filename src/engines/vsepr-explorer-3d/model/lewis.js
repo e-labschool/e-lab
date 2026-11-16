@@ -30,7 +30,7 @@ export function deriveLewis(m) {
   });
 
   const centralFormal = c.valence - (2 * lp + sumOrders);
-  if (m.central === "H" && bonds.length > 1) warn("Hydrogen cannot be a central atom with more than one bond.");
+  if (m.central === "H") warn("Hydrogen can form only one bond, so it cannot be the central atom of a shape.");
   if (bonds.length && !m.domains.every((d) => d.kind === "lp" || d.symbol)) { /* already warned above */ }
 
   if (centralElectrons > 8 && m.central !== "H") {
@@ -41,12 +41,18 @@ export function deriveLewis(m) {
     else if (m.central !== "H") warn(`${m.central} has only ${centralElectrons} electrons around it (incomplete octet). Add lone pairs or bonds, or this is a reactive species.`);
   }
   const net = centralFormal + terminals.reduce((s, t) => s + t.formal, 0);
-  if (net !== 0 && bonds.length) {
-    const sign = net > 0 ? `+${net}` : `${net}`;
-    warn(`The electron count gives a net formal charge of ${sign}, so this is an ion or not a neutral molecule.`);
+  const charge = m.charge ?? 0;
+  const fmt = (v) => (v > 0 ? `+${v}` : `${v}`);
+  if (net !== charge && bonds.length) {
+    const hint = charge === 0
+      ? `This is not a real neutral molecule. If you meant an ion, set the overall charge to ${fmt(net)}.`
+      : `The overall charge you set is ${fmt(charge)}; add or remove electrons (lone pairs, bond orders) or change the charge.`;
+    warn(`The electron count gives a net formal charge of ${fmt(net)}${charge === 0 ? "" : `, not ${fmt(charge)}`}. ${hint}`);
+  } else if (charge !== 0 && bonds.length) {
+    info(`An ion with overall charge ${fmt(charge)}: the formal charges shown add up to ${fmt(net)}. Where an atom could carry the charge in several equivalent ways, the real ion is a resonance hybrid.`);
   } else if (centralFormal !== 0 && bonds.length) {
-    warn(`${m.central} has formal charge ${centralFormal > 0 ? "+" : ""}${centralFormal}.`);
+    info(`${m.central} carries formal charge ${centralFormal > 0 ? "+" : ""}${centralFormal}, balanced by the opposite formal charge elsewhere (as in ozone, where resonance spreads it over the molecule).`);
   }
   const status = warnings.some((w) => w.level === "warn") ? "warning" : warnings.length ? "exception" : "ok";
-  return { empty: false, central: m.central, centralLonePairs: lp, sumOrders, centralElectrons, centralFormal, terminals, netCharge: net, warnings, status };
+  return { empty: false, central: m.central, centralLonePairs: lp, sumOrders, centralElectrons, centralFormal, terminals, netCharge: net, charge, warnings, status };
 }

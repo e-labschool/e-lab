@@ -71,7 +71,7 @@ export default function Workspace() {
   const focus = stage === 5 && analyser === "sector" ? scanFocus(plan, Math.min(shownT, plan.total)) : null;
   return (
     <div className="ms-journey" data-testid="journey-workspace" data-stage={stage} data-analyser={analyser} data-t={shownT.toFixed(2)} data-duration={duration.toFixed(2)}>
-      <Overview stage={stage} analyser={analyser} trackPart={info?.part ?? null} />
+      {stage < 6 && <Overview stage={stage} analyser={analyser} trackPart={info?.part ?? null} />}
       <TrackBar info={info} track={track} stage={stage} exp={exp} a={a} />
       <div className="ms-jmain">
         <JourneyScene exp={exp} stage={stage} t={shownT} started={started} fired={fired} analyser={analyser} V={V} B={B} plan={plan} showCharges={showCharges} showLabels={showLabels}

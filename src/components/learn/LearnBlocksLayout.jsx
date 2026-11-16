@@ -1,4 +1,5 @@
 import { segmentBlocks } from "../../lib/blockLayout.js";
+import { isCanvas, canvasGrid } from "../../lib/blockCanvas.js";
 
 /** Lays out already-filtered, already-paginated lesson blocks.
  *
@@ -11,6 +12,21 @@ import { segmentBlocks } from "../../lib/blockLayout.js";
  * renderBlock(block, { inCell }) lets the caller keep its own block switch
  * (e.g. Check Your Understanding vs LearnBlockRenderer). */
 export default function LearnBlocksLayout({ blocks, renderBlock, className = "mt-6" }) {
+  // Canvas lessons (blocks with content.layout.col/gr): one 12-column grid, natural heights, reading order on narrow screens.
+  if (isCanvas(blocks)) {
+    const cells = canvasGrid(blocks);
+    return (
+      <div className={`lb-root ${className}`} data-testid="lesson-layout" data-layout="canvas">
+        <div className="lb-grid">
+          {cells.map((cell) => (
+            <div key={cell.block.id} className="lb-gcell" data-block-id={cell.block.id} style={{ "--lb-col": cell.col, "--lb-span": cell.span, "--lb-r": cell.r, "--lb-rs": cell.rs }}>
+              {renderBlock(cell.block, { inCell: true })}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
   const segments = segmentBlocks(blocks);
   if (segments.length === 1 && segments[0].kind === "flow") {
     return <div className={`${className} space-y-5`}>{segments[0].blocks.map((block) => renderBlock(block, { inCell: false }))}</div>;

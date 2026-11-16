@@ -1,7 +1,8 @@
+import { useEffect, useState } from "react";
 import { Pause, Play, TriangleAlert } from "lucide-react";
 import { DashPanel } from "../../../components/simulation/SimulationDashboard.jsx";
 import GasCanvas from "./GasCanvas.jsx";
-import { DEVIATION_CLASSES, GAS, Z_BOUNDS } from "../model.js";
+import { DEVIATION_CLASSES, GAS, IB_UNITS, Z_BOUNDS, fmtVolume, unitLabelV } from "../model.js";
 
 const THRESHOLD_HELP =
   `Deviation from ideal behaviour is judged from |Z - 1|, where Z = PV/(nRT): ` +
@@ -48,14 +49,38 @@ export function DeviationBadge({ state }) {
 }
 
 // The animated chamber (illustrative particle picture) + deviation indicator + play/pause.
-export default function ChamberPanel({ sim, state, reducedMotion, playing, onTogglePlay }) {
+/** "Pressure from collisions": the momentum the particles hand to the piston per second, compared with the kinetic value of the
+ *  same particles. Polled (not per-frame) so it is readable and cheap. In the picture the pressure really IS this wall impact rate;
+ *  the number on the pressure slider comes from PV = nRT (or van der Waals), which this gauge should agree with in the ideal case. */
+export function WallGauge({ sim, real }) {
+  const [w, setW] = useState(null);
+  useEffect(() => {
+    const id = setInterval(() => setW(sim.getWallStats()), 450);
+    return () => clearInterval(id);
+  }, [sim]);
+  if (!w || w.ratio == null) return null;
+  const pct = Math.round(w.ratio * 100);
+  return (
+    <div className="ig-wall" data-testid="wall-gauge" role="status"
+      title={"Each time a particle bounces off the piston it hands it momentum. Pressure = total momentum handed over per second \u00f7 piston area (here per unit length, because the picture is 2D). "
+        + "The percentage compares that with the value from the particles' own kinetic energy (ideal gas of points = 100 %). With about 50 particles it flickers by roughly 10 %; "
+        + (real ? "in the real-gas picture attractions and finite size shift it." : "finite particle size adds a few percent.")}>
+      <span className="ig-wall-title">Pressure from collisions</span>
+      <span className="ig-wall-row"><b data-testid="wall-hits">{Math.round(w.hitsPerSec)}</b> piston hits per s</span>
+      <span className="ig-wall-row"><b data-testid="wall-ratio">{pct} %</b> of the kinetic value{!w.steady ? " (piston moving)" : ""}</span>
+    </div>
+  );
+}
+
+export default function ChamberPanel({ sim, state, reducedMotion, playing, onTogglePlay, units = IB_UNITS, showWall = true }) {
   const real = state.mode === "real";
-  const label = `Gas cylinder with ${state.N} drawn particles, ${state.T} kelvin, ${state.V.toPrecision(3)} litres, ${real ? "real" : "ideal"} gas`;
+  const label = `Gas cylinder with ${state.N} drawn particles, ${Number(state.T.toFixed(2))} kelvin, ${fmtVolume(state.V, units)} ${unitLabelV(units) === "L" ? "litres" : "cubic decimetres"}, ${real ? "real" : "ideal"} gas. The piston scale is labelled in ${unitLabelV(units)}.`;
   return (
     <DashPanel ariaLabel="Gas chamber" grow noBody className="!p-1.5">
       <div className="sd-chamber" data-testid="chamber">
         <GasCanvas sim={sim} reducedMotion={reducedMotion} label={label} />
         <DeviationBadge state={state} />
+        {showWall && <WallGauge sim={sim} real={real} />}
         <button
           type="button" className="sd-chamber-btn" onClick={onTogglePlay} data-testid="play-pause"
           aria-label={playing ? "Pause simulation" : "Play simulation"} title={playing ? "Pause simulation" : "Play simulation"}

@@ -15,6 +15,13 @@ export default function HeatingGraph({ sub, E, label }) {
   const st = stateAtEnergy(sub, E);
   const full = segs.map((g) => `${x(g.E0).toFixed(1)},${y(g.T0).toFixed(1)} ${x(g.E1).toFixed(1)},${y(g.T1).toFixed(1)}`);
   const upTo = (g) => { if (E <= g.E0) return null; const e1 = Math.min(E, g.E1); const f = g.E1 > g.E0 ? (e1 - g.E0) / (g.E1 - g.E0) : 0; return `${x(g.E0)},${y(g.T0)} ${x(e1)},${y(g.T0 + (g.T1 - g.T0) * f)}`; };
+  // region names sit under their segment, but narrow segments (solid, liquid) would stack on the axis ticks and on each other: keep them apart and inside the plot
+  const regionLabels = (() => {
+    const raw = [["solid", x(segs[0].E1 * 0.5)], ["liquid", x((segs[2].E0 + segs[2].E1) / 2)], ["gas", x((segs[4].E0 + segs[4].E1) / 2)]];
+    const out = []; let prev = PAD.l + 8;
+    for (const [t, cx] of raw) { const px = Math.min(PAD.l + PW - 14, Math.max(cx, prev + (out.length ? 38 : 14))); out.push({ t, x: px }); prev = px; }
+    return out;
+  })();
   const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => f * total);
   const tTicks = [Tmin, sub.Tm, sub.Tb, Tmax];
   const fmt = (v) => (v >= 100 ? Math.round(v) : v.toFixed(1));
@@ -30,9 +37,7 @@ export default function HeatingGraph({ sub, E, label }) {
         {segs.map((g, i) => { const pts = upTo(g); return pts ? <polyline key={i} points={pts} fill="none" stroke={COL[g.phase]} strokeWidth="3" strokeLinecap="round" /> : null; })}
         <text x={x((segs[1].E0 + segs[1].E1) / 2)} y={y(sub.Tm) - 5} textAnchor="middle" className="imf-plateau">melting</text>
         <text x={x((segs[3].E0 + segs[3].E1) / 2)} y={y(sub.Tb) - 5} textAnchor="middle" className="imf-plateau">boiling</text>
-        <text x={x(segs[0].E1 * 0.5)} y={PAD.t + PH - 6} textAnchor="middle" className="imf-region">solid</text>
-        <text x={x((segs[2].E0 + segs[2].E1) / 2)} y={PAD.t + PH - 6} textAnchor="middle" className="imf-region">liquid</text>
-        <text x={x((segs[4].E0 + segs[4].E1) / 2)} y={PAD.t + PH - 6} textAnchor="middle" className="imf-region">gas</text>
+        {regionLabels.map((r) => <text key={r.t} x={r.x} y={PAD.t + PH - 6} textAnchor="middle" className="imf-region" data-testid={`region-${r.t}`}>{r.t}</text>)}
         <circle cx={x(E)} cy={y(st.T)} r="5.5" fill={COL[st.phase]} stroke="#fff" strokeWidth="2" data-testid="graph-marker" />
         <text x={PAD.l + PW / 2} y={H - 6} textAnchor="middle" className="imf-axlabel">Energy added (kJ per mol, simplified)</text>
         <text transform={`translate(11 ${PAD.t + PH / 2}) rotate(-90)`} textAnchor="middle" className="imf-axlabel">Temperature (K)</text>

@@ -1,0 +1,16 @@
+import assert from "node:assert/strict";
+import * as E from "../src/engines/wave-explorer/lib/emSpectrum.js";
+import * as M from "../src/engines/wave-explorer/lib/waveMath.js";
+import { C } from "../src/lib/atomic/constants.js";
+let n = 0; const t = (name, fn) => { fn(); n++; console.log("ok -", name); };
+t("shared CODATA constants (WE-06)", () => { assert.equal(M.SPEED_OF_LIGHT, C); assert.ok(Math.abs(M.PLANCK_CONSTANT - 6.62607015e-34) < 1e-42); });
+t("slider round trip over 15 decades (WE-01)", () => { for (const nm of [0.001, 0.5, 550, 1e5, 3e9, 1e12]) assert.ok(Math.abs(Math.log10(E.sliderToWavelengthNm(E.wavelengthNmToSlider(nm))) - Math.log10(nm)) < 1e-9); });
+t("slider ends: 1 pm and 1 km", () => { assert.ok(Math.abs(E.sliderToWavelengthNm(0) - 1e-3) < 1e-12); assert.ok(Math.abs(E.sliderToWavelengthNm(1) - 1e12) < 1); });
+t("regions", () => { const r = (nm) => E.regionOf(nm).id; assert.equal(r(0.001), "gamma"); assert.equal(r(1), "xray"); assert.equal(r(200), "uv"); assert.equal(r(550), "visible"); assert.equal(r(10000), "ir"); assert.equal(r(1e7), "microwave"); assert.equal(r(1e10), "radio"); });
+t("formatWavelength units", () => { assert.equal(E.formatWavelength(550), "550 nm"); assert.equal(E.formatWavelength(0.5), "500 pm"); assert.equal(E.formatWavelength(1e4), "10.0 µm"); assert.equal(E.formatWavelength(1e9), "1.00 m"); assert.equal(E.formatWavelength(1e12), "1.00 km"); });
+t("550 nm photon: 2.25 eV, 217 kJ/mol", () => { const e = E.photonEnergies(550); assert.ok(Math.abs(e.eV - 2.254) < 0.002); assert.ok(Math.abs(e.kJPerMol - 217.5) < 0.5); });
+t("c = f lambda", () => assert.ok(Math.abs(E.frequencyHz(550) - 5.4508e14) < 1e11));
+t("amplitude 0 maps to a flat line (WE-02)", () => { assert.equal(E.amplitudeToPx(0, 46), 0); assert.equal(E.amplitudeToPx(1, 46), 46); assert.equal(E.amplitudeToPx(-1, 46), 0); });
+t("animation speed stays watchable and monotonic", () => { for (const nm of [1e-3, 400, 700, 1e12]) { const v = E.visualCyclesPerSecond(nm); assert.ok(v >= 0.2 && v <= 1.2); } assert.ok(E.visualCyclesPerSecond(400) > E.visualCyclesPerSecond(700)); });
+t("drawn wavelength within 50-140 px", () => { for (const m of ["visible", "full"]) for (const nm of [400, 550, 700, 1e-3, 1e12]) { const p = E.drawnWavelengthPx(nm, m); assert.ok(p >= 50 && p <= 140); } });
+console.log(`${n} passed`);

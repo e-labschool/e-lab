@@ -1,154 +1,108 @@
-import { useEffect, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import InteractiveFrame from "../../components/interactive-shell/InteractiveFrame.jsx";
-import DropperBeaker from "./components/DropperBeaker.jsx";
-import ConcentrationBars from "./components/ConcentrationBars.jsx";
-import PHPanel from "./components/PHPanel.jsx";
-import StatusStrip from "./components/StatusStrip.jsx";
-import { INITIAL_H, nextHConcentration, nextHFromNaOHDrop, ohFromH, pHFromH, lerpConcentration } from "./lib/math.js";
-import { PALETTE } from "../particle-model-visualizer/data/palette.js";
+import { useSimulationPresentation } from "../../components/interactive-shell/SimulationPresentation.js";
+import "../../lib/acidbase/acidbase-ui.css";
+import "./HOHBalance.css";
+import { waterState, DROP_CM3, WATER_VOLUME_CM3, MAX_ADDED_CM3 } from "../../lib/acidbase/addition.js";
+import { formatScientific, formatPH, formatDelta } from "../../lib/acidbase/format.js";
 
-const NEUTRAL_STATUS = "Pure water: [H⁺] = [OH⁻] → Neutral";
-const REACTION_CAPTION = "H⁺ + OH⁻ → H₂O";
-const REAGENT_TEXT = {
-  hcl: { addCaption: "HCl adds H⁺", status: ["HCl added → [H⁺] ↑", "H⁺ reacts with OH⁻ → [OH⁻] ↓", "More H⁺ → lower pH"] },
-  naoh: { addCaption: "NaOH adds OH⁻", status: ["NaOH added → [OH⁻] ↑", "OH⁻ reacts with H⁺ → [H⁺] ↓", "Less H⁺ → higher pH"] },
-};
+const CONCS = [0.01, 0.1, 1];
+const DECADES = Array.from({ length: 15 }, (_, i) => -i); // 10^0 ... 10^-14
 
-/**
- * A compact, content-sized component — no 100vh/min-h-screen/full-page
- * canvas anywhere. Both reagent paths run through the same timeline
- * shape (see handleAddReagent): whichever species the reagent directly
- * adds rises first, then the reaction caption appears, then the OTHER
- * species falls — so the animation always shows the added ion consuming
- * its counterpart, never the counterpart just changing on its own. The
- * only thing that differs between "hcl" and "naoh" is which bar/caption
- * plays which role.
- */
-export default function HOHBalance({ compact = false, standalone = false }) {
-  const [hConc, setHConc] = useState(INITIAL_H); // settled value — single source of truth
-  const [displayH, setDisplayH] = useState(INITIAL_H);
-  const [displayOH, setDisplayOH] = useState(ohFromH(INITIAL_H));
-  const [fallingReagent, setFallingReagent] = useState(null); // "hcl" | "naoh" | null
-  const [caption, setCaption] = useState("");
-  const [statusText, setStatusText] = useState(NEUTRAL_STATUS);
-  const [animating, setAnimating] = useState(false);
+/** Height fraction 0..1 of a concentration on the chosen scale. */
+export function barFraction(conc, scale, linMax) {
+  if (scale === "log") return Math.min(1, Math.max(0, (Math.log10(conc) + 14) / 14));
+  return Math.min(1, Math.max(0, conc / linMax));
+}
+const niceMax = (x) => { const e = Math.pow(10, Math.floor(Math.log10(Math.max(x, 1e-12)))); return [1, 2, 5, 10].map((m) => m * e).find((v) => v >= x) ?? 10 * e; };
 
-  const timeoutsRef = useRef([]);
-  const rafRef = useRef(null);
+function Body() {
+  const { isViewport } = useSimulationPresentation();
+  const [c, setC] = useState(0.1);
+  const [drops, setDrops] = useState({ hcl: 0, naoh: 0 });
+  const [scale, setScale] = useState("log");
+  const [prev, setPrev] = useState(null);
+  const s = useMemo(() => waterState({ hclDrops: drops.hcl, naohDrops: drops.naoh, c }), [drops, c]);
+  const linMax = niceMax(Math.max(s.H, s.OH));
+  const total = drops.hcl + drops.naoh;
+  const left = Math.max(0, Math.round((MAX_ADDED_CM3 - s.vAdded) / DROP_CM3));
 
-  function clearAllTimers() {
-    timeoutsRef.current.forEach(clearTimeout);
-    timeoutsRef.current = [];
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    rafRef.current = null;
+  function add(kind, n) {
+    const room = Math.min(n, left); if (room <= 0) return;
+    setPrev(s.pH);
+    setDrops((d) => ({ ...d, [kind]: d[kind] + room }));
   }
-
-  useEffect(() => clearAllTimers, []);
-
-  function schedule(fn, ms) {
-    timeoutsRef.current.push(setTimeout(fn, ms));
-  }
-
-  function tweenConcentration(from, to, durationMs, setter, onDone) {
-    const start = performance.now();
-    function step(now) {
-      const t = Math.min(1, (now - start) / durationMs);
-      setter(lerpConcentration(from, to, t));
-      if (t < 1) rafRef.current = requestAnimationFrame(step);
-      else onDone?.();
-    }
-    rafRef.current = requestAnimationFrame(step);
-  }
-
-  function handleAddReagent(reagent) {
-    if (animating) return;
-    setAnimating(true);
-    const text = REAGENT_TEXT[reagent];
-    setStatusText(text.status[0]);
-    setCaption(text.addCaption);
-    setFallingReagent(reagent);
-
-    const fromH = hConc;
-    const toH = reagent === "hcl" ? nextHConcentration(hConc) : nextHFromNaOHDrop(hConc);
-    const fromOH = ohFromH(fromH);
-    const toOH = ohFromH(toH);
-
-    schedule(() => setFallingReagent(null), 400);
-
-    // Whichever species this reagent adds directly rises first.
-    const primary = reagent === "hcl"
-      ? { setter: setDisplayH, from: fromH, to: toH }
-      : { setter: setDisplayOH, from: fromOH, to: toOH };
-    schedule(() => tweenConcentration(primary.from, primary.to, 500, primary.setter), 500);
-
-    schedule(() => { setCaption(REACTION_CAPTION); setStatusText(text.status[1]); }, 1000);
-    schedule(() => setCaption(""), 1600);
-
-    // The other species falls in response — never simultaneously.
-    const secondary = reagent === "hcl"
-      ? { setter: setDisplayOH, from: fromOH, to: toOH }
-      : { setter: setDisplayH, from: fromH, to: toH };
-    schedule(() => {
-      tweenConcentration(secondary.from, secondary.to, 600, secondary.setter, () => {
-        setHConc(toH);
-        setStatusText(text.status[2]);
-        setAnimating(false);
-      });
-    }, 1200);
-  }
-
-  function handleReset() {
-    clearAllTimers();
-    setHConc(INITIAL_H);
-    setDisplayH(INITIAL_H);
-    setDisplayOH(ohFromH(INITIAL_H));
-    setFallingReagent(null);
-    setCaption("");
-    setStatusText(NEUTRAL_STATUS);
-    setAnimating(false);
-  }
-
-  const pH = pHFromH(displayH);
-
-  const body = (
-    <div
-      className="@container mx-auto flex w-full flex-col gap-4 rounded-xl border p-5 sm:p-6"
-      style={{ maxWidth: 1000, borderColor: PALETTE.border, background: PALETTE.bg }}
-    >
-      <p className="text-center text-sm font-semibold" style={{ color: PALETTE.textPrimary }}>
-        H⁺&ndash;OH⁻ Balance in Water at 25&deg;C
-      </p>
-
-      <div className="grid grid-cols-1 gap-4 @[48rem]:grid-cols-[minmax(220px,0.9fr)_minmax(300px,1.3fr)_minmax(200px,0.8fr)] @[48rem]:gap-5">
-        <div className="flex items-center justify-center">
-          <DropperBeaker
-            fallingReagent={fallingReagent}
-            onAddHCl={() => handleAddReagent("hcl")}
-            onAddNaOH={() => handleAddReagent("naoh")}
-            onReset={handleReset}
-            disabled={animating}
-          />
-        </div>
-
-        <div className="flex flex-col items-center justify-center gap-2">
-          <ConcentrationBars hConc={displayH} ohConc={displayOH} />
-          <p className="h-4 text-xs font-medium" style={{ color: PALETTE.textSecondary, opacity: caption ? 1 : 0, transition: "opacity 150ms ease" }}>
-            {caption || "\u00A0"}
-          </p>
-        </div>
-
-        <div className="flex items-center justify-center">
-          <PHPanel pH={pH} />
-        </div>
-      </div>
-
-      <StatusStrip statusText={statusText} />
-    </div>
-  );
+  const reset = () => { setDrops({ hcl: 0, naoh: 0 }); setPrev(null); setC(0.1); setScale("log"); };
+  const dPH = prev == null ? null : formatDelta(s.pH - prev);
+  const cls = Math.abs(s.pH - 7) < 0.005 ? "Neutral" : s.pH < 7 ? "Acidic" : "Basic";
+  const caption = total === 0 ? "Pure water" : `Water + ${drops.hcl ? `${drops.hcl} drop${drops.hcl > 1 ? "s" : ""} HCl` : ""}${drops.hcl && drops.naoh ? " + " : ""}${drops.naoh ? `${drops.naoh} drop${drops.naoh > 1 ? "s" : ""} NaOH` : ""}`;
+  const nExcess = s.nH - s.nOH;
+  const msg = total === 0
+    ? "Pure water: [H⁺] = [OH⁻] = 1.0 × 10⁻⁷ mol dm⁻³, so pH 7.00 (neutral). Every drop adds the same amount of acid or base."
+    : `n(H⁺) added = ${formatScientific(s.nH)} mol, n(OH⁻) added = ${formatScientific(s.nOH)} mol; the excess ${nExcess >= 0 ? "H⁺" : "OH⁻"} (${formatScientific(Math.abs(nExcess) || 1e-30)} mol) in ${s.totalCm3.toFixed(2)} cm³ sets the pH. H⁺ + OH⁻ → H₂O removes the other ion, keeping [H⁺][OH⁻] = 1.0 × 10⁻¹⁴.${dPH ? ` Last addition changed pH by ${dPH}: equal drops, but the same moles matter less as the solution gets more acidic or basic.` : ""}`;
+  const bar = (label, conc, colour) => { const f = barFraction(conc, scale, linMax); return (
+    <div className="hoh-bar"><div className="hoh-bar-top">{label}</div>
+      <div className="hoh-bar-track" role="img" aria-label={`${label} ${formatScientific(conc)} mol per cubic decimetre`}><div className="hoh-bar-fill" style={{ height: `${f * 100}%`, background: colour }} /></div>
+      <div className="hoh-bar-val">{formatScientific(conc)}</div></div>); };
 
   return (
+    <section className={"ab-root hoh sim-surface-dark" + (isViewport ? " is-viewport" : "")}>
+      <div className="hoh-grid">
+        <div className="ab-panel hoh-left">
+          <h3 className="hoh-h">Reagents + {WATER_VOLUME_CM3} cm{"³"} water, 298 K</h3>
+          <svg viewBox="0 0 140 120" className="ab-svg hoh-beaker" role="img" aria-label={caption}>
+            <path d="M22 8 V98 Q22 112 36 112 H104 Q118 112 118 98 V8" fill="none" stroke="#9aa8bd" strokeWidth="2.5" />
+            <path d={`M25 ${60 - Math.min(18, s.vAdded / 6)} H115 V98 Q115 109 104 109 H36 Q25 109 25 98 Z`} fill={s.pH < 6.5 ? "rgba(232,121,100,.45)" : s.pH > 7.5 ? "rgba(108,134,238,.5)" : "rgba(90,140,210,.35)"} />
+          </svg>
+          <p className="hoh-cap" data-testid="caption">{caption} ({s.totalCm3.toFixed(2)} cm{"³"})</p>
+          <label className="ab-field">Reagent concentration
+            <select value={c} onChange={(e) => { setC(Number(e.target.value)); setDrops({ hcl: 0, naoh: 0 }); setPrev(null); }} aria-label="Reagent concentration">{CONCS.map((x) => <option key={x} value={x}>{x.toFixed(x < 1 ? 3 : 2)} mol dm{"⁻³"}</option>)}</select></label>
+          <p className="ab-note">1 drop = {DROP_CM3} cm{"³"} = {formatScientific(c * DROP_CM3 / 1000)} mol</p>
+          <div className="hoh-btns">
+            <button type="button" className="sim-btn ab-btn" disabled={left <= 0} onClick={() => add("hcl", 1)}>+1 drop HCl</button>
+            <button type="button" className="sim-btn ab-btn" disabled={left <= 0} onClick={() => add("hcl", 10)}>+10 drops HCl</button>
+            <button type="button" className="sim-btn ab-btn" disabled={left <= 0} onClick={() => add("naoh", 1)}>+1 drop NaOH</button>
+            <button type="button" className="sim-btn ab-btn" disabled={left <= 0} onClick={() => add("naoh", 10)}>+10 drops NaOH</button>
+          </div>
+          {left <= 0 && <p className="ab-note ab-warn">Limit: {MAX_ADDED_CM3} cm{"³"} of reagent ({MAX_ADDED_CM3 / DROP_CM3} drops) added, the beaker is full. Press Reset.</p>}
+        </div>
+        <div className="ab-panel hoh-mid">
+          <div className="ab-row hoh-mid-head"><h3 className="hoh-h">Concentrations ({scale === "log" ? "logarithmic" : "linear"} scale)</h3>
+            <div className="ab-btns" role="group" aria-label="Axis scale">
+              <button type="button" className="sim-btn ab-btn" aria-pressed={scale === "log"} onClick={() => setScale("log")}>Log</button>
+              <button type="button" className="sim-btn ab-btn" aria-pressed={scale === "linear"} onClick={() => setScale("linear")}>Linear</button></div></div>
+          <div className="hoh-chart">
+            <div className="hoh-axis" aria-hidden="true">
+              {scale === "log" ? DECADES.map((d) => <span key={d} style={{ bottom: `${((d + 14) / 14) * 100}%` }}>10<sup>{d === 0 ? "0" : `−${-d}`}</sup></span>)
+                : [0, 0.25, 0.5, 0.75, 1].map((f) => <span key={f} style={{ bottom: `${f * 100}%` }}>{formatScientific(f * linMax, 1).replace(" × 10⁰", "")}</span>)}
+            </div>
+            <div className="hoh-plot">
+              {(scale === "log" ? DECADES.map((d) => (d + 14) / 14) : [0, 0.25, 0.5, 0.75, 1]).map((f) => <i key={f} className="hoh-grid-line" style={{ bottom: `${f * 100}%` }} />)}
+              <div className="hoh-bars">{bar("[H⁺]", s.H, "#e8836a")}{bar("[OH⁻]", s.OH, "#7f98f2")}</div>
+            </div>
+          </div>
+          <p className="ab-note">{"mol dm⁻³"}. {scale === "log" ? "Each gridline is a factor of 10, so equal heights mean equal concentrations and a 10⁷-fold change is only half the axis." : `Linear axis to ${formatScientific(linMax, 1)}: the smaller ion nearly vanishes.`}</p>
+        </div>
+        <div className="ab-panel hoh-right">
+          <div className="hoh-ph"><span>pH</span><strong data-testid="ph">{formatPH(s.pH)}</strong><em className={"hoh-" + cls.toLowerCase()}>{cls}</em></div>
+          <table className="ab-table"><tbody>
+            <tr><th scope="row">pOH</th><td>{formatPH(s.pOH)}</td></tr>
+            <tr><th scope="row">[H{"⁺"}][OH{"⁻"}]</th><td>{formatScientific(s.H * s.OH, 2)}</td></tr>
+            <tr><th scope="row">Volume</th><td>{s.totalCm3.toFixed(2)} cm{"³"}</td></tr>
+          </tbody></table>
+          <p className="ab-note">pH = {"−"}log{"₁₀"}[H{"⁺"}]. K{"ᵥ"} = 1.0 {"×"} 10{"⁻¹⁴"} at 298 K only; it changes with temperature.</p>
+        </div>
+      </div>
+      <p className="hoh-msg" aria-live="polite" data-testid="message">{msg}</p>
+      <div className="ab-btns"><button type="button" className="sim-btn ab-btn" onClick={reset}>Reset</button></div>
+    </section>
+  );
+}
+
+export default function HOHBalance({ compact = false, standalone = false }) {
+  return (
     <InteractiveFrame title="H+ - OH- Balance in Water" subtitle="Add HCl or NaOH and watch [H+], [OH-] and pH move together." compact={compact} standalone={standalone}>
-      {body}
+      <Body />
     </InteractiveFrame>
   );
 }

@@ -16,7 +16,7 @@ const PAPERS = ["Paper 1A", "Paper 1B", "Paper 2"];
 const QUESTION_TYPES = ["MCQ", "Calculation", "Short Response", "Extended Response", "Data-based"];
 const DIFFICULTIES = ["Easy", "Medium", "Hard", "Challenge"];
 const STATUSES = ["draft", "reviewed", "published", "archived"];
-const DEFAULT_FILTERS = { search: "", topicCode: "", concept: "", level: "", paper: "", questionType: "", difficulty: "", status: "" };
+const DEFAULT_FILTERS = { search: "", topicCode: "", concept: "", level: "", paper: "", questionType: "", difficulty: "", status: "", guide: "", needsReview: false };
 
 const VISUAL_BADGE_TONE = {
   "no-visual": "neutral", "possible-visual-needed": "amber", "elab-visual": "indigo",
@@ -122,6 +122,14 @@ export default function AdminQuestionBank() {
           onChange={(e) => updateFilters({ topicCode: e.target.value })}
           className="w-36 rounded-md border border-[var(--color-line)] bg-transparent px-2.5 py-1.5 text-xs text-[var(--color-ink-soft)]"
         />
+        <input
+          type="text" placeholder="Guide version (e.g. 2025)" aria-label="Guide version" value={filters.guide}
+          onChange={(e) => updateFilters({ guide: e.target.value })}
+          className="w-44 rounded-md border border-[var(--color-line)] bg-transparent px-2.5 py-1.5 text-xs text-[var(--color-ink-soft)]"
+        />
+        <label className="inline-flex items-center gap-1.5 text-xs text-[var(--color-ink-soft)]" title='Questions tagged "needs-review" in the Tags field'>
+          <input type="checkbox" checked={filters.needsReview} onChange={(e) => updateFilters({ needsReview: e.target.checked })} /> Needs review
+        </label>
         <input
           type="text" placeholder="Concept" value={filters.concept}
           onChange={(e) => updateFilters({ concept: e.target.value })}

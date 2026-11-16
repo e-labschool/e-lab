@@ -46,3 +46,28 @@
 .ig-dev--noticeable { border-color: #f1cf7a; background: #fff4d6; color: #7a4d00; }
 .ig-dev--strong { border-color: #f1a49f; background: #fde6e4; color: #8f1d17; }
 .ig-dev--limit { border-color: #f1cf7a; background: #fff4d6; color: #7a4d00; }
+
+/* Pressure-from-collisions gauge (bottom-right of the chamber) */
+.ig-wall {
+  position: absolute;
+  right: 8px;
+  bottom: 30px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-width: 46%;
+  padding: 4px 8px;
+  border: 1px solid #b9d2f8;
+  border-radius: 9px;
+  background: #fff;
+  color: #14226b;
+  font-size: var(--sd-fs-sm);
+  line-height: 1.25;
+  box-shadow: 0 1px 4px rgba(20, 34, 107, 0.15);
+  cursor: help;
+}
+.ig-wall-title { font-weight: 800; }
+.ig-wall-row { white-space: nowrap; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; }
+.ig-wall b { font-weight: 800; }
+@media (max-width: 520px) { .ig-wall { max-width: 62%; } }

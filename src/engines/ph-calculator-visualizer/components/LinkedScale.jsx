@@ -1,104 +1,56 @@
 import { useCallback, useRef } from "react";
-import { PH_MIN, PH_MAX, concentrationFromPH, formatDecimal, formatScientific } from "../lib/ph.js";
+import { PH_MIN, PH_MAX, concentrationFromPH, hydroxideFromPH, formatDecimal, formatScientific, formatPH, clampPH } from "../lib/ph.js";
 
-const ROW_PH = Array.from({ length: PH_MAX - PH_MIN + 1 }, (_, i) => PH_MIN + i);
-const ROW_HEIGHT = 29;
-const TRACK_HEIGHT = ROW_HEIGHT * (ROW_PH.length - 1);
-const PAD = ROW_HEIGHT / 2;
-const COLUMN_GAP = 20; // px each side of the centre line -> 40px total between columns
+const ROWS = Array.from({ length: PH_MAX - PH_MIN + 1 }, (_, i) => PH_MIN + i);
+const ROW_H = 25;
+const TRACK_H = ROW_H * (ROWS.length - 1);
+const PAD = ROW_H / 2;
 
 /**
- * The whole simulation, visually: one draggable horizontal marker that
- * slides across a fixed dual ladder of pH (right) and the matching
- * [H3O+] decade (left) — moving it updates both at once, which is the
- * point: every pH step IS a tenfold concentration step, shown directly
- * rather than explained separately.
+ * One draggable marker on a ladder of pH rows with the matching [H3O+] (left) and [OH-] (right). Exposed as a real slider
+ * (role="slider", arrow / Page / Home / End keys, aria-valuetext) and highlighted as a band BEHIND the text, so no line
+ * ever strikes through a number.
  */
 export default function LinkedScale({ pH, onChange }) {
   const trackRef = useRef(null);
-  const draggingRef = useRef(false);
-
-  const updateFromClientY = useCallback(
-    (clientY) => {
-      const track = trackRef.current;
-      if (!track) return;
-      const rect = track.getBoundingClientRect();
-      const fraction = Math.min(1, Math.max(0, (clientY - rect.top - PAD) / TRACK_HEIGHT));
-      onChange(PH_MIN + fraction * (PH_MAX - PH_MIN));
-    },
-    [onChange]
-  );
-
-  function handlePointerDown(e) {
-    draggingRef.current = true;
-    e.currentTarget.setPointerCapture(e.pointerId);
-    updateFromClientY(e.clientY);
-  }
-  function handlePointerMove(e) {
-    if (!draggingRef.current) return;
-    updateFromClientY(e.clientY);
-  }
-  function handlePointerUp(e) {
-    draggingRef.current = false;
-    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* already released */ }
-  }
-
-  function rowY(p) {
-    return PAD + ((p - PH_MIN) / (PH_MAX - PH_MIN)) * TRACK_HEIGHT;
-  }
-  const markerTop = rowY(pH);
-
+  const dragging = useRef(false);
+  const fromY = useCallback((clientY) => {
+    const rect = trackRef.current.getBoundingClientRect();
+    const f = Math.min(1, Math.max(0, (clientY - rect.top - PAD) / TRACK_H));
+    onChange(PH_MIN + f * (PH_MAX - PH_MIN));
+  }, [onChange]);
+  const rowY = (p) => PAD + ((p - PH_MIN) / (PH_MAX - PH_MIN)) * TRACK_H;
+  const onKey = (e) => {
+    const big = e.shiftKey ? 1 : 0.1; let next = null;
+    if (e.key === "ArrowDown" || e.key === "ArrowRight") next = pH + big;
+    else if (e.key === "ArrowUp" || e.key === "ArrowLeft") next = pH - big;
+    else if (e.key === "PageDown") next = pH + 1; else if (e.key === "PageUp") next = pH - 1;
+    else if (e.key === "Home") next = PH_MIN; else if (e.key === "End") next = PH_MAX;
+    if (next !== null) { e.preventDefault(); onChange(clampPH(Math.round(next * 100) / 100)); }
+  };
+  const nearest = Math.round(pH);
   return (
-    <div className="mx-auto select-none" style={{ width: "min(100%, 480px)", marginTop: 14 }}>
-      <div className="relative h-4 text-[10px] font-semibold uppercase tracking-wide" style={{ color: "var(--color-ink-faint)" }}>
-        <span className="absolute right-1/2" style={{ paddingRight: COLUMN_GAP }}>[H₃O⁺] mol dm⁻³</span>
-        <span className="absolute left-1/2" style={{ paddingLeft: COLUMN_GAP }}>pH</span>
-      </div>
-
+    <div className="phc-scale">
+      <div className="phc-scale-head" aria-hidden="true"><span>[H{"₃"}O{"⁺"}] mol dm{"⁻³"}</span><span>pH</span><span>[OH{"⁻"}] mol dm{"⁻³"}</span></div>
       <div
-        ref={trackRef}
-        className="relative mt-1 cursor-ns-resize touch-none"
-        style={{ height: TRACK_HEIGHT + ROW_HEIGHT }}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
+        ref={trackRef} className="phc-track" style={{ height: TRACK_H + ROW_H }} tabIndex={0} role="slider" aria-orientation="vertical"
+        aria-label="pH scale" aria-valuemin={PH_MIN} aria-valuemax={PH_MAX} aria-valuenow={Number(pH.toFixed(2))}
+        aria-valuetext={`pH ${formatPH(pH)}, hydronium ${formatDecimal(concentrationFromPH(pH))} mol per cubic decimetre`}
+        onKeyDown={onKey}
+        onPointerDown={(e) => { dragging.current = true; e.currentTarget.setPointerCapture(e.pointerId); e.currentTarget.focus(); fromY(e.clientY); }}
+        onPointerMove={(e) => dragging.current && fromY(e.clientY)}
+        onPointerUp={(e) => { dragging.current = false; try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* released */ } }}
       >
-        <div className="absolute left-1/2 top-0 h-full w-px -translate-x-1/2" style={{ background: "var(--color-line)" }} />
-
-        {ROW_PH.map((p) => {
-          const isNeutral = p === 7;
-          const conc = concentrationFromPH(p);
-          return (
-            <div
-              key={p}
-              className="absolute left-0 right-0"
-              style={{ top: rowY(p), height: ROW_HEIGHT, transform: "translateY(-50%)" }}
-            >
-              <span className="absolute right-1/2 flex items-baseline gap-2" style={{ top: "50%", transform: "translateY(-50%)", paddingRight: COLUMN_GAP }}>
-                <span className="text-[12px] font-medium tabular-nums" style={{ color: "var(--color-ink)" }}>{formatDecimal(conc)}</span>
-                <span className="text-[9px]" style={{ color: "var(--color-ink-faint)" }}>{formatScientific(conc)}</span>
-              </span>
-              <span
-                className={`absolute left-1/2 whitespace-nowrap text-[12px] tabular-nums ${isNeutral ? "font-bold" : "font-medium"}`}
-                style={{ top: "50%", transform: "translateY(-50%)", paddingLeft: COLUMN_GAP, color: isNeutral ? "var(--color-teal)" : "var(--color-ink-soft)" }}
-              >
-                {p}{isNeutral && <span className="ml-1 text-[9px] font-medium uppercase tracking-wide">Neutral</span>}
-              </span>
-            </div>
-          );
-        })}
-
-        <div className="pointer-events-none absolute left-0 right-0" style={{ top: markerTop, height: 2, background: "var(--color-indigo)" }} />
-        <div
-          className="pointer-events-none absolute left-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2"
-          style={{ top: markerTop, background: "var(--color-indigo)", borderColor: "var(--color-paper)" }}
-        />
+        <div className="phc-band" style={{ top: rowY(pH) - 11 }} aria-hidden="true"><i /></div>
+        {ROWS.map((p) => (
+          <div key={p} className={"phc-row" + (p === nearest ? " is-near" : "")} style={{ top: rowY(p) - ROW_H / 2, height: ROW_H }} aria-hidden="true">
+            <span className="phc-c"><b>{formatDecimal(concentrationFromPH(p))}</b><small>{formatScientific(concentrationFromPH(p))}</small></span>
+            <span className={"phc-p" + (p === 7 ? " is-neutral" : "")}>{p < 0 ? `\u2212${-p}` : p}{p === 7 && <small>neutral</small>}</span>
+            <span className="phc-o"><b>{formatDecimal(hydroxideFromPH(p))}</b></span>
+          </div>
+        ))}
       </div>
-
-      <div className="mt-1 flex justify-between px-1 text-[10px]" style={{ color: "var(--color-ink-faint)" }}>
-        <span>Acidic — higher [H₃O⁺]</span>
-        <span>Basic — lower [H₃O⁺]</span>
-      </div>
+      <div className="phc-ends" aria-hidden="true"><span>Acidic: higher [H{"₃"}O{"⁺"}]</span><span>Basic: lower [H{"₃"}O{"⁺"}]</span></div>
     </div>
   );
 }

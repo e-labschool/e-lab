@@ -42,12 +42,12 @@ export default function IsotopeActivity() {
       </>
     )}>
       <p data-testid="s10-text">Both isotopes have <b>17 protons</b> but a different number of <b>neutrons</b>, so different mass numbers (35, 37). In the spectrum the Cl⁺ ions appear at <b>m/z 35 and 37</b> and the peak heights show the abundances.</p>
-      <Equation testId="ar-equation" className="ms-eq--block" parts={[{ t: `Aᵣ ≈ (35 × ${f2(s.p35).replace(/\.00$/, "")} + 37 × ${f2(s.p37).replace(/\.00$/, "")}) / 100 = ${s.arMassNumbers.toFixed(2)}` }]} ariaLabel={`Relative atomic mass approximately ${s.arMassNumbers.toFixed(2)}`} />
+      <Equation testId="ar-equation" className="ms-eq--block" parts={[{ t: `Ar ≈ (35 × ${f2(s.p35).replace(/\.00$/, "")} + 37 × ${f2(s.p37).replace(/\.00$/, "")}) / 100 = ${s.arMassNumbers.toFixed(2)}` }]} ariaLabel={`Relative atomic mass approximately ${s.arMassNumbers.toFixed(2)}`} />
       <Readouts items={[
-        { id: "ar", label: "Aᵣ from mass numbers", value: s.arMassNumbers.toFixed(2), tone: "mag" },
-        { id: "ar-exact", label: "Aᵣ from isotopic masses", value: s.arExact.toFixed(2), tone: "b0" },
+        { id: "ar", label: "Ar from mass numbers", value: s.arMassNumbers.toFixed(2), tone: "mag" },
+        { id: "ar-exact", label: "Ar from isotopic masses", value: s.arExact.toFixed(2), tone: "b0" },
       ]} />
-      <p className="ss-note" data-testid="s10-note">35 and 37 are <b>mass numbers</b>, used here as approximations. Precise Aᵣ uses the actual isotopic masses.</p>
+      <p className="ss-note" data-testid="s10-note">35 and 37 are <b>mass numbers</b>, used here as approximations. Precise Ar uses the actual isotopic masses.</p>
     </ActivityFrame>
   );
 }

@@ -20,6 +20,9 @@ export default function LongitudinalWave({ wavelengthNm, wavelengthPx, amplitude
   const reducedMotion = useReducedMotion();
   const { phase, cycleCount } = useWavePhase({ wavelengthNm, paused: paused || reducedMotion });
 
+  // Displacement must stay below spacing/pi, or neighbouring particles would overtake each other (non-physical). Amplitude 0..max maps to 0..that limit.
+  const maxDisplacementPx = (WIDTH / PARTICLE_COUNT / Math.PI) * 0.9;
+  amplitudePx = (amplitudePx / 46) * maxDisplacementPx;
   const rest = useMemo(() => restPositions(PARTICLE_COUNT, WIDTH), []);
   const actual = useMemo(
     () => rest.map((x0) => x0 + longitudinalDisplacement(x0, amplitudePx, wavelengthPx, phase)),

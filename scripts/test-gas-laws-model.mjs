@@ -3,6 +3,7 @@
 //   node scripts/test-gas-laws-model.mjs
 // Covers the spec section 14 checks at model level.
 import assert from "node:assert/strict";
+import * as RD from "../src/engines/gas-laws-explorer/readings.js";
 import * as M from "../src/engines/gas-laws-explorer/model.js";
 import * as Phys from "../src/engines/gas-laws-explorer/physics.js";
 
@@ -38,18 +39,18 @@ test("4. doubling n doubles V (P, T constant)", () => {
   const r = M.setVariable(s, "n", 1.4).state;
   close(r.V, 2 * s.V); assert.equal(r.P, s.P); assert.equal(r.T, s.T);
 });
-test("PV = nRT everywhere on the slider grid (R = 0.082057)", () => {
-  assert.equal(M.R_GAS, 0.082057);
-  for (const mode of M.MODE_IDS) for (let i = 0; i < 200; i++) {
+test("PV = nRT everywhere on the slider grid (R = 8.31, IB data booklet)", () => {
+  assert.equal(M.R_GAS, 8.31);
+  for (const mode of M.SINGLE_MODE_IDS) for (let i = 0; i < 200; i++) {
     let s = M.defaultState(mode);
     const info = M.MODES[mode];
     for (const k of [...info.locked, info.independent]) s = M.setVariable(M.makeState(mode, s), k, rand(M.RANGES[k].min, M.RANGES[k].max)).state;
-    assert.ok(M.residual(s) < 1e-12, `residual ${M.residual(s)}`);
+    assert.ok(M.residual(s) <= 1e-12 * s.n * M.R_GAS * s.T, `residual ${M.residual(s)}`); // relative: PV is now ~10^3 kPa dm3
   }
 });
 
 console.log("== Locked variables (check 5) ==");
-for (const mode of M.MODE_IDS) {
+for (const mode of M.SINGLE_MODE_IDS) {
   test(`5. locked variables exactly constant over 5000 changes (${mode})`, () => {
     const s0 = M.defaultState(mode);
     const info = M.MODES[mode];
@@ -72,7 +73,7 @@ for (const mode of M.MODE_IDS) {
 
 console.log("== Ranges & clamping ==");
 test("every reachable state keeps all four variables inside their ranges", () => {
-  for (const mode of M.MODE_IDS) {
+  for (const mode of M.SINGLE_MODE_IDS) {
     let s = M.defaultState(mode);
     const info = M.MODES[mode];
     for (let i = 0; i < 3000; i++) {
@@ -85,19 +86,19 @@ test("every reachable state keeps all four variables inside their ranges", () =>
   }
 });
 test("clamping: extreme request is limited so the dependent variable stays in range", () => {
-  const s = M.defaultState("vt"); // P = 1.23 atm, n = 1 -> V = nRT/P, T limited
+  const s = M.defaultState("vt"); // P = 99.7 kPa, n = 1 -> V = nRT/P, T limited
   const r = M.setVariable(s, "T", 800);
   assert.equal(r.clamped, true);
   assert.ok(r.state.V <= 50 + 1e-9);
   close(r.state.V, 50, 1e-9);
   const lo = M.setVariable(M.defaultState("pv"), "V", 1);
-  assert.equal(lo.state.V >= 5, true); assert.ok(lo.state.P <= 10 + 1e-9);
+  assert.equal(lo.state.V >= 5, true); assert.ok(lo.state.P <= 1000 + 1e-9);
 });
 test("effective range is narrower than the hard range when needed and never empty", () => {
   const s = M.setVariable(M.defaultState("vt"), "T", 400).state;
   const r = M.effectiveRange(s, "T");
   assert.ok(r.limited && r.min < r.max);
-  for (const mode of M.MODE_IDS) for (let i = 0; i < 300; i++) {
+  for (const mode of M.SINGLE_MODE_IDS) for (let i = 0; i < 300; i++) {
     let t = M.defaultState(mode);
     for (const k of M.MODES[mode].locked) t = M.setVariable(t, k, rand(M.RANGES[k].min, M.RANGES[k].max)).state;
     const e = M.effectiveRange(t, M.MODES[mode].independent);
@@ -171,7 +172,7 @@ test("curves use the investigation's constants (not hard-coded)", () => {
   assert.doesNotMatch(g.constants, /P =/);
 });
 test("7. marker coordinates equal the live values for every mode and graph", () => {
-  for (const mode of M.MODE_IDS) for (const def of M.graphOptions(mode)) {
+  for (const mode of M.SINGLE_MODE_IDS) for (const def of M.graphOptions(mode)) {
     let s = M.defaultState(mode);
     for (let i = 0; i < 20; i++) {
       s = M.setVariable(s, M.MODES[mode].independent, rand(0, 100)).state;
@@ -196,8 +197,8 @@ test("7. marker coordinates equal the live values for every mode and graph", () 
   }
 });
 test("axis labels carry units; default graph first; ticks span the data", () => {
-  const g = graphFor("vt", "v-tc"); assert.match(g.xTitle, /°C/); assert.match(g.yTitle, /\(L\)/);
-  for (const mode of M.MODE_IDS) { assert.equal(M.defaultGraphId(mode), M.graphOptions(mode)[0].id); }
+  const g = graphFor("vt", "v-tc"); assert.match(g.xTitle, /°C/); assert.match(g.yTitle, /\(dm³\)/);
+  for (const mode of M.SINGLE_MODE_IDS) { assert.equal(M.defaultGraphId(mode), M.graphOptions(mode)[0].id); }
   assert.deepEqual(M.graphOptions("pv").map((o) => o.id), ["p-v", "p-invv", "pv-v"]);
   assert.deepEqual(M.graphOptions("vt").map((o) => o.id), ["v-tk", "v-tc", "v-over-t"]);
   assert.deepEqual(M.graphOptions("pt").map((o) => o.id), ["p-tk", "p-tc", "p-over-t"]);
@@ -206,7 +207,7 @@ test("axis labels carry units; default graph first; ticks span the data", () => 
 test("changing graph type does not change the state or the constants", () => {
   const s = M.setVariable(M.defaultState("vt"), "T", 450).state;
   const snap = JSON.stringify(s);
-  for (const d of M.graphOptions("vt")) { const g = M.buildGraph(s, d.id); assert.match(g.constants, /P = 1\.23 atm/); }
+  for (const d of M.graphOptions("vt")) { const g = M.buildGraph(s, d.id); assert.match(g.constants, /P = 99\.7 kPa/); }
   assert.equal(JSON.stringify(s), snap);
 });
 
@@ -295,13 +296,13 @@ test("scientific notation rounding edge cases", () => {
 
 console.log("== Reset / mode switching (check 11) ==");
 test("11. Reset restores a consistent state (PV = nRT residual ~1e-12) in every mode", () => {
-  for (const mode of M.MODE_IDS) {
+  for (const mode of M.SINGLE_MODE_IDS) {
     let s = M.defaultState(mode);
     s = M.setVariable(s, M.MODES[mode].independent, 40).state;
     const r = M.defaultState(mode);
     assert.ok(M.residual(r) < 1e-12);
     assert.equal(r.n, 1); assert.equal(r.T, 300);
-    close(r.P, 1.230855, 1e-9); close(r.V, 20, 1e-12);
+    close(r.P, 8.31 * 300 / 25, 1e-9); close(r.V, 25, 1e-12);
     assert.notEqual(JSON.stringify(s), JSON.stringify(r));
   }
 });
@@ -309,7 +310,7 @@ test("mode switching carries all values over without inconsistency or jumps", ()
   let s = M.defaultState("pv");
   for (let i = 0; i < 400; i++) {
     s = M.setVariable(s, M.MODES[s.mode].independent, rand(0, 900)).state;
-    const to = M.MODE_IDS[Math.floor(rng() * 4)];
+    const to = M.SINGLE_MODE_IDS[Math.floor(rng() * 4)];
     const t = M.switchMode(s, to);
     for (const k of ["P", "V", "T", "n"]) close(t[k], s[k], 1e-12, `${s.mode}->${to} ${k}`);
     assert.ok(M.residual(t) < 1e-11);
@@ -321,7 +322,7 @@ test("mode switching carries all values over without inconsistency or jumps", ()
 
 console.log("== Explanations ==");
 test("default message first; direction-aware, mode-specific messages", () => {
-  for (const mode of M.MODE_IDS) {
+  for (const mode of M.SINGLE_MODE_IDS) {
     const d = M.selectExplanation(null, M.defaultState(mode)); assert.equal(d.id, `${mode}-default`);
     const s = M.setVariable(M.defaultState(mode), M.MODES[mode].independent, 0).state; // go to the minimum
     const lo = M.selectExplanation(M.defaultState(mode), s);
@@ -330,7 +331,7 @@ test("default message first; direction-aware, mode-specific messages", () => {
     assert.notEqual(lo.text, hi.text);
     assert.equal(M.selectExplanation(s, s), null);
   }
-  const texts = new Set(M.MODE_IDS.flatMap((m) => [M.EXPLANATIONS[m].up, M.EXPLANATIONS[m].down, M.EXPLANATIONS[m].default]));
+  const texts = new Set(M.SINGLE_MODE_IDS.flatMap((m) => [M.EXPLANATIONS[m].up, M.EXPLANATIONS[m].down, M.EXPLANATIONS[m].default]));
   assert.equal(texts.size, 12);
   assert.match(M.EXPLANATIONS.pv.down, /Volume decreases.*more wall collisions.*pressure increases/);
   assert.match(M.EXPLANATIONS.vt.up, /faster particles.*piston rises/);
@@ -340,7 +341,7 @@ test("default message first; direction-aware, mode-specific messages", () => {
 });
 test("predict content: one question per relationship with numbers when reachable", () => {
   const s = M.defaultState("pv"); const c = M.predictContent(s);
-  assert.match(c.question, /halved \(from 20\.0 L to 10\.0 L\)/); assert.match(c.answer, /doubles/); assert.match(c.answer, /1\.23 atm to 2\.46 atm/);
+  assert.match(c.question, /halved \(from 25\.0 dm³ to 12\.5 dm³\)/); assert.match(c.answer, /doubles/); assert.match(c.answer, /99\.7 kPa to 199\.4 kPa/);
   assert.match(M.predictContent(M.defaultState("vt")).question, /absolute temperature doubles/);
   assert.match(M.predictContent(M.defaultState("pt")).question, /pressure if the absolute temperature doubles/);
   assert.match(M.predictContent(M.defaultState("vn")).question, /amount of gas doubles/);
@@ -395,7 +396,7 @@ test("long random control run (all modes, rapid changes, fast piston moves): not
   let s = M.defaultState("pv"); sim.reset(s);
   const W = M.CHAMBER.width; const r = Phys.RADIUS; let steps = 0;
   for (let it = 0; it < 4000; it++) {
-    if (it % 400 === 0) s = M.switchMode(s, M.MODE_IDS[(it / 400) % 4]);
+    if (it % 400 === 0) s = M.switchMode(s, M.SINGLE_MODE_IDS[(it / 400) % 4]);
     if (rng() < 0.3) { const k = M.MODES[s.mode].independent; s = M.setVariable(s, k, rand(M.RANGES[k].min, M.RANGES[k].max)).state; sim.setTarget(s); }
     if (it === 1500) sim.setPaused(true); if (it === 1600) sim.setPaused(false);
     sim.advance(rng() < 0.1 ? 0.1 : 0.016); steps++;
@@ -407,6 +408,76 @@ test("long random control run (all modes, rapid changes, fast piston moves): not
     assert.ok(Number.isFinite(sim.pistonH));
   }
   assert.ok(steps === 4000);
+});
+
+
+console.log("== IB units, presets, limits, typed values, combined mode (this round) ==");
+test("STP and SATP presets: 100 kPa, 273.15 / 298.15 K, 1.00 mol -> 22.7 / 24.8 dm3 in every single mode", () => {
+  for (const mode of M.SINGLE_MODE_IDS) {
+    const a = M.presetState(mode, "stp"); close(a.T, 273.15, 1e-12); close(a.P, 100, 1e-12); assert.equal(Number(a.V.toFixed(1)), 22.7); assert.ok(M.residual(a) < 1e-9);
+    const b = M.presetState(mode, "satp"); close(b.T, 298.15, 1e-12); assert.equal(Number(b.V.toFixed(1)), 24.8);
+  }
+});
+test("273 K, 298 K and 273.15 K can be set exactly (1 K slider steps + typed decimals)", () => {
+  assert.equal(M.RANGES.T.step, 1);
+  const s = M.defaultState("vt");
+  for (const T of [273, 298, 273.15, 298.15]) { const r = M.setVariable(s, "T", T); assert.equal(r.state.T, T); assert.equal(r.clamped, false); }
+  assert.equal(M.formatValue("T", 273.15), "273.15"); assert.equal(M.formatValue("T", 298), "298");
+});
+test("limitReason only at a REAL limit; names the calculated variable and the bound (GS-13)", () => {
+  const s = M.defaultState("vt"); const r = M.effectiveRange(s, "T");
+  assert.equal(M.limitReason(s, "T"), null);
+  const hi = M.setVariable(s, "T", 800).state; assert.equal(hi.T, r.max);
+  assert.match(M.limitReason(hi, "T"), /volume would go above 50\.0 dm\u00b3/);
+  const lo = M.setVariable(s, "T", 100).state; assert.equal(M.limitReason(lo, "T"), null);
+});
+test("limitReason never fires when the end of the slider is the control's own hard range (the old false note)", () => {
+  for (const mode of M.SINGLE_MODE_IDS) {
+    const s = M.defaultState(mode); const k = M.freeKeys(s)[0]; const r = M.effectiveRange(s, k);
+    for (const edge of [r.min, r.max]) {
+      const st = M.setVariable(s, k, edge).state; const msg = M.limitReason(st, k);
+      const hardEnd = Math.abs(edge - M.RANGES[k].min) < 1e-9 || Math.abs(edge - M.RANGES[k].max) < 1e-9;
+      if (hardEnd) assert.equal(msg, null, `${mode} ${k} at ${edge}`); else assert.match(msg, /Limit reached/);
+    }
+  }
+});
+test("slider ends are the effective range, so nothing is clamped silently from a slider", () => {
+  for (const mode of M.SINGLE_MODE_IDS) {
+    const s = M.defaultState(mode); const k = M.freeKeys(s)[0]; const r = M.effectiveRange(s, k);
+    assert.equal(M.setVariable(s, k, r.min).clamped, false); assert.equal(M.setVariable(s, k, r.max).clamped, false);
+    assert.equal(M.setVariable(s, k, r.max * 1.5).clamped, true);
+  }
+});
+test("display units: atm / L are conversions only (state stays kPa / dm3)", () => {
+  const s = M.presetState("pv", "stp"); const u = { pressure: "atm", volume: "L" };
+  assert.equal(M.formatWithUnit("P", s.P, u), "0.987 atm"); assert.equal(M.formatWithUnit("V", s.V, u), "22.7 L"); assert.equal(M.formatWithUnit("P", s.P), "100.0 kPa");
+  const g = M.buildGraph(s, "p-v", { units: u }); assert.match(g.yTitle, /atm/); assert.match(g.xTitle, /\(L\)/);
+  const gi = M.buildGraph(s, "p-v"); close(g.accessible[5].y, gi.accessible[5].y / 101.325, 1e-12); close(g.accessible[5].x, gi.accessible[5].x, 1e-12);
+  close(M.fromDisplayValue("P", M.displayValue("P", 123.4, u), u), 123.4, 1e-12);
+});
+test("combined mode: any variable can be the calculated one, PV = nRT holds, calculated variable is not settable", () => {
+  for (const calc of ["P", "V", "T", "n"]) {
+    let s = M.makeState("comb", M.defaultState("pv"), calc);
+    assert.equal(M.depOf(s), calc); assert.deepEqual(M.freeKeys(s).sort(), ["P", "V", "T", "n"].filter((k) => k !== calc).sort());
+    assert.equal(M.setVariable(s, calc, 12345).changed, false);
+    for (const k of M.freeKeys(s)) { const r = M.effectiveRange(s, k); s = M.setVariable(s, k, r.min + 0.3 * (r.max - r.min)).state; assert.ok(M.residual(s) < 1e-9, `${calc}/${k}`); }
+  }
+});
+test("combined mode graph: PV against nT is a straight line of gradient R = 8.31; PV/nT is flat at R", () => {
+  const s = M.defaultState("comb");
+  const g = M.buildGraph(s, "pv-nt"); for (const p of g.accessible.filter((q) => q.x > 0)) close(p.y / p.x, 8.31, 1e-9);
+  const h = M.buildGraph(s, "r-nt"); for (const p of h.accessible) close(p.y, 8.31, 1e-9);
+  close(g.marker.y / g.marker.x, 8.31, 1e-9);
+});
+test("default opening state is an everyday gas near 100 kPa and 300 K", () => {
+  const s = M.defaultState("pv"); assert.ok(s.P > 90 && s.P < 110); assert.equal(s.T, 300); assert.equal(s.n, 1);
+});
+test("readings adapter: columns scale to display units, theory points exist for the plotted axes, proportional pairs include the origin", () => {
+  const s = M.defaultState("pv"); const v = RD.readingValues(s);
+  const cols = RD.readingColumns({ pressure: "atm", volume: "L" });
+  close(v.P * cols.find((c) => c.key === "P").scale, v.P / 101.325, 1e-12);
+  assert.ok(RD.theoryFor(s, "invV", "P").length > 10); assert.equal(RD.theoryFor(s, "Tk", "Tc"), null);
+  assert.equal(RD.originFor("invV", "P"), true); assert.equal(RD.originFor("V", "P"), false);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

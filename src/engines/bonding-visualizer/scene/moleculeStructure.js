@@ -3,13 +3,12 @@
 // molecule for display and carries no angle values, geometry names or polarity. Lone pairs are not drawn here (the Lewis
 // counts are shown by the live strip); bond order is drawn as 1, 2 or 3 parallel bonds.
 import { getBondingElement } from "../model/elements.js";
+import { elementEdge } from "../../shared-3d/elementStyle.js";
 
 /** Covalent radii (pm) used only to give bonds a believable relative length. */
 const COVALENT_PM = { H: 31, Be: 96, B: 84, C: 76, N: 71, O: 66, F: 57, P: 107, S: 105, Cl: 102 };
 /** Display radius of each element's sphere (world units); spheres never touch in a correct structure. */
 const DISPLAY_R = { H: 0.32, Be: 0.5, B: 0.47, C: 0.47, N: 0.45, O: 0.43, F: 0.41, P: 0.57, S: 0.57, Cl: 0.55 };
-/** Sphere colours for the structure view (the element colours, with F made distinct from S). */
-const STRUCT_COLOR = { F: "#9bd96b" };
 const LEN_SCALE = 0.0145; // pm -> world units
 const ORDER_SHORTEN = { 1: 1, 2: 0.92, 3: 0.86 };
 
@@ -26,7 +25,12 @@ function directions(id, n) {
     case "NH3": { const t = 68.2 * DEG; return [0, 1, 2].map((q) => [Math.sin(t) * Math.cos((2 * Math.PI * q) / 3), Math.cos(t), Math.sin(t) * Math.sin((2 * Math.PI * q) / 3)]); }
     case "CH4": return [[1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1]].map(norm);
     case "BF3": return [0, 1, 2].map((q) => [Math.cos((2 * Math.PI * q) / 3), 0, Math.sin((2 * Math.PI * q) / 3)]);
-    case "BeCl2": return [[1, 0, 0], [-1, 0, 0]];
+    case "BeCl2": case "CO2": return [[1, 0, 0], [-1, 0, 0]];
+    case "HCN": return [[1, 0, 0], [-1, 0, 0]];
+    case "H2S": { const a = (92.1 / 2) * DEG; return [[Math.sin(a), -Math.cos(a), 0], [-Math.sin(a), -Math.cos(a), 0]]; }
+    case "PH3": { const t = 70.4 * DEG; return [0, 1, 2].map((q) => [Math.sin(t) * Math.cos((2 * Math.PI * q) / 3), Math.cos(t), Math.sin(t) * Math.sin((2 * Math.PI * q) / 3)]); }
+    case "NH4+": case "CCl4": return [[1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1]].map(norm);
+    case "H3O+": { const t = 68.2 * DEG; return [0, 1, 2].map((q) => [Math.sin(t) * Math.cos((2 * Math.PI * q) / 3), Math.cos(t), Math.sin(t) * Math.sin((2 * Math.PI * q) / 3)]); }
     case "PCl5": return [[0, 1, 0], [0, -1, 0], ...[0, 1, 2].map((q) => [Math.cos((2 * Math.PI * q) / 3), 0, Math.sin((2 * Math.PI * q) / 3)])];
     case "SF6": return [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
     default: return Array.from({ length: n }, (_, i) => [Math.cos((2 * Math.PI * i) / n), 0, Math.sin((2 * Math.PI * i) / n)]);
@@ -40,7 +44,19 @@ function directions(id, n) {
  */
 export function moleculeStructure(m) {
   const raw = [];
-  if (m.central === null) {
+  if (m.layout) { // chains / several central atoms: planar drawing positions in bond-length units
+    const heavy = m.atoms.map((a) => a !== "H"); const cc = m.bonds.find(([i, j]) => heavy[i] && heavy[j]);
+    const Lcc = cc ? bondLength(m.atoms[cc[0]], m.atoms[cc[1]], cc[2]) : 1.5;
+    m.atoms.forEach((a, i) => {
+      if (heavy[i]) { raw[i] = [m.layout[i][0] * Lcc, m.layout[i][1] * Lcc, 0]; return; }
+    });
+    m.atoms.forEach((a, i) => { // hydrogens hang off their carbon along the drawing direction, at the real C-H length
+      if (heavy[i]) return;
+      const bond = m.bonds.find(([x, y]) => (x === i && heavy[y]) || (y === i && heavy[x])); const anchor = bond[0] === i ? bond[1] : bond[0];
+      const d = [m.layout[i][0] - m.layout[anchor][0], m.layout[i][1] - m.layout[anchor][1], 0]; const l = Math.hypot(...d) || 1; const len = bondLength(m.atoms[anchor], "H", 1);
+      raw[i] = [raw[anchor][0] + (d[0] / l) * len, raw[anchor][1] + (d[1] / l) * len, 0];
+    });
+  } else if (m.central === null) {
     const d = bondLength(m.atoms[0], m.atoms[1], m.bonds[0][2]);
     raw.push([-d / 2, 0, 0], [d / 2, 0, 0]);
   } else {
@@ -57,7 +73,7 @@ export function moleculeStructure(m) {
   const c = lo.map((l, a) => (l + hi[a]) / 2);
   const atoms = raw.map((p, i) => {
     const el = getBondingElement(m.atoms[i]);
-    return { index: i, symbol: m.atoms[i], pos: p.map((v, a) => v - c[a]), radius: displayRadius(m.atoms[i]), color: STRUCT_COLOR[m.atoms[i]] ?? el.color };
+    return { index: i, symbol: m.atoms[i], pos: p.map((v, a) => v - c[a]), radius: displayRadius(m.atoms[i]), color: el.color, text: el.text, edge: elementEdge(m.atoms[i]) };
   });
   const bonds = m.bonds.map(([i, j, order]) => ({ i, j, order }));
   const radius = Math.max(...atoms.map((a) => Math.hypot(...a.pos) + a.radius));

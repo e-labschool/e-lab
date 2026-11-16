@@ -72,7 +72,7 @@ test("gas-laws styles are scoped (gl-* classes or the mode-tabs selector); the s
 });
 test("instrument deck is DOM (not an image/canvas drawing) and reads the same formatted state values as the live strip", () => {
   assert.match(glChamber, /export function InstrumentDeck/);
-  assert.match(glChamber, /formatValue\(k, state\[k\]\)/);
+  assert.match(glChamber, /formatValue\(k, state\[k\], units\)/);
   assert.match(glChamber, /<Gauge k="P"/); assert.match(glChamber, /<Gauge k="T"/);
   assert.doesNotMatch(glChamber, /<img|<svg|drawImage/);
   assert.match(glCss, /\.gl-deck \{[^}]*position: absolute/);

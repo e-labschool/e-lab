@@ -3,8 +3,8 @@ import { MODES, predictContent } from "../model.js";
 import { lawHeading } from "../lawInfo.js";
 
 // Predict: a small optional button; the question and (on request) the answer float above the strip.
-export function PredictPanel({ state, revealed, onToggle }) {
-  const c = predictContent(state);
+export function PredictPanel({ state, revealed, onToggle, units }) {
+  const c = predictContent(state, units);
   return <PredictPopover question={`${c.question} Try adjusting the slider.`} answer={c.answer} revealed={revealed} onToggle={onToggle} />;
 }
 

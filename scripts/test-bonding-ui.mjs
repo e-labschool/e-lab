@@ -16,6 +16,7 @@ Object.defineProperty(globalThis, "navigator", { value: dom.window.navigator, co
 dom.window.HTMLCanvasElement.prototype.getContext = () => null;
 // The animations are compressed by the component's own reduced-motion path so the suite is quick; one test also runs the
 // normal-speed path.
+globalThis.__ELAB_ASSUME_GL = true; // jsdom has no WebGL: let the metallic logic run; one test below clears it to check the no-WebGL state
 dom.window.__reduced = true;
 dom.window.matchMedia = () => ({ get matches() { return dom.window.__reduced === true; }, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} });
 globalThis.IS_REACT_ACT_ENVIRONMENT = false;
@@ -168,8 +169,8 @@ await test("[check 9] H2 bond: shared pair keeps both colours, overlap shown, H�
 });
 await test("[check 10] bond selector loads only scientifically valid examples: Double = O₂, Triple = N₂; Single set has no O₂/N₂", async () => {
   const ex = () => $$('[data-testid="examples"] button').map((b) => b.textContent.trim());
-  assert.deepEqual(ex(), ["H₂", "Cl₂", "HCl", "H₂O", "NH₃", "CH₄"]);
-  await click($$('[role="radio"]').find((r) => r.textContent.includes("Double Bond"))); assert.deepEqual(ex(), ["O₂"]); assert.equal($('[data-testid="canvas"]').getAttribute("data-formula"), "O2");
+  assert.deepEqual(ex(), ["H₂", "Cl₂", "HCl", "HF", "H₂O", "H₂S", "NH₃", "PH₃", "CH₄", "CCl₄"]);
+  await click($$('[role="radio"]').find((r) => r.textContent.includes("Double Bond"))); assert.deepEqual(ex(), ["O₂", "CO₂"]); assert.equal($('[data-testid="canvas"]').getAttribute("data-formula"), "O2");
   await click('[data-testid="tool-bring"]'); await tick(700); await click('[data-testid="tool-form-bond"]'); await until(() => stage() === "bonded", 6000, "O2 bonded");
   assert.equal(txt('[data-testid="live-shared"] dd'), "2"); assert.equal(txt('[data-testid="live-lone"] dd'), "4"); assert.match(txt('[data-testid="molecule-label"]'), /O=O/);
   await click($$('[role="radio"]').find((r) => r.textContent.includes("Triple Bond"))); assert.deepEqual(ex(), ["N₂"]);
@@ -196,6 +197,16 @@ await test("building a molecule by hand: an unsupported set explains itself, a s
   await click('[data-testid="el-O"]'); await click('[data-testid="el-Cl"]');
   assert.equal($('[data-testid="canvas"]').getAttribute("data-formula"), ""); assert.ok(disabled('[data-testid="tool-form-bond"]'));
   assert.match(txt('[data-testid="bv-explain"]'), /No validated molecule|Not a complete molecule/);
+});
+await test("metallic mode without WebGL: controls are disabled with a visible reason, no dead 3D stage", async () => {
+  globalThis.__ELAB_ASSUME_GL = false;
+  try {
+    await click('[data-testid="tab-ionic"]'); await click('[data-testid="tab-metallic"]');
+    await until(() => $('[data-testid="tool-release"]'), 8000, "metallic controls");
+    for (const id of ["tool-release", "tool-form-lattice", "tool-pause", "tool-replay", "add-1", "add-5"]) assert.ok(disabled(`[data-testid="${id}"]`), id);
+    assert.match(txt('[data-testid="bv-explain"]'), /3D view unavailable on this device/);
+    assert.ok($('[data-testid="webgl-fallback"]')); assert.equal($('[data-testid="tool-reset-view"]'), null);
+  } finally { globalThis.__ELAB_ASSUME_GL = true; await click('[data-testid="tab-ionic"]'); }
 });
 await test("metallic mode opens its own 3D workspace and controls (WebGL fallback in jsdom)", async () => {
   await click('[data-testid="tab-metallic"]');

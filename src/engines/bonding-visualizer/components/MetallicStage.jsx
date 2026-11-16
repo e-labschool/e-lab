@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
-import WebGLGate from "./WebGLGate.jsx";
-import { isSoftwareGL } from "./webgl.js";
+import GuardedFrame from "../../shared-3d/GuardedFrame.jsx";
+import CameraKeyApi from "../../shared-3d/CameraKeyApi.jsx";
 import { chargeText, getBondingElement } from "../model/elements.js";
 import { MAX_METAL_ATOMS } from "../model/metallic.js";
 import { MAX_ELECTRONS, R_ELECTRON, createEngine, cubeHalf, stepEngine } from "../scene/metallicScene.js";
@@ -92,7 +92,7 @@ function Cube({ groupRef }) {
   );
 }
 
-function Scene({ metal, atomPos, sitePos, n, stage, runKey, playing, selectedIndex, lat, onMove, onSelect, onDone, apiRef, viewKey, reduced }) {
+function Scene({ metal, atomPos, sitePos, n, stage, runKey, playing, selectedIndex, lat, onMove, onSelect, onDone, apiRef, viewKey, reduced, camRef }) {
   const controls = useThree((s) => s.controls);
   const camera = useThree((s) => s.camera);
   const size = useThree((s) => s.size);
@@ -202,6 +202,7 @@ function Scene({ metal, atomPos, sitePos, n, stage, runKey, playing, selectedInd
       <directionalLight position={[6, 8, 5]} intensity={1.1} />
       <directionalLight position={[-6, -3, -4]} intensity={0.35} />
       <ApiBridge apiRef={apiRef} />
+      <CameraKeyApi apiRef={camRef} />
       <instancedMesh ref={coreRef} args={[null, null, MAX_METAL_ATOMS]} frustumCulled={false} {...(draggable ? handlers : {})} onPointerCancel={handlers.onPointerUp} name="cores">
         <sphereGeometry args={[1, hi ? 14 : 28, hi ? 10 : 18]} />
         <meshLambertMaterial ref={matRef} color={neutral} emissiveIntensity={0.3} />
@@ -226,24 +227,23 @@ function Scene({ metal, atomPos, sitePos, n, stage, runKey, playing, selectedInd
  * deliberately simplified illustration (smooth looping paths inside the cube), not a trajectory.
  */
 export default function MetallicStage(props) {
-  const { metal, stage, n, playing } = props;
-  const aa = useMemo(() => !isSoftwareGL(), []); // multisampling is skipped only when WebGL runs on the CPU
+  const { metal, stage, n, playing, onResetView } = props;
   const cam = useMemo(() => {
     const d = fitDistance(cubeHalf(1), 1.6);
     return { position: DEFAULT_DIR.clone().multiplyScalar(d).toArray(), fov: FOV, near: 0.1, far: 400 };
   }, []);
   return (
-    <div className="bv-3d" data-testid="metallic-stage" data-stage={stage} data-n={n}>
-      <WebGLGate fallback="Metal ions (+) sit in a regular lattice inside a cube, surrounded by delocalized valence electrons that are shared throughout the whole structure.">
-        <Canvas camera={cam} dpr={[1, 1.5]} frameloop={playing ? "always" : "demand"} gl={{ antialias: aa, powerPreference: "low-power" }}>
-          <Scene {...props} />
-        </Canvas>
-      </WebGLGate>
+    <GuardedFrame className="bv-3d" testId="metallic-stage" render={({ canvasKey, aa, camRef }) => (
+      <Canvas key={canvasKey} camera={cam} dpr={[1, 1.5]} frameloop={playing ? "always" : "demand"} gl={{ antialias: aa, powerPreference: "low-power" }}>
+        <Scene {...props} camRef={camRef} />
+      </Canvas>
+    )} ariaLabel="3D metallic bonding stage. Arrow keys rotate, plus and minus zoom, zero resets the view." onReset={onResetView}
+      data-stage={stage} data-n={n} fallback="Metal ions (+) sit in a regular lattice inside a cube, surrounded by delocalized valence electrons that are shared throughout the whole structure.">
       <div className="bv-legend" data-testid="metal-legend">
         {stage === "place" || stage === "releasing"
           ? <><span><i style={{ background: getBondingElement(metal.symbol).color }} />{metal.symbol} atom</span><span><i style={{ background: ELECTRON_COLOR }} />valence electron</span></>
           : <><span><i style={{ background: "#ef6c6c" }} />{chargeText(metal.symbol, metal.valence)} ion core</span><span><i style={{ background: ELECTRON_COLOR }} />delocalized electron</span></>}
       </div>
-    </div>
+    </GuardedFrame>
   );
 }

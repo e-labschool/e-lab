@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { availableUpwardTransitions, availableDownwardTransitions, matchAbsorptionByEnergy, ionizationEnergyEv, MAX_LEVEL } from "../lib/transitionMatching.js";
+import { availableUpwardTransitions, availableDownwardTransitions, matchAbsorptionByEnergy, ionizationEnergyEv, MAX_LEVEL, relaxCascade, ABSORPTION_TOLERANCE_PERCENT } from "../lib/transitionMatching.js";
 import { wavelengthNmToFrequencyHz, classifyRegion } from "../lib/photonMath.js";
 import EnergyLevelDiagram from "./EnergyLevelDiagram.jsx";
 import PhotonWave from "./PhotonWave.jsx";
@@ -37,10 +37,25 @@ export default function EnergyLevelsView() {
     setSendResult(null);
   }
 
+  function resetAbsorption() {
+    setAbsorptionFrom(1); setTargetLevel(null); setPhotonEnergy(null); setSendResult(null);
+  }
+  function relaxAbsorption() {
+    const steps = relaxCascade(absorptionFrom);
+    setSendResult({ outcome: "relaxed", steps, fromLevel: absorptionFrom });
+    setAbsorptionFrom(1); setTargetLevel(null); setPhotonEnergy(null);
+  }
+
   function handleSendPhoton() {
     if (photonEnergy == null) return;
     const match = matchAbsorptionByEnergy(absorptionFrom, photonEnergy);
-    if (match?.kind === "bound") {
+    if (match?.kind === "bound" && selectedTarget && match.toLevel !== selectedTarget.toLevel) {
+      // The photon is resonant with a DIFFERENT gap than the selected target: say so, and absorb at the gap it actually matches.
+      setSendResult({ outcome: "bound", fromLevel: absorptionFrom, otherThanTarget: selectedTarget.toLevel, ...match });
+      setAbsorptionFrom(match.toLevel);
+      setTargetLevel(null);
+      setPhotonEnergy(null);
+    } else if (match?.kind === "bound") {
       setSendResult({ outcome: "bound", fromLevel: absorptionFrom, ...match });
       setAbsorptionFrom(match.toLevel);
       setTargetLevel(null);
@@ -48,7 +63,8 @@ export default function EnergyLevelsView() {
     } else if (match?.kind === "ionization") {
       setSendResult({ outcome: "ionization", fromLevel: absorptionFrom, ...match });
     } else {
-      setSendResult({ outcome: "none", requiredEv: selectedTarget?.deltaEv ?? ionizationEv });
+      const req = selectedTarget?.deltaEv ?? ionizationEv;
+      setSendResult({ outcome: "none", requiredEv: req, offsetPercent: ((photonEnergy - req) / req) * 100 });
     }
   }
 
@@ -73,7 +89,7 @@ export default function EnergyLevelsView() {
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
         <div className="rounded-xl border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-2" style={{ height: 400 }}>
           <EnergyLevelDiagram
-            markerLevel={subMode === "absorption" ? absorptionFrom : emissionFrom}
+            markerLevel={subMode === "absorption" ? (sendResult?.outcome === "ionization" ? null : absorptionFrom) : emissionFrom}
             highlightFrom={subMode === "absorption" ? (targetLevel != null ? absorptionFrom : null) : emissionFrom}
             highlightTo={subMode === "absorption" ? targetLevel : emissionTo}
           />
@@ -81,10 +97,20 @@ export default function EnergyLevelsView() {
 
         {subMode === "absorption" ? (
           <div className="flex flex-col gap-2.5">
-            <p className="text-xs text-[var(--color-ink-soft)]">Electron starts at <strong className="text-[var(--color-ink)]">n = {absorptionFrom}</strong>. Select a target level to see the energy required.</p>
+            {sendResult?.outcome === "ionization" ? (
+              <p className="text-xs text-[var(--color-ink-soft)]"><strong className="text-[var(--color-ink)]">H{"\u207A"}</strong>{": the electron has left, so there are no energy levels left to absorb into."}</p>
+            ) : (
+              <p className="text-xs text-[var(--color-ink-soft)]">Electron is at <strong className="text-[var(--color-ink)]">n = {absorptionFrom}</strong>. Select a target level to see the energy required.</p>
+            )}
+            <div className="flex flex-wrap gap-1.5">
+              <button type="button" onClick={resetAbsorption} className="rounded-md border border-[var(--color-line)] px-2 py-1 text-[11px] font-semibold text-[var(--color-ink-soft)]">{sendResult?.outcome === "ionization" ? "New hydrogen atom (n = 1)" : "Reset to n = 1"}</button>
+              {absorptionFrom > 1 && sendResult?.outcome !== "ionization" && (
+                <button type="button" onClick={relaxAbsorption} className="rounded-md border border-[var(--color-line)] px-2 py-1 text-[11px] font-semibold text-[var(--color-ink-soft)]">Let the electron fall back to n = 1</button>
+              )}
+            </div>
 
             <div className="flex flex-wrap gap-1">
-              {upwardOptions.map((t) => (
+              {sendResult?.outcome !== "ionization" && upwardOptions.map((t) => (
                 <button key={t.toLevel} type="button" onClick={() => handleSelectTarget(t.toLevel)} aria-pressed={targetLevel === t.toLevel} className={`rounded-md px-2 py-1 text-[10px] font-medium ${targetLevel === t.toLevel ? "border border-[var(--color-indigo)] bg-[var(--color-indigo-soft)] text-[var(--color-indigo)]" : "border border-[var(--color-line)] text-[var(--color-ink-soft)]"}`}>
                   {t.toLevel === Infinity ? `n${absorptionFrom}\u2192\u221E (ionization)` : `n${absorptionFrom}\u2192${t.toLevel}`}
                 </button>
@@ -112,6 +138,23 @@ export default function EnergyLevelsView() {
                   <span className="font-semibold text-[var(--color-ink)]">Photon energy</span>
                   <input type="range" min={(selectedTarget?.deltaEv ?? ionizationEv) * 0.5} max={(selectedTarget?.deltaEv ?? ionizationEv) * 1.6} step="0.01" value={photonEnergy ?? 0} onChange={(e) => { setPhotonEnergy(Number(e.target.value)); setSendResult(null); }} aria-label="Photon energy in electron-volts" />
                   <span className="text-[11px] text-[var(--color-ink-soft)]">{photonEnergy?.toFixed(2)} eV</span>
+                  {(() => {
+                    const lo = (selectedTarget?.deltaEv ?? ionizationEv) * 0.5, hi = (selectedTarget?.deltaEv ?? ionizationEv) * 1.6;
+                    const pct = (v) => `${((v - lo) / (hi - lo)) * 100}%`;
+                    const marks = [];
+                    if (selectedTarget) marks.push({ v: selectedTarget.deltaEv, t: `\u0394E ${selectedTarget.deltaEv.toFixed(2)}` });
+                    if (ionizationEv > lo && ionizationEv < hi && targetLevel !== Infinity) marks.push({ v: ionizationEv, t: `ionisation ${ionizationEv.toFixed(2)}` });
+                    return (
+                      <span className="relative block h-7" aria-hidden="true">
+                        {marks.map((m) => (
+                          <span key={m.t} className="absolute top-0 text-[9px] text-[var(--color-ink-soft)]" style={{ left: pct(m.v), transform: "translateX(-50%)", whiteSpace: "nowrap" }}>
+                            <span className="mx-auto block h-1.5 w-px bg-[var(--color-ink-soft)]" />{m.t} eV
+                          </span>
+                        ))}
+                      </span>
+                    );
+                  })()}
+                  <span className="text-[10px] text-[var(--color-ink-faint)]">{`A photon is absorbed only if its energy matches a gap to within ${ABSORPTION_TOLERANCE_PERCENT}%, or exceeds the ionisation energy.`}</span>
                 </label>
 
                 <div className="flex items-center gap-2">
@@ -124,14 +167,21 @@ export default function EnergyLevelsView() {
             )}
 
             {sendResult && (
-              <div className="rounded-lg p-2.5" style={{ backgroundColor: sendResult.outcome !== "none" ? "var(--color-teal-soft)" : "var(--color-coral-soft)" }}>
+              <div className="rounded-lg p-2.5" role="status" aria-live="polite" style={{ backgroundColor: sendResult.outcome !== "none" ? "var(--color-teal-soft)" : "var(--color-coral-soft)" }}>
                 {sendResult.outcome === "bound" && (
                   <>
                     <p className="text-sm font-bold text-[var(--color-teal)]">ABSORBED</p>
+                    {sendResult.otherThanTarget != null && <p className="mt-0.5 text-xs text-[var(--color-ink-soft)]">{`Not the selected target (n = ${sendResult.otherThanTarget}): this photon's energy matches the n = ${sendResult.fromLevel} \u2192 ${sendResult.toLevel} gap, so that is the transition that happens.`}</p>}
                     <p className="mt-0.5 text-xs text-[var(--color-ink-soft)]">{"n = "}{sendResult.fromLevel}{" \u2192 n = "}{sendResult.toLevel}{" \u2022 \u0394E = "}{sendResult.deltaEv.toFixed(2)}{" eV"}</p>
                     <div className="mt-1.5">
                       <MiniSpectrumStrip wavelengthNm={sendResult.wavelengthNm} />
                     </div>
+                  </>
+                )}
+                {sendResult.outcome === "relaxed" && (
+                  <>
+                    <p className="text-sm font-bold text-[var(--color-teal)]">EMITTED</p>
+                    <p className="mt-0.5 text-xs text-[var(--color-ink-soft)]">{"One possible route from n = " + sendResult.fromLevel + " (single steps): " + sendResult.steps.map((s) => `n${s.from}\u2192${s.to} ${s.wavelengthNm.toFixed(1)} nm`).join(", ") + "."}</p>
                   </>
                 )}
                 {sendResult.outcome === "ionization" && (
@@ -148,7 +198,7 @@ export default function EnergyLevelsView() {
                 {sendResult.outcome === "none" && (
                   <>
                     <p className="text-sm font-bold text-[var(--color-coral)]">NOT ABSORBED</p>
-                    <p className="mt-0.5 text-xs text-[var(--color-ink-soft)]">{"Photon: "}{photonEnergy?.toFixed(2)}{" eV \u2022 required: "}{sendResult.requiredEv.toFixed(2)}{" eV. Photon energy does not match an available energy gap \u2014 the radiation continues through."}</p>
+                    <p className="mt-0.5 text-xs text-[var(--color-ink-soft)]">{"Photon: "}{photonEnergy?.toFixed(2)}{" eV \u2022 required: "}{sendResult.requiredEv.toFixed(2)}{" eV. It is "}{Math.abs(sendResult.offsetPercent).toFixed(1)}{"% "}{sendResult.offsetPercent < 0 ? "below" : "above"}{" the gap (tolerance "}{ABSORPTION_TOLERANCE_PERCENT}{"%), and no other gap matches \u2014 the photon passes through."}</p>
                   </>
                 )}
               </div>

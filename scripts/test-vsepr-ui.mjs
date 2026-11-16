@@ -91,8 +91,15 @@ await test("H2O, CH4, BF3 and SF6 by clicks; double/triple bonds are one domain 
   await build("C", "O", 2, 0, 2); assert.match(dd("row-molecule"), /^CO₂/);
 });
 await test("a free build that matches no validated molecule is labelled as an idealised VSEPR model with no invented angle", async () => {
-  await build("N", "H", 2, 1);
-  assert.ok($(T("idealised-badge"))); assert.match(dd("row-molecule"), /Idealised VSEPR model/); assert.match(dd("row-angle"), /^< 120°/); assert.equal(dd("row-mg"), "Bent");
+  await build("S", "F", 2, 2);
+  assert.ok($(T("idealised-badge"))); assert.match(dd("row-molecule"), /Idealised VSEPR model/); assert.match(dd("row-angle"), /^< 109.5°/); assert.equal(dd("row-mg"), "Bent");
+});
+await test("free build never presents an impossible species as real (BS-05): NH2 neutral, XeF6, H as central atom; the charge control makes NH4+ legitimate", async () => {
+  await build("N", "H", 2, 1); assert.ok($(T("reality-warning")), "NH2 with 5+2 electrons is not a closed-shell neutral molecule"); assert.match(dd("row-molecule"), /^Hypothetical arrangement/);
+  await build("Xe", "F", 6, 0); assert.ok($(T("reality-warning"))); assert.match(dd("row-molecule"), /^Hypothetical/);
+  await click(T("btn-reset")); await click(T("tool-atom-H")); assert.match(txt(T("vsepr-note")), /Hydrogen forms only one bond/); assert.ok($(T("empty-hint")), "H was not accepted as the central atom");
+  await build("N", "H", 4, 0); assert.ok($(T("reality-warning"))); assert.match(txt(T("reality-warning")), /charge to \+1/);
+  await click(T("charge-inc")); assert.equal(txt(T("charge-value")), "+1"); assert.equal($$(T("reality-warning")).length, 0); assert.match(dd("row-molecule"), /^NH₄⁺ \(ammonium ion\)/);
 });
 await test("clicking a bond tool while a bond is selected is wired; seventh domain is refused with a note; toolbox lone pair needs a central atom", async () => {
   await build("S", "F", 6, 0); await click(T("tool-atom-F")); assert.match(txt(T("vsepr-note")), /up to 6/);
@@ -117,7 +124,7 @@ await test("Why this shape? expands; Lewis tab: accurate bond orders, terminal l
   await click(T("card-tab-lewis")); assert.ok($(T("lewis-svg"))); assert.match(txt(T("lewis-panel")), /Octet complete/);
   await build("C", "O", 2, 0, 2); assert.equal($$(`${T("lewis-svg")} .vx-lewis-bond`).map((g) => g.querySelectorAll("line").length).join(), "2,2", "two double bonds drawn as two lines each");
   assert.equal($$(`${T("lewis-svg")} .vx-lewis-dots g > g`).length, 4, "two lone pairs on each oxygen");
-  await build("H", "H", 2, 0); assert.ok($$(T("lewis-warning")).length >= 1, "hydrogen with two bonds warns");
+  await build("C", "H", 1, 0, 2); assert.ok($$(T("lewis-warning")).length >= 1, "a hydrogen double bond warns");
   await build("N", "H", 4, 0); assert.match(txt(T("lewis-panel")), /net formal charge of \+1/);
   await build("B", "F", 3, 0); assert.equal($$(T("lewis-warning")).length, 0); assert.match(txt(T("lewis-panel")), /Exception: Incomplete octet/);
   await build("S", "F", 6, 0); assert.match(txt(T("lewis-panel")), /Exception: Expanded octet/);
@@ -148,23 +155,46 @@ await test("tabs do not mix state: Build keeps its model, Molecules keeps its mo
   assert.equal($(T("tab-build")).getAttribute("aria-selected"), "true"); assert.equal(dd("row-axe"), "AX₄E₂"); await click(T("btn-undo")); assert.equal(dd("row-axe"), before);
 });
 
-console.log("Challenge tab");
-await test("Predict -> Build -> Observe -> Explain with constructive feedback, one molecule at a time", async () => {
-  await click(T("tab-challenge")); assert.equal($(T("challenge-panel")).getAttribute("data-step"), "predict"); assert.match(txt(T("challenge-molecule")), /H₂O/);
-  assert.ok($(T("ch-to-build")).disabled); assert.equal($$('[data-testid^="ans-"]').length, 6);
-  await setSelect(T("ans-domains"), "3"); await setSelect(T("ans-lonePairs"), "1"); await setSelect(T("ans-ed"), "Trigonal planar"); await setSelect(T("ans-mg"), "Bent"); await setSelect(T("ans-axe"), "AX2E"); await setSelect(T("ans-angle"), "120");
-  assert.ok(!$(T("ch-to-build")).disabled); await click(T("ch-to-build")); assert.equal($(T("challenge-panel")).getAttribute("data-step"), "build");
-  assert.match(txt(T("build-summary")), /Nothing built yet/); await click(T("tool-atom-O")); await click(T("tool-atom-H")); await click(T("tool-atom-H")); await click(T("tool-lp")); await click(T("tool-lp"));
-  assert.match(txt(T("build-summary")), /AX₂E₂/); assert.equal(dd("row-axe"), "", "no info rows in the Challenge tab before the check");
-  await click(T("ch-check")); assert.equal($(T("challenge-panel")).getAttribute("data-step"), "observe");
-  assert.equal(txt(T("ch-score")), "1 of 6 correct"); assert.ok($(T("res-mg")).classList.contains("is-ok")); assert.ok($(T("res-domains")).classList.contains("is-bad"));
-  assert.match(txt(T("build-compare")), /matches H₂O/); assert.ok($(T("show-real")) && $(T("show-mine")));
-  await click(T("ch-to-explain")); assert.match(txt(T("ch-explain")), /Electron domains:.*2 H atoms|Electron domains:.*surrounding atom/i); assert.match(txt(T("ch-explain")), /Lone pair|lone pair/);
-  await click(T("ch-next")); assert.equal($(T("challenge-panel")).getAttribute("data-step"), "predict"); assert.match(txt(T("challenge-molecule")), /CH₄/);
+await test("Molecules library lists H2S and the ions (BS-06); the Ions filter shows only ions; CO3 2- shows its resonance note", async () => {
+  await click(T("tab-molecules")); assert.ok($(T("mol-h2s"))); await click(T("filter-ions"));
+  const ids = $$('[data-testid^="mol-"]').map((b) => b.getAttribute("data-testid")); assert.ok(ids.includes("mol-nh4p") && ids.includes("mol-co32m") && ids.includes("mol-so42m") && !ids.includes("mol-h2o"), ids.join());
+  await click(T("mol-co32m")); assert.match(dd("row-molecule"), /^CO₃²⁻ \(carbonate ion\)/); assert.equal(dd("row-mg"), "Trigonal planar"); assert.match(txt(T("resonance-note")), /Resonance/);
+  await click(T("filter-all")); await click(T("mol-ch4")); await click(T("tab-build"));
 });
-await test("a fully correct prediction is confirmed; Build tab is unaffected by the Challenge build", async () => {
-  for (const [k, v] of Object.entries({ domains: "4", lonePairs: "0", ed: "Tetrahedral", mg: "Tetrahedral", axe: "AX4", angle: "109.5" })) await setSelect(T(`ans-${k}`), v);
-  await click(T("ch-to-build")); await click(T("ch-check")); assert.equal(txt(T("ch-score")), "6 of 6 correct"); await click(T("ch-to-explain")); assert.match(txt(T("ch-explain")), /Every answer is correct/);
+
+console.log("Challenge tab");
+const SEEDED = async () => { await click(T("tab-challenge")); assert.equal($(T("challenge-panel")).getAttribute("data-step"), "start"); await click(T("level-all")); await click(T("ch-start")); };
+// the round is shuffled with a random seed; answer whatever molecule is shown from the validated data
+const { PRESETS } = await import("../src/engines/vsepr-explorer-3d/model/presets.js");
+const shown = () => PRESETS.find((p) => txt(T("challenge-molecule")).includes(p.display) && txt(T("challenge-molecule")).includes(p.name));
+async function answer(p, over = {}) {
+  const ans = { domains: String(p.domains), lonePairs: String(p.lonePairs), ed: p.ed, mg: p.mg, axe: `AX${p.bonding > 1 ? p.bonding : ""}${p.lonePairs ? `E${p.lonePairs > 1 ? p.lonePairs : ""}` : ""}`, ...over };
+  for (const [k, v] of Object.entries(ans)) if (!$(T(`ans-${k}`)).disabled) await setSelect(T(`ans-${k}`), v);
+  const want = [...new Set(p.challengeAngles.map(String))]; for (const o of $$('[data-testid^="ans-angle-"]')) { const v = o.getAttribute("data-testid").replace("ans-angle-", ""); if (o.checked !== want.includes(v)) await click(o); }
+}
+await test("a scored round: start screen, random order, Predict -> Build -> Observe -> Explain, score and streak", async () => {
+  await SEEDED(); assert.match(txt(T("scorebar")), /Score 0\/0/); const p = shown(); assert.ok(p, "a molecule is shown");
+  assert.ok($(T("ch-to-build")).disabled); assert.equal($$('select[data-testid^="ans-"]').length, 5);
+  await answer(p); assert.ok(!$(T("ch-to-build")).disabled); await click(T("ch-to-build")); assert.equal($(T("challenge-panel")).getAttribute("data-step"), "build");
+  assert.match(txt(T("build-summary")), /Nothing built yet/); assert.equal(dd("row-axe"), "", "no info rows in the Challenge tab before the check");
+  await click(T("ch-check")); assert.equal($(T("challenge-panel")).getAttribute("data-step"), "observe"); assert.equal(txt(T("ch-score")), "6 of 6 correct");
+  assert.match(txt(T("scorebar")), /Score 6\/6.*Streak 1/); assert.ok($(T("show-real")) && $(T("show-mine")));
+  await click(T("ch-to-explain")); assert.match(txt(T("ch-explain")), /Every answer is correct/);
+  await click(T("ch-next")); assert.equal($(T("challenge-panel")).getAttribute("data-step"), "predict"); assert.match(txt(T("challenge-molecule")), /Molecule 2 of 8/);
+});
+await test("a wrong answer explains; a hint locks and removes the two counting answers from the score; multi-angle molecules need every angle", async () => {
+  const p = shown(); const wrong = p.mg === "Linear" ? "Bent" : "Linear";
+  await click(T("ch-hint")); assert.ok($(T("ans-domains")).disabled && $(T("ans-lonePairs")).disabled); assert.equal($(T("ans-domains")).value, String(p.domains));
+  await answer(p, { mg: wrong }); await click(T("ch-to-build")); await click(T("ch-check")); assert.match(txt(T("ch-score")), /^3 of 4 correct \(hint used/);
+  await click(T("ch-to-explain")); assert.match(txt(T("ch-explain")), /Molecular geometry/);
+  await click(T("ch-retry")); assert.equal($(T("challenge-panel")).getAttribute("data-step"), "predict");
+});
+await test("finishing the round shows a summary with score, weakest area and Play again", async () => {
+  for (let i = 0; i < 7; i += 1) { await click(T("ch-next")).catch(() => {}); if ($(T("challenge-panel")).getAttribute("data-step") === "predict") { const p = shown(); await answer(p); await click(T("ch-to-build")); await click(T("ch-check")); await click(T("ch-to-explain")); } }
+  await click(T("ch-next")); assert.equal($(T("challenge-panel")).getAttribute("data-step"), "done"); assert.match(txt(T("round-score")), /of \d+ points/); assert.ok($(T("round-weakest"))); assert.ok($(T("ch-again")) && $(T("ch-copy")));
+  await click(T("ch-again")); assert.equal($(T("challenge-panel")).getAttribute("data-step"), "predict");
+});
+await test("Build tab is unaffected by the Challenge build", async () => {
   await click(T("tab-build")); assert.equal(dd("row-axe"), "AX₅", "Build model unchanged by the Challenge");
 });
 await test("header Reset acts on the active tab only", async () => {

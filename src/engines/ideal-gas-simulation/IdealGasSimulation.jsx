@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSimulationSessionState } from "../../components/interactive-shell/simulationSession.js";
 import InteractiveFrame from "../../components/interactive-shell/InteractiveFrame.jsx";
-import SimulationDashboard, { DashPanel, DashboardTabs, ExplainLine, PopoverSection, SettingToggle } from "../../components/simulation/SimulationDashboard.jsx";
-import { DEFAULT_CONTROLS, DEFAULT_DISPLAY, GAS, applyControlChange, createSimulation, resolveState, selectExplanation } from "./model.js";
+import SimulationDashboard, { DashPanel, DashboardTabs, ExplainLine, MiniSwitch, PopoverSection, SettingToggle } from "../../components/simulation/SimulationDashboard.jsx";
+import { DEFAULT_CONTROLS, DEFAULT_DISPLAY, GAS, applyControlChange, createSimulation, resolveState, selectExplanation, unitLabelV } from "./model.js";
+import { UNIT_SYSTEMS } from "../../lib/gas/gasUnits.js";
+import ReadingsPanel from "../../components/interactive-shell/readings/ReadingsPanel.jsx";
+import { addReading, clearReadings, createReadings, removeReading } from "../../components/interactive-shell/readings/readingsModel.js";
+import { originFor, plotDefaultsFor, readingColumns, readingValues, theoryFor } from "./readings.js";
 import { useReducedMotion } from "./useReducedMotion.js";
 import "./IdealGasSimulation.css";
 import ControlsPanel from "./components/ControlsPanel.jsx";
@@ -52,9 +56,13 @@ function IdealGasWorkspace() {
   const [playing, setPlaying] = useState(true);
   const [revealed, setRevealed] = useState(false);
   const [showGraph, setShowGraph] = useSimulationSessionState("showGraph", false, (v) => typeof v === "boolean");
+  const [unitSystem, setUnitSystem] = useState("ib");
+  const [view, setView] = useState("theory");
+  const [readingsState, setReadingsState] = useState(() => createReadings());
+  const units = useMemo(() => ({ pressure: UNIT_SYSTEMS[unitSystem].pressure, volume: UNIT_SYSTEMS[unitSystem].volume }), [unitSystem]);
 
   useEffect(() => { sim.setControls(controls); }, [sim, controls]);
-  useEffect(() => { sim.setDisplay(display); }, [sim, display]);
+  useEffect(() => { sim.setDisplay({ ...display, volumeLabel: unitLabelV(units) }); }, [sim, display, units]);
   useEffect(() => { sim.setPaused(!playing); }, [sim, playing]);
   useEffect(() => { sim.setInstant(reducedMotion); }, [sim, reducedMotion]);
 
@@ -82,15 +90,61 @@ function IdealGasWorkspace() {
     settledRef.current = { ...DEFAULT_CONTROLS };
     setExplain(selectExplanation(null, DEFAULT_CONTROLS));
     setDisplay({ ...DEFAULT_DISPLAY });
+    setUnitSystem("ib");
+    setView("theory");
+    setReadingsState(createReadings());
     setPlaying(true);
     setRevealed(false);
   }, [sim, setControls, setDisplay]);
 
   const real = readings.mode === "real";
 
+  // STP / SATP (IB data booklet): 1.00 mol (N = 100 particles) at 100 kPa and 273.15 / 298.15 K, pressure is the controlled variable.
+  const handlePreset = useCallback((T) => {
+    setControls((c) => applyControlChange(applyControlChange(c, { control: "pressure" }), { N: 100, T, P: 100 / 101.325 }));
+  }, [setControls]);
+
+  const columns = useMemo(() => readingColumns(units), [units]);
+  const handleRecord = useCallback(() => {
+    const r = addReading(readingsState, readingValues(readings), columns);
+    if (r.ok) setReadingsState(r.state);
+    return r;
+  }, [readings, columns, readingsState]);
+  const readingsNode = (
+    <ReadingsPanel
+      title="Ideal vs Real Gas" stem="ideal-vs-real-gas"
+      columns={columns} rows={readingsState.rows}
+      onRecord={handleRecord}
+      onDelete={(id) => setReadingsState((r) => removeReading(r, id))}
+      onClear={() => setReadingsState((r) => clearReadings(r))}
+      axes={plotDefaultsFor(readings)}
+      theory={(x, y) => theoryFor(readings, x, y, columns)}
+      includeOrigin={(x, y) => originFor(x, y)}
+      meta={[`Gas model when recorded: ${GAS.name} (ideal PV = nRT or van der Waals)`, `Units: ${columns[0].unit} and ${columns[1].unit}; R = 8.31 J K-1 mol-1`, "Values are the simulation's own readings (no measurement error)."]}
+      recordHint="Add the current P, V, T, n and Z"
+    />
+  );
+
   const settings = (
     <>
+      <PopoverSection title="Units" testId="settings-units">
+        <MiniSwitch large options={[{ id: "ib", label: "kPa, dm\u00b3", title: "IB data booklet units" }, { id: "atm", label: "atm, L", title: "Older convention" }]} value={unitSystem} onChange={setUnitSystem} ariaLabel="Pressure and volume units" testId="unit-system" />
+        <p className="sd-pop-note">Temperature is always in kelvin. R = 8.31 J K&#8315;&sup1; mol&#8315;&sup1; = 8.31 kPa dm&sup3; K&#8315;&sup1; mol&#8315;&sup1;.</p>
+      </PopoverSection>
+      <PopoverSection title="Standard conditions" testId="settings-presets">
+        <div className="gl-presets" style={{ display: "flex", gap: 6 }}>
+          <button type="button" className="sd-btn sd-btn--sm" onClick={() => handlePreset(273.15)} data-testid="preset-stp" title="STP: 273.15 K and 100 kPa, 1.00 mol, so V = 22.7 dm\u00b3 (ideal gas)">STP</button>
+          <button type="button" className="sd-btn sd-btn--sm" onClick={() => handlePreset(298.15)} data-testid="preset-satp" title="SATP: 298.15 K and 100 kPa, 1.00 mol, so V = 24.8 dm\u00b3 (ideal gas)">SATP</button>
+        </div>
+        <p className="sd-pop-note">IB data booklet: STP = 273.15 K and 100 kPa (22.7 dm&sup3; mol&#8315;&sup1;); SATP = 298.15 K and 100 kPa. Sets n = 1.00 mol and the pressure as the controlled variable.</p>
+      </PopoverSection>
+      <PopoverSection title="Piston scale" testId="settings-scale">
+        <MiniSwitch large options={[{ id: "25", label: "0\u201325" }, { id: "100", label: "0\u2013100" }, { id: "log", label: "Log" }]}
+          value={String(display.pistonScale)} onChange={(v) => handleDisplay({ pistonScale: v === "log" ? "log" : Number(v) })} ariaLabel="Piston scale range" testId="scale-switch" />
+        <p className="sd-pop-note">Linear scales draw volume in proportion to the piston height. Very small volumes stop at the bottom of the scale (the picture says so). The log scale compresses large volumes.</p>
+      </PopoverSection>
       <PopoverSection title="Particle picture" testId="settings-display">
+        <SettingToggle id="ig-set-wall" label="Pressure from collisions" hint="Show how hard the particles hit the piston." checked={display.wallGauge} onChange={(wallGauge) => handleDisplay({ wallGauge })} testId="toggle-wall" />
         <SettingToggle id="ig-set-trails" label="Particle trails" hint="Show the recent path of each particle." checked={display.trails} onChange={(trails) => handleDisplay({ trails })} testId="toggle-trails" />
         <SettingToggle id="ig-set-flashes" label="Collision flashes" hint="Highlight particle-particle and particle-wall collisions." checked={display.collisions} onChange={(collisions) => handleDisplay({ collisions })} testId="toggle-collisions" />
         <SettingToggle
@@ -101,7 +155,7 @@ function IdealGasWorkspace() {
       <PopoverSection title="About this model">
         <p className="sd-pop-note" data-testid="model-note">
           Real gas: {GAS.name}, van der Waals (P + an&sup2;/V&sup2;)(V &minus; nb) = nRT with a = {GAS.a.toFixed(3)} L&sup2;&middot;atm/mol&sup2; and b = {GAS.b} L/mol.
-          The particle picture is illustrative: it is not molecular dynamics and does not set the pressure.
+          The vapour-pressure (condensation) limit is qualitative. The particle picture is illustrative: 2D, about 50 particles, and the pressure on the slider comes from the model, not from counting collisions; the &ldquo;pressure from collisions&rdquo; gauge compares the two.
         </p>
       </PopoverSection>
     </>
@@ -131,15 +185,16 @@ function IdealGasWorkspace() {
           onChange={(mode) => handleControls({ mode })} testId="gas-switch"
         />
       }
-      controls={<ControlsPanel controls={controls} state={readings} onChange={handleControls} />}
-      chamber={<ChamberPanel sim={sim} state={readings} reducedMotion={reducedMotion} playing={playing} onTogglePlay={() => setPlaying((p) => !p)} />}
+      controls={<ControlsPanel controls={controls} state={readings} onChange={handleControls} units={units} onRecord={handleRecord} readingCount={readingsState.rows.length} />}
+      chamber={<ChamberPanel sim={sim} state={readings} reducedMotion={reducedMotion} playing={playing} onTogglePlay={() => setPlaying((p) => !p)} units={units} showWall={display.wallGauge} />}
       graph={
         <DashPanel ariaLabel="Real vs Ideal Gas Behaviour" grow testId="graph-panel">
-          <RealIdealGraph state={readings} />
+          <MiniSwitch fill options={[{ id: "theory", label: "Z vs P graph" }, { id: "readings", label: `My readings (${readingsState.rows.length})` }]} value={view} onChange={setView} ariaLabel="Graph source" testId="view-switch" />
+          {view === "readings" ? <div className="min-h-0 flex-1 overflow-y-auto" data-testid="readings-view">{readingsNode}</div> : <RealIdealGraph state={readings} units={units} />}
         </DashPanel>
       }
-      live={<LiveValues readings={readings} />}
-      predict={<PredictPanel controls={controls} revealed={revealed} onToggle={() => setRevealed((r) => !r)} />}
+      live={<LiveValues readings={readings} units={units} />}
+      predict={<PredictPanel controls={controls} units={units} revealed={revealed} onToggle={() => setRevealed((r) => !r)} />}
       explain={<ExplainLine text={explain.text} details={details} />}
     />
   );

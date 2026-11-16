@@ -21,6 +21,9 @@ function Nucleus() {
 const BASE_LABELS = { "1s": "1s", "2s": "2s", "2p": "2p", "3s": "3s", "3p": "3p", "3d": "3d", "4s": "4s" };
 const DETECTION_STEPS = [1, 10, 100, 1000];
 const INITIAL_1S_COUNT = 1400; // "beautiful but not excessively dense" default cloud
+const MAX_DETECTIONS = 40000; // cap: every change re-samples the cloud, so unbounded counts froze the page (OE-03)
+const DEFAULT_COUNT = { s: 2500, p: 5000, d: 8000 }; // enough points for p and d shapes to be recognisable (OE-04)
+const HYDROGENIC_NOTE = "Hydrogen-like orbitals: the shapes and node counts are correct for any atom, but every orbital here is drawn with the hydrogen (Z = 1) radial function, so SIZES are not scaled for heavier atoms (in real atoms inner orbitals are far more compact).";
 
 function familyOf(base) {
   if (base.includes("s")) return "s";
@@ -51,7 +54,7 @@ export default function OrbitalExplorerSimulation({ compact = false, standalone 
   const handleSelectBase = useCallback((base) => {
     setBaseOrbital(base);
     setOrientation(ORIENTATIONS[base] ? defaultOrientationFor(base) : null);
-    setDetectionCount(base === "1s" ? INITIAL_1S_COUNT : 400);
+    setDetectionCount(base === "1s" ? INITIAL_1S_COUNT : DEFAULT_COUNT[familyOf(base)]);
     setSeed((s) => s + 1);
     setViewKey((k) => k + 1); // auto-reframe the camera for the newly selected orbital's own scale
   }, []);
@@ -62,7 +65,7 @@ export default function OrbitalExplorerSimulation({ compact = false, standalone 
   }, []);
 
   const handleAddDetections = useCallback((n) => {
-    setDetectionCount((c) => c + n);
+    setDetectionCount((c) => Math.min(MAX_DETECTIONS, c + n));
   }, []);
 
   const handleClear = useCallback(() => {
@@ -79,7 +82,7 @@ export default function OrbitalExplorerSimulation({ compact = false, standalone 
             Explore an Orbital
           </button>
           <button type="button" onClick={() => setMode("build")} aria-pressed={mode === "build"} className={`rounded-md px-3 py-1.5 text-xs font-semibold ${mode === "build" ? "bg-[var(--color-indigo)] text-white" : "border border-[var(--color-line)] text-[var(--color-ink-soft)]"}`}>
-            Build an Atom
+            Atom View (all occupied orbitals)
           </button>
           <button type="button" onClick={() => setShowHelp((v) => !v)} aria-label="About this simulation" className="ml-1 flex h-7 w-7 items-center justify-center rounded-full border border-[var(--color-line)] text-[var(--color-ink-faint)]">
             <Info size={13} />
@@ -89,6 +92,8 @@ export default function OrbitalExplorerSimulation({ compact = false, standalone 
         {showHelp && (
           <div className="rounded-lg border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-3 text-xs text-[var(--color-ink-soft)]">
             <ul className="list-disc space-y-1 pl-4">
+              <li>{HYDROGENIC_NOTE}</li>
+              <li>The nucleus is drawn far larger than real scale (a real nucleus is about 10{"\u207B\u2075"} of an orbital radius).</li>
               <li>Cloud density represents relative electron probability density.</li>
               <li>Each detection point represents a simulated position measurement, not a separate electron.</li>
               <li>Colours distinguish orbital families and are not the orbital&rsquo;s actual colour.</li>
@@ -96,6 +101,8 @@ export default function OrbitalExplorerSimulation({ compact = false, standalone 
             </ul>
           </div>
         )}
+
+        <p className="rounded-lg border border-[var(--color-line)] bg-[var(--color-paper-raised)] px-3 py-2 text-[11px] text-[var(--color-ink-soft)]">{HYDROGENIC_NOTE}</p>
 
         {mode === "build" && <AtomBuilder compact={compact} />}
 
@@ -147,12 +154,12 @@ export default function OrbitalExplorerSimulation({ compact = false, standalone 
                 <button type="button" aria-pressed="true" className="w-full rounded-md border border-[var(--color-indigo)] bg-[var(--color-indigo-soft)] px-2 py-1.5 text-left text-[11px] font-semibold text-[var(--color-indigo)]">
                   Probability Cloud
                 </button>
-                <p className="mt-1 text-[9.5px] text-[var(--color-ink-faint)]">Boundary Surface and Cross-section are not yet available.</p>
+                <p className="mt-1 text-[10px] text-[var(--color-ink-soft)]">Brighter, denser regions are where the electron is more likely to be found.</p>
               </div>
             </div>
 
             {/* CENTER: 3D viewer */}
-            <div className="relative">
+            <div className="relative" role="group" aria-label={`3D view of the ${def.n}${ORIENTATION_LABELS[orbitalId] ?? baseOrbital.slice(1)} orbital: ${detectionCount.toLocaleString()} simulated position detections. ${radialNodes} radial node${radialNodes === 1 ? "" : "s"}, ${angularNodes} angular node${angularNodes === 1 ? "" : "s"}. Drag to rotate, scroll to zoom; use the Reset view button to recentre.`}>
               <ThreeCanvas key={viewKey} height={compact ? 380 : 500} cameraDistance={boundingRadiusFor(def.n) * 1.9} fallbackDescription="This device can't render the 3D orbital view. Try a device with WebGL support." fallbackLabel="Orbital viewer">
                 <color attach="background" args={["#0A0E1A"]} />
                 <Nucleus />
@@ -167,7 +174,7 @@ export default function OrbitalExplorerSimulation({ compact = false, standalone 
                 <p className="mt-0.5 text-[10.5px] text-[var(--color-ink-faint)]">Each point is a simulated position measurement, not a separate electron.</p>
                 <div className="mt-2 flex flex-wrap gap-1">
                   {DETECTION_STEPS.map((step) => (
-                    <button key={step} type="button" onClick={() => handleAddDetections(step)} className="rounded-md border border-[var(--color-line)] px-2 py-1 text-[11px] font-medium text-[var(--color-ink-soft)] hover:bg-[var(--color-line)]/30">
+                    <button key={step} type="button" onClick={() => handleAddDetections(step)} disabled={detectionCount >= MAX_DETECTIONS} className="rounded-md border border-[var(--color-line)] px-2 py-1 text-[11px] font-medium text-[var(--color-ink-soft)] hover:bg-[var(--color-line)]/30 disabled:cursor-not-allowed disabled:opacity-50">
                       {`+${step}`}
                     </button>
                   ))}
@@ -176,6 +183,7 @@ export default function OrbitalExplorerSimulation({ compact = false, standalone 
                   </button>
                 </div>
                 <p className="mt-2 text-sm font-bold text-[var(--color-ink)]">{detectionCount.toLocaleString()} detections</p>
+                <p className="text-[10.5px] text-[var(--color-ink-soft)]" role="status" aria-live="polite">{detectionCount >= MAX_DETECTIONS ? `Maximum of ${MAX_DETECTIONS.toLocaleString()} detections reached (more points would only slow the page down). Press Clear to start again.` : `Up to ${MAX_DETECTIONS.toLocaleString()} detections.`}</p>
               </div>
 
               <div className="rounded-xl border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-3">

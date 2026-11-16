@@ -36,16 +36,35 @@ const ORACLE = {
   sf6: { n: 6, b: 6, l: 0, axe: "AX₆", ed: "Octahedral", mg: "Octahedral", angles: [[90, "ideal"], [180, "ideal"]] },
   brf5: { n: 6, b: 5, l: 1, axe: "AX₅E", ed: "Octahedral", mg: "Square pyramidal", angles: [[85, "approx"]] },
   xef4: { n: 6, b: 4, l: 2, axe: "AX₄E₂", ed: "Octahedral", mg: "Square planar", angles: [[90, "ideal"], [180, "ideal"]] },
+  h2s: { n: 4, b: 2, l: 2, axe: "AX₂E₂", ed: "Tetrahedral", mg: "Bent", angles: [[92.1, "approx"]] },
+  o3: { n: 3, b: 2, l: 1, axe: "AX₂E", ed: "Trigonal planar", mg: "Bent", angles: [[116.8, "approx"]] },
+  nh4p: { n: 4, b: 4, l: 0, axe: "AX₄", ed: "Tetrahedral", mg: "Tetrahedral", angles: [[109.5, "ideal"]] },
+  h3op: { n: 4, b: 3, l: 1, axe: "AX₃E", ed: "Tetrahedral", mg: "Trigonal pyramidal", angles: [[113, "approx"]] },
+  co32m: { n: 3, b: 3, l: 0, axe: "AX₃", ed: "Trigonal planar", mg: "Trigonal planar", angles: [[120, "ideal"]] },
+  no3m: { n: 3, b: 3, l: 0, axe: "AX₃", ed: "Trigonal planar", mg: "Trigonal planar", angles: [[120, "ideal"]] },
+  no2m: { n: 3, b: 2, l: 1, axe: "AX₂E", ed: "Trigonal planar", mg: "Bent", angles: [[115, "approx"]] },
+  no2p: { n: 2, b: 2, l: 0, axe: "AX₂", ed: "Linear", mg: "Linear", angles: [[180, "ideal"]] },
+  so32m: { n: 4, b: 3, l: 1, axe: "AX₃E", ed: "Tetrahedral", mg: "Trigonal pyramidal", angles: [[106, "approx"]] },
+  so42m: { n: 4, b: 4, l: 0, axe: "AX₄", ed: "Tetrahedral", mg: "Tetrahedral", angles: [[109.5, "ideal"]] },
+  po43m: { n: 4, b: 4, l: 0, axe: "AX₄", ed: "Tetrahedral", mg: "Tetrahedral", angles: [[109.5, "ideal"]] },
+  clo4m: { n: 4, b: 4, l: 0, axe: "AX₄", ed: "Tetrahedral", mg: "Tetrahedral", angles: [[109.5, "ideal"]] },
+  bf4m: { n: 4, b: 4, l: 0, axe: "AX₄", ed: "Tetrahedral", mg: "Tetrahedral", angles: [[109.5, "ideal"]] },
+  icl4m: { n: 6, b: 4, l: 2, axe: "AX₄E₂", ed: "Octahedral", mg: "Square planar", angles: [[90, "ideal"], [180, "ideal"]] },
+  i3m: { n: 5, b: 2, l: 3, axe: "AX₂E₃", ed: "Trigonal bipyramidal", mg: "Linear", angles: [[180, "ideal"]] },
 };
-const ORACLE_ATOMS = { becl2: ["Be", "Cl", "Cl"], co2: ["C", "O", "O"], hcn: ["C", "H", "N"], bf3: ["B", "F", "F", "F"], so3: ["S", "O", "O", "O"], ch2o: ["C", "H", "H", "O"], so2: ["S", "O", "O"], ch4: ["C", "H", "H", "H", "H"], nh3: ["N", "H", "H", "H"], h2o: ["O", "H", "H"], pcl5: ["P", "Cl", "Cl", "Cl", "Cl", "Cl"], sf4: ["S", "F", "F", "F", "F"], clf3: ["Cl", "F", "F", "F"], xef2: ["Xe", "F", "F"], sf6: ["S", "F", "F", "F", "F", "F", "F"], brf5: ["Br", "F", "F", "F", "F", "F"], xef4: ["Xe", "F", "F", "F", "F"] };
-const ORACLE_BOND_ORDERS = { co2: [2, 2], hcn: [1, 3], so3: [2, 2, 2], ch2o: [1, 1, 2], so2: [2, 2] };
+// oracle charges (written from the textbook)
+const ORACLE_CHARGE = { nh4p: 1, h3op: 1, co32m: -2, no3m: -1, no2m: -1, no2p: 1, so32m: -2, so42m: -2, po43m: -3, clo4m: -1, bf4m: -1, icl4m: -1, i3m: -1 };
+const ORACLE_ATOMS = { becl2: ["Be", "Cl", "Cl"], co2: ["C", "O", "O"], hcn: ["C", "H", "N"], bf3: ["B", "F", "F", "F"], so3: ["S", "O", "O", "O"], ch2o: ["C", "H", "H", "O"], so2: ["S", "O", "O"], ch4: ["C", "H", "H", "H", "H"], nh3: ["N", "H", "H", "H"], h2o: ["O", "H", "H"], pcl5: ["P", "Cl", "Cl", "Cl", "Cl", "Cl"], sf4: ["S", "F", "F", "F", "F"], clf3: ["Cl", "F", "F", "F"], xef2: ["Xe", "F", "F"], sf6: ["S", "F", "F", "F", "F", "F", "F"], brf5: ["Br", "F", "F", "F", "F", "F"], xef4: ["Xe", "F", "F", "F", "F"],
+  h2s: ["S", "H", "H"], o3: ["O", "O", "O"], nh4p: ["N", "H", "H", "H", "H"], h3op: ["O", "H", "H", "H"], co32m: ["C", "O", "O", "O"], no3m: ["N", "O", "O", "O"], no2m: ["N", "O", "O"], no2p: ["N", "O", "O"],
+  so32m: ["S", "O", "O", "O"], so42m: ["S", "O", "O", "O", "O"], po43m: ["P", "O", "O", "O", "O"], clo4m: ["Cl", "O", "O", "O", "O"], bf4m: ["B", "F", "F", "F", "F"], icl4m: ["I", "Cl", "Cl", "Cl", "Cl"], i3m: ["I", "I", "I"] };
+const ORACLE_BOND_ORDERS = { co2: [2, 2], hcn: [1, 3], so3: [2, 2, 2], ch2o: [1, 1, 2], so2: [2, 2], o3: [1, 2], co32m: [1, 1, 2], no3m: [1, 1, 2], no2m: [1, 2], no2p: [2, 2], so32m: [1, 1, 2], so42m: [1, 1, 2, 2], po43m: [1, 1, 1, 2], clo4m: [1, 2, 2, 2] };
 const REQUIRED = ["becl2", "co2", "bf3", "ch4", "nh3", "h2o", "so2", "pcl5", "sf4", "clf3", "xef2", "sf6", "brf5", "xef4"];
 
 // ---- helpers ---------------------------------------------------------------------------------------------------
 function rng(seed) { let s = seed >>> 0; return () => { s = (s + 0x6d2b79f5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
-function simFor(b, l) {
+function simFor(b, l, angles = null) {
   const kinds = [...Array(b).fill("bond"), ...Array(l).fill("lp")];
-  const sim = G.syncDomains(G.createSim(), kinds.map((_, i) => `d${i}`), kinds); G.settleInstant(sim); return sim;
+  const sim = G.syncDomains(G.createSim(), kinds.map((_, i) => `d${i}`), kinds, {}, angles); G.settleInstant(sim); return sim;
 }
 function bondAngles(sim) { const out = []; for (let i = 0; i < sim.n; i += 1) for (let j = i + 1; j < sim.n; j += 1) if (sim.kinds[i] === "bond" && sim.kinds[j] === "bond") out.push(G.angleBetween(sim, i, j) * DEG); return out.sort((a, b) => a - b); }
 function rotateAbout(v, axis, ang) { const [x, y, z] = v; const [ux, uy, uz] = axis; const c = Math.cos(ang), s = Math.sin(ang), d = ux * x + uy * y + uz * z; return [x * c + (uy * z - uz * y) * s + ux * d * (1 - c), y * c + (uz * x - ux * z) * s + uy * d * (1 - c), z * c + (ux * y - uy * x) * s + uz * d * (1 - c)]; }
@@ -65,6 +84,7 @@ test("each preset matches the independent oracle: atoms, bond orders, lone pairs
     assert.equal(p.domains, o.n, `${p.id} domains`); assert.equal(p.bonding, o.b); assert.equal(p.lonePairs, o.l);
     assert.equal(p.axe, o.axe, `${p.id} axe`); assert.equal(p.ed, o.ed, `${p.id} ed`); assert.equal(p.mg, o.mg, `${p.id} mg`);
     assert.deepEqual([p.central, ...p.ligands.map((x) => x.symbol)], ORACLE_ATOMS[p.id], `${p.id} atoms`);
+    assert.equal(p.charge, ORACLE_CHARGE[p.id] ?? 0, `${p.id} charge`);
     if (ORACLE_BOND_ORDERS[p.id]) assert.deepEqual(p.ligands.map((x) => x.order).sort(), [...ORACLE_BOND_ORDERS[p.id]].sort(), `${p.id} orders`);
     else assert.ok(p.ligands.every((x) => x.order === 1), `${p.id} all single`);
     assert.deepEqual(p.angles.map((a) => [a.value, a.kind]), o.angles, `${p.id} angles`);
@@ -118,7 +138,7 @@ test("Horn's best rotation recovers a known rotation, and the prior resolves a d
 });
 test("reference arrangement of every preset reproduces its listed angles (ideal within 0.6 deg, approximate within 4 deg)", () => {
   for (const p of P.PRESETS) {
-    const sim = simFor(p.bonding, p.lonePairs); const have = bondAngles(sim);
+    const sim = simFor(p.bonding, p.lonePairs, P.modelAnglesFor(p)); const have = bondAngles(sim);
     for (const a of p.angles) {
       const tol = a.kind === "ideal" ? 0.6 : 4; const best = Math.min(...have.map((h) => Math.abs(h - a.value)));
       assert.ok(best <= tol, `${p.id} ${a.label}: model ${have.map((h) => h.toFixed(1))} vs ${a.value}`);
@@ -216,7 +236,7 @@ test("adding and removing domains keeps existing directions continuous and re-fi
   G.syncDomains(sim, ["d0", "d1", "d2", "d3"], ["bond", "bond", "bond", "lp"]);
   for (let i = 0; i < 9; i += 1) assert.ok(Math.abs(sim.dir[i] - before[i]) < 1e-12, "existing domains did not jump");
   run(sim, 4); assert.ok(G.maxDisplacement(sim) < 0.01); for (const a of bondAngles(sim)) assert.ok(Math.abs(a - 107) < 0.6);
-  G.syncDomains(sim, ["d0", "d1", "d3"], ["bond", "bond", "lp"]); run(sim, 4); assert.ok(G.maxDisplacement(sim) < 0.01); for (const a of bondAngles(sim)) assert.ok(Math.abs(a - 118) < 0.6);
+  G.syncDomains(sim, ["d0", "d1", "d3"], ["bond", "bond", "lp"]); run(sim, 4); assert.ok(G.maxDisplacement(sim) < 0.01); for (const a of bondAngles(sim)) assert.ok(Math.abs(a - 119.5) < 0.6);
 });
 test("stepSim never allocates NaN and survives huge dt, zero dt and a 6-domain worst case", () => {
   const sim = simFor(6, 0); perturb(sim, rng(3), 180); G.stepSim(sim, 10); G.stepSim(sim, 0); G.stepSim(sim, -1);
@@ -280,8 +300,8 @@ test("changing the central element keeps the domains; history limit bounded", ()
 console.log("Lewis structures");
 test("every preset derives a Lewis structure without warnings (expanded / incomplete octets are exceptions, not errors)", () => {
   for (const p of P.PRESETS) {
-    const lw = W.deriveLewis({ central: p.central, domains: [...p.ligands.map((l, i) => ({ id: `b${i}`, kind: "bond", ...l })), ...Array.from({ length: p.lonePairs }, (_, i) => ({ id: `l${i}`, kind: "lp" }))] });
-    assert.ok(!lw.warnings.some((w) => w.level === "warn"), `${p.id}: ${JSON.stringify(lw.warnings)}`); assert.equal(lw.netCharge, 0); assert.equal(lw.centralLonePairs, p.lonePairs);
+    const lw = W.deriveLewis({ central: p.central, charge: p.charge, domains: [...p.ligands.map((l, i) => ({ id: `b${i}`, kind: "bond", ...l })), ...Array.from({ length: p.lonePairs }, (_, i) => ({ id: `l${i}`, kind: "lp" }))] });
+    assert.ok(!lw.warnings.some((w) => w.level === "warn"), `${p.id}: ${JSON.stringify(lw.warnings)}`); assert.equal(lw.netCharge, p.charge, `${p.id} net formal charge equals the species charge`); assert.equal(lw.centralLonePairs, p.lonePairs);
   }
   const L = (id) => { const p = presetById(id); return W.deriveLewis({ central: p.central, domains: [...p.ligands.map((l, i) => ({ id: `b${i}`, kind: "bond", ...l })), ...Array.from({ length: p.lonePairs }, (_, i) => ({ id: `l${i}`, kind: "lp" }))] }); };
   assert.equal(L("becl2").status, "exception"); assert.equal(L("bf3").status, "exception"); assert.equal(L("sf6").status, "exception"); assert.equal(L("pcl5").centralElectrons, 10);
@@ -305,9 +325,11 @@ test("invalid valence / unsupported combinations produce warnings and are never 
 console.log("Challenge");
 test("a fully correct prediction passes every field for every preset; a wrong one explains instead of just marking", () => {
   for (const p of P.PRESETS) {
-    const ok = { domains: String(p.domains), lonePairs: String(p.lonePairs), ed: p.ed, mg: p.mg, axe: `AX${p.bonding > 1 ? p.bonding : ""}${p.lonePairs ? `E${p.lonePairs > 1 ? p.lonePairs : ""}` : ""}`, angle: String(p.challengeAngles[0]) };
+    const ok = { domains: String(p.domains), lonePairs: String(p.lonePairs), ed: p.ed, mg: p.mg, axe: `AX${p.bonding > 1 ? p.bonding : ""}${p.lonePairs ? `E${p.lonePairs > 1 ? p.lonePairs : ""}` : ""}`, angle: [...new Set(p.challengeAngles.map(String))].join(",") };
     const r = C.checkPrediction(p, ok); assert.equal(r.score, r.total, `${p.id} ${JSON.stringify(r.fields.filter((f) => !f.correct))}`);
   }
+  const sf6 = presetById("sf6"); const one = C.checkPrediction(sf6, { domains: "6", lonePairs: "0", ed: "Octahedral", mg: "Octahedral", axe: "AX6", angle: "90" });
+  assert.equal(one.fields.find((f) => f.key === "angle").correct, false, "SF6 has two distinct angles: choosing only one is not a full answer");
   const nh3 = presetById("nh3"); const bad = C.checkPrediction(nh3, { domains: "3", lonePairs: "0", ed: "Trigonal planar", mg: "Trigonal planar", axe: "AX3", angle: "120" });
   assert.equal(bad.score, 0); for (const f of bad.fields) assert.ok(f.message.length > 30 && f.expected, f.key);
   assert.match(bad.fields[0].message, /lone pair/); assert.ok(C.isComplete({ domains: "1", lonePairs: "0", ed: "a", mg: "b", axe: "c", angle: "d" })); assert.ok(!C.isComplete(C.emptyAnswers()));
@@ -323,6 +345,46 @@ test("compareBuild reports match / mismatch / nothing built", () => {
   assert.equal(C.compareBuild(nh3, B.classify(build("N", [["H"], ["H"], ["H"]], 1).present)).match, true);
   assert.equal(C.compareBuild(nh3, B.classify(build("N", [["H"], ["H"], ["H"]], 0).present)).match, false);
   assert.equal(C.compareBuild(nh3, B.classify(B.EMPTY_MODEL)).built, false);
+});
+
+console.log("Ions, free-build honesty and the scored round");
+test("library has the IB ions and H2S as validated presets; the dangling challenge entry is gone", () => {
+  for (const id of ["h2s", "nh4p", "h3op", "co32m", "no3m", "so42m", "po43m", "clo4m"]) assert.ok(presetById(id), id);
+  assert.equal(presetById("co32m").display, "CO₃²⁻"); assert.equal(presetById("nh4p").display, "NH₄⁺"); assert.equal(presetById("no3m").plain, "NO3-");
+  assert.ok(C.CHALLENGE_ORDER.every((id) => presetById(id)) && !C.CHALLENGE_ORDER.includes("hx"));
+});
+test("a free-built ion is recognised only with the right charge, whatever bond orders were used", () => {
+  const nh4 = B.historyReducer(build("N", [["H"], ["H"], ["H"], ["H"]], 0), { type: "setCharge", charge: 1 }).present;
+  assert.equal(B.classify(nh4).preset?.id, "nh4p"); assert.equal(B.classify(nh4).reality.level, "real");
+  const neutral = build("N", [["H"], ["H"], ["H"], ["H"]], 0).present; const c0 = B.classify(neutral);
+  assert.equal(c0.preset, null); assert.equal(c0.reality.level, "unlikely"); assert.match(c0.reality.reason, /set the overall charge to \+1/);
+  const co3 = B.historyReducer(build("C", [["O", 1], ["O", 1], ["O", 1]], 0), { type: "setCharge", charge: -2 }).present;
+  assert.equal(B.classify(co3).preset?.id, "co32m");
+});
+test("free build does not present impossible species as real (BS-05)", () => {
+  assert.equal(B.classify(build("Xe", Array(6).fill(["F"]), 0).present).reality.level, "unlikely", "XeF6 needs a lone pair (7 domains), not 6 bonds");
+  const ho3 = B.historyReducer(B.createHistory(), { type: "setCentral", symbol: "H" }); assert.equal(ho3.present.central, null); assert.match(ho3.note, /Hydrogen/);
+  assert.equal(B.classify(build("S", Array(4).fill(["F"]), 1).present).reality.level, "real");
+  assert.equal(B.classify(build("C", Array(3).fill(["H"]), 0).present).reality.level, "unlikely");
+});
+test("symmetric lone-pair shapes (AX4E2 square planar, AX2E3 linear) show exact ideal angles, not '<' (BS-04)", () => {
+  const sq = B.classify(build("I", Array(4).fill(["Cl"]), 2).present); assert.deepEqual(sq.angles.entries.map((e) => e.text), ["90°", "180°"]);
+  const lin = B.classify(build("I", Array(2).fill(["Cl"]), 3).present); assert.deepEqual(lin.angles.entries.map((e) => e.text), ["180°"]);
+  assert.ok(B.classify(build("Br", Array(3).fill(["F"]), 2).present).angles.entries.every((e) => e.kind === "lessthan"));
+});
+test("3D model angle follows the species: H2S 92, water 104.5 (BS-12 / reference arrangement)", () => {
+  const h2s = bondAngles(simFor(2, 2, P.modelAnglesFor(presetById("h2s"))))[0]; assert.ok(Math.abs(h2s - 92.1) < 0.6, String(h2s));
+  const h2o = bondAngles(simFor(2, 2, P.modelAnglesFor(presetById("h2o"))))[0]; assert.ok(Math.abs(h2o - 104.5) < 0.6);
+});
+test("scored round: seeded, level-restricted, hint removes the two counting answers, streak and summary", () => {
+  const a = C.buildRound("sl", 7); const b = C.buildRound("sl", 7); const c = C.buildRound("sl", 8);
+  assert.deepEqual(a, b); assert.notDeepEqual(a, c); assert.equal(a.length, 8);
+  assert.ok(a.every((id) => presetById(id).domains <= 4 && !presetById(id).charge)); assert.ok(C.buildRound("hl", 1).every((id) => presetById(id).domains >= 5)); assert.ok(C.buildRound("ions", 1).every((id) => presetById(id).charge !== 0));
+  const p = presetById("h2o"); const ans = { domains: "4", lonePairs: "2", ed: "Tetrahedral", mg: "Bent", axe: "AX2E2", angle: "104.5" };
+  const full = C.checkPrediction(p, ans); assert.equal(full.score, 6); assert.equal(full.total, 6);
+  const hinted = C.checkPrediction(p, { ...ans, domains: "", lonePairs: "" }, { hinted: true }); assert.equal(hinted.total, 4); assert.equal(hinted.score, 4);
+  let sc = C.recordResult(C.emptyScore(), p, full); sc = C.recordResult(sc, p, C.checkPrediction(p, { ...ans, mg: "Linear" })); sc = C.recordResult(sc, p, full);
+  assert.equal(sc.bestStreak, 1); assert.equal(sc.streak, 1); const sm = C.summarise(sc); assert.equal(sm.worst.key, "mg"); assert.equal(sm.pct, Math.round(100 * 17 / 18));
 });
 
 console.log("Toolbox data");

@@ -4,6 +4,7 @@
 // fresh here from those three numbers, never independently stored, so
 // nothing can drift out of sync with what's actually on screen.
 import { elementByAtomicNumber } from "../data/elementLookup.js";
+import { formatCharge as sharedFormatCharge } from "../../../lib/atomic/format.js";
 
 export function createAtomState(protons, neutrons, electrons) {
   return { protons, neutrons, electrons };
@@ -36,13 +37,7 @@ export function deriveAtom({ protons, neutrons, electrons }) {
   };
 }
 
-/** Formats a net charge the way nuclide notation expects: no "+0" or a
- * bare "0", "+1" (not "1+"), "2-" style multi-charges written as "2+"/
- * "2-" per IB convention, empty string for a neutral species (nothing
- * shown in the notation's charge slot). */
+/** Net charge in IB notation (2+, −, 3−); one shared formatter. Empty string for a neutral species. */
 export function formatCharge(netCharge) {
-  if (netCharge === 0) return "";
-  const magnitude = Math.abs(netCharge);
-  const sign = netCharge > 0 ? "+" : "\u2212";
-  return magnitude === 1 ? sign : `${magnitude}${sign}`;
+  return netCharge === 0 ? "" : sharedFormatCharge(netCharge);
 }

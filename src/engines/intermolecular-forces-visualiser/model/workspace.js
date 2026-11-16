@@ -5,7 +5,7 @@ import { QID, add, dist, norm, qFromAxisAngle, qMul, qNorm, scale, sub } from ".
 
 export const MAX_IN_WORKSPACE = 6;
 export const BOUND = 11; // A: molecules are kept inside +-BOUND on every axis
-export const START_GAP = 6; // A between the molecule surfaces when the workspace is first laid out
+export const START_GAP = 1.0; // A between the vdW envelopes when the workspace is first laid out: close enough that the very first view already shows an interaction (BS-29; it was 6 A, where the indicators read ~0)
 export const MIN_SEPARATION_FACTOR = 0.9; // fraction of the vdW-radius sum below which the molecules are treated as touching
 const KNOWN = new Set([...TRAY_NONPOLAR, ...TRAY_POLAR, "Ne", "F2"]);
 
@@ -18,7 +18,7 @@ export const overlaps = (list, id, pos, ignoreUid = -1) => list.some((m) => m.ui
 
 /** Position for a new molecule: the wanted point if it is free, otherwise the nearest free spot on a widening ring around it. */
 export function freeSpot(list, id, want = null) {
-  const start = want ? clampPos(want) : [list.length % 2 === 0 ? -1 : 1, 0, 0].map((v, i) => (i === 0 ? v * (MOLECULES[id].radius + 3.6) : 0));
+  const start = want ? clampPos(want) : [list.length % 2 === 0 ? -1 : 1, 0, 0].map((v, i) => (i === 0 ? v * (MOLECULES[id].radius + START_GAP / 2) : 0));
   if (!overlaps(list, id, start)) return start;
   for (let ring = 1; ring < 24; ring += 1) for (let k = 0; k < 12; k += 1) {
     const a = (k / 12) * Math.PI * 2 + ring * 0.4; const p = clampPos(add(start, [Math.cos(a) * ring * 1.6, Math.sin(a) * ring * 1.1, 0]));

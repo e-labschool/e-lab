@@ -25,7 +25,7 @@ export const ACTIVITIES = [
   { id: null, label: "My spectrum" },
   { id: "unknown", label: "Unknown challenge" },
   { id: "patterns", label: "Halogen isotope patterns" },
-  { id: "isotopes", label: "Isotopes and Aᵣ (revision)" },
+  { id: "isotopes", label: "Isotopes and Ar (revision)" },
 ];
 export const PATTERN_COMPOUNDS = ["cl2", "ch3cl", "ch2cl2", "chcl3", "ch3br", "br2"];
 export const V_MIN = SECTOR.V_MIN; export const V_MAX = SECTOR.V_MAX; export const V_DEFAULT = 2000;

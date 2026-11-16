@@ -126,11 +126,11 @@ export async function listBlocks(pageId) {
   return data;
 }
 
-export async function createBlock(pageId, { blockType, content, position }) {
+export async function createBlock(pageId, { blockType, content, position, visible }) {
   if (!supabase) throw new Error("Not connected to Supabase.");
   const { data, error } = await supabase
     .from("learn_blocks")
-    .insert({ page_id: pageId, block_type: blockType, content, position })
+    .insert({ page_id: pageId, block_type: blockType, content, position, ...(visible === undefined ? {} : { visible }) })
     .select()
     .single();
   if (error) throw error;

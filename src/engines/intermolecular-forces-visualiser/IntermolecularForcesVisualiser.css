@@ -185,3 +185,40 @@
 /* phones: a taller stage and a shorter legend so the molecules stay the visual focus */
 [data-testid="imf-workspace"].sd-root[data-layout="stacked"] .sd-col--chamber { height: min(760px, 100vw + 300px); min-height: 520px; }
 @media (max-width: 560px) { .imf-legend-long { display: none; } .imf-legend { max-width: calc(100% - 16px); } }
+
+/* ---- Boiling-point ranking task + alkane series (2D, no WebGL needed) ---- */
+.imf-chamber--rank { overflow: hidden; }
+.imf-rankscroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 10px 12px; border: 1px solid var(--imf-line); border-radius: 14px; background: var(--imf-stage); display: flex; flex-direction: column; gap: 12px; }
+.imf-rank-head h3, .imf-alk h3 { margin: 0 0 2px; font-size: calc(var(--sd-fs) + 2px); color: var(--imf-ink); }
+.imf-rank-head p { margin: 0; font-size: var(--sd-fs); color: var(--imf-muted); }
+.imf-rank-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.imf-rank-end { font-size: var(--sd-fs-sm); color: var(--imf-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.imf-rank-item { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 6px 8px; border: 1.5px solid var(--imf-ctl-line); border-radius: 10px; background: var(--imf-panel); }
+.imf-rank-item[data-ok="1"] { border-color: #5fd38d; } .imf-rank-item[data-ok="0"] { border-color: var(--imf-warn); }
+.imf-rank-pos { display: grid; place-content: center; width: 24px; height: 24px; border-radius: 50%; background: var(--imf-accent-soft); font-weight: 800; font-size: var(--sd-fs-sm); }
+.imf-rank-name b { font-size: calc(var(--sd-fs) + 1px); } .imf-rank-name small { color: var(--imf-muted); margin-left: 4px; }
+.imf-rank-btns { display: inline-flex; gap: 4px; }
+.imf-rank-reveal { grid-column: 2 / -1; display: grid; gap: 2px; font-size: var(--sd-fs-sm); }
+.imf-rank-item:has(.imf-rank-reveal) { grid-template-columns: 26px minmax(0, 1fr); }
+.imf-rank-bp { font-weight: 800; color: #ffd166; }
+.imf-rank-tags { display: flex; flex-wrap: wrap; gap: 4px; } .imf-rank-tags i { font-style: normal; padding: 0 7px; border-radius: 999px; background: var(--imf-accent-soft); border: 1px solid var(--imf-ctl-line); }
+.imf-rank-tags i[data-f="hb"] { background: rgba(95, 211, 141, 0.2); } .imf-rank-tags i[data-f="dd"] { background: rgba(255, 198, 92, 0.2); }
+.imf-rank-why { color: var(--imf-ink); line-height: 1.3; }
+.imf-rank-score { margin: 8px 0 0; font-weight: 700; } .imf-rank-score span { display: block; font-weight: 400; color: var(--imf-muted); }
+.imf-rank-actions { margin-top: 8px; }
+.imf-alk { padding: 8px 10px; border: 1px solid var(--imf-line); border-radius: 12px; background: var(--imf-panel); }
+.imf-alk-row { display: flex; align-items: center; gap: 10px; font-size: var(--sd-fs); } .imf-alk-row input { flex: 1 1 140px; min-width: 0; }
+.imf-alk-grid { display: grid; grid-template-columns: minmax(120px, 170px) minmax(0, 1fr); gap: 10px; align-items: center; margin-top: 6px; }
+@container (max-width: 520px) { .imf-alk-grid { grid-template-columns: minmax(0, 1fr); } }
+.imf-alk-facts { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; margin: 0; font-size: var(--sd-fs); } .imf-alk-facts dt { color: var(--imf-muted); } .imf-alk-facts dd { margin: 0; font-weight: 700; } .imf-alk-facts small { font-weight: 400; color: var(--imf-muted); }
+.imf-alkchart { width: 100%; height: auto; max-height: 190px; } .imf-alkchart .imf-ax { stroke: var(--imf-muted); } .imf-alkchart .imf-ref { stroke: var(--imf-muted); stroke-dasharray: 4 3; opacity: 0.6; } .imf-alkchart .imf-tick, .imf-alkchart .imf-axlabel { fill: var(--imf-muted); font-size: 10px; } .imf-alkchart .imf-curve-ghost { stroke: var(--imf-ctl-line); stroke-width: 2; }
+.imf-alk-text { margin: 6px 0 0; font-size: var(--sd-fs); line-height: 1.35; }
+.imf-rank-reveal { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; }
+.imf-rank-why { flex: 1 1 100%; }
+.imf-rank-item:has(.imf-rank-reveal) .imf-rank-name { grid-column: 2; }
+.imf-nogl--with-view { grid-template-rows: minmax(0, 1fr) auto; place-content: stretch; align-items: center; padding: 8px 12px; }
+.imf-nogl--with-view p { max-width: none; font-size: var(--sd-fs); }
+.imf-static2d { width: 100%; height: 100%; min-height: 0; }
+
+/* ---- Phone / narrow: the 3D stage comes first, the tray / lessons follow (BS-31) ---- */
+[data-testid="imf-workspace"].sd-root[data-layout="stacked"] .sd-col--chamber { order: -1; }

@@ -1,9 +1,9 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { GAS, Z_P_MAX, Z_P_MIN, generateZCurve, vdwCriticalConstants, vdwSaturationPressure, zAxisRange, zMarker } from "../model.js";
+import { GAS, IB_UNITS, Z_P_MAX, Z_P_MIN, fmtPressure, unitLabelP, generateZCurve, vdwCriticalConstants, vdwSaturationPressure, zAxisRange, zMarker } from "../model.js";
 
 // "Real vs Ideal Gas Behaviour": compressibility factor Z = PV/(nRT) against pressure for the SAME gas
 // (CO2) at the CURRENT temperature. Plain SVG drawn from model.generateZCurve() / model.zMarker();
-// nothing is stored or hard-coded here. Log pressure axis (0.1-1000 atm).
+// nothing is stored or hard-coded here. Log pressure axis (0.1-1000 atm = 10-10^5 kPa).
 //   solid blue line  Ideal gas, Z = 1 (fixed)
 //   orange curve     Real gas (van der Waals CO2), recomputed whenever T changes
 //   dark dot         the live state (matches the live strip and the chamber)
@@ -14,7 +14,10 @@ const C_MARK = "#14226B";
 const M0 = { l: 44, r: 12, t: 8, b: 34 };
 const LOG_MIN = Math.log10(Z_P_MIN);
 const LOG_SPAN = Math.log10(Z_P_MAX) - LOG_MIN;
-const X_TICKS = [0.1, 1, 10, 100, 1000];
+// tick positions are in atm (the model unit); labels are the same pressures in the display unit
+const X_TICKS_ATM = [0.1, 1, 10, 100, 1000];
+const KPA_LABEL = { 100: "10\u00b2", 1000: "10\u00b3", 10000: "10\u2074", 100000: "10\u2075" };
+const X_TICKS_KPA = [100, 1000, 10000, 100000]; // decades of kPa that fall inside 0.1-1000 atm
 
 function yTicks(lo, hi) {
   const span = hi - lo;
@@ -56,9 +59,10 @@ function LegendSwatch({ color, dash, children, dot, hollow }) {
   );
 }
 
-const fmtP = (v) => (v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2));
 
-export default function RealIdealGraph({ state }) {
+export default function RealIdealGraph({ state, units = IB_UNITS }) {
+  const fmtP = (v) => fmtPressure(v, units); const uP = unitLabelP(units);
+  const ticks = units.pressure === "kPa" ? X_TICKS_KPA.map((k) => ({ at: k / 101.325, label: KPA_LABEL[k] })) : X_TICKS_ATM.map((v) => ({ at: v, label: String(v) }));
   const plotRef = useRef(null);
   const clipId = useId();
   const { w, h } = useSize(plotRef);
@@ -85,9 +89,9 @@ export default function RealIdealGraph({ state }) {
 
   const zText = marker.status === "ok" || marker.status === "limit" ? marker.Z.toFixed(3) : null;
   const label =
-    `Real vs Ideal Gas Behaviour: compressibility factor Z against pressure in atmospheres for ${GAS.name} at ${Math.round(T)} kelvin. ` +
+    `Real vs Ideal Gas Behaviour: compressibility factor Z against pressure in ${uP} (log scale) for ${GAS.name} at ${Math.round(T)} kelvin. ` +
     `Ideal gas reference line at Z equals 1. Real gas curve. ` +
-    (marker.status === "limit" ? `Current state is outside the model: ${marker.text}` : `Current state: P ${fmtP(marker.P)} atm, Z ${zText}.` + (marker.real ? ` Real gas at the same conditions: Z ${marker.real.Z.toFixed(3)}.` : ""));
+    (marker.status === "limit" ? `Current state is outside the model: ${marker.text}` : `Current state: P ${fmtP(marker.P)} ${uP}, Z ${zText}.` + (marker.real ? ` Real gas at the same conditions: Z ${marker.real.Z.toFixed(3)}.` : ""));
 
   const onMove = (e) => {
     const r = e.currentTarget.getBoundingClientRect();
@@ -120,10 +124,10 @@ export default function RealIdealGraph({ state }) {
   const ry = rm ? clampY(rm.Z) : null;
 
   const regime = T < Tc
-    ? `T < Tᶜ (${Tc.toFixed(0)} K): CO₂ condenses above ${psat ? psat.toFixed(psat >= 100 ? 0 : 1) : "P_sat"} atm`
+    ? `T < Tᶜ (${Tc.toFixed(0)} K): CO₂ condenses above ${psat ? fmtP(psat) : "P_sat"} ${uP} (van der Waals, qualitative)`
     : `T > Tᶜ (${Tc.toFixed(0)} K): supercritical, no condensation`;
   const notes = [
-    curve.end ? `Curve ends at ${fmtP(curve.end.P)} atm: ${curve.end.text}` : null,
+    curve.end ? `Curve ends at ${fmtP(curve.end.P)} ${uP}: ${curve.end.text}` : null,
     marker.status === "limit" ? marker.text : null,
     marker.outside ? "The current state is outside the plotted pressure range." : null,
     axis.clipped ? "The curve continues above the plotted Z range." : null,
@@ -161,15 +165,15 @@ export default function RealIdealGraph({ state }) {
               <text x={M.l - 6} y={sy(v) + 3.5} textAnchor="end" fontSize={10.5 * k} fill="#33415F">{v.toFixed(v * 10 === Math.round(v * 10) ? 1 : 2)}</text>
             </g>
           ))}
-          {X_TICKS.map((v) => (
-            <g key={"x" + v}>
-              <line x1={sx(v)} x2={sx(v)} y1={M.t} y2={M.t + ph} stroke="#EEF2F9" strokeWidth="1" />
-              <text x={sx(v)} y={M.t + ph + 14 * k} textAnchor="middle" fontSize={10.5 * k} fill="#33415F">{v}</text>
+          {ticks.map((t) => (
+            <g key={"x" + t.at}>
+              <line x1={sx(t.at)} x2={sx(t.at)} y1={M.t} y2={M.t + ph} stroke="#EEF2F9" strokeWidth="1" />
+              <text x={sx(t.at)} y={M.t + ph + 14 * k} textAnchor="middle" fontSize={10.5 * k} fill="#33415F">{t.label}</text>
             </g>
           ))}
           <line x1={M.l} x2={M.l + pw} y1={M.t + ph} y2={M.t + ph} stroke="#6B7A99" strokeWidth="1.2" />
           <line x1={M.l} x2={M.l} y1={M.t} y2={M.t + ph} stroke="#6B7A99" strokeWidth="1.2" />
-          <text x={M.l + pw / 2} y={h - 4} textAnchor="middle" fontSize={11.5 * k} fontWeight="600" fill="#14226B">Pressure, P (atm, log scale)</text>
+          <text x={M.l + pw / 2} y={h - 4} textAnchor="middle" fontSize={11.5 * k} fontWeight="600" fill="#14226B">Pressure, P ({uP}, log scale)</text>
           <text transform={`translate(${11 * k} ${M.t + ph / 2}) rotate(-90)`} textAnchor="middle" fontSize={11.5 * k} fontWeight="600" fill="#14226B">Compressibility factor, Z</text>
 
           <g clipPath={`url(#${clipId})`}>
@@ -207,7 +211,7 @@ export default function RealIdealGraph({ state }) {
         </svg>
         {hover && (
           <div className="pointer-events-none absolute right-2 top-1 rounded-md bg-white/90 px-2 py-0.5 text-[11px] tabular-nums text-[#14226B] shadow-sm" data-testid="graph-hover">
-            P = {fmtP(hover.P)} atm; Z = {hover.Z.toFixed(3)}
+            P = {fmtP(hover.P)} {uP}; Z = {hover.Z.toFixed(3)}
           </div>
         )}
       </div>

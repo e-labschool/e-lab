@@ -174,3 +174,35 @@ export const SEGMENT_CAPTION = {
   freeze: "Particles settle into a regular lattice and energy is released (potential energy falls). Kinetic energy is constant, so the temperature stays at the melting point.",
   solidCool: "Particles vibrate less and less about their fixed positions as kinetic energy falls and the temperature falls.",
 };
+
+/** ---- Real-energy mode (true time scale only): Q = m c dT for the heating segments, energy per gram for the plateaus, t = Q / P. ---- */
+export const MASS_RANGE = { min: 1, max: 1000, unit: "g" };
+export const POWER_RANGE = { min: 10, max: 5000, unit: "W" };
+
+/** Energy (J) transferred since the start of the active mode for `massG` grams. Cooling releases the energy the heating curve absorbed. */
+export function energySinceStartJ(curve, state, massG) {
+  const perGram = state.mode === "heating" ? state.energyAbsorbed : curve.totalEnergy - state.energyAbsorbed;
+  return perGram * massG;
+}
+/** Seconds since the start of the mode at constant power P (W). Valid on the TO-SCALE time axis, where progress is proportional to energy. */
+export function elapsedSeconds(curve, state, massG, powerW) { return energySinceStartJ(curve, state, massG) / powerW; }
+export function totalSeconds(curve, massG, powerW) { return (curve.totalEnergy * massG) / powerW; }
+
+const C_OF = { solidHeat: "cSolid", solidCool: "cSolid", liquidHeat: "cLiquid", liquidCool: "cLiquid", gasHeat: "cGas", gasCool: "cGas" };
+/** The worked energy calculation for the segment the marker is in (so far): { formula, joules }. */
+export function segmentWorking(curve, state, massG) {
+  const sub = curve.substance; const seg = state.segmentKey; const m = massG;
+  const num = (x) => Number(x.toPrecision(3)).toString();
+  if (C_OF[seg]) {
+    const c = sub[C_OF[seg]];
+    const segData = (state.mode === "heating" ? curve.heating : curve.cooling).find((x) => x.key === seg);
+    const dT = Math.abs(state.temp - segData.from);
+    const q = m * c * dT;
+    return { joules: q, formula: `Q = m \u00d7 c \u00d7 \u0394T = ${num(m)} g \u00d7 ${c} J g\u207b\u00b9 \u00b0C\u207b\u00b9 \u00d7 ${num(dT)} \u00b0C = ${num(q)} J` };
+  }
+  const per = seg === "melt" || seg === "freeze" ? sub.latentFusion : sub.latentVaporisation;
+  const f = state.mode === "heating" ? state.segmentFraction : state.segmentFraction;
+  const q = m * per * f;
+  const what = seg === "melt" ? "melted" : seg === "freeze" ? "frozen" : seg === "boil" ? "boiled" : "condensed";
+  return { joules: q, formula: `Q = m \u00d7 (energy per gram to change state) \u00d7 fraction ${what} = ${num(m)} g \u00d7 ${per} J g\u207b\u00b9 \u00d7 ${num(f)} = ${num(q)} J` };
+}

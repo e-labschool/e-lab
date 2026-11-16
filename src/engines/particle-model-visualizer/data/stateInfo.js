@@ -7,7 +7,7 @@ export const STATE_INFO = {
     properties: [
       "Fixed volume",
       "Fixed shape",
-      "Very difficult to compress",
+      "Very low compressibility",
       "Stronger attractive forces keep particles closely packed",
       "Particles vibrate about fixed positions",
     ],
@@ -18,9 +18,9 @@ export const STATE_INFO = {
     properties: [
       "Fixed volume",
       "No fixed shape \u2014 takes the shape of the part of the container it occupies",
-      "Very difficult to compress",
+      "Low compressibility",
       "Attractive forces between particles are weaker than in solids",
-      "Particles vibrate, rotate and move past one another",
+      "Particles vibrate and move past one another",
     ],
   },
   gas: {
@@ -29,9 +29,9 @@ export const STATE_INFO = {
     properties: [
       "No fixed volume \u2014 expands to occupy the available space",
       "No fixed shape",
-      "Can be compressed",
+      "High compressibility",
       "Attractive forces between particles are negligible in the idealized model",
-      "Particles vibrate, rotate and move freely and rapidly",
+      "Particles move freely and rapidly in straight lines until they collide",
     ],
   },
 };

@@ -65,13 +65,14 @@ const EXPECT = {
   vt: { law: "Charles's Law", heading: "Charles's Law — Volume and Temperature", sentence: "At constant pressure and amount of gas, volume is directly proportional to absolute temperature." },
   pt: { law: "Gay-Lussac's Law", heading: "Gay-Lussac's Law — Pressure and Temperature", sentence: "At constant volume and amount of gas, pressure is directly proportional to absolute temperature." },
   vn: { law: "Avogadro's Law", heading: "Avogadro's Law — Volume and Amount of Gas", sentence: "At constant pressure and temperature, volume is directly proportional to the amount of gas." },
+  comb: { law: "Ideal gas equation", heading: "Ideal gas equation — P, V, T and n", sentence: "PV = nRT: for an ideal gas the four variables are linked, with R = 8.31 J K\u207b\u00b9 mol\u207b\u00b9 (kPa with dm\u00b3)." },
 };
 
 console.log("== tabs, heading and law sentence ==");
-test("four tabs keep P–V, V–T, P–T, V–n and carry the law name underneath (two lines)", () => {
+test("five tabs: P–V, V–T, P–T, V–n and PV = nRT, each with the law name underneath (two lines)", () => {
   const tabs = [...document.querySelectorAll('[data-testid="mode-tabs"] [role="tab"], [data-testid="mode-tabs"] [role="radio"]')];
-  assert.equal(tabs.length, 4);
-  const want = [["P–V", "Boyle's Law"], ["V–T", "Charles's Law"], ["P–T", "Gay-Lussac's Law"], ["V–n", "Avogadro's Law"]];
+  assert.equal(tabs.length, 5);
+  const want = [["P–V", "Boyle's Law"], ["V–T", "Charles's Law"], ["P–T", "Gay-Lussac's Law"], ["V–n", "Avogadro's Law"], ["PV=nRT", "Ideal gas equation"]];
   tabs.forEach((t, i) => {
     assert.equal(t.querySelector(".sd-tab-main")?.textContent, want[i][0]);
     assert.equal(t.querySelector(".sd-tab-sub")?.textContent, want[i][1]);
@@ -114,7 +115,7 @@ test("gauges show the resolved state in every mode, with the same text as the li
     assert.equal(gauge("T"), strip("T"));
   }
   await fresh("pv");
-  assert.equal(gauge("P"), "1.23 atm");
+  assert.equal(gauge("P"), "99.7 kPa");
   assert.equal(gauge("T"), "300 K");
 });
 test("labels: PRESSURE and TEMPERATURE (full labels), soft blue / soft amber tones, deck inside the chamber", () => {
@@ -129,11 +130,11 @@ test("labels: PRESSURE and TEMPERATURE (full labels), soft blue / soft amber ton
 const INDEP = { pv: "V", vt: "T", pt: "T", vn: "n" };
 const SWEEP = {
   pv: [5, 7.5, 12, 20, 33.5, 50],
-  vt: [100, 150, 300, 450, 800],
+  vt: [100, 150, 300, 450, 600],
   pt: [100, 250, 300, 500, 800],
   vn: [0.5, 0.8, 1, 1.45, 2],
 };
-for (const id of M.MODE_IDS) {
+for (const id of M.SINGLE_MODE_IDS) {
   test(`sweep ${id}: gauges track the resolved state; ${id === "pv" ? "T" : id === "vt" || id === "vn" ? "P" : "V"} constants stay constant`, async () => {
     await fresh(id);
     const start = M.defaultState(id);

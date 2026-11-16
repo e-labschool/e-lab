@@ -21,6 +21,8 @@ export default function IonizationEnergyExplorer({ compact = false, standalone =
   const [removing, setRemoving] = useState(null); // in-flight animation descriptor, or null
   const [feedback, setFeedback] = useState(null);
   const [innerShellPulse, setInnerShellPulse] = useState(false);
+  const [predictions, setPredictions] = useState({}); // { [step]: { choice: string|null, correct: boolean } } for the CURRENT element
+  const [showAll, setShowAll] = useState(false);
 
   const atomState = useMemo(() => deriveAtomState(atomicNumber, electronsRemoved), [atomicNumber, electronsRemoved]);
   const element = atomState.element;
@@ -38,6 +40,7 @@ export default function IonizationEnergyExplorer({ compact = false, standalone =
     setRemoving(null);
     setFeedback(null);
     setInnerShellPulse(false);
+    setPredictions({});
   }, []);
 
   const handleReset = useCallback(() => {
@@ -46,13 +49,20 @@ export default function IonizationEnergyExplorer({ compact = false, standalone =
     setRemoving(null);
     setFeedback(null);
     setInnerShellPulse(false);
+    setPredictions({});
+    setShowAll(false);
   }, []);
+
+  const handlePredict = useCallback((choice) => {
+    const step = electronsRemoved + 1;
+    setPredictions((p) => ({ ...p, [step]: choice === null ? { choice: null, correct: false } : { choice, correct: choice === atomState.nextSublevel } }));
+  }, [electronsRemoved, atomState]);
 
   const handleSupply = useCallback(() => {
     if (!atomState || atomState.isFullyIonized || removing) return;
     const currentIE = atomState.nextIonizationEnergy;
     if (!(suppliedEnergy >= currentIE)) {
-      setFeedback({ text: "Not enough energy. The electron remains bound.", tone: "warn" });
+      setFeedback({ text: `Not enough energy: ${Math.round(suppliedEnergy).toLocaleString()} kJ mol⁻¹ is short by ${Math.round(currentIE - suppliedEnergy).toLocaleString()} kJ mol⁻¹. The electron remains bound.`, tone: "warn" });
       return;
     }
     const shell = atomState.nextShell;
@@ -70,7 +80,8 @@ export default function IonizationEnergyExplorer({ compact = false, standalone =
       const shellEmptied = !(nextState.shells[current.shell] > 0);
       setElectronsRemoved(nextRemoved);
       setSuppliedEnergy(0);
-      let text = `Electron removed. ${prevSpecies} → ${nextState.speciesSymbol}`;
+      const excess = Math.max(0, suppliedEnergy - (atomState.nextIonizationEnergy ?? 0));
+      let text = `Electron removed. ${prevSpecies} → ${nextState.speciesSymbol}.${excess > 0 ? ` The extra ${Math.round(excess).toLocaleString()} kJ mol⁻¹ leaves with the electron as kinetic energy.` : ""}`;
       if (nextState.isInnerShellJump) {
         text += " Notice the jump! The next electron must be removed from an inner main energy level, where it is held much more strongly.";
       }
@@ -80,7 +91,7 @@ export default function IonizationEnergyExplorer({ compact = false, standalone =
       return null;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [atomState, atomicNumber, electronsRemoved]);
+  }, [atomState, atomicNumber, electronsRemoved, suppliedEnergy]);
 
   const canSupply = !atomState.isFullyIonized && !removing;
 
@@ -103,6 +114,13 @@ export default function IonizationEnergyExplorer({ compact = false, standalone =
         canSupply={canSupply}
         feedback={feedback}
         removalOrder={removalOrder}
+        prediction={predictions[atomState.electronsRemoved + 1] ?? null}
+        onPredict={handlePredict}
+        onSkip={() => handlePredict(null)}
+        revealedUpTo={atomState.electronsRemoved + (predictions[atomState.electronsRemoved + 1] ? 1 : 0)}
+        showAll={showAll}
+        setShowAll={setShowAll}
+        handleSelectElement={handleSelectElement}
       />
     </InteractiveFrame>
   );
@@ -118,6 +136,7 @@ function IonizationEnergyWorkspace(props) {
     atomicNumber, element, values, atomState, handleSelectElement, handleReset,
     removing, reducedMotion, handleAnimationEnd, innerShellPulse,
     suppliedEnergy, setSuppliedEnergy, handleSupply, canSupply, feedback, removalOrder,
+    prediction, onPredict, onSkip, revealedUpTo, showAll, setShowAll,
   } = props;
   const { isViewport } = useSimulationPresentation();
   // Viewport (fullscreen / new tab) layout is chosen from the workspace's OWN measured box, never from the window:
@@ -152,6 +171,13 @@ function IonizationEnergyWorkspace(props) {
     </div>
   );
 
+  const showAllToggle = (
+    <label className="flex cursor-pointer items-center gap-2 text-xs text-[var(--color-ink-soft)]">
+      <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} data-testid="ie-show-all" className="h-4 w-4 accent-[var(--color-indigo)]" />
+      Show all values (no prediction)
+    </label>
+  );
+
   const resetButton = (
     <button
       type="button"
@@ -181,13 +207,17 @@ function IonizationEnergyWorkspace(props) {
       onSupply={handleSupply}
       disabled={!canSupply}
       feedback={feedback}
+      prediction={prediction}
+      onPredict={onPredict}
+      onSkip={onSkip}
+      step={atomState.electronsRemoved + 1}
     />
   );
 
   const configPanel = <ConfigurationPanel atomState={atomState} />;
 
   const graph = (
-    <IonizationGraph element={element} values={values} currentStep={atomState.electronsRemoved + 1} removalOrder={removalOrder} />
+    <IonizationGraph element={element} values={values} currentStep={atomState.electronsRemoved + 1} removalOrder={removalOrder} revealedUpTo={revealedUpTo} showAll={showAll} onSelectZ={handleSelectElement} selectableZ={(z) => IONIZATION_DATA.some((e) => e.atomicNumber === z)} />
   );
 
   if (!isViewport) {
@@ -197,16 +227,17 @@ function IonizationEnergyWorkspace(props) {
     // like any other Learn content.
     return (
       <>
+        {/* Mobile order: element, atom, supply control + configuration, THEN the data table. On lg the left column is a real column. */}
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[200px_1fr_280px]">
-          <div className="flex flex-col gap-3 lg:order-1">
-            {elementSelector}
-            <IonizationDataTable element={element} values={values} currentStep={atomState.electronsRemoved + 1} />
-            {resetButton}
+          <div className="contents lg:order-1 lg:flex lg:flex-col lg:gap-3">
+            <div className="order-1">{elementSelector}</div>
+            <div className="order-5 lg:order-none"><IonizationDataTable element={element} values={values} currentStep={atomState.electronsRemoved + 1} revealedUpTo={showAll ? Infinity : revealedUpTo} /></div>
+            <div className="order-6 flex flex-col gap-2 lg:order-none">{showAllToggle}{resetButton}</div>
           </div>
-          <div className="flex aspect-square flex-col rounded-md border border-[#1c2740] bg-[#070b14] p-3 sm:aspect-[4/3] lg:order-2 lg:aspect-auto lg:min-h-[560px]">
+          <div className="order-2 flex aspect-square flex-col rounded-md border border-[#1c2740] bg-[#070b14] p-3 sm:aspect-[4/3] lg:order-2 lg:aspect-auto lg:min-h-[560px]">
             {atomPanel}
           </div>
-          <div className="flex flex-col gap-4 lg:order-3">
+          <div className="order-3 flex flex-col gap-4 lg:order-3">
             {energyControl}
             {configPanel}
           </div>
@@ -233,8 +264,8 @@ function IonizationEnergyWorkspace(props) {
             column that might overflow". */}
         <div className={fitMode === "fit" ? "grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] gap-2" : "grid gap-2"}>
           {elementSelector}
-          <IonizationDataTable element={element} values={values} currentStep={atomState.electronsRemoved + 1} />
-          {resetButton}
+          <IonizationDataTable element={element} values={values} currentStep={atomState.electronsRemoved + 1} revealedUpTo={showAll ? Infinity : revealedUpTo} />
+          <div className="flex flex-col gap-2">{showAllToggle}{resetButton}</div>
         </div>
 
         {/* CENTRE: hero atom -- fills exactly this column/row's real

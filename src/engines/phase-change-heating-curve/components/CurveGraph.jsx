@@ -3,14 +3,14 @@ import { curveVertices, segmentsFor } from "../data/curveModel.js";
 import { useSize } from "../lib/useSize.js";
 import { segColor } from "../lib/colors.js";
 
-const PAD = { left: 58, right: 16, top: 16, bottom: 46 };
+const PAD = { left: 58, right: 16, top: 16, bottom: 52 };
 const fmt = (t) => `${t < 0 ? "−" : ""}${Math.abs(Math.round(t))}`;
 const SEG_FILL = { sensible: "rgba(108,134,238,0.06)", latent: "rgba(224,166,76,0.12)" };
 
 /** Temperature-time graph (SVG, sized by a ResizeObserver, text always at its real pixel size).
  * Shows the whole curve of the active mode, the part already travelled, and a marker at (progress, temperature),
  * all computed from `state` (one progress value). */
-export default function CurveGraph({ curve, mode, state }) {
+export default function CurveGraph({ curve, mode, state, realTime = null }) {
   const [ref, { width, height }] = useSize();
   const sub = curve.substance;
   const W = Math.max(width, 10);
@@ -65,7 +65,13 @@ export default function CurveGraph({ curve, mode, state }) {
             </g>
           ))}
           <text transform={`translate(14 ${PAD.top + ph / 2}) rotate(-90)`} textAnchor="middle" fontSize="12" fontWeight="600" fill={PALETTE.textSecondary} data-testid="hc-y-label">Temperature (°C)</text>
-          <text x={PAD.left + pw / 2} y={H - 8} textAnchor="middle" fontSize="12" fontWeight="600" fill={PALETTE.textSecondary} data-testid="hc-x-label">Time (arbitrary units)</text>
+          <text x={PAD.left + pw / 2} y={H - 8} textAnchor="middle" fontSize="12" fontWeight="600" fill={PALETTE.textSecondary} data-testid="hc-x-label">{realTime ? `Time (s) at ${realTime.massG} g and ${realTime.powerW} W, to scale` : "Time (schematic: plateau lengths shortened, not to scale)"}</text>
+          {realTime && [0, 0.25, 0.5, 0.75, 1].map((f) => (
+            <g key={f}>
+              <line x1={X(f)} x2={X(f)} y1={PAD.top + ph} y2={PAD.top + ph + 4} stroke={PALETTE.textFaint} />
+              <text x={X(f)} y={PAD.top + ph + 16} textAnchor={f === 0 ? "start" : f === 1 ? "end" : "middle"} fontSize="11" fill={PALETTE.textSecondary} data-testid="hc-x-tick">{Math.round(f * realTime.totalS)}</text>
+            </g>
+          ))}
           <path d={`M ${PAD.left + pw - 22} ${PAD.top + ph + 14} l 22 0 m -5 -4 l 5 4 l -5 4`} fill="none" stroke={PALETTE.textFaint} />
           {/* plateau labels */}
           <text x={PAD.left + pw - 4} y={Y(sub.tBoil) - 6} textAnchor="end" fontSize="11" fill={PALETTE.textSecondary}>Boiling point {sub.tBoil} °C</text>

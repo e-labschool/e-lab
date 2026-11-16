@@ -1,11 +1,12 @@
 import NuclearNotation from "./NuclearNotation.jsx";
-import { isotopeIdentity, nuclideStatus } from "../lib/atomControls.js";
+import { isotopeIdentity, nuclideStatus, ionCheck } from "../lib/atomControls.js";
+import { formatCharge } from "../../../lib/atomic/format.js";
 
 const CLASSIFICATION_LABEL = { neutral: "Neutral atom", cation: "Positive ion — cation", anion: "Negative ion — anion" };
 const CLASSIFICATION_COLOR = { neutral: "var(--color-teal)", cation: "var(--color-amber)", anion: "var(--color-indigo)" };
 // Informative, never blocking. "no-data" is neutral (not a warning): this
 // simulation simply has no isotope data for that element.
-const STATUS_COLOR = { reference: "var(--color-teal)", stable: "var(--color-teal)", radioactive: "var(--color-coral)", "not-stable": "var(--color-coral)", "no-data": "var(--color-ink-faint)" };
+const STATUS_COLOR = { reference: "var(--color-teal)", stable: "var(--color-teal)", radioactive: "var(--color-coral)", unbound: "var(--color-coral)", unknown: "var(--color-coral)", "no-data": "var(--color-ink-faint)" };
 
 export default function IdentityPanel({ derived, highlightA, highlightZ, highlightCharge }) {
   const { protons, neutrons, electrons, atomicNumber, massNumber, netCharge, element, nuclideName, classification } = derived;
@@ -15,7 +16,7 @@ export default function IdentityPanel({ derived, highlightA, highlightZ, highlig
       <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-[var(--color-line)] p-5 text-center" data-testid="atom-identity">
         <p className="text-sm font-semibold text-[var(--color-ink)]">No element yet</p>
         <p className="text-xs text-[var(--color-ink-faint)]">Add a proton to begin building an atom.</p>
-        <p className="text-xs text-[var(--color-ink-faint)]">Net charge: {netCharge > 0 ? `+${netCharge}` : netCharge} &middot; mass number: {massNumber}</p>
+        
       </div>
     );
   }
@@ -38,7 +39,7 @@ export default function IdentityPanel({ derived, highlightA, highlightZ, highlig
           <dt className="text-[var(--color-ink-faint)]">Mass number, A</dt>
           <dd className="text-right font-semibold" style={{ color: "var(--color-violet)" }} data-testid="atom-A">{massNumber}</dd>
           <dt className="text-[var(--color-ink-faint)]">Net charge</dt>
-          <dd className="text-right font-semibold text-[var(--color-ink)]" data-testid="atom-charge">{netCharge > 0 ? `+${netCharge}` : netCharge}</dd>
+          <dd className="text-right font-semibold text-[var(--color-ink)]" data-testid="atom-charge">{formatCharge(netCharge, { explicit1: true })}</dd>
           <dt className="text-[var(--color-ink-faint)]">p / n / e</dt>
           <dd className="text-right font-semibold text-[var(--color-ink)]">{protons} / {neutrons} / {electrons}</dd>
         </dl>
@@ -57,6 +58,7 @@ export default function IdentityPanel({ derived, highlightA, highlightZ, highlig
           {status.label}
         </span>
       </div>
+      {ionCheck(protons, electrons) && <p className="text-center text-[11px] text-[var(--color-ink-soft)]" data-testid="atom-ion-check">{"Not a real ion: "}{ionCheck(protons, electrons)}</p>}
       {status.detail && <p className="text-center text-[11px] text-[var(--color-ink-faint)]" data-testid="atom-stability-detail">{status.detail}</p>}
     </div>
   );

@@ -30,7 +30,7 @@ const BOND_TOOLS = [
  *   pointer drag -> onDragMove(item, x, y) while dragging, onDrop(item, x, y) on release (mouse, pen AND touch)
  */
 export default function Toolbox({
-  bondTool, onActivate, onDragMove, onDrop, onDragEnd, hint, canUndo, canRedo, onUndo, onRedo, onClear, onReset, disabledNote, showEdit = true, atomsOnly = false,
+  bondTool, onActivate, onDragMove, onDrop, onDragEnd, hint, canUndo, canRedo, onUndo, onRedo, onClear, onReset, disabledNote, showEdit = true, atomsOnly = false, charge = 0, onCharge,
 }) {
   const press = useRef(null);
   const justDragged = useRef(false);
@@ -92,6 +92,16 @@ export default function Toolbox({
               ))}
             </div>
           </section>
+          {onCharge && (
+            <section aria-label="Overall charge">
+              <h3 className="vx-h">Overall charge</h3>
+              <div className="vx-charge" role="group" aria-label="Overall charge of the species">
+                <button type="button" className="vx-btn" onClick={() => onCharge(charge - 1)} disabled={charge <= -3} aria-label="Decrease charge" data-testid="charge-dec">−</button>
+                <output className="vx-charge-val" aria-live="polite" data-testid="charge-value">{charge === 0 ? "0 (neutral)" : charge > 0 ? `+${charge}` : `−${-charge}`}</output>
+                <button type="button" className="vx-btn" onClick={() => onCharge(charge + 1)} disabled={charge >= 3} aria-label="Increase charge" data-testid="charge-inc">+</button>
+              </div>
+            </section>
+          )}
           <section aria-label="Lone pair">
             <h3 className="vx-h">Lone pair</h3>
             <button type="button" className="vx-lp" data-testid="tool-lp" title="Lone pair: one electron domain on the central atom. Click to add, or drag onto the model." {...bind({ type: "lp" }, { label: "••", color: "#2a3f78", text: "#e8f0ff", round: false })}>
@@ -107,7 +117,7 @@ export default function Toolbox({
           <button type="button" className="vx-btn" onClick={onUndo} disabled={!canUndo} title="Undo the last edit (adding, removing or changing atoms, bonds and lone pairs)" data-testid="btn-undo"><Undo2 size={14} aria-hidden="true" /> Undo</button>
           <button type="button" className="vx-btn" onClick={onRedo} disabled={!canRedo} title="Redo" data-testid="btn-redo"><Redo2 size={14} aria-hidden="true" /> Redo</button>
           <button type="button" className="vx-btn" onClick={onClear} title="Clear: remove everything from the workspace (you can undo this)" data-testid="btn-clear"><Trash2 size={14} aria-hidden="true" /> Clear</button>
-          <button type="button" className="vx-btn" onClick={onReset} title="Reset: empty workspace, forget the history and reset the view and options" data-testid="btn-reset"><RotateCcw size={14} aria-hidden="true" /> Reset</button>
+          <button type="button" className="vx-btn" onClick={onReset} title="Start over: empty workspace, forget the history and reset the view and options" data-testid="btn-reset"><RotateCcw size={14} aria-hidden="true" /> Start over</button>
         </div>
       )}
       {ghost && createPortal(<div className={"vx-ghost" + (ghost.round ? " vx-ghost--round" : "")} style={{ left: ghost.x, top: ghost.y, background: ghost.color, color: ghost.text }} aria-hidden="true">{ghost.label}</div>, ghost.host)}

@@ -43,7 +43,7 @@ export function availableDownwardTransitions(fromLevel) {
 // transition's own energy is generous enough for a real slider drag to
 // land within reliably, while still requiring the student to have
 // genuinely found the right region rather than absorbing at any input.
-const ENERGY_TOLERANCE_FRACTION = 0.03;
+const ENERGY_TOLERANCE_FRACTION = 0.01; // 1 % of the gap: the "line width" of this model, stated to the student (was 3 %, which accepted clearly off-resonance photons)
 
 /** Checks whether `incomingWavelengthNm` matches any available upward
  * transition from `fromLevel` within tolerance -- returns the matched
@@ -99,12 +99,27 @@ export function matchAbsorptionByEnergy(fromLevel, photonEnergyEv) {
   if (photonEnergyEv >= threshold) {
     return { kind: "ionization", thresholdEv: threshold, excessKeEv: photonEnergyEv - threshold };
   }
+  // NEAREST gap within tolerance (not the first in list order). Reports how far off-resonance the photon was.
   const boundCandidates = availableUpwardTransitions(fromLevel).filter((t) => t.toLevel !== Infinity);
+  let best = null;
   for (const t of boundCandidates) {
-    const tolerance = t.deltaEv * ENERGY_TOLERANCE_FRACTION;
-    if (Math.abs(photonEnergyEv - t.deltaEv) <= tolerance) return { kind: "bound", ...t };
+    const off = Math.abs(photonEnergyEv - t.deltaEv);
+    if (off <= t.deltaEv * ENERGY_TOLERANCE_FRACTION && (!best || off < best.off)) best = { t, off };
   }
+  if (best) return { kind: "bound", ...best.t, offsetEv: photonEnergyEv - best.t.deltaEv, offsetPercent: ((photonEnergyEv - best.t.deltaEv) / best.t.deltaEv) * 100 };
   return null;
 }
 
 export { hydrogenEnergyEv };
+
+export const ABSORPTION_TOLERANCE_PERCENT = ENERGY_TOLERANCE_FRACTION * 100;
+
+/** A cascade from `level` to the ground state by single steps (one of several possible routes): [{from,to,deltaEv,wavelengthNm}]. */
+export function relaxCascade(level) {
+  const steps = [];
+  for (let n = level; n > 1; n -= 1) {
+    const deltaEv = transitionEnergyEv(n, n - 1);
+    steps.push({ from: n, to: n - 1, deltaEv, wavelengthNm: energyEvToWavelengthNm(deltaEv) });
+  }
+  return steps;
+}

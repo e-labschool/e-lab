@@ -13,7 +13,7 @@ export default function SummaryScene() {
         {STATES.map((state) => (
           <div key={state} className="rounded-md border border-[var(--color-line)] p-4">
             <p className="mb-2 text-sm font-medium" style={{ color: STATE_COLOR[state] }}>{state[0].toUpperCase() + state.slice(1)}</p>
-            <ParticleField mode={state} particleCount={state === "gas" ? 10 : undefined} />
+            <ParticleField mode={state} />
             <ul className="mt-3 flex flex-col gap-1 text-xs text-[var(--color-ink-soft)]">
               {SUMMARY_POINTS[state].map((point) => (
                 <li key={point}>{point}</li>

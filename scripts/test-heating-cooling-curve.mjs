@@ -159,6 +159,30 @@ test("one progress value drives everything: identical progress gives identical s
   assert.equal(M.curveState(C, "heating", -3).progress, 0);
 });
 
+
+// ----------------------------------------------------------------------------------------- real-energy mode (Q = mc dT, t = Q/P)
+test("real-energy mode: total energy for 100 g is 313.2 kJ and t = Q/P", () => {
+  const T = M.buildCurve("true");
+  close(M.totalSeconds(T, 100, 500), (3132 * 100) / 500 * (T.totalEnergy / 3132), 1e-6);
+  close(T.totalEnergy, 2.09 * 20 + 334 + 4.18 * 100 + 2257 + 2.01 * 30, 1e-9);
+  const end = M.curveState(T, "heating", 1);
+  close(M.elapsedSeconds(T, end, 100, 500), M.totalSeconds(T, 100, 500), 1e-6);
+});
+test("real-energy mode: Q = m c dT in a sensible segment, cooling releases the heating energy", () => {
+  const T = M.buildCurve("true");
+  const st = M.curveState(T, "heating", 0.01); // inside heating the solid (true scale)
+  const w = M.segmentWorking(T, st, 100);
+  close(w.joules, 100 * 2.09 * (st.temp - (-20)), 1e-6);
+  assert.match(w.formula, /Q = m .* c .* .*T/);
+  const cool = M.curveState(T, "cooling", 0.5);
+  close(M.energySinceStartJ(T, cool, 100) + 100 * cool.energyAbsorbed, 100 * T.totalEnergy, 1e-6);
+});
+test("real-energy mode: on a plateau Q = m x energy per gram x fraction", () => {
+  const T = M.buildCurve("true");
+  let st = null; for (let p = 0; p <= 1; p += 0.001) { const s = M.curveState(T, "heating", p); if (s.segmentKey === "melt" && s.segmentFraction > 0.5) { st = s; break; } }
+  close(M.segmentWorking(T, st, 50).joules, 50 * 334 * st.segmentFraction, 1e-6);
+});
+
 // ----------------------------------------------------------------------------------------- particle model
 const W = 560; const H = 400;
 const set = P.createParticleSet();

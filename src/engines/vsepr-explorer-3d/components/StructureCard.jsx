@@ -17,7 +17,9 @@ export default function StructureCard({ model, cls, view, resetKey, compactRows 
   const empty = !cls.hasCentral;
   const rows = [];
   if (!empty) {
-    const molecule = cls.preset ? `${cls.preset.display} (${cls.preset.name.split(" (")[0].toLowerCase()})` : cls.n ? `Idealised VSEPR model · ${formulaOf(model)}` : formulaOf(model);
+    const molecule = cls.preset ? `${cls.preset.display} (${cls.preset.name.split(" (")[0].toLowerCase()})`
+      : cls.reality?.level === "unlikely" ? `Hypothetical arrangement · ${formulaOf(model)}`
+        : cls.n ? `Idealised VSEPR model · ${formulaOf(model)}` : formulaOf(model);
     rows.push(["Molecule", molecule, "row-molecule"]);
     rows.push(["AXE notation", cls.n ? cls.axe : "–", "row-axe"]);
     rows.push(["Total electron domains", cls.n ? `${cls.n} (${cls.b} bonding + ${plural(cls.l, "lone pair")})` : "0", "row-domains"]);
@@ -53,7 +55,10 @@ export default function StructureCard({ model, cls, view, resetKey, compactRows 
           {rows.map(([k, v, id]) => (<div key={id} className="vx-row" data-testid={id}><dt>{k}</dt><dd>{v}</dd></div>))}
         </dl>
       )}
-      {!empty && cls.idealisedModel && cls.n >= 2 && <p className="vx-badge" data-testid="idealised-badge" title="This arrangement does not match one of the validated molecules in the library">Idealised VSEPR model (not a validated molecule)</p>}
+      {!empty && cls.reality?.level === "unlikely" && <p className="vx-warn vx-reality" role="status" data-testid="reality-warning"><b>Not a real species.</b> {cls.reality.reason}</p>}
+      {!empty && cls.preset?.resonance && <p className="vx-legend-line" data-testid="resonance-note"><b>Resonance:</b> {cls.preset.resonance}</p>}
+      {!empty && cls.preset?.note && <p className="vx-legend-line" data-testid="preset-note">{cls.preset.note}</p>}
+      {!empty && cls.idealisedModel && cls.n >= 2 && cls.reality?.level !== "unlikely" && <p className="vx-badge" data-testid="idealised-badge" title="This arrangement does not match one of the validated molecules in the library">Idealised VSEPR model (not a validated molecule)</p>}
       {!empty && cls.angles?.entries?.length > 0 && <p className="vx-legend-line" data-testid="angle-legend">{cls.angles.source === "preset" ? "≈ = approximate experimental value; plain = idealised VSEPR angle." : "Idealised model angles. Lone pairs make real angles smaller than ideal."}</p>}
       {!empty && cls.warnings?.map((w, i) => <p key={i} className="vx-warn" role="status" data-testid="info-warning">{w}</p>)}
       {!empty && (

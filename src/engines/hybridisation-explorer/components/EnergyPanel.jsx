@@ -26,13 +26,13 @@ export function OrbitalBox({ id, latex, plain, electrons, chip, selected, hover,
 }
 
 export default function EnergyPanel({
-  atom, selectable = true, hoverId = null, onToggle, onCollapse, collapsible = true, title = "Energy Levels", hybridised = true, testId = "energy-panel", label,
+  atom, selectable = true, hoverId = null, onToggle, onCollapse, collapsible = true, title = "Energy Levels", hybridised = true, testId = "energy-panel", label, showD = true,
 }) {
   if (!atom) return null;
   const state = atom.state; const hyb = hybridised ? atom.hybrid : null;
   const sel = new Set(atom.selected ?? []);
   const rows = [];
-  if (state.n >= 3) rows.push("d"); if (state.n >= 2) rows.push("p"); rows.push("s");
+  if (state.n >= 3 && (showD || atom.orbitals.some((o) => o.type === "d" && o.electrons > 0))) rows.push("d"); if (state.n >= 2) rows.push("p"); rows.push("s");
   const consumed = hyb ? hyb.consumed : [];
   const recipe = hyb ? RECIPES[hyb.recipeId] : null;
   const remaining = hyb ? atom.orbitals.filter((o) => !consumed.includes(o.id)) : [];

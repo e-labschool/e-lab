@@ -1,0 +1,15 @@
+.pm-temp { display: grid; gap: 4px; padding: 8px 10px; border: 1px solid #232b3d; border-radius: 10px; background: #0f1420; color: #e7e9ef; }
+.pm-temp-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.pm-temp-label { font-size: 12px; font-weight: 700; }
+.pm-temp-value { font-size: 12.5px; font-weight: 700; font-variant-numeric: tabular-nums; color: #f5c518; }
+.pm-range { -webkit-appearance: none; appearance: none; width: 100%; height: 20px; margin: 0; background: transparent; cursor: pointer; }
+.pm-range::-webkit-slider-runnable-track { height: 7px; border-radius: 999px; background: linear-gradient(90deg, #6c86ee var(--pm-fill, 50%), #46506a var(--pm-fill, 50%)); }
+.pm-range::-moz-range-track { height: 7px; border-radius: 999px; background: linear-gradient(90deg, #6c86ee var(--pm-fill, 50%), #46506a var(--pm-fill, 50%)); }
+.pm-range::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 18px; height: 18px; margin-top: -5.5px; border-radius: 50%; border: 2px solid #fff; background: #6c86ee; }
+.pm-range::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; border: 2px solid #fff; background: #6c86ee; }
+.pm-range:focus-visible, .pm-follow input:focus-visible { outline: 2px solid #ffffff; outline-offset: 3px; }
+.pm-ke { height: 6px; border-radius: 999px; background: #232b3d; overflow: hidden; }
+.pm-ke-fill { display: block; height: 100%; background: #d97757; transition: width 0.25s ease; }
+@media (prefers-reduced-motion: reduce) { .pm-ke-fill { transition: none; } }
+.pm-ke-text { margin: 0; font-size: 11.5px; line-height: 1.35; color: #c3c9d9; }
+.pm-follow { display: flex; align-items: flex-start; gap: 6px; font-size: 11.5px; color: #c3c9d9; }

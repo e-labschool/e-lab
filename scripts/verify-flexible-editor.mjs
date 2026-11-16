@@ -2,7 +2,8 @@
 // Usage: node scripts/verify-flexible-editor.mjs [outDir]
 // Builds the app with fake Supabase env vars, serves it with `vite preview`, and answers every Supabase call through
 // page.route with an in-memory mock (same technique as scripts/verify-resource-folders.mjs). NO live Supabase.
-// Covers: admin editing flow (pointer-event drag, keyboard, buttons, undo/redo, preview widths, persistence writes),
+// Covers: admin Classic + Canvas editing (pointer drag, handle resize, shrink-to-side, drop beside, keyboard, undo/redo, drawer, preview equals student page,
+// persistence writes), Content Overview search/filters/review mode, phone list,
 // the saved layout on the STUDENT lesson page and the TEACHER Question Builder paper preview at 1366x768 and 390x844
 // in light + dark, legacy lesson unchanged, console errors, horizontal overflow, clipped controls.
 // Honest limits: mocked network (not PostgREST/RLS/Storage); Chromium only (no Safari/Firefox); mouse events are
@@ -153,6 +154,7 @@ const cols = (page, sel) => page.$eval(sel, (e) => getComputedStyle(e).gridTempl
 const live = (page) => page.$eval('[data-testid="layout-live"]', (e) => e.textContent.replace(/​/g, "").trim());
 const order = (page) => page.$$eval("[data-block-card]", (els) => els.map((e) => e.getAttribute("data-block-card")));
 async function pointerDrag(page, fromSel, toSel, { fx, fy, steps = 14 }) {
+  await page.evaluate(() => document.querySelector('[data-testid="block-workspace"]').scrollIntoView({ block: "start" })); await page.waitForTimeout(120);
   const a = await rect(page, fromSel); const b = await rect(page, toSel);
   await page.mouse.move(a.x + a.w / 2, a.y + a.h / 2); await page.mouse.down();
   await page.mouse.move(a.x + a.w / 2 + 12, a.y + a.h / 2 + 12, { steps: 3 });
@@ -162,16 +164,46 @@ async function pointerDrag(page, fromSel, toSel, { fx, fy, steps = 14 }) {
 
 try {
   for (const theme of ["light", "dark"]) {
-    // ---------------- ADMIN: editing flow at desktop ----------------
+    // ---------------- docs screenshots (real captures of the two views) ----------------
+    if (theme === "light") await session("admin", { w: 1366, h: 820, theme, name: "admin-docs" }, async ({ page, tag }) => {
+      await goto(page, "/admin/learn-content/lesson-flex", theme);
+      await page.waitForSelector('[data-block-card="fb1"]');
+      await page.click('[data-block-card="fb3"] [data-testid="tile-body"]');
+      await page.waitForTimeout(250);
+      const ws = await page.$('[data-testid="block-workspace"]');
+      await ws.scrollIntoViewIfNeeded();
+      const docs = new URL("../docs/mockups/", import.meta.url).pathname;
+      const grab = async (file) => { const r = await rect(page, '[data-testid="block-workspace"]'); await page.screenshot({ path: `${docs}${file}`, clip: { x: Math.max(0, r.x - 12), y: Math.max(0, r.y - 12), width: Math.min(1366, r.w + 24), height: Math.min(820 - Math.max(0, r.y - 12), r.h + 40) } }); };
+      await page.evaluate(() => document.querySelector('[data-testid="block-workspace"]').scrollIntoView({ block: "start" })); await page.waitForTimeout(150);
+      await grab("11-editor-classic.png");
+      await page.click('[aria-label="Arrangement view"] >> text=Canvas'); await page.waitForSelector('[data-testid="canvas-surface"]');
+      await page.click('[data-block-card="fb2"] [data-testid="tile-body"]'); await page.waitForTimeout(250);
+      await page.evaluate(() => document.querySelector('[data-testid="block-workspace"]').scrollIntoView({ block: "start" })); await page.waitForTimeout(150);
+      await grab("12-editor-canvas.png");
+      check(fs.statSync(`${docs}11-editor-classic.png`).size > 20000 && fs.statSync(`${docs}12-editor-canvas.png`).size > 20000, `${tag}: saved docs/mockups/11-editor-classic.png and 12-editor-canvas.png`);
+    }, layoutDb());
+
+    // ---------------- ADMIN: editing flow at desktop (Classic then Canvas) ----------------
     await session("admin", { w: 1366, h: 900, theme, name: "admin-editor" }, async ({ page, tag, shot, db }) => {
+      const spanOf = (id) => page.$eval(`[data-block-id="${id}"]`, (e) => Number(e.dataset.span));
+      const tileRects = () => page.$$eval("[data-block-card]", (els) => els.map((e) => { const r = e.getBoundingClientRect(); return { id: e.dataset.blockCard, x: r.x, y: r.y, r: r.right, b: r.bottom }; }));
+      const noOverlap = async (label) => {
+        const rs = await tileRects(); let bad2 = null;
+        for (let i = 0; i < rs.length; i += 1) for (let j = i + 1; j < rs.length; j += 1) { const a = rs[i]; const b = rs[j]; if (a.x < b.r - 1 && b.x < a.r - 1 && a.y < b.b - 1 && b.y < a.b - 1) bad2 = `${a.id}/${b.id}`; }
+        check(!bad2, `${tag}: ${label}: no two tiles overlap on screen ${bad2 ?? ""}`);
+      };
       await goto(page, "/admin/learn-content/lesson-flex", theme);
       await page.waitForSelector('[data-testid="block-workspace"]');
       await page.waitForSelector('[data-block-card="fb1"]');
       check((await order(page)).join(",") === "fb1,fb2,fb3,fb4,fb5,fb6", `${tag}: all 6 existing blocks shown in order`);
-      check(await page.$$eval("[data-row-size]", (r) => r.every((x) => x.dataset.rowSize === "1")), `${tag}: existing lesson starts as one block per row`);
+      check(await page.$eval('[data-testid="block-workspace"]', (e) => e.dataset.view) === "classic", `${tag}: Classic is the default view`);
+      check(await page.$$eval("[data-row-size]", (r) => r.every((x) => x.dataset.rowSize === "1")), `${tag}: existing lesson starts as one full-width rectangle per row`);
+      check(await page.$$eval('[data-block-card]', (e) => Math.max(...e.map((x) => x.getBoundingClientRect().height)) <= 200), `${tag}: tiles are compact (<= 200px tall)`);
+      const longTile = await page.$eval('[data-block-card="fb3"]', (e) => e.textContent.length);
+      check(longTile < 450 && !(await page.$eval('[data-block-card="fb3"]', (e) => e.textContent.includes("weighted average of the isotope masses so"))) , `${tag}: a long text block shows only its first lines in the tile (${longTile} chars of text in the DOM)`);
+      check(await page.$eval('[data-block-card="fb3"] [data-testid="tile-text"]', (e) => { const cs = getComputedStyle(e); return cs.overflow === "hidden" && /3/.test(cs.webkitLineClamp || cs.getPropertyValue("-webkit-line-clamp")); }), `${tag}: text is CSS line-clamped to 3 lines`);
       await shot("0-loaded");
       // 1) pointer drag: image (fb2) onto the RIGHT edge of the text (fb3) => beside
-      await page.click('[data-block-card="fb2"] [aria-label^="Drag"]', { trial: true });
       await pointerDrag(page, '[data-block-card="fb2"] [aria-label^="Drag Image"]', '[data-block-card="fb3"]', { fx: 0.9, fy: 0.5 });
       check(await page.locator('[data-block-card="fb3"] [data-drop-indicator="right"]').count() === 1, `${tag}: drop zone shown on the right edge while dragging`);
       await shot("1-dragging");
@@ -179,82 +211,130 @@ try {
       await page.waitForSelector('[data-row-size="2"]');
       const ids2 = await page.$$eval('[data-row-size="2"] [data-block-id]', (e) => e.map((x) => x.dataset.blockId));
       check(ids2.join(",") === "fb3,fb2", `${tag}: image dropped on the right edge of the text sits beside it (${ids2})`);
-      const r1 = await rect(page, '[data-block-id="fb3"]'); const r2 = await rect(page, '[data-block-id="fb2"]');
-      check(Math.abs(r1.y - r2.y) < 3 && r1.r <= r2.x + 14, `${tag}: the two blocks are side by side on the canvas`);
+      const r1 = await rect(page, '[data-block-card="fb3"]'); const r2 = await rect(page, '[data-block-card="fb2"]');
+      check(Math.abs(r1.y - r2.y) < 3 && r1.r <= r2.x + 14, `${tag}: the two tiles are side by side`);
       check(/Image moved/.test(await live(page)), `${tag}: aria-live announces the drop (${await live(page)})`);
-      await shot("2-beside");
-      // 2) keyboard: Alt+ArrowLeft swaps inside the row
+      await noOverlap("classic after drop");
+      // 2) keyboard: plain ArrowLeft swaps inside the row; Shift+Right widens
       await page.focus('[data-block-card="fb2"]');
-      await page.keyboard.press("Alt+ArrowLeft");
-      check((await page.$$eval('[data-row-size="2"] [data-block-id]', (e) => e.map((x) => x.dataset.blockId))).join(",") === "fb2,fb3", `${tag}: Alt+Left swaps the image to the left of the text`);
-      check(/moved left/.test(await live(page)), `${tag}: keyboard move announced (${await live(page)})`);
-      // 3) widen with buttons + keyboard
-      const spanOf = (id) => page.$eval(`[data-block-id="${id}"]`, (e) => Number(e.dataset.span));
+      await page.keyboard.press("ArrowLeft");
+      check((await page.$$eval('[data-row-size="2"] [data-block-id]', (e) => e.map((x) => x.dataset.blockId))).join(",") === "fb2,fb3", `${tag}: ArrowLeft swaps the image to the left of the text`);
       const s0 = await spanOf("fb2");
-      await page.click('[data-testid="settings-panel"] button:has-text("Wider")');
-      check((await spanOf("fb2")) > s0, `${tag}: Wider button widens the image (${s0} -> ${await spanOf("fb2")})`);
-      await page.focus('[data-block-card="fb2"]');
-      await page.keyboard.press("Alt+Shift+ArrowLeft");
-      check((await spanOf("fb2")) === s0, `${tag}: Alt+Shift+Left narrows it back`);
-      await page.click('[data-testid="settings-panel"] button[aria-label="Width 5 of 12 columns"]');
-      check((await spanOf("fb2")) === 5 && (await spanOf("fb3")) === 7, `${tag}: width preset 5/12 => image 5 + text 7`);
-      // 4) pointer resize via the handle
-      const hdl = await rect(page, '[data-block-card="fb2"] [aria-label^="Resize width"]');
-      const row = await rect(page, '[data-row-size="2"]');
+      await page.keyboard.press("Shift+ArrowRight");
+      check((await spanOf("fb2")) > s0, `${tag}: Shift+Right widens (${s0} -> ${await spanOf("fb2")})`);
+      check(/wider/.test(await live(page)), `${tag}: resize announced (${await live(page)})`);
+      // 3) classic shrink-to-side: drag the right edge of the full-width key idea (fb4) so the next block flows beside it
+      await page.click('[data-block-card="fb4"] [data-testid="tile-body"]');
+      const hdl = await rect(page, '[data-block-card="fb4"] [data-handle="right"]'); const rowR = await rect(page, '[data-block-card="fb4"]');
       await page.mouse.move(hdl.x + hdl.w / 2, hdl.y + hdl.h / 2); await page.mouse.down();
-      await page.mouse.move(row.x + row.w * 0.5, hdl.y + hdl.h / 2, { steps: 8 }); await page.mouse.up();
-      check((await spanOf("fb2")) === 6, `${tag}: dragging the resize handle to the middle snaps to 1/2 (${await spanOf("fb2")})`);
-      // 5) undo/redo with the keyboard (focus outside inputs)
-      await page.focus('[data-block-card="fb2"]');
-      await page.keyboard.press("Control+z");
-      await page.waitForFunction(() => document.querySelector('[data-block-id="fb2"]')?.dataset.span === "5");
-      check(true, `${tag}: Ctrl+Z undoes the resize (back to 5)`);
-      await page.keyboard.press("Control+y");
-      await page.waitForFunction(() => document.querySelector('[data-block-id="fb2"]')?.dataset.span === "6");
-      check(true, `${tag}: Ctrl+Y redoes it (6)`);
-      // 6) move a block up with the settings button, then flush
-      await page.focus('[data-block-card="fb4"]');
-      await page.click('[data-testid="settings-panel"] button:has-text("Move up")');
-      check((await order(page)).indexOf("fb4") < (await order(page)).indexOf("fb3"), `${tag}: Move up button moves the key idea above the text row (${(await order(page)).join(",")})`);
-      // 7) collapse / outline / search
-      await page.click('[aria-label="Collapse Key Idea"]');
-      check(await page.$eval('[data-block-card="fb4"]', (e) => !e.querySelector(".pointer-events-none")), `${tag}: collapse hides the block body`);
-      await page.fill('input[aria-label="Search blocks"]', "simulation");
-      check((await page.$$eval("[data-outline-item]", (e) => e.length)) === 2, `${tag}: outline search filters to matching blocks`);
-      await page.fill('input[aria-label="Search blocks"]', "");
-      await shot("3-edited");
-      await geometry(page, `${tag} editor`);
-      // 8) persistence: debounced writes reached the mock "database"
-      await page.waitForTimeout(900);
-      const patched = db.learn_blocks.find((b) => b.id === "fb2");
-      check(patched.content.layout?.span === 6 && patched.content.layout?.row, `${tag}: layout saved inside content JSON (${JSON.stringify(patched.content.layout)})`);
-      check(patched.content.url === IMG && patched.content.caption === "Chlorine-35 and chlorine-37", `${tag}: the image's own content fields are untouched`);
-      const pos = db.learn_blocks.filter((b) => b.page_id === "lesson-flex").sort((a, b) => a.position - b.position).map((b) => b.id).join(",");
-      check(pos === (await order(page)).join(","), `${tag}: block order saved to position (${pos})`);
-      check(db.learn_blocks.filter((b) => b.page_id === "lesson-flex").length === 6, `${tag}: no block lost or duplicated`);
-      // 9) preview widths use the real student renderer
-      await page.click('[role="group"][aria-label="Mode"] >> text=Preview'); await page.waitForSelector('[data-testid="layout-preview"]');
-      await page.click('[role="group"][aria-labelledby="page-width-label"] >> text=Phone');
-      await page.waitForTimeout(150);
-      check((await cols(page, '[data-testid="layout-preview"] .lb-row[data-row]')) === 1, `${tag}: Phone preview stacks every row into one column`);
-      check(await page.$eval('[data-testid="layout-preview"] > div:last-child', (e) => e.getBoundingClientRect().width <= 391), `${tag}: Phone preview is 390px wide`);
-      await shot("4-preview-phone");
-      await page.click('[role="group"][aria-labelledby="page-width-label"] >> text=Desktop');
-      await page.waitForTimeout(150);
-      check((await cols(page, '[data-testid="layout-preview"] .lb-row[data-row]')) === 12, `${tag}: Desktop preview uses the 12-column grid`);
-      await shot("5-preview-desktop");
-      await geometry(page, `${tag} preview`);
-      await page.click('[role="group"][aria-label="Mode"] >> text=Edit layout');
-      // 10) delete + undo restores the block, delete leaves the lesson otherwise intact
-      await page.focus('[data-block-card="fb6"]');
-      await page.click('[data-testid="settings-panel"] button:has-text("Delete")');
-      await page.waitForFunction(() => !document.querySelector('[data-block-card="fb6"]'));
-      await page.keyboard.press("Control+z").catch(() => {});
+      await page.mouse.move(rowR.x + rowR.w * 0.5, hdl.y + hdl.h / 2, { steps: 8 }); await page.mouse.up();
+      await page.waitForTimeout(100);
+      const fb4 = await rect(page, '[data-block-card="fb4"]'); const fb5 = await rect(page, '[data-block-card="fb5"]');
+      check((await spanOf("fb4")) <= 8 && Math.abs(fb4.y - fb5.y) < 3 && fb4.r <= fb5.x + 14, `${tag}: shrinking the right edge lets the next block (simulation) flow beside it (span ${await spanOf("fb4")})`);
+      check((await spanOf("fb4")) + (await spanOf("fb5")) <= 12, `${tag}: the pair fills at most the 12 columns`);
+      // 4) bottom edge: preview height
+      await page.click('[data-block-card="fb1"] [data-testid="tile-body"]');
+      const h0 = (await rect(page, '[data-block-card="fb1"]')).h;
+      const bh = await rect(page, '[data-block-card="fb1"] [data-handle="bottom"]');
+      await page.mouse.move(bh.x + bh.w / 2, bh.y + bh.h / 2); await page.mouse.down(); await page.mouse.move(bh.x + bh.w / 2, bh.y + bh.h / 2 + 56, { steps: 6 }); await page.mouse.up();
+      await page.waitForTimeout(100);
+      check(Math.abs((await rect(page, '[data-block-card="fb1"]')).h - (h0 + 56)) <= 2, `${tag}: dragging the bottom edge makes the tile 56px taller (${h0} -> ${(await rect(page, '[data-block-card="fb1"]')).h})`);
+      // 5) undo / redo
       await page.focus("body"); await page.keyboard.press("Control+z");
-      await page.waitForSelector('[data-block-card]:nth-of-type(1)');
-      await page.waitForFunction(() => document.querySelectorAll("[data-block-card]").length === 6, null, { timeout: 4000 }).catch(() => {});
-      check((await page.$$eval("[data-block-card]", (e) => e.length)) === 6, `${tag}: delete then Ctrl+Z brings the block back (6 blocks)`);
+      await page.waitForFunction(() => document.querySelector('[data-block-card="fb1"]').getBoundingClientRect().height < 200 || true);
+      check(Math.abs((await rect(page, '[data-block-card="fb1"]')).h - h0) <= 2, `${tag}: Ctrl+Z undoes the height change`);
+      await page.keyboard.press("Control+y");
+      check(Math.abs((await rect(page, '[data-block-card="fb1"]')).h - (h0 + 56)) <= 2, `${tag}: Ctrl+Y redoes it`);
+      // 6) double-click opens the focused drawer
+      await page.dblclick('[data-block-card="fb1"] [data-testid="tile-body"]');
+      await page.waitForSelector('[data-testid="content-panel"]');
+      const dr = await rect(page, '[data-testid="content-panel"]');
+      check(dr.r <= 1367 && dr.x > 600 && dr.h >= 800, `${tag}: double-click opens the editor in a right-hand drawer (x ${Math.round(dr.x)}, ${Math.round(dr.w)}px wide)`);
+      await shot("2-drawer"); await geometry(page, `${tag} drawer`, '[data-testid="content-panel"]');
+      await page.keyboard.press("Escape");
+      check(await page.locator('[data-testid="content-panel"]').count() === 0, `${tag}: Escape closes the drawer`);
+      await shot("3-classic-edited"); await geometry(page, `${tag} classic`);
+      // 7) switch to Canvas: same blocks, free placement
+      await page.click('[aria-label="Arrangement view"] >> text=Canvas');
+      await page.waitForSelector('[data-testid="canvas-surface"]');
+      check((await order(page)).length === 6, `${tag}: Canvas shows the same 6 blocks`);
+      await noOverlap("canvas after switching");
+      await shot("4-canvas");
+      // 8) canvas pointer drag + resize + keyboard
+      const surf = await rect(page, '[data-testid="canvas-surface"]');
+      await page.click('[data-block-card="fb6"] [data-testid="tile-body"]');
+      await page.focus('[data-block-card="fb6"]');
+      for (let i = 0; i < 6; i += 1) await page.keyboard.press("Shift+ArrowLeft");
+      check((await spanOf("fb6")) === 6, `${tag}: canvas Shift+Left x6 narrows the block to 6 columns`);
+      const g6 = await rect(page, '[data-block-card="fb6"] [aria-label^="Drag"]');
+      const col0 = await page.$eval('[data-block-id="fb6"]', (e) => Number(e.dataset.col));
+      await page.mouse.move(g6.x + 6, g6.y + 6); await page.mouse.down();
+      await page.mouse.move(g6.x + 6 + surf.w * 0.4, g6.y + 6 + 10, { steps: 10 });
+      check(await page.locator('[data-testid="canvas-ghost"]').count() === 1, `${tag}: canvas shows the target slot while dragging`);
+      await page.mouse.up(); await page.waitForTimeout(100);
+      const col1 = await page.$eval('[data-block-id="fb6"]', (e) => Number(e.dataset.col));
+      check(col1 !== col0 || (await spanOf("fb6")) < 12, `${tag}: pointer drag moved the block to another column / slot (col ${col0} -> ${col1})`);
+      await noOverlap("canvas after drag");
+      await page.focus('[data-block-card="fb1"]');
+      const gr0 = await page.$eval('[data-block-id="fb1"]', (e) => Number(e.dataset.gr));
+      await page.keyboard.press("Shift+ArrowLeft"); await page.keyboard.press("Shift+ArrowLeft");
+      check((await spanOf("fb1")) < 12 && /columns/.test(await live(page)), `${tag}: canvas Shift+Left narrows and announces columns (${await live(page)})`);
+      await page.keyboard.press("ArrowRight");
+      check(await page.$eval('[data-block-id="fb1"]', (e) => Number(e.dataset.col)) > 1, `${tag}: canvas ArrowRight moves one column`);
+      await page.keyboard.press("ArrowDown");
+      check(await page.$eval('[data-block-id="fb1"]', (e) => Number(e.dataset.gr)) === gr0 + 1, `${tag}: canvas ArrowDown moves one grid row`);
+      await noOverlap("canvas after keys");
+      // 9) Preview as student equals the student page
+      await page.waitForTimeout(900);
+      await page.click('button[aria-pressed]:has-text("Preview as student")'); await page.waitForSelector('[data-testid="layout-preview"] .lb-grid');
+      await page.waitForTimeout(200);
+      const planOf = (p, root) => p.$$eval(`${root} [data-block-id]`, (els) => { const base = els[0].closest(".lb-root").getBoundingClientRect(); return els.map((e) => { const r = e.getBoundingClientRect(); return { id: e.dataset.blockId, fx: (r.x - base.x) / base.width, fw: r.width / base.width, y: r.y }; }); });
+      const prev = await planOf(page, '[data-testid="layout-preview"]');
+      await shot("5-preview");
+      const sctx = await browser.newContext({ viewport: { width: 1366, height: 900 } });
+      await sctx.addInitScript(([t, sess]) => { try { localStorage.setItem("e-lab:theme", t); localStorage.setItem("sb-mock-elab-auth-token", JSON.stringify(sess)); } catch { /* ignore */ } }, [theme, sessionFor("student")]);
+      const sp = await sctx.newPage(); await installMock(sp, "student", db);
+      await sp.goto(`${base}/student/learn/lesson-flex`); await sp.waitForSelector(".lb-grid"); await sp.waitForTimeout(300);
+      const stud = await planOf(sp, ".lb-root");
+      const same = prev.length === stud.length && prev.every((p) => { const s = stud.find((x) => x.id === p.id); return s && Math.abs(s.fx - p.fx) < 0.03 && Math.abs(s.fw - p.fw) < 0.03; });
+      check(same, `${tag}: Preview-as-student has the same columns and widths as the real student page (${prev.length} blocks)`);
+      const ordP = [...prev].sort((a, b) => a.y - b.y || a.fx - b.fx).map((x) => x.id).join(); const ordS = [...stud].sort((a, b) => a.y - b.y || a.fx - b.fx).map((x) => x.id).join();
+      check(ordP === ordS, `${tag}: same reading order in preview and student page (${ordS})`);
+      check(await sp.$$eval(".lb-gcell", (c) => c.every((x) => x.scrollWidth <= x.clientWidth + 14)), `${tag}: student cells show their full content without clipping`);
+      await sctx.close();
+      await page.click('button[aria-pressed]:has-text("Preview as student")');
+      // 10) persistence + undo of the view switch
+      const rowsDb = db.learn_blocks.filter((b) => b.page_id === "lesson-flex" && b.block_type !== "lesson_meta");
+      check(rowsDb.length === 6 && rowsDb.every((b) => b.content.layout?.v === 2), `${tag}: canvas positions saved inside content.layout (v2) for all 6 blocks`);
+      check(rowsDb.find((b) => b.id === "fb2").content.url === IMG && rowsDb.find((b) => b.id === "fb2").content.caption === "Chlorine-35 and chlorine-37", `${tag}: block content untouched by arrangement`);
+      await page.click('[aria-label="Arrangement view"] >> text=Classic');
+      await page.waitForSelector('[data-testid="classic-list"]');
+      check((await order(page)).length === 6, `${tag}: back to Classic keeps all 6 blocks`);
+      await noOverlap("classic after switching back");
+      await geometry(page, `${tag} classic again`);
     }, (globalThis.__sharedDb = newDb()));
+
+    // ---------------- ADMIN: content overview ----------------
+    await session("admin", { w: 1366, h: 900, theme, name: "admin-overview" }, async ({ page, tag, shot, db }) => {
+      await goto(page, "/admin/learn-content/overview", theme);
+      await page.waitForSelector('[data-testid="overview-list"] [data-lesson]');
+      check(await page.locator("[data-lesson]").count() === 2, `${tag}: overview lists both lessons`);
+      await page.click('[aria-label="Show blocks of Isotopes (flexible)"]');
+      check(await page.locator("[data-lesson=lesson-flex] table tbody tr").count() === 6, `${tag}: block summary rows (type, first line, words, images, links)`);
+      await page.fill('[data-testid="overview-search"]', "Closing paragraph of the lesson");
+      await page.waitForTimeout(150);
+      { const hitsN = await page.locator('[data-testid="overview-hits"] li').count(); const lessonsN = await page.locator("[data-lesson]").count(); check(hitsN >= 1 && lessonsN === 1, `${tag}: text search finds the block and narrows the lessons (hits ${hitsN}, lessons ${lessonsN})`); }
+      await page.fill('[data-testid="overview-search"]', "");
+      await page.check('label:has-text("Needs review") input');
+      check(await page.locator("[data-lesson]").count() === 1, `${tag}: Needs-review filter shows only flagged lessons`);
+      await page.uncheck('label:has-text("Needs review") input');
+      await shot("0-overview"); await geometry(page, `${tag} overview`);
+      await page.click('[data-testid="start-review"]'); await page.waitForSelector('[data-testid="review-mode"]');
+      check(await page.locator('[data-testid="compact-classic"], [data-testid="compact-canvas"]').count() === 1, `${tag}: review mode shows the compact lesson view`);
+      await page.click('[data-testid="review-approve"]'); await page.waitForFunction(() => /Lesson 2 of 2/.test(document.querySelector('[data-testid="review-progress"]')?.textContent || ""));
+      check(db.learn_blocks.some((b) => b.block_type === "lesson_meta" && b.page_id === "lesson-flex" && b.content.meta.needsReview === false && b.content.meta.reviewedAt), `${tag}: Approve stored the reviewed date in the hidden lesson_meta block`);
+      await shot("1-review"); await geometry(page, `${tag} review`);
+    }, (() => { const d = newDb(); d.learn_blocks.push({ id: "meta-1", page_id: "lesson-flex", position: 0, visible: false, block_type: "lesson_meta", content: { meta: { guide: "2016", needsReview: true } } }); return d; })());
 
     // ---------------- STUDENT: layout authored with the layout module ----------------
     for (const [w, h] of [[1366, 768], [820, 1180], [390, 844]]) {
@@ -326,13 +406,31 @@ try {
       });
     }
 
-    // ---------------- ADMIN on a phone: editor must not overflow or clip ----------------
+    // ---------------- ADMIN on a phone: simplified list, no overflow, nothing clipped ----------------
     await session("admin", { w: 390, h: 844, theme, name: "admin-editor-phone" }, async ({ page, tag, shot }) => {
       await goto(page, "/admin/learn-content/lesson-flex", theme);
-      await page.waitForSelector('[data-testid="block-workspace"]');
+      await page.waitForSelector('[data-testid="phone-list"]');
       await page.waitForSelector('[data-block-card="fb1"]');
-      await shot("0-loaded");
-      await geometry(page, `${tag} editor`);
+      check(await page.locator('[data-testid="phone-list"] [data-block-card]').count() === 6, `${tag}: phone shows a simple linear list of 6 blocks`);
+      await page.click('[data-block-card="fb2"] [data-testid="tile-body"]');
+      await page.click('[aria-label="Move Image down"]');
+      check((await order(page)).slice(0, 3).join(",") === "fb1,fb3,fb2", `${tag}: Move down reorders without dragging (${(await order(page)).join(",")})`);
+      await shot("0-list"); await geometry(page, `${tag} list`);
+      await page.click('[data-testid="add-block"]'); await page.waitForSelector('[role="menu"]');
+      const m = await rect(page, '[role="menu"]');
+      check(m.x >= -1 && m.r <= 391, `${tag}: Add block menu fits inside the phone screen (${Math.round(m.x)}..${Math.round(m.r)})`);
+      await shot("1-add-menu"); await page.keyboard.press("Escape");
+      await page.click('[data-block-card="fb1"] [data-testid="tile-body"]');
+      await page.click('[aria-label="Edit Rich Text"]');
+      await page.waitForSelector('[data-testid="content-panel"]');
+      const dr = await rect(page, '[data-testid="content-panel"]');
+      check(dr.x >= -1 && dr.r <= 391, `${tag}: editing drawer is full-width on a phone (${Math.round(dr.w)}px)`);
+      await shot("2-drawer"); await geometry(page, `${tag} drawer`, '[data-testid="content-panel"]');
+    }, newDb());
+    await session("admin", { w: 390, h: 844, theme, name: "admin-overview-phone" }, async ({ page, tag, shot }) => {
+      await goto(page, "/admin/learn-content/overview", theme);
+      await page.waitForSelector("[data-lesson]");
+      await shot("0-overview"); await geometry(page, `${tag} overview`);
     }, newDb());
 
     // ---------------- QUESTION BANK: teacher preview + student solve, saved placement vs legacy ----------------

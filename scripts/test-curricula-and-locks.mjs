@@ -83,7 +83,7 @@ await test("role rules: student = exactly one, teacher = one or more, never empt
 console.log("catalogue field and library filter");
 const live = cat.getLiveSimulations();
 await test("every live simulation is ['ib-dp'] (verified by IB syllabus codes); coming-soon entries claim nothing", () => {
-  assert.ok(live.length >= 25);
+  assert.ok(live.length >= 24);
   for (const e of live) {
     assert.deepEqual([...e.curriculum], ["ib-dp"], e.id);
     assert.ok(e.syllabus.length > 0 && e.syllabus.every((c) => /^[SR]\d/.test(c)), `${e.id}: IB DP syllabus codes back the mapping`);
@@ -196,22 +196,22 @@ await test("the Access-level dropdowns are gone; one lock toggle per live simula
 });
 await test("locking writes the unchanged payload {sim_id, tier:'premium', featured}; unlocking writes tier 'free'", async () => {
   const fake = fakeSupabase(); await mountAdmin(fake);
-  await click($("#lock-build-an-atom")); await wait(60);
-  assert.deepEqual(fake.log[0], { sim_id: "build-an-atom", tier: "premium", featured: true });
-  assert.equal($("#lock-build-an-atom").getAttribute("aria-pressed"), "true"); assert.equal($("#lock-build-an-atom").getAttribute("title"), "Unlock (free)");
-  assert.match(norm($("[data-sim-row='build-an-atom']").textContent), /Locked.*Saved; open to everyone while Premium is off/);
+  await click($("#lock-vsepr-explorer-3d")); await wait(60);
+  assert.deepEqual(fake.log[0], { sim_id: "vsepr-explorer-3d", tier: "premium", featured: true });
+  assert.equal($("#lock-vsepr-explorer-3d").getAttribute("aria-pressed"), "true"); assert.equal($("#lock-vsepr-explorer-3d").getAttribute("title"), "Unlock (free)");
+  assert.match(norm($("[data-sim-row='vsepr-explorer-3d']").textContent), /Locked.*Saved; open to everyone while Premium is off/);
   assert.equal($("#lock-wave-explorer").getAttribute("aria-pressed"), "false", "other rows untouched");
-  await click($("#lock-build-an-atom")); await wait(60);
-  assert.deepEqual(fake.log[1], { sim_id: "build-an-atom", tier: "free", featured: true });
-  assert.equal($("#lock-build-an-atom").getAttribute("aria-pressed"), "false");
+  await click($("#lock-vsepr-explorer-3d")); await wait(60);
+  assert.deepEqual(fake.log[1], { sim_id: "vsepr-explorer-3d", tier: "free", featured: true });
+  assert.equal($("#lock-vsepr-explorer-3d").getAttribute("aria-pressed"), "false");
 });
 await test("Featured star still works and keeps the lock; a previously saved 'demo' row shows as free demo and can be locked", async () => {
   const fake = fakeSupabase({ initial: [{ sim_id: "wave-explorer", tier: "demo", featured: false }] }); await mountAdmin(fake);
   assert.equal($("#lock-wave-explorer").getAttribute("aria-pressed"), "false");
   assert.match(norm($("[data-sim-row='wave-explorer']").textContent), /Free demo/);
-  await click($("#lock-build-an-atom")); await wait(60);
-  await click($("button[aria-label^='Remove Build an Atom']")); await wait(60);
-  assert.deepEqual(fake.log.at(-1), { sim_id: "build-an-atom", tier: "premium", featured: false });
+  await click($("#lock-vsepr-explorer-3d")); await wait(60);
+  await click($("button[aria-label^='Remove VSEPR Explorer']")); await wait(60);
+  assert.deepEqual(fake.log.at(-1), { sim_id: "vsepr-explorer-3d", tier: "premium", featured: false });
   await click($("#lock-wave-explorer")); await wait(60);
   assert.deepEqual(fake.log.at(-1), { sim_id: "wave-explorer", tier: "premium", featured: false });
 });

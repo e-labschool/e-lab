@@ -214,9 +214,9 @@ export default function SceneContent({ live, apiRef, labelRefs, mini = false, au
         // bond lobe (electron-domain region): teardrop from the nucleus, wide near the surrounding atom
         if (bl) { bl.quaternion.copy(T.q); bl.scale.set(1, BOND_LEN * 1.12, 1); bl.position.set(0, 0, 0); }
         // bond strands (1-3 parallel cylinders, always visible side by side from the camera)
-        const order = dom.order; const len = BOND_LEN - cr * 0.4;
+        const order = dom.res ? 1 : dom.order; const len = BOND_LEN - cr * 0.4;
         T.u.set(dx, dy, dz); T.w.copy(T.camR); T.w.addScaledVector(T.u, -T.camR.dot(T.u)); if (T.w.lengthSq() < 0.02) { T.w.copy(T.camU); T.w.addScaledVector(T.u, -T.camU.dot(T.u)); } T.w.normalize();
-        const rad = STRAND_RADIUS[order]; const off = STRAND_OFFSETS[order];
+        const rad = dom.res ? 0.07 : STRAND_RADIUS[order]; const off = STRAND_OFFSETS[order];
         const mid = cr * 0.4 + len / 2;
         for (let k = 0; k < off.length; k += 1) {
           T.r.set(dx * mid + T.w.x * off[k], dy * mid + T.w.y * off[k], dz * mid + T.w.z * off[k]); T.s.set(rad, len, rad);
@@ -292,12 +292,12 @@ export default function SceneContent({ live, apiRef, labelRefs, mini = false, au
       <Bridge apiRef={apiRef} live={live} controlsRef={controlsRef} />
       {/* central atom */}
       <mesh ref={centralRef} geometry={sphereGeo} visible={false}><meshStandardMaterial roughness={0.28} metalness={0.05} /></mesh>
-      <sprite ref={centralSprite} visible={false} renderOrder={5}><spriteMaterial transparent depthWrite={false} /></sprite>
+      <sprite ref={centralSprite} visible={false} renderOrder={5}><spriteMaterial transparent depthWrite={false} depthTest={false} /></sprite>
       {/* surrounding atoms */}
       {Array.from({ length: MAX_SLOTS }, (_, i) => (
         <group key={i}>
           <mesh ref={(m) => { atomRefs.current[i] = m; }} geometry={sphereGeo} visible={false}><meshStandardMaterial roughness={0.3} metalness={0.04} /></mesh>
-          <sprite ref={(m) => { spriteRefs.current[i] = m; }} visible={false} renderOrder={5}><spriteMaterial transparent depthWrite={false} /></sprite>
+          <sprite ref={(m) => { spriteRefs.current[i] = m; }} visible={false} renderOrder={5}><spriteMaterial transparent depthWrite={false} depthTest={false} /></sprite>
           <mesh ref={(m) => { stubRefs.current[i] = m; }} geometry={lowSphere} visible={false}><meshBasicMaterial color="#9fb3d9" wireframe transparent opacity={0.8} /></mesh>
           <mesh ref={(m) => { bondLobeRefs.current[i] = m; }} visible={false} renderOrder={2}>
             <latheGeometry args={[bondGeo, 40]} />
@@ -394,6 +394,16 @@ function updateOverlays(L, sim, n, T, state, { arcsRef, shaftsRef, headsRef, cam
       if (!picks.some((p) => Math.abs(p[2] - deg) < 3)) picks.push([bonds[a], bonds[b], deg]);
     }
     picks.sort((x, y) => x[2] - y[2]);
+    // at rest with listed angles (a validated molecule): label ONLY the listed angles, one pick per entry (no unmarked model angles, no duplicates)
+    const ent = L.angleEntries ?? [];
+    if (!settling && ent.length) {
+      const keep = [];
+      for (const e of ent) {
+        let best = null; for (const pk of picks) if (Math.abs(pk[2] - e.value) <= 8 && (!best || Math.abs(pk[2] - e.value) < Math.abs(best[2] - e.value))) best = pk;
+        if (best && !keep.includes(best)) keep.push(best);
+      }
+      if (keep.length) { picks.length = 0; picks.push(...keep); }
+    }
   }
   const rho = Math.max(0.7, cr + 0.26); const placed = [];
   for (const [i, j, deg] of picks.slice(0, MAX_ARCS)) {
@@ -420,7 +430,8 @@ function updateOverlays(L, sim, n, T, state, { arcsRef, shaftsRef, headsRef, cam
       else { text = entry.text.replace("≈ ", "≈"); kind = entry.kind; }
       T.p.set(mx, my, mz).multiplyScalar(1.28).project(camera);
       const sx = (T.p.x * 0.5 + 0.5) * size.width; const sy = (-T.p.y * 0.5 + 0.5) * size.height;
-      let yy = sy; for (const q of placed) if (Math.abs(q.x - sx) < 52 && Math.abs(q.y - yy) < 24) yy = q.y + 26; placed.push({ x: sx, y: yy });
+      let yy = sy; for (let pass = 0; pass < 4; pass += 1) { let moved = false; for (const q of placed) if (Math.abs(q.x - sx) < 60 && Math.abs(q.y - yy) < 26) { yy = q.y + 28; moved = true; } if (!moved) break; }
+      placed.push({ x: sx, y: yy });
       if (el.textContent !== text) el.textContent = text; if (el.dataset.kind !== kind) el.dataset.kind = kind;
       el.style.transform = `translate(${sx.toFixed(1)}px, ${yy.toFixed(1)}px) translate(-50%, -50%)`; if (el.dataset.on !== "1") { el.dataset.on = "1"; el.style.opacity = "1"; }
       arcCount += 1;

@@ -2,7 +2,11 @@ import { useCallback, useImperativeHandle, useMemo, useRef, useState } from "rea
 import { Canvas } from "@react-three/fiber";
 import { Box } from "lucide-react";
 import ImfScene from "./ImfScene.jsx";
-import { detectWebGL, isSoftwareGL } from "./webgl.js";
+import StaticView from "./StaticView.jsx";
+import { useStageGuard } from "../../shared-3d/useStageGuard.js";
+import CameraKeyApi from "../../shared-3d/CameraKeyApi.jsx";
+import { ContextLostNotice } from "../../shared-3d/StageShell.jsx";
+import { cameraKeyAction } from "../../shared-3d/stageKeys.js";
 import { MOLECULES } from "../model/molecules.js";
 import { qFromAxisAngle, qMul, qNorm } from "../model/vec.js";
 import { BOUND, clampPos, cloneAll } from "../model/workspace.js";
@@ -21,8 +25,8 @@ export default function ImfStage({
   const containerRef = useRef(null); const apiRef = useRef(null); const gesture = useRef(null); const downEmpty = useRef(null);
   const optsRef = useRef(opts); optsRef.current = opts;
   const [resetToken, setResetToken] = useState(0);
-  const webgl = useMemo(() => detectWebGL(), []);
-  const aa = useMemo(() => !isSoftwareGL(), []);
+  const { webgl, aa, lost, canvasKey } = useStageGuard(containerRef);
+  const camRef = useRef(null);
   const setCursor = (c) => { const el = containerRef.current; if (el && el.dataset.cursor !== c) el.dataset.cursor = c; };
   const repaint = () => apiRef.current?.invalidate?.();
 
@@ -76,6 +80,13 @@ export default function ImfStage({
     if (e.key === "[" || e.key === "]") { e.preventDefault(); if (!list.length) return; const i = list.findIndex((m) => m.uid === sel); onSelect?.(list[(i + (e.key === "]" ? 1 : -1) + list.length) % list.length].uid); return; }
     if ((e.key === "+" || e.key === "=") ) { e.preventDefault(); onSeparate?.(-0.5); return; }
     if (e.key === "-" || e.key === "_") { e.preventDefault(); onSeparate?.(0.5); return; }
+    // keyboard orbit alternative (WCAG 2.1.1): with nothing selected the arrows orbit the camera, PageUp / PageDown zoom, 0 / Home reset the view
+    const ka = cameraKeyAction(e);
+    if (ka && (sel == null || ka.type !== "orbit") && !(ka.type === "zoom" && (e.key === "+" || e.key === "=" || e.key === "-" || e.key === "_") && list.length >= 2)) {
+      e.preventDefault();
+      if (ka.type === "orbit") camRef.current?.orbit(ka.az, ka.pol); else if (ka.type === "zoom") camRef.current?.zoom(ka.factor); else setResetToken((t) => t + 1);
+      return;
+    }
     if (sel == null || !api) return;
     if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); onRemove?.(sel); return; }
     const dir = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1] }[e.key]; if (!dir) return;
@@ -107,13 +118,15 @@ export default function ImfStage({
       onKeyDown={onKeyDown} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}
     >
       {webgl ? (
-        <Canvas flat dpr={[1, 1.75]} frameloop="demand" camera={{ fov: 38, near: 0.5, far: 160, position: [0, 3, 15] }} gl={{ antialias: aa, alpha: true, powerPreference: "low-power" }} style={{ touchAction: "none" }} resize={{ scroll: false }}>
+        <Canvas key={canvasKey} flat dpr={[1, 1.75]} frameloop="demand" camera={{ fov: 38, near: 0.5, far: 160, position: [0, 3, 15] }} gl={{ antialias: aa, alpha: true, powerPreference: "low-power" }} style={{ touchAction: "none" }} resize={{ scroll: false }}>
+          <CameraKeyApi apiRef={camRef} />
           <ImfScene storeRef={molsRef} optsRef={optsRef} simRef={simRef} apiRef={apiRef} onSummary={onSummary} revision={revision} resetViewToken={resetToken} interactive={interactive} />
         </Canvas>
       ) : (
-        <div className="imf-nogl" data-testid="webgl-fallback" role="status"><Box size={22} aria-hidden="true" /><p><b>3D view unavailable on this device.</b></p><p>{fallback ?? "The molecule list, force selector and explanations still work; the 3D drawing needs WebGL."}</p></div>
+        <div className="imf-nogl imf-nogl--with-view" data-testid="webgl-fallback" role="status"><StaticView molsRef={molsRef} ariaLabel={ariaLabel} /><p><Box size={16} aria-hidden="true" /> <b>3D view unavailable on this device.</b> {fallback ?? "This flat side view shows the molecules as placed. Dragging, rotating and the electron clouds need WebGL; the force selector, the strip below and the explanation still update, and the Boiling points tab works fully."}</p></div>
       )}
-      <p id="imf-stage-help" className="imf-sr">Drag a molecule to move it, or switch to Rotate to turn it. Drag empty space to orbit the camera. With the workspace focused: arrow keys move the selected molecule, Shift plus arrows rotate it, plus and minus change the separation, and the square bracket keys cycle the selection.</p>
+      <p id="imf-stage-help" className="imf-sr">Drag a molecule to move it, or switch to Rotate to turn it. Drag empty space to orbit the camera. With the workspace focused: arrow keys move the selected molecule, Shift plus arrows rotate it (with nothing selected the arrow keys orbit the camera, Page Up and Page Down zoom, 0 resets the view), plus and minus change the separation, and the square bracket keys cycle the selection.</p>
+      {lost && <ContextLostNotice />}
       {children}
     </div>
   );

@@ -1,0 +1,23 @@
+/* Shared Readings panel. Uses the dashboard's .sd-btn buttons and --sd-* tokens (the dashboard paints its own light surface). */
+.rd-root { display: flex; flex-direction: column; gap: 6px; min-height: 0; min-width: 0; height: 100%; color: var(--sd-ink, #1e2a44); font-size: var(--sd-fs, 12.5px); }
+.rd-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+.rd-count { margin-left: auto; font-size: var(--sd-fs-sm, 11px); color: var(--sd-muted, #4a5a82); font-weight: 600; }
+.rd-axes { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: var(--sd-fs-sm, 11px); }
+.rd-axes label { font-weight: 600; color: var(--sd-muted, #4a5a82); }
+.rd-select { min-height: 26px; max-width: 150px; border: 1.5px solid var(--sim-btn-border, #5b6b92); border-radius: 8px; background: #fff; color: var(--sd-ink, #1e2a44); font-size: var(--sd-fs-sm, 11px); padding: 0 4px; }
+.rd-check { display: inline-flex; align-items: center; gap: 4px; }
+.rd-plot { flex: 0 0 auto; min-width: 0; }
+.rd-plot svg { width: 100%; max-height: 38vh; }
+.rd-fit { margin: 2px 0 0; font-size: var(--sd-fs-sm, 11px); color: var(--sd-ink, #1e2a44); }
+.rd-tablewrap { flex: 1 1 80px; min-height: 60px; overflow: auto; border: 1px solid var(--sd-line, #e3eaf6); border-radius: 8px; background: #fff; }
+.rd-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: var(--sd-fs-sm, 11px); }
+.rd-table th, .rd-table td { padding: 3px 6px; text-align: right; border-bottom: 1px solid var(--sd-line, #e3eaf6); white-space: nowrap; }
+.rd-table thead th { position: sticky; top: 0; background: #eef3fc; color: var(--sd-ink, #1e2a44); font-weight: 700; z-index: 1; }
+.rd-table thead th small { font-weight: 500; color: var(--sd-muted, #4a5a82); }
+.rd-table tbody th { color: var(--sd-muted, #4a5a82); font-weight: 600; }
+.rd-empty { text-align: left !important; color: var(--sd-muted, #4a5a82); white-space: normal !important; }
+.rd-del { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border: 1.5px solid var(--sim-btn-border, #5b6b92); border-radius: 6px; background: #fff; color: var(--sd-ink, #1e2a44); cursor: pointer; }
+.rd-del:hover { background: #fde8e8; border-color: #a12626; color: #7a1010; }
+.rd-live { margin: 0; min-height: 14px; font-size: var(--sd-fs-sm, 11px); color: var(--sd-muted, #4a5a82); }
+.rd-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.rd-root :is(button, select, input, [tabindex]):focus-visible { outline: 2px solid var(--sim-btn-focus, #1b4fd0); outline-offset: 2px; }

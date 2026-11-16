@@ -50,27 +50,28 @@ export default function TransverseWave({ wavelengthNm, wavelengthPx, amplitudePx
 
         {/* Crest: only the SECOND measured crest, well below the
             wavelength label so it never crowds it */}
-        <g>
+        {amplitudePx >= 0.5 && <g>
           <circle cx={crestB} cy={MID_Y - amplitudePx} r="2" fill="var(--color-ink)" />
           <line x1={crestB} y1={MID_Y - amplitudePx} x2={crestB + 14} y2={CREST_LABEL_Y + 2} stroke="var(--color-ink-faint)" strokeWidth="0.75" />
           <text x={crestB + 17} y={CREST_LABEL_Y + 4} fontSize="9" fontWeight="600" fill="var(--color-ink-soft)">Crest</text>
-        </g>
+        </g>}
 
         {/* Amplitude: equilibrium to the FIRST measured crest, label to the SIDE */}
-        <g className={emphasize === "amplitude" ? "wave-emphasis" : undefined}>
+        {amplitudePx < 0.5 && <text x={WIDTH / 2 - 40} y={MID_Y - 10} textAnchor="middle" fontSize="9.5" fontWeight="700" fill="var(--color-teal)">Amplitude = 0: no oscillation</text>}
+        {amplitudePx >= 0.5 && <g className={emphasize === "amplitude" ? "wave-emphasis" : undefined}>
           <line x1={crestA} y1={MID_Y} x2={crestA} y2={MID_Y - amplitudePx} stroke="var(--color-teal)" strokeWidth="1" markerStart="url(#wave-tick-teal)" markerEnd="url(#wave-tick-teal)" />
           <text x={crestA - 8} y={MID_Y - amplitudePx / 2 - 4} textAnchor="end" fontSize="9" fontWeight="700" fill="var(--color-teal)">Amplitude</text>
           <text x={crestA - 8} y={MID_Y - amplitudePx / 2 + 6} textAnchor="end" fontSize="9" fontWeight="700" fill="var(--color-teal)">(A)</text>
-        </g>
+        </g>}
 
         {/* Trough: the trough BETWEEN the two measured crests -- always
             spatially separate from the amplitude label (different
             crest/side) and the Crest label (different vertical band). */}
-        <g>
+        {amplitudePx >= 0.5 && <g>
           <circle cx={troughX} cy={MID_Y + amplitudePx} r="2" fill="var(--color-ink)" />
           <line x1={troughX} y1={MID_Y + amplitudePx} x2={troughX} y2={MID_Y + amplitudePx + 16} stroke="var(--color-ink-faint)" strokeWidth="0.75" />
           <text x={troughX} y={MID_Y + amplitudePx + 26} textAnchor="middle" fontSize="9" fontWeight="600" fill="var(--color-ink-soft)">Trough</text>
-        </g>
+        </g>}
 
         {/* Observation point: isolated on the right, far from the
             wavelength/amplitude/crest/trough cluster */}

@@ -1,0 +1,23 @@
+/* Viewport-fit layout: artwork (fixed 720x440 design, scaled) beside a controls panel; everything visible at 1366x768. */
+.eq2.ab-root { max-width: 1180px; padding: 10px 12px; border-radius: 12px; overflow: visible; background: var(--ab-bg); grid-template-rows: minmax(0, 1fr) auto; }
+.eq2.is-viewport { max-width: none; min-height: 0; border-width: 1px; border-radius: 8px; }
+.eq2-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 340px); gap: 10px; min-height: 0; }
+.eq2-artbox { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+.eq2-art { position: absolute; left: 0; top: 0; margin: 0; transform-origin: top left; }
+.eq2-panel { display: grid; gap: 8px; align-content: start; min-width: 0; min-height: 0; overflow-y: auto; }
+.eq2-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: stretch; }
+.eq2-status { display: grid; gap: 2px; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--ab-line); background: var(--ab-panel); }
+.eq2-status strong { font-size: 15px; } .eq2-status span { font-weight: 600; font-size: 12.5px; color: var(--ab-muted); }
+.eq2-status.equivalence { border-color: #34d399; background: rgba(16, 185, 129, .14); }
+.eq2-status.approaching, .eq2-status.past { border-color: #f59e0b; background: rgba(245, 158, 11, .14); }
+.eq2-status.acid { border-color: #fb7185; background: rgba(244, 63, 94, .12); } .eq2-status.base { border-color: #60a5fa; background: rgba(37, 99, 235, .14); }
+.eq2-ph { display: grid; justify-items: center; padding: 6px 14px; border: 1px solid var(--ab-line); border-radius: 10px; background: #08101a; }
+.eq2-ph span { font-size: 11px; font-weight: 700; color: var(--ab-muted); } .eq2-ph strong { font: 700 26px/1.1 ui-monospace, monospace; color: var(--ab-teal); }
+.eq2-setup { font-size: 12.5px; line-height: 1.45; } .eq2-eq { font-size: 12.5px; color: var(--ab-muted); }
+.eq2-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.eq2-trace { width: 100%; height: auto; max-height: 130px; border: 1px solid var(--ab-line-soft); border-radius: 8px; background: var(--ab-panel); }
+.eq2-toggle { display: flex; gap: 8px; align-items: center; font-size: 12.5px; }
+.eq2-explore { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 8px; } .eq2-explore .ab-note { grid-column: 1 / -1; }
+.eq2-copy { font-size: 11px; }
+@media (max-width: 760px) { .ab-root.eq2 { grid-template-rows: auto auto; } }
+@container (max-width: 760px) { .eq2-grid { grid-template-columns: minmax(0, 1fr); } .eq2-artbox { height: var(--art-h); } .eq2-panel { overflow: visible; } }

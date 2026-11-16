@@ -3,9 +3,14 @@ import { Canvas } from "@react-three/fiber";
 import { Box, Minus, Plus, Rotate3d, RotateCcw } from "lucide-react";
 import SceneContent from "./Scene.jsx";
 import { BOND_LEN, fitDistance } from "./sceneMath.js";
-import { detectWebGL, isSoftwareGL } from "./webgl.js";
+import { useStageGuard } from "../../shared-3d/useStageGuard.js";
+import CameraKeyApi from "../../shared-3d/CameraKeyApi.jsx";
+import { ContextLostNotice, StageKeyHint, useStageKeys } from "../../shared-3d/StageShell.jsx";
+import useReducedMotion from "../../shared-3d/useReducedMotion.js";
+import { classify } from "../model/builder.js";
 import { createSim, dragDomain, isSettled, releaseDomain, settleInstant, syncDomains } from "../model/geometry.js";
 import { ELEMENTS } from "../model/elements.js";
+import { matchPreset, modelAnglesFor } from "../model/presets.js";
 
 const MOVE_THRESHOLD = 5; // px before a press on a domain becomes a drag (below it: a click that selects)
 const LABEL_SLOTS = [0, 1, 2, 3, 4];
@@ -31,11 +36,16 @@ export default function ViewerStage({
   const [size, setSize] = useState({ w: 640, h: 420 });
   const [auto, setAuto] = useState(false);
   const [resetToken, setResetToken] = useState(0);
-  const webgl = useMemo(() => detectWebGL(), []);
-  const aa = useMemo(() => !isSoftwareGL(), []);
+  const { webgl, aa, lost, canvasKey } = useStageGuard(containerRef);
+  const reduced = useReducedMotion();
+  const camRef = useRef(null);
+  const desc = useMemo(() => {
+    const c = classify(model); if (!c.hasCentral || c.n < 2) return "";
+    return `${c.preset ? `${c.preset.name}, ` : ""}${c.axe}, ${c.ed?.toLowerCase()} electron domains${c.mg ? `, ${c.mg.toLowerCase()} shape` : ""}${c.angles?.summary && c.angles.summary !== "–" ? `, bond angle ${c.angles.summary}` : ""}`;
+  }, [model]);
 
   const mode = view.mode; const lpVisible = mode === "ed" ? true : view.showLP;
-  const centralRadius = model.central ? ELEMENTS[model.central].r * 1.2 : 0.5;
+  const centralRadius = model.central ? ELEMENTS[model.central].r * 1.05 : 0.5;
   const live = useRef({});
   // everything the three scene reads each frame lives in this ref (no React re-render per frame)
   useLayoutEffect(() => {
@@ -47,17 +57,22 @@ export default function ViewerStage({
   });
 
   // keep the simulation in step with the model (ids / kinds); settle instantly when the whole model was replaced
-  const sig = model.domains.map((d) => `${d.id}:${d.kind}`).join("|");
+  const modelAngles = useMemo(() => {
+    if (!model.central || model.domains.some((d) => d.kind === "bond" && !d.symbol)) return null;
+    const lig = model.domains.filter((d) => d.kind === "bond").map((d) => ({ symbol: d.symbol, order: d.order }));
+    return modelAnglesFor(matchPreset(model.central, lig, model.domains.length - lig.length, model.charge ?? 0));
+  }, [model.central, model.domains, model.charge]);
+  const sig = model.domains.map((d) => `${d.id}:${d.kind}`).join("|") + `#${modelAngles ? JSON.stringify(modelAngles) : ""}`;
   const lastSig = useRef(""); const lastKey = useRef(null);
   useLayoutEffect(() => {
     const sim = simRef.current;
     if (lastSig.current !== sig) {
-      syncDomains(sim, model.domains.map((d) => d.id), model.domains.map((d) => d.kind), model.hints);
+      syncDomains(sim, model.domains.map((d) => d.id), model.domains.map((d) => d.kind), model.hints, modelAngles);
       lastSig.current = sig;
     }
     if (lastKey.current !== resetKey) { lastKey.current = resetKey; settleInstant(sim); sim.pulse = 0; }
-    else if (mini) settleInstant(sim);
-  }, [sig, resetKey, model.hints, model.domains, mini]);
+    else if (mini || reduced) settleInstant(sim); // reduced motion: no spring relaxation, the shape appears at once
+  }, [sig, resetKey, model.hints, model.domains, mini, reduced]);
 
   useLayoutEffect(() => {
     const el = containerRef.current; if (!el) return undefined;
@@ -108,18 +123,20 @@ export default function ViewerStage({
     const g = gesture.current; const sim = simRef.current;
     if (g && g.pid === e.pointerId) {
       gesture.current = null; containerRef.current?.releasePointerCapture?.(e.pointerId);
-      if (g.started) { releaseDomain(sim); setCursor(""); onDragActive?.(false); }
+      if (g.started) { releaseDomain(sim); if (reduced) settleInstant(sim); setCursor(""); onDragActive?.(false); }
       else if (!cancelled) onSelect?.(g.id);
       return;
     }
     const d = downEmpty.current; downEmpty.current = null;
     if (d && !cancelled && Math.hypot(e.clientX - d.x, e.clientY - d.y) <= MOVE_THRESHOLD) onSelect?.(d.central ? "central" : null);
-  }, [onSelect, onDragActive]);
+  }, [onSelect, onDragActive, reduced]);
 
-  const onKeyDown = (e) => {
-    if (e.key === "Escape") { onSelect?.(null); return; }
-    if ((e.key === "Delete" || e.key === "Backspace") && selectedId && interactive) { e.preventDefault(); onRemove?.(selectedId); }
-  };
+  const ownKeys = useCallback((e) => {
+    if (e.key === "Escape") { onSelect?.(null); return true; }
+    if ((e.key === "Delete" || e.key === "Backspace") && selectedId && interactive) { e.preventDefault(); onRemove?.(selectedId); return true; }
+    return false;
+  }, [onSelect, onRemove, selectedId, interactive]);
+  const onKeyDown = useStageKeys(camRef, () => setResetToken((t) => t + 1), ownKeys);
 
   useImperativeHandle(ref, () => ({
     hit(x, y) {
@@ -153,28 +170,31 @@ export default function ViewerStage({
 
   return (
     <div
-      ref={containerRef} className="vx-stage" tabIndex={mini ? -1 : 0} role="application" aria-label={ariaLabel} data-testid={mini ? "vsepr-mini" : "vsepr-stage"} data-mode={mode} data-n={model.domains.length}
+      ref={containerRef} className="vx-stage" tabIndex={mini ? -1 : 0} role="application" aria-label={desc ? `${ariaLabel}. ${desc}` : ariaLabel} aria-describedby={mini ? undefined : "vx-keyhint"} data-s3d-stage data-webgl={webgl ? "1" : "0"} data-testid={mini ? "vsepr-mini" : "vsepr-stage"} data-mode={mode} data-n={model.domains.length}
       data-settled="1" data-dragging="0" data-dropping="0" data-selected={selectedId ?? ""}
       onPointerDownCapture={onPointerDownCapture} onPointerMove={onPointerMove}
       onPointerUp={(e) => endGesture(e, false)} onPointerCancel={(e) => endGesture(e, true)} onKeyDown={onKeyDown}
     >
       {webgl ? (
-        <Canvas flat dpr={mini ? 1.5 : [1, 1.75]} camera={cam} frameloop={mini ? "demand" : "always"} gl={{ antialias: aa, alpha: true, powerPreference: "low-power" }} style={{ touchAction: "none" }} resize={{ scroll: false }}>
-          <SceneContent live={live} apiRef={apiRef} labelRefs={labelRefs} mini={mini} autoRotate={auto} camDistance={camDistance} resetToken={resetToken} onFrame={onFrame} />
+        <Canvas key={canvasKey} flat dpr={mini ? 1.5 : [1, 1.75]} camera={cam} frameloop={mini ? "demand" : "always"} gl={{ antialias: aa, alpha: true, powerPreference: "low-power" }} style={{ touchAction: "none" }} resize={{ scroll: false }}>
+          <CameraKeyApi apiRef={camRef} />
+          <SceneContent live={live} apiRef={apiRef} labelRefs={labelRefs} mini={mini} autoRotate={auto && !reduced} camDistance={camDistance} resetToken={resetToken} onFrame={onFrame} />
         </Canvas>
       ) : (
         <div className="vx-nogl" data-testid="webgl-fallback" role="status"><Box size={22} aria-hidden="true" /><p><b>3D view unavailable on this device.</b></p><p>{fallback ?? "You can still build molecules with the toolbox; the information panel and Lewis structure update as usual."}</p></div>
       )}
+      {!mini && webgl && lost && <ContextLostNotice />}
+      {!mini && webgl && <StageKeyHint id="vx-keyhint" />}
       {!mini && webgl && (
         <>
           <div className="vx-angle-layer" aria-hidden="true">
             {LABEL_SLOTS.map((i) => <div key={i} ref={(el) => { labelRefs.current[i] = el; }} className="vx-angle-label" data-on="0" data-testid={`angle-label-${i}`} />)}
           </div>
           <div className="vx-viewtools" role="group" aria-label="3D view controls">
-            <button type="button" className="vx-vt" aria-pressed={auto} onClick={() => setAuto((a) => !a)} title="Rotate: drag empty space to orbit, or toggle slow auto-rotation" data-testid="vt-rotate"><Rotate3d size={18} aria-hidden="true" /><span>Rotate</span></button>
+            <button type="button" className="vx-vt" aria-pressed={auto && !reduced} disabled={reduced} onClick={() => setAuto((a) => !a)} title={reduced ? "Auto-rotation is off because your system asks for reduced motion. Drag or use the arrow keys to rotate." : "Rotate: drag empty space to orbit, or toggle slow auto-rotation"} data-testid="vt-rotate"><Rotate3d size={18} aria-hidden="true" /><span>Rotate</span></button>
             <button type="button" className="vx-vt" onClick={() => apiRef.current?.zoom(0.8)} title="Zoom in (or use the scroll wheel / pinch)" data-testid="vt-zoom-in"><Plus size={18} aria-hidden="true" /><span>Zoom in</span></button>
             <button type="button" className="vx-vt" onClick={() => apiRef.current?.zoom(1.25)} title="Zoom out" data-testid="vt-zoom-out"><Minus size={18} aria-hidden="true" /><span>Zoom out</span></button>
-            <button type="button" className="vx-vt" onClick={() => setResetToken((t) => t + 1)} title="Reset the camera view" data-testid="vt-reset-view"><RotateCcw size={18} aria-hidden="true" /><span>Reset</span></button>
+            <button type="button" className="vx-vt" onClick={() => setResetToken((t) => t + 1)} title="Reset the camera view" data-testid="vt-reset-view"><RotateCcw size={18} aria-hidden="true" /><span>Reset view</span></button>
           </div>
         </>
       )}

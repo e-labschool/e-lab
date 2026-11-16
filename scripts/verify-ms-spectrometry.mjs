@@ -67,7 +67,7 @@ for (const mode of MODES) for (const [w, h] of SIZES) {
     check(g.hx <= 1, `${t}: horizontal page overflow ${g.hx}px`); check(g.clipped.length === 0, `${t}: controls outside the workspace: ${g.clipped.join(", ")}`);
     check(g.covered.length === 0, `${t}: controls covered by other elements: ${g.covered.join(", ")}`);
     check(g.jw[0] > 250 && g.jw[1] > 250, `${t}: journey workspace too small ${g.jw}`); check(g.svg[0] > 200 && g.svg[1] > 100, `${t}: scene too small ${g.svg}`); check(g.spec[0] > 150 && g.spec[1] > 50, `${t}: spectrum too small ${g.spec}`);
-    check((await count(T("instrument-overview"))) === 1, `${t}: overview missing`);
+    check((await count(T("instrument-overview"))) === (n === 6 ? 0 : 1), `${t}: instrument overview ${n === 6 ? "must be hidden at stage 6 (it shrank to an unreadable strip, BS-34)" : "missing"}`);
   };
 
   // ---- every stage opens, geometry ok in every mode ----

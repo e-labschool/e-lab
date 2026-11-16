@@ -5,7 +5,9 @@ import SceneContent, { fitDistance, CAMERA_DIR } from "../scene/Scene3D.jsx";
 import { readTheme } from "../scene/theme.js";
 import { retainGeometry, releaseGeometry, warmGeometries } from "../scene/geometry.js";
 import { paletteFor } from "../scene/theme.js";
-import { detectWebGL, isSoftwareGL } from "./webgl.js";
+import { useStageGuard } from "../../shared-3d/useStageGuard.js";
+import CameraKeyApi from "../../shared-3d/CameraKeyApi.jsx";
+import { ContextLostNotice, StageKeyHint, useStageKeys } from "../../shared-3d/StageShell.jsx";
 import { qMul, qFromAxisAngle, sub, dot, cross, normalize } from "../model/vec.js";
 
 const MOVE_PX = 5;
@@ -31,7 +33,9 @@ export default function ViewerStage({
   const gesture = useRef(null); const pending = useRef(null); const raf = useRef(0); const hoverRef = useRef(null);
   const [theme, setTheme] = useState(null); const [size, setSize] = useState({ w: 640, h: 420 });
   const [fitToken, setFitToken] = useState(0);
-  const webgl = useMemo(() => detectWebGL(), []); const aa = useMemo(() => !isSoftwareGL(), []);
+  const { webgl, aa, lost, canvasKey } = useStageGuard(containerRef);
+  const camRef = useRef(null);
+  const onKeyDown = useStageKeys(camRef, () => setFitToken((t) => t + 1));
   viewRef.current = view;
 
   useLayoutEffect(() => {
@@ -113,12 +117,13 @@ export default function ViewerStage({
   const dpr = useMemo(() => [1, 1.75], []); const glProps = useMemo(() => ({ antialias: aa, alpha: true, powerPreference: "low-power" }), [aa]);
   return (
     <div
-      ref={containerRef} className="hy-stage" tabIndex={0} role="application" aria-label={ariaLabel} data-testid={testId} data-tool={tool}
+      ref={containerRef} className="hy-stage" tabIndex={0} role="application" aria-label={ariaLabel} aria-describedby={webgl ? `${testId}-keys` : undefined} data-s3d-stage data-webgl={webgl ? "1" : "0"} data-testid={testId} data-tool={tool} onKeyDown={onKeyDown}
       onPointerDownCapture={onPointerDownCapture} onPointerMove={onPointerMove} onPointerUp={(e) => endGesture(e, false)} onPointerCancel={(e) => endGesture(e, true)}
       {...extraData}
     >
       {webgl ? (
-        <Canvas flat dpr={dpr} camera={camera} frameloop="demand" gl={glProps} style={{ touchAction: "none" }} resize={{ scroll: false }}>
+        <Canvas key={canvasKey} flat dpr={dpr} camera={camera} frameloop="demand" gl={glProps} style={{ touchAction: "none" }} resize={{ scroll: false }}>
+          <CameraKeyApi apiRef={camRef} />
           {theme && <SceneContent view={view} theme={theme} apiRef={apiRef} fit={fitProp} onMorphDone={onMorphDone} />}
         </Canvas>
       ) : (
@@ -132,6 +137,8 @@ export default function ViewerStage({
           <button type="button" className="hy-vt" onClick={() => setFitToken((t) => t + 1)} title="Fit everything in view" data-testid="vt-fit"><Maximize2 size={16} aria-hidden="true" /><span>Fit</span></button>
         </div>
       )}
+      {webgl && <StageKeyHint id={`${testId}-keys`} />}
+      {lost && <ContextLostNotice />}
       {children}
     </div>
   );

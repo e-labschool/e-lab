@@ -8,15 +8,18 @@
 //   * dragging a domain is a transient perturbation, not an edit: it is not recorded, the model relaxes back;
 //   * Clear empties the workspace but stays undoable; Reset returns to the initial empty state AND forgets the history.
 import { MAX_DOMAINS, MAX_LONE_PAIRS, axeNotation, axePlain, electronDomainName, formatIdeal, isSupportedCombination, molecularGeometryName, nearestIdealAngle, referenceAngleClasses } from "./geometry.js";
-import { matchPreset } from "./presets.js";
+import { chargePlain, chargeSuffix, matchPreset } from "./presets.js";
+import { deriveLewis } from "./lewis.js";
 
-export const EMPTY_MODEL = Object.freeze({ central: null, domains: Object.freeze([]), nextId: 1, epoch: 0, hints: Object.freeze({}) });
+export const MAX_CHARGE = 3;
+export const EMPTY_MODEL = Object.freeze({ central: null, domains: Object.freeze([]), charge: 0, nextId: 1, epoch: 0, hints: Object.freeze({}) });
 export const createHistory = () => ({ present: EMPTY_MODEL, past: [], future: [], note: "" });
 const HISTORY_LIMIT = 80;
 
 const withEdit = (h, next, note = "") => ({ present: next, past: [...h.past, h.present].slice(-HISTORY_LIMIT), future: [], note });
 const bump = (m) => ({ ...m, epoch: m.epoch + 1 });
 
+export { chargePlain, chargeSuffix };
 export const countBonds = (m) => m.domains.filter((d) => d.kind === "bond").length;
 export const countLonePairs = (m) => m.domains.filter((d) => d.kind === "lp").length;
 
@@ -26,6 +29,7 @@ export function historyReducer(h, action) {
   switch (action.type) {
     case "setCentral": {
       if (!action.symbol || m.central === action.symbol) return { ...h, note: "" };
+      if (action.symbol === "H") return { ...h, note: "Hydrogen forms only one bond, so it cannot be the central atom. Choose another atom (it can still be a surrounding atom)." };
       return withEdit(h, { ...m, central: action.symbol });
     }
     case "add": {
@@ -50,15 +54,20 @@ export function historyReducer(h, action) {
       if (!d || d.kind !== "bond" || d.symbol === action.symbol) return { ...h, note: "" };
       return withEdit(h, { ...m, domains: m.domains.map((x) => (x.id === action.id ? { ...x, symbol: action.symbol } : x)) });
     }
+    case "setCharge": {
+      const q = Math.max(-MAX_CHARGE, Math.min(MAX_CHARGE, Math.round(Number(action.charge) || 0)));
+      if (q === (m.charge ?? 0)) return { ...h, note: "" };
+      return withEdit(h, { ...m, charge: q });
+    }
     case "clear": {
       if (!m.central && !m.domains.length) return { ...h, note: "" };
       return withEdit(h, bump({ ...EMPTY_MODEL, nextId: m.nextId, epoch: m.epoch }));
     }
     case "load": { // a whole molecule (preset); one undo step
       let nextId = m.nextId; const domains = [];
-      for (const lig of action.ligands) domains.push({ id: `d${nextId++}`, kind: "bond", order: lig.order, symbol: lig.symbol });
+      for (const lig of action.ligands) domains.push({ id: `d${nextId++}`, kind: "bond", order: lig.order, symbol: lig.symbol, ...(lig.res ? { res: true } : {}) });
       for (let i = 0; i < action.lonePairs; i += 1) domains.push({ id: `d${nextId++}`, kind: "lp" });
-      return withEdit(h, bump({ central: action.central, domains, nextId, epoch: m.epoch, hints: {} }));
+      return withEdit(h, bump({ central: action.central, domains, charge: action.charge ?? 0, nextId, epoch: m.epoch, hints: {} }));
     }
     case "undo": {
       if (!h.past.length) return { ...h, note: "" };
@@ -86,12 +95,13 @@ export function classify(m) {
   const b = countBonds(m); const l = countLonePairs(m); const n = b + l;
   const complete = m.domains.every((d) => d.kind === "lp" || d.symbol);
   const supported = isSupportedCombination(b, l);
-  const preset = complete ? matchPreset(m.central, ligandsOf(m), l) : null;
+  const charge = m.charge ?? 0;
+  const preset = complete ? matchPreset(m.central, ligandsOf(m), l, charge) : null;
   const ed = electronDomainName(n); const mg = supported || (b === 1 && l === 0) ? molecularGeometryName(b, l) : null;
   const out = {
     hasCentral: true, empty: false, central: m.central, b, l, n, supported, preset, complete,
     axe: n ? axeNotation(b, l) : "A", axePlain: n ? axePlain(b, l) : "A", ed, mg,
-    idealisedModel: !preset, warnings: [],
+    idealisedModel: !preset, warnings: [], charge,
   };
   if (n === 0) out.warnings.push("Add a bond or a lone pair to see electron domains.");
   if (b === 0 && l > 0) out.warnings.push("Lone pairs only: add at least one bonded atom to define a molecular shape.");
@@ -99,7 +109,19 @@ export function classify(m) {
     out.warnings.push(n > MAX_DOMAINS ? `More than ${MAX_DOMAINS} domains are not supported.` : `${axePlain(b, l)} with ${l} lone pairs on ${n} domains is not a recognised VSEPR case (this model allows up to ${MAX_LONE_PAIRS[n] ?? 0}).`);
   }
   out.angles = angleInfo(b, l, preset);
+  out.reality = realityOf(m, out);
   return out;
+}
+
+/** Is a free build a species that can exist?  "real" = a validated library molecule / ion, "model" = plausible electron count but not in
+ *  the library, "unlikely" = the electron count, charge or atom choice says it is not a real species (HO3, XeF6, NH4 with no charge ...). */
+export function realityOf(m, c) {
+  if (c.preset) return { level: "real", reason: "" };
+  if (!c.complete || c.n < 2) return { level: "model", reason: "" };
+  const lw = deriveLewis(m);
+  const bad = lw.warnings.find((w) => w.level === "warn");
+  if (bad) return { level: "unlikely", reason: bad.text };
+  return { level: "model", reason: "" };
 }
 
 /** Angle text for the info panel. Presets: validated values (ideal vs approximate); free builds: the idealised model only. */
@@ -108,13 +130,15 @@ export function angleInfo(b, l, preset) {
   if (b < 2 || b + l < 2 || !isSupportedCombination(b, l)) return { source: "none", entries: [], summary: b === 1 ? "none (only one bonded atom)" : "–" };
   const entries = referenceAngleClasses(b, l).map((c) => {
     const ideal = nearestIdealAngle(c.deg);
-    return l === 0 ? { value: c.deg, label: "ideal", text: `${formatIdeal(ideal)}°`, kind: "ideal" } : { value: c.deg, label: "idealised", text: `< ${formatIdeal(ideal)}°`, kind: "lessthan", note: "lone pairs squeeze bond angles; the exact value depends on the atoms" };
+    // AX2E3 (linear) and AX4E2 (square planar): the lone pairs are trans / equatorial and cancel, so the angles are exactly ideal
+    const symmetric = l === 0 || (b === 2 && l === 3) || (b === 4 && l === 2);
+    return symmetric ? { value: c.deg, label: "ideal", text: `${formatIdeal(ideal)}°`, kind: "ideal" } : { value: c.deg, label: "idealised", text: `< ${formatIdeal(ideal)}°`, kind: "lessthan", note: "lone pairs squeeze bond angles; the exact value depends on the atoms" };
   });
   return { source: "ideal", entries, summary: entries.map((e) => e.text).join(", ") };
 }
 
 export function modelFromPreset(p) {
-  return { central: p.central, ligands: p.ligands, lonePairs: p.lonePairs };
+  return { central: p.central, ligands: p.ligands, lonePairs: p.lonePairs, charge: p.charge ?? 0 };
 }
 
 /** "Why this shape?" text. Preset explanation when available, otherwise generated from the domain counts. */

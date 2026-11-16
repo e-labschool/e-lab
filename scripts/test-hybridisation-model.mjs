@@ -218,7 +218,7 @@ test("sigma-compatibility is symmetric; p-p and s-s allowed, s-d never", () => {
 });
 
 console.log("Molecule data");
-test("11 molecules, including the four specified in detail", () => { assert.equal(MD.MOLECULES.length, 11); for (const id of ["C2H4", "C2H2", "C2H6", "C6H6"]) assert.ok(MD.MOLECULE_BY_ID[id], id); });
+test("15 molecules (the original 11 plus BeCl2, BF3, HCN, ethanol), including the four specified in detail", () => { assert.equal(MD.MOLECULES.length, 15); for (const [id, sg, pi] of [["BeCl2", 2, 0], ["BF3", 3, 0], ["HCN", 2, 2], ["C2H5OH", 8, 0]]) { assert.deepEqual(MD.MOLECULE_BY_ID[id].expected, { sigma: sg, pi }, id); } for (const id of ["C2H4", "C2H2", "C2H6", "C6H6"]) assert.ok(MD.MOLECULE_BY_ID[id], id); });
 test("every molecule compiles with no consistency problems and correct sigma/pi totals", () => {
   for (const id of MD.MOLECULE_IDS) { const c = ML.compileMolecule(id); assert.deepEqual(c.problems, [], id); assert.equal(c.analysis.sigma, c.expected.sigma, id); assert.equal(c.analysis.pi, c.expected.pi, id); }
 });
@@ -281,6 +281,42 @@ test("default theme equals VSEPR's default (dark), read from source", () => {
   const hy = fs.readFileSync(new URL(`${root}HybridisationExplorer.jsx`, import.meta.url), "utf8"); const m = hy.match(/HYBRIDISATION_THEME\s*=\s*"(\w+)"/); assert.ok(m, "constant missing");
   const vs = fs.readFileSync(new URL("../src/engines/vsepr-explorer-3d/VSEPRExplorer3D.jsx", import.meta.url), "utf8"); assert.ok(/"dark"/.test(vs));
   assert.equal(m[1], "dark");
+});
+
+console.log("IB scope: d-orbital hybrids are behind a switch (BS-21), carbon promotion explained (BS-22)");
+test("IB recipes are exactly sp, sp2, sp3; d-hybrids flagged", () => {
+  assert.deepEqual(H.IB_RECIPE_IDS, ["sp", "sp2", "sp3"]);
+  for (const id of ["sp3d", "sp3d2", "dsp2"]) assert.ok(H.isBeyondIB(id), id);
+  for (const id of ["sp", "sp2", "sp3"]) assert.ok(!H.isBeyondIB(id), id);
+});
+test("with the switch off no d promotion is offered; carbon / boron / beryllium / silicon keep theirs; P, S, Cl, Xe lose theirs", () => {
+  for (const s of ["Be", "B", "C", "Si"]) assert.ok(E.canExcite(s, false), s);
+  for (const s of ["P", "S", "Cl", "Xe"]) { assert.ok(E.canExcite(s, true), `${s} (model default)`); assert.equal(E.canExcite(s, false), false, s); }
+  assert.ok(!E.IB_SELECTABLE_SYMBOLS.includes("Xe") && E.IB_SELECTABLE_SYMBOLS.includes("S") && E.SELECTABLE_SYMBOLS.includes("Xe"));
+});
+test("the Mix button reason: sp3d / sp3d2 selections are blocked with the switch off, allowed with it on; sp3 on S always allowed", () => {
+  let a = W.createAtom("a", "S", [0, 0, 0], "excited", "3s1-3p3-3d1"); a = { ...a, selected: ["3s", "3px", "3py", "3pz", "3dz2"] };
+  const off = W.describeActive(a, { beyondIB: false }); assert.equal(off.mix.enabled, false); assert.match(off.mix.reason, /beyond the IB course/); assert.equal(off.canExcite, false);
+  assert.equal(W.describeActive(a, { beyondIB: true }).mix.enabled, true);
+  const g = { ...W.createAtom("g", "S"), selected: ["3s", "3px", "3py", "3pz"] }; assert.equal(W.describeActive(g, { beyondIB: false }).mix.enabled, true);
+});
+test("usesBeyondIB detects d promotions and d hybrids", () => {
+  assert.equal(W.usesBeyondIB([W.createAtom("a", "C")]), false);
+  assert.equal(W.usesBeyondIB([W.createAtom("a", "P", [0, 0, 0], "excited", "3s1-3p3-3d1")]), true);
+});
+test("ground-state carbon explanation: states the 2 unpaired vs 4 bonds problem, and the promotion text for excited", () => {
+  assert.match(E.groundStateHint("C", "ground"), /only two unpaired electrons, yet carbon forms four bonds/); assert.match(E.groundStateHint("C", "excited"), /costs energy/);
+  assert.equal(E.groundStateHint("N", "ground"), "");
+});
+test("every IB-level molecule in the list uses only sp / sp2 / sp3 hybrids", () => {
+  for (const m of MD.MOLECULES) for (const [id, a] of Object.entries(m.atoms)) if (a.mix) { const r = H.mixOrbitals(E.atomicState(a.el, a.kind ?? "ground").orbitals, a.mix); assert.ok(!H.isBeyondIB(r.recipeId), `${m.id} ${id}`); }
+});
+test("new molecules: geometry of the computed hybrids (BeCl2 180, BF3 120 coplanar, HCN linear, ethanol sp3 109.5)", () => {
+  const ang = (c, a, b) => deg(c.atoms[a].hybrid.hybrids[0].direction, c.atoms[b].hybrid.hybrids[1].direction);
+  const be = ML.compileMolecule("BeCl2"); near(ang(be, "Be1", "Be1"), 180, 0.01);
+  const bf = ML.compileMolecule("BF3"); const hs = bf.atoms.B1.hybrid.hybrids; near(deg(hs[0].direction, hs[1].direction), 120, 0.01); assert.equal(bf.atoms.B1.orbitals.find((o) => o.id === "2pz").electrons, 0);
+  const hcn = ML.compileMolecule("HCN"); assert.equal(hcn.atoms.N1.hybrid.hybrids[0].electrons, 2); // lone pair in one N sp hybrid
+  const et = ML.compileMolecule("C2H5OH"); near(deg(et.atoms.O1.hybrid.hybrids[0].direction, et.atoms.O1.hybrid.hybrids[3].direction), 109.47, 0.05);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

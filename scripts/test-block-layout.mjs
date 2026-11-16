@@ -236,8 +236,8 @@ t("ops: messages, no-ops, keyboard mapping, drop zones, snapshots and persistenc
   assert.equal(O.runLayoutOp(bs, "bogus", "a").changed, false); assert.equal(O.runLayoutOp(bs, "up", "nope").changed, false);
   assert.equal(O.opForKey({ altKey: true, key: "ArrowUp" }), "up");
   assert.equal(O.opForKey({ altKey: true, shiftKey: true, key: "ArrowRight" }), "wider");
-  assert.equal(O.opForKey({ altKey: true, shiftKey: true, key: "ArrowUp" }), null);
-  assert.equal(O.opForKey({ altKey: false, key: "ArrowUp" }), null); assert.equal(O.opForKey({ altKey: true, ctrlKey: true, key: "ArrowUp" }), null);
+  assert.equal(O.opForKey({ altKey: true, shiftKey: true, key: "ArrowUp" }), "shorter");
+  assert.equal(O.opForKey({ altKey: false, key: "ArrowUp" }), "up"); assert.equal(O.opForKey({ altKey: true, ctrlKey: true, key: "ArrowUp" }), null);
   assert.equal(O.dropZone(0.1, 0.5), "left"); assert.equal(O.dropZone(0.9, 0.5), "right"); assert.equal(O.dropZone(0.5, 0.2), "before"); assert.equal(O.dropZone(0.5, 0.8), "after");
   assert.equal(O.dropZone(0.1, 0.8, { allowSides: false }), "after"); assert.equal(O.dropZone(0.1, 0.1, { vertical: true }), "before");
   assert.deepEqual(ids(O.applyDrop(bs, "a", "d", "after")), ["b", "c", "d", "a", "e"]);

@@ -170,6 +170,69 @@ export const MOLECULES = [
       S("Complete C₆H₆: 12 σ bonds plus one delocalised π system (6 electrons over 6 carbons).", { ring: true }),
     ],
   },
+  {
+    id: "BeCl2", plain: "BeCl2", latex: "BeCl_{2}", name: "Beryllium chloride", expected: { sigma: 2, pi: 0 }, note: "Qualitative model: only the Cl 3p orbital pointing along each bond is drawn overlapping. Gaseous BeCl₂ is linear; the solid is a polymer, so this is the gas-phase molecule.",
+    atoms: { Be1: { el: "Be", kind: "excited", mix: ["2s", "2px"] }, Cl1: { el: "Cl" }, Cl2: { el: "Cl" } }, root: "Be1",
+    bonds: [
+      { id: "BeCl1", type: "sigma", a: ["Be1", "h0"], b: ["Cl1", "3pz"] },
+      { id: "BeCl2", type: "sigma", a: ["Be1", "h1"], b: ["Cl2", "3pz"] },
+    ],
+    steps: [
+      S("Beryllium (2s²) is promoted to 2s¹ 2p¹ (illustrative); the 2s and one 2p orbital mix into two sp hybrid orbitals, 180° apart. Two 2p orbitals stay empty.", { add: ["Be1"], hybridise: ["Be1"], focus: "Be1" }),
+      S("Each chlorine has one unpaired electron in a 3p orbital pointing at beryllium.", { add: ["Cl1", "Cl2"], focus: "Cl1" }),
+      S("Each Be sp hybrid overlaps end-on with a Cl 3p orbital: two σ (sp–3p) bonds in a line.", { form: ["BeCl1", "BeCl2"] }),
+      S("BeCl₂ has 2 σ bonds and no π bonds: only four electrons surround Be (an electron-deficient, linear molecule, Cl–Be–Cl = 180°).", {}),
+    ],
+  },
+  {
+    id: "BF3", plain: "BF3", latex: "BF_{3}", name: "Boron trifluoride", expected: { sigma: 3, pi: 0 }, note: "Qualitative model: only the F 2p orbital that points along each bond is drawn overlapping. In the real molecule fluorine also donates some π character into boron's empty 2p orbital (not shown).",
+    atoms: { B1: { el: "B", kind: "excited", mix: ["2s", "2px", "2py"] }, F1: { el: "F" }, F2: { el: "F" }, F3: { el: "F" } }, root: "B1",
+    bonds: [0, 1, 2].map((i) => ({ id: `BF${i + 1}`, type: "sigma", a: ["B1", `h${i}`], b: [`F${i + 1}`, "2pz"] })),
+    steps: [
+      S("Boron (2s² 2p¹) is promoted to 2s¹ 2p² (illustrative); 2s + 2px + 2py mix into three sp² hybrids, 120° apart in one plane. The 2pz orbital stays empty, perpendicular to the plane.", { add: ["B1"], hybridise: ["B1"], focus: "B1", emphasise: ["B1:2pz"] }),
+      S("Each fluorine has one unpaired electron in a 2p orbital pointing at boron.", { add: ["F1", "F2", "F3"], focus: "F1" }),
+      S("Each B sp² hybrid overlaps end-on with an F 2p orbital: three σ (sp²–2p) bonds, 120° apart.", { form: ["BF1", "BF2", "BF3"] }),
+      S("BF₃ has 3 σ bonds, no π bonds and no lone pair on B: it is trigonal planar (F–B–F = 120°) and electron deficient, with an empty 2p orbital on boron.", {}),
+    ],
+  },
+  {
+    id: "HCN", plain: "HCN", latex: "HCN", name: "Hydrogen cyanide", expected: { sigma: 2, pi: 2 }, note: "Simplified model: nitrogen is sp with its lone pair in one sp hybrid and two unhybridised 2p orbitals for the two π bonds.",
+    atoms: { C1: { el: "C", kind: "excited", mix: ["2s", "2px"] }, N1: { el: "N", mix: ["2s", "2px"] }, H1: { el: "H" } }, root: "C1",
+    bonds: [
+      { id: "CN-sigma", type: "sigma", a: ["C1", "h0"], b: ["N1", "h1"] },
+      { id: "CN-pi-y", type: "pi", a: ["C1", "2py"], b: ["N1", "2py"] },
+      { id: "CN-pi-z", type: "pi", a: ["C1", "2pz"], b: ["N1", "2pz"] },
+      { id: "CH", type: "sigma", a: ["C1", "h1"], b: ["H1", "1s"] },
+    ],
+    steps: [
+      S("Carbon (promoted to 2s¹ 2p³, illustrative) and nitrogen (2s² 2p³) each mix 2s + 2px into two sp hybrids at 180°, keeping 2py and 2pz.", { add: ["C1", "N1"], hybridise: ["C1", "N1"], focus: "C1" }),
+      S("Nitrogen's lone pair sits in one sp hybrid; its other sp hybrid and its 2py and 2pz each hold one unpaired electron.", { emphasise: ["N1:h0", "N1:h1", "N1:2py", "N1:2pz"], focus: "N1" }),
+      S("One sp hybrid of each atom overlaps end-on along the axis: the C–N σ (sp–sp) bond.", { form: ["CN-sigma"] }),
+      S("The parallel 2py orbitals overlap sideways: the first C–N π bond.", { form: ["CN-pi-y"] }),
+      S("The parallel 2pz orbitals overlap sideways in the perpendicular plane: the second π bond.", { form: ["CN-pi-z"] }),
+      S("The H 1s orbital overlaps with carbon's remaining sp hybrid: the C–H σ (sp–1s) bond.", { add: ["H1"], form: ["CH"] }),
+      S("Complete HCN: 2 σ and 2 π bonds (C≡N is one σ plus two π), linear H–C–N = 180°, and a lone pair on N.", {}),
+    ],
+  },
+  {
+    id: "C2H5OH", plain: "C2H5OH", latex: "C_{2}H_{5}OH", name: "Ethanol", expected: { sigma: 8, pi: 0 }, note: "Simplified model: both carbons and the oxygen are sp³. The real C–O–H angle is about 109°, a little larger than in water because oxygen is bonded to a carbon.",
+    atoms: { C1: { el: "C", kind: "excited", mix: ["2s", "2px", "2py", "2pz"] }, C2: { el: "C", kind: "excited", mix: ["2s", "2px", "2py", "2pz"] }, O1: { el: "O", mix: ["2s", "2px", "2py", "2pz"] }, ...Object.fromEntries([1, 2, 3, 4, 5, 6].map((i) => [`H${i}`, { el: "H" }])) }, root: "C1",
+    bonds: [
+      { id: "CC", type: "sigma", a: ["C1", "h0"], b: ["C2", "h0"], staggered: true },
+      ...[1, 2, 3].map((i) => ({ id: `C1H${i}`, type: "sigma", a: ["C1", `h${i}`], b: [`H${i}`, "1s"] })),
+      ...[1, 2].map((i) => ({ id: `C2H${i}`, type: "sigma", a: ["C2", `h${i}`], b: [`H${i + 3}`, "1s"] })),
+      { id: "CO", type: "sigma", a: ["C2", "h3"], b: ["O1", "h2"] },
+      { id: "OH", type: "sigma", a: ["O1", "h3"], b: ["H6", "1s"] },
+    ],
+    steps: [
+      S("Both carbons are promoted to 2s¹ 2p³ (illustrative) and mix into four sp³ hybrids each; oxygen (2s² 2p⁴) mixes into four sp³ hybrids holding six electrons, two of them lone pairs.", { add: ["C1", "C2", "O1"], hybridise: ["C1", "C2", "O1"], focus: "C1" }),
+      S("The two carbons approach and one sp³ hybrid from each overlaps end-on: the C–C σ (sp³–sp³) bond.", { form: ["CC"] }),
+      S("Carbon C2 overlaps another sp³ hybrid with an oxygen sp³ hybrid: the C–O σ (sp³–sp³) bond.", { form: ["CO"] }),
+      S("Five C–H bonds (three on C1, two on C2) form from sp³ and H 1s overlap: five σ (sp³–1s) bonds.", { add: ["H1", "H2", "H3", "H4", "H5"], form: ["C1H1", "C1H2", "C1H3", "C2H1", "C2H2"] }),
+      S("The last H 1s overlaps with an oxygen sp³ hybrid: the O–H σ (sp³–1s) bond. Oxygen keeps two lone pairs.", { add: ["H6"], form: ["OH"] }),
+      S("Complete C₂H₅OH: 8 σ bonds (1 C–C, 1 C–O, 5 C–H, 1 O–H) and no π bonds. Every carbon and the oxygen are sp³.", {}),
+    ],
+  },
 ];
 export const MOLECULE_BY_ID = Object.fromEntries(MOLECULES.map((m) => [m.id, m]));
 export const MOLECULE_IDS = MOLECULES.map((m) => m.id);

@@ -7,7 +7,7 @@ import { PALETTE, STATE_ACCENT } from "../particle-model-visualizer/data/palette
 import ParticleCanvas from "./components/ParticleCanvas.jsx";
 import CurveGraph from "./components/CurveGraph.jsx";
 import { segColor } from "./lib/colors.js";
-import { buildCurve, curveState, SEGMENT_CAPTION, TOTAL_SECONDS_AT_1X } from "./data/curveModel.js";
+import { buildCurve, curveState, SEGMENT_CAPTION, TOTAL_SECONDS_AT_1X, MASS_RANGE, POWER_RANGE, elapsedSeconds, totalSeconds, segmentWorking } from "./data/curveModel.js";
 import { useSize } from "./lib/useSize.js";
 
 // Container width (px) at which the split screen (particles | graph) replaces the stacked layout.
@@ -94,6 +94,18 @@ function Workspace({ curve, mode, state, stateRef, progress, playing, speed, toS
   const { isViewport } = useSimulationPresentation();
   const [rootRef, { width }] = useSize();
   const reduced = useReducedMotion();
+  const [massG, setMassG] = useState(100);
+  const [powerW, setPowerW] = useState(500);
+  const [limitMsg, setLimitMsg] = useState("");
+  const setBounded = (raw, range, set, name) => {
+    const v = Number(raw);
+    if (!Number.isFinite(v) || raw === "") { setLimitMsg(`${name} must be a number from ${range.min} to ${range.max} ${range.unit}.`); return; }
+    const c = Math.min(range.max, Math.max(range.min, v));
+    setLimitMsg(c !== v ? `${name} is limited to ${range.min}\u2013${range.max} ${range.unit}; using ${c} ${range.unit}.` : "");
+    set(c);
+  };
+  const realTime = toScale ? { massG, powerW, totalS: totalSeconds(curve, massG, powerW) } : null;
+  const working = toScale ? segmentWorking(curve, state, massG) : null;
   const wide = width === 0 || width >= WIDE_MIN_WIDTH;
   const sub = curve.substance;
   const heating = mode === "heating";
@@ -112,7 +124,7 @@ function Workspace({ curve, mode, state, stateRef, progress, playing, speed, toS
   );
 
   const particlePanel = (
-    <section className="flex min-h-0 min-w-0 flex-col gap-2 rounded-lg border p-3" style={{ borderColor: PALETTE.border, background: PALETTE.panelRaised }} aria-label="Particle container" data-testid="hc-particle-panel">
+    <section className="flex min-w-0 flex-col gap-2 rounded-lg border p-3" style={{ borderColor: PALETTE.border, background: PALETTE.panelRaised }} aria-label="Particle container" data-testid="hc-particle-panel">
       <div className="flex items-baseline justify-between gap-2">
         <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: PALETTE.eyebrow }}>Particles ({sub.name.toLowerCase()})</p>
         <p className="text-xl font-semibold tabular-nums" style={{ color: PALETTE.textPrimary }} data-testid="hc-temp">{fmtT(state.temp)}</p>
@@ -131,7 +143,7 @@ function Workspace({ curve, mode, state, stateRef, progress, playing, speed, toS
   );
 
   const graphPanel = (
-    <section className="flex min-h-0 min-w-0 flex-col gap-2 rounded-lg border p-3" style={{ borderColor: PALETTE.border, background: PALETTE.panelRaised }} aria-label="Temperature against time graph" data-testid="hc-graph-panel">
+    <section className="flex min-w-0 flex-col gap-2 rounded-lg border p-3" style={{ borderColor: PALETTE.border, background: PALETTE.panelRaised }} aria-label="Temperature against time graph" data-testid="hc-graph-panel">
       <div className="flex items-baseline justify-between gap-2">
         <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: PALETTE.eyebrow }}>{heating ? "Heating" : "Cooling"} curve &mdash; {sub.name.toLowerCase()}</p>
         <p className="flex items-center gap-1 text-[11px] font-semibold" style={{ color: heating ? "#F0A458" : "#7FB4FF" }} data-testid="hc-energy-flow">
@@ -139,13 +151,30 @@ function Workspace({ curve, mode, state, stateRef, progress, playing, speed, toS
           Energy {state.energyFlow}
         </p>
       </div>
-      <CurveGraph curve={curve} mode={mode} state={state} />
+      <CurveGraph curve={curve} mode={mode} state={state} realTime={realTime} />
       <p className="text-[11px] leading-snug" style={{ color: PALETTE.textSecondary }} data-testid="hc-caption">{SEGMENT_CAPTION[state.segmentKey]}</p>
       <p className="text-[11px] leading-snug" style={{ color: PALETTE.textFaint }} data-testid="hc-assumption">
-        Assumes constant {heating ? "heating" : "cooling"} power, so time is proportional to energy. {heating ? "" : "The cooling curve is the heating curve reversed: energy is released on condensation and freezing. "}
+        Assumes constant {heating ? "heating" : "cooling"} power, so time is proportional to energy (graph of temperature against time for the sample, not against energy). {heating ? "" : "The cooling curve is the heating curve reversed: energy is released on condensation and freezing. "}
         {sub.name} at 1 atm: melting point {sub.tMelt} °C, boiling point {sub.tBoil} °C.
-        {toScale ? " Time axis to scale." : " Time axis schematic: plateau lengths are shortened (boiling alone is 72 % of the true energy)."}
+        {toScale ? " Time axis to scale." : " Time axis is a SCHEMATIC, not to scale: the length of each stage is shown shortened (boiling alone really needs 72 % of the energy). Tick \u201cTime axis to scale\u201d for real times."}
       </p>
+      {toScale && (
+        <div className="flex flex-col gap-1 rounded-md border p-2 text-[11px]" style={{ borderColor: PALETTE.border, color: PALETTE.textSecondary }} data-testid="hc-qmode">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <label className="flex items-center gap-1 font-semibold">Mass
+              <input type="number" min={MASS_RANGE.min} max={MASS_RANGE.max} step="10" defaultValue={100} key="m" onChange={(e) => setBounded(e.target.value, MASS_RANGE, setMassG, "Mass")} className="sim-btn h-7 min-h-0 w-20 px-1.5" data-testid="hc-mass" aria-label="Mass in grams" /> g</label>
+            <label className="flex items-center gap-1 font-semibold">Power
+              <input type="number" min={POWER_RANGE.min} max={POWER_RANGE.max} step="50" defaultValue={500} key="p" onChange={(e) => setBounded(e.target.value, POWER_RANGE, setPowerW, "Power")} className="sim-btn h-7 min-h-0 w-20 px-1.5" data-testid="hc-power" aria-label="Heating power in watts" /> W</label>
+            <span className="tabular-nums" data-testid="hc-elapsed">t = Q / P = {Math.round(elapsedSeconds(curve, state, massG, powerW))} s of {Math.round(realTime.totalS)} s</span>
+          </div>
+          <p className="tabular-nums" data-testid="hc-working">{working.formula}</p>
+          {limitMsg && <p role="status" style={{ color: "#F0A458" }} data-testid="hc-limit-note">{limitMsg}</p>}
+        </div>
+      )}
+      <details className="text-[11px]" style={{ color: PALETTE.textSecondary }} data-testid="hc-names">
+        <summary className="cursor-pointer font-semibold">Names of the changes of state</summary>
+        <p className="mt-1 leading-snug">Melting (solid &rarr; liquid), freezing (liquid &rarr; solid), vaporization (liquid &rarr; gas: evaporation at the surface, boiling throughout), condensation (gas &rarr; liquid), <b>sublimation</b> (solid &rarr; gas directly, e.g. dry ice or iodine) and <b>deposition</b> (gas &rarr; solid directly, e.g. frost). Water at 1 atm does not sublime, so these two do not appear on this curve.</p>
+      </details>
     </section>
   );
 
@@ -177,7 +206,7 @@ function Workspace({ curve, mode, state, stateRef, progress, playing, speed, toS
     </div>
   );
 
-  const rootStyle = { background: PALETTE.bg, borderColor: PALETTE.border, ...(isViewport ? {} : { height: wide ? "clamp(540px, calc(100dvh - 8rem), 760px)" : undefined }) };
+  const rootStyle = { background: PALETTE.bg, borderColor: PALETTE.border, ...(isViewport ? {} : { minHeight: wide ? "clamp(540px, calc(100dvh - 8rem), 760px)" : undefined }) };
 
   return (
     <div
@@ -192,7 +221,7 @@ function Workspace({ curve, mode, state, stateRef, progress, playing, speed, toS
       data-temp={state.temp.toFixed(2)}
       data-playing={playing ? "1" : "0"}
     >
-      <div className={"grid gap-3 " + (wide ? "min-h-0 flex-1" : "shrink-0")} style={wide ? { gridTemplateColumns: "minmax(0, 46fr) minmax(0, 54fr)" } : { gridTemplateColumns: "minmax(0, 1fr)" }}>
+      <div className={"grid gap-3 " + (wide ? "flex-1" : "shrink-0")} style={wide ? { gridTemplateColumns: "minmax(0, 46fr) minmax(0, 54fr)" } : { gridTemplateColumns: "minmax(0, 1fr)" }}>
         {particlePanel}
         {graphPanel}
       </div>

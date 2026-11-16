@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { SPEED_OF_LIGHT } from "./waveMath.js";
+import { visualCyclesPerSecond as emVisualCyclesPerSecond } from "./emSpectrum.js";
 import { clampFrameDelta } from "../../../lib/frameTime.js";
 
 // The real frequency for visible-light wavelengths spans only a ~1.75x
@@ -16,8 +17,7 @@ const VISUAL_BASE_HZ = 0.5;
 const REFERENCE_FREQUENCY = SPEED_OF_LIGHT / (REFERENCE_NM / 1e9);
 
 function visualCyclesPerSecond(wavelengthNm) {
-  const realFrequency = SPEED_OF_LIGHT / (wavelengthNm / 1e9);
-  return VISUAL_BASE_HZ * (realFrequency / REFERENCE_FREQUENCY);
+  return emVisualCyclesPerSecond(wavelengthNm); // compressed log-like mapping, valid from gamma to radio
 }
 
 /** Drives the wave's animation phase via requestAnimationFrame (needed

@@ -11,7 +11,7 @@ export function createLearnFake({ pages = [], blocks = [], user = { id: "admin-1
     if (q.op === "select") {
       const out = rows.filter(match).map((r) => JSON.parse(JSON.stringify(r)));
       if (q.order) out.sort((a, b) => ((a[q.order.col] > b[q.order.col]) - (a[q.order.col] < b[q.order.col])) * (q.order.asc ? 1 : -1));
-      return { data: out, error: null };
+      return { data: q.range ? out.slice(q.range[0], q.range[1] + 1) : out, error: null };
     }
     log.push({ table: q.table, op: q.op, filters: q.filters, payload: q.payload });
     if (q.op === "insert") {
@@ -24,10 +24,10 @@ export function createLearnFake({ pages = [], blocks = [], user = { id: "admin-1
     return { data: null, error: { message: "unsupported" } };
   }
   function builder(table) {
-    const q = { table, op: "select", filters: [], payload: null, order: null, single: false };
+    const q = { table, op: "select", filters: [], payload: null, order: null, single: false, range: null };
     const b = {
       select() { return b; }, insert(p) { q.op = "insert"; q.payload = p; return b; }, update(p) { q.op = "update"; q.payload = p; return b; }, delete() { q.op = "delete"; return b; },
-      eq(c, v) { q.filters.push([c, v]); return b; }, order(col, o = {}) { q.order = { col, asc: o.ascending !== false }; return b; }, single() { q.single = true; return b; },
+      eq(c, v) { q.filters.push([c, v]); return b; }, order(col, o = {}) { q.order = { col, asc: o.ascending !== false }; return b; }, single() { q.single = true; return b; }, range(a, z) { q.range = [a, z]; return b; },
       then(res, rej) {
         let out = run(q);
         if (q.single && !out.error) out = out.data?.length ? { data: out.data[0], error: null } : { data: null, error: { message: "no rows" } };

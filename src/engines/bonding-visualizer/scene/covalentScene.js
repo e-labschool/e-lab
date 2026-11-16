@@ -3,6 +3,7 @@
 // directions used (horizontal pair, cross, even ring) are drawing conventions, not molecular shapes.
 import { getBondingElement, CORE_ELECTRON_COLOR } from "../model/elements.js";
 import { electronsAround, sharedPairsOn } from "../model/covalent.js";
+import { elementEdge, elementStyle } from "../../shared-3d/elementStyle.js";
 import { clamp01, dotRadius, easeInOut, electronsOfShells, lerp, polar, ringRadius, slotAngle } from "./atomGeometry.js";
 import { electronColor } from "./ionicScene.js";
 
@@ -37,6 +38,7 @@ export const DOT_KERNEL = 25; // radius of the kernel ring (inner-shell electron
  * are not bonded to each other overlap? (SF6 and PCl5 do; nothing is looked up by name.)
  */
 export function isCrowded(m) {
+  if (m.layout) return true; // chains / several central atoms are always drawn in the compact valence-dot style
   if (m.central === null) return false;
   const rc = outerRing(m.atoms[0]);
   const angles = ligandAngles(m).map((d) => d * DEG);
@@ -61,7 +63,11 @@ export function layoutMolecule(m) {
   const pos = m.atoms.map(() => ({ x: 0, y: 0 }));
   const bonds = [];
   const dots = isCrowded(m);
-  if (dots) {
+  if (m.layout) {
+    L = DOT_L;
+    m.layout.forEach((q, i) => { pos[i] = { x: q[0] * DOT_L, y: q[1] * DOT_L }; rho[i] = DOT_RHO; });
+    for (const [i, j, order] of m.bonds) bonds.push({ i, j, angle: Math.atan2(pos[j].y - pos[i].y, pos[j].x - pos[i].x), order });
+  } else if (dots) {
     const angles = ligandAngles(m).map((d) => d * DEG);
     L = DOT_L;
     for (let i = 1; i < m.atoms.length; i += 1) {
@@ -131,9 +137,10 @@ export function layoutMolecule(m) {
     const cx = a0.x + Math.cos(ang) * mid; const cy = a0.y + Math.sin(ang) * mid;
     const nx = -Math.sin(ang); const ny = Math.cos(ang);
     const step = 11; // unscaled; multiplied by the drawing scale when positions are placed
+    const dn = m.bonds.find((x) => x[0] === b.i && x[1] === b.j)?.[3]; // coordinate (dative) pairs: the LAST dn pairs of this bond
     for (let q = 0; q < b.order; q += 1) {
       const off = (q - (b.order - 1) / 2) * step;
-      pairs.push({ bond: b, ang, x: cx + nx * off, y: cy + ny * off });
+      pairs.push({ bond: b, ang, x: cx + nx * off, y: cy + ny * off, dative: !!dn && q >= b.order - dn.n, donor: dn?.donor });
     }
   }
   return { pos, rho, R, L, bonds, lonePairAngles, pairs, dots };
@@ -211,7 +218,7 @@ export function covalentScene({ atoms, molecule, stage, p = 0, time = 0, world, 
 
   const base = atoms.map((a) => {
     const el = getBondingElement(a.symbol);
-    return { id: a.id, symbol: a.symbol, color: el.color, shells: el.shells, colorIdx: a.colorIdx, x: a.x, y: a.y, scale: S, electrons: [], rings: [], role: -1 };
+    return { id: a.id, symbol: a.symbol, color: el.color, edge: elementEdge(a.symbol), text: elementStyle(a.symbol).text, shells: el.shells, colorIdx: a.colorIdx, x: a.x, y: a.y, scale: S, electrons: [], rings: [], role: -1 };
   });
 
   let finalCentres = null;
@@ -246,7 +253,9 @@ export function covalentScene({ atoms, molecule, stage, p = 0, time = 0, world, 
   const shared = started ? lay.pairs : [];
   for (const d of base) {
     const colour = electronColor(d.colorIdx);
-    const evs = electronsOfShells(d.shells);
+    let evs = electronsOfShells(d.shells);
+    const lost = started && d.role >= 0 ? (molecule.charges?.[d.role] ?? 0) : 0; // H+ in NH4+ / H3O+: no electron to show
+    if (lost > 0) { const val = evs.filter((q) => !q.core); const drop = new Set(val.slice(val.length - lost)); evs = evs.filter((q) => !drop.has(q)); }
     let vi = 0; let ci = 0;
     const nCore = evs.filter((q) => q.core).length;
     for (const e of evs) {
@@ -261,15 +270,17 @@ export function covalentScene({ atoms, molecule, stage, p = 0, time = 0, world, 
       let x = here.x; let y = here.y; let state = e.core ? "core" : "free";
       if (started && !e.core && d.role >= 0) {
         const role = d.role;
-        const nShared = sharedPairsOn(molecule, role);
+        // the electron slots of this atom: one per own shared pair; a coordinate bond gives the DONOR both electrons (two slots on the
+        // same pair position) and the ACCEPTOR none
+        const slots = shared.filter((sp) => sp.bond.i === role || sp.bond.j === role).flatMap((sp) => (sp.dative ? (sp.donor === role ? [sp, sp] : []) : [sp]));
+        const nShared = slots.length;
         const idx = vi; vi += 1;
         let target = null;
         if (idx < nShared) {
-          // this electron belongs to shared pair #idx of this atom
-          const mine = shared.filter((sp) => sp.bond.i === role || sp.bond.j === role);
-          const sp = mine[idx];
+          const sp = slots[idx];
           const iAmFirst = sp.bond.i === role;
-          const nudge = (dotRadius(S) + 0.9) * (iAmFirst ? -1 : 1); // each atom's electron sits a little toward its own nucleus
+          const second = sp.dative && idx > 0 && slots[idx - 1] === sp; // second electron of a dative pair sits a little further along
+          const nudge = (dotRadius(S) + 0.9) * (iAmFirst ? -1 : 1) * (second ? -0.6 : 1);
           target = { x: origin.x + sp.x * S + Math.cos(sp.ang) * nudge, y: origin.y + sp.y * S + Math.sin(sp.ang) * nudge };
           state = "shared";
         } else {
@@ -278,7 +289,7 @@ export function covalentScene({ atoms, molecule, stage, p = 0, time = 0, world, 
           const lAng = lay.lonePairAngles[role][pairNo];
           const rr = lay.rho[role] * S;
           const delta = ((dotRadius(S) + 1.2) / rr) * (which ? 1 : -1);
-          const o = polar(0, 0, rr, lAng + delta);
+          const o = polar(0, 0, rr, lAng + (lAng === undefined ? 0 : delta));
           target = { x: finalCentres[role].x + o.x, y: finalCentres[role].y + o.y };
           state = "lone";
         }
@@ -300,6 +311,7 @@ export function covalentScene({ atoms, molecule, stage, p = 0, time = 0, world, 
       lenses.push({ a: A.id, b: B.id, ax: A.x, ay: A.y, ar: A.outerR, bx: B.x, by: B.y, br: B.outerR, ca: electronColor(A.colorIdx), cb: electronColor(B.colorIdx), opacity: clamp01((prog - 0.25) / 0.45) });
     }
   }
+  const dative = started && prog >= 0.6 ? lay.pairs.filter((q) => q.dative).map((q) => { const a = base[map[q.bond.i]]; const b = base[map[q.bond.j]]; const donor = q.donor === q.bond.i ? a : b; const acc = donor === a ? b : a; return { from: { x: donor.x, y: donor.y }, to: { x: acc.x, y: acc.y }, opacity: clamp01((prog - 0.6) / 0.3) }; }) : [];
   const info = started && prog >= 0.99 ? {
     central: molecule.central,
     perAtom: molecule.atoms.map((s, i) => ({ symbol: s, electrons: electronsAround(molecule, i) })),
@@ -307,5 +319,5 @@ export function covalentScene({ atoms, molecule, stage, p = 0, time = 0, world, 
   const centroid = base.length ? { x: base.reduce((s, a) => s + a.x, 0) / base.length, y: base.reduce((s, a) => s + a.y, 0) / base.length } : { x: 0, y: 0 };
   const top = base.length ? Math.min(...base.map((a) => a.y - a.outerR)) : 0;
   const bottom = base.length ? Math.max(...base.map((a) => a.y + a.outerR)) : 0;
-  return { atoms: base, lenses, S, started, prog, info, crowded: dots, dotBlend, centroid, top, bottom, labelOpacity: clamp01((prog - 0.85) / 0.15) };
+  return { atoms: base, lenses, dative, S, started, prog, info, crowded: dots, dotBlend, centroid, top, bottom, labelOpacity: clamp01((prog - 0.85) / 0.15) };
 }

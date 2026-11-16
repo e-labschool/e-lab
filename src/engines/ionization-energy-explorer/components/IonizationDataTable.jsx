@@ -9,7 +9,7 @@ import { useSimulationPresentation } from "../../../components/interactive-shell
 // Ca's 20 rows) precisely so the REST of the simulation never has to. In
 // embedded mode it keeps its previous fixed `max-h-64` so normal Learn-
 // page flow is unaffected.
-export default function IonizationDataTable({ element, values, currentStep }) {
+export default function IonizationDataTable({ element, values, currentStep, revealedUpTo = Infinity }) {
   const { isViewport } = useSimulationPresentation();
   return (
     <div className={isViewport ? "flex min-h-0 flex-1 flex-col rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)]" : "rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)]"}>
@@ -22,10 +22,11 @@ export default function IonizationDataTable({ element, values, currentStep }) {
             {values.map((v, i) => {
               const step = i + 1;
               const isCurrent = step === currentStep;
+              const hidden = step > revealedUpTo;
               return (
                 <tr key={step} className={isCurrent ? "bg-[var(--color-indigo-soft)]" : ""}>
-                  <td className={`px-3 py-1.5 font-medium ${isCurrent ? "text-[var(--color-indigo)]" : "text-[var(--color-ink-faint)]"}`}>IE<sub>{step}</sub></td>
-                  <td className={`px-3 py-1.5 text-right ${isCurrent ? "font-semibold text-[var(--color-indigo)]" : "text-[var(--color-ink)]"}`}>{v.toLocaleString()}</td>
+                  <td className={`px-3 py-1.5 font-medium ${isCurrent ? "text-[var(--color-indigo)]" : "text-[var(--color-ink-soft)]"}`}>IE<sub>{step}</sub></td>
+                  <td className={`px-3 py-1.5 text-right ${isCurrent ? "font-semibold text-[var(--color-indigo)]" : "text-[var(--color-ink)]"}`}>{hidden ? <span aria-label="not revealed yet" title="Predict first, or tick Show all values">?</span> : v.toLocaleString()}</td>
                 </tr>
               );
             })}

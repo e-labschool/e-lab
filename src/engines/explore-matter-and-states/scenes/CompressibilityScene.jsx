@@ -25,7 +25,7 @@ export default function CompressibilityScene({ forceToken }) {
           <div key={state}>
             <p className="mb-1.5 text-sm font-medium" style={{ color: STATE_COLOR[state] }}>{state[0].toUpperCase() + state.slice(1)}</p>
             <div className="relative">
-              <ParticleField mode={state} compressionFactor={pressed ? 1 : 0} particleCount={state === "gas" ? 12 : undefined} />
+              <ParticleField mode={state} compressionFactor={pressed ? 1 : 0} />
             </div>
             {pressed && <p className="mt-1.5 text-xs text-[var(--color-ink-faint)]">{OBSERVATION[state]}</p>}
           </div>
