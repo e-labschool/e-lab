@@ -2,12 +2,14 @@ import { useState } from "react";
 import ParticleField from "../components/ParticleField.jsx";
 import RevealChip from "../components/RevealChip.jsx";
 import ConclusionBadge from "../components/ConclusionBadge.jsx";
+import PredictChoice from "../components/PredictChoice.jsx";
 import SceneQuestion from "../components/SceneQuestion.jsx";
 
 export default function DiffusionScene({ forceToken }) {
   const [tab, setTab] = useState("gas");
   const [mixed, setMixed] = useState(false);
   const [diffusing, setDiffusing] = useState(false);
+  const [guessedGas, setGuessedGas] = useState(false);
 
   return (
     <div className="flex flex-col gap-6">
@@ -29,6 +31,12 @@ export default function DiffusionScene({ forceToken }) {
       {tab === "gas" ? (
         <div className="flex flex-col gap-4">
           <ParticleField mode="gas" twoSpecies mixed={mixed} />
+          {!guessedGas && (
+            <PredictChoice
+              question="what happens to the two gases when the divider is removed?" correct="mix" onSkip={mixed ? undefined : () => setGuessedGas(true)} testId="predict-diffusion"
+              choices={[{ id: "stay", label: "They stay separate" }, { id: "mix", label: "They mix completely" }, { id: "edge", label: "They mix only at the divider" }]}
+            />
+          )}
           {!mixed ? (
             <button type="button" onClick={() => setMixed(true)} className="self-start rounded-md bg-[var(--color-ink)] px-4 py-2 text-sm text-[var(--color-paper)]">
               Remove divider

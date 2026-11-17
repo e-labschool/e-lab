@@ -256,6 +256,18 @@ function IonizationEnergyWorkspace(props) {
   // they can actually SHRINK instead of overflowing.
   return (
     <div ref={boxRef} className="h-full min-h-0">
+    {fitMode === "stack" ? (
+      // Narrow screens (IE-06): element, atom, supply control + configuration FIRST; the long data table, toggle and graph after.
+      <div className="grid grid-cols-1 gap-2">
+        {elementSelector}
+        <div className="flex aspect-square min-h-[300px] flex-col rounded-md border border-[#1c2740] bg-[#070b14] p-2.5">{atomPanel}</div>
+        {energyControl}
+        {configPanel}
+        <IonizationDataTable element={element} values={values} currentStep={atomState.electronsRemoved + 1} revealedUpTo={showAll ? Infinity : revealedUpTo} />
+        <div className="flex flex-col gap-2">{showAllToggle}{resetButton}</div>
+        <div className="min-h-[260px]">{graph}</div>
+      </div>
+    ) : (<>
     <div className={fitMode === "fit" ? "grid h-full min-h-0 grid-rows-[minmax(0,1fr)_minmax(150px,220px)] gap-2" : "grid grid-cols-1 gap-2"}>
       <div className={fitMode === "fit" ? "grid min-h-0 grid-cols-[190px_minmax(0,1fr)_260px] grid-rows-[minmax(0,1fr)] gap-2" : fitMode === "scroll" ? "grid grid-cols-[190px_minmax(0,1fr)_260px] items-start gap-2" : "grid grid-cols-1 gap-2"}>
         {/* LEFT: element selector (auto) / IE table (flexible, internal
@@ -289,7 +301,7 @@ function IonizationEnergyWorkspace(props) {
       {/* BOTTOM: compact landscape graph band -- a bounded fraction of
           the workspace height in fit mode, a fixed readable height otherwise. */}
       <div className={fitMode === "fit" ? "min-h-0" : "min-h-[260px]"}>{graph}</div>
-    </div>
+    </div></>)}
     </div>
   );
 }

@@ -29,7 +29,7 @@ function visualCyclesPerSecond(wavelengthNm) {
  * under reduced motion (a fixed frame is shown; the calling component
  * is responsible for rendering that frame meaningfully rather than
  * simply freezing mid-animation). */
-export function useWavePhase({ wavelengthNm, paused }) {
+export function useWavePhase({ wavelengthNm, paused, cyclesPerSecond: cpsOverride }) {
   const [phase, setPhase] = useState(0);
   const [cycleCount, setCycleCount] = useState(0);
   const rafRef = useRef(null);
@@ -45,7 +45,7 @@ export function useWavePhase({ wavelengthNm, paused }) {
     function tick(time) {
       if (lastTimeRef.current !== null) {
         const dtSeconds = clampFrameDelta((time - lastTimeRef.current) / 1000);
-        const cyclesPerSecond = visualCyclesPerSecond(wavelengthNm);
+        const cyclesPerSecond = cpsOverride ?? visualCyclesPerSecond(wavelengthNm);
         phaseAccumRef.current += dtSeconds * cyclesPerSecond * 2 * Math.PI;
         setPhase(phaseAccumRef.current);
         const wholecycles = Math.floor(phaseAccumRef.current / (2 * Math.PI));
@@ -61,7 +61,7 @@ export function useWavePhase({ wavelengthNm, paused }) {
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [wavelengthNm, paused]);
+  }, [wavelengthNm, paused, cpsOverride]);
 
   return { phase, cycleCount };
 }

@@ -14,6 +14,7 @@ export const SHELL_COLOR = {
   "3p": "#B455E8", // purple / magenta family
   "3d": "#4CD164", // green family
   "4s": "#2FE0A8", // teal-green -- distinct from both 2s (amber) and 3d (green)
+  "4p": "#F2D03B", // yellow -- the only p family not in the pink/purple range (OE-06: Z up to 36)
 };
 
 /** Maps an individual orbital id (e.g. "2px", "3dxy", "1s") to its

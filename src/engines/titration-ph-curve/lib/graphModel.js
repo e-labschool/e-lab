@@ -47,14 +47,20 @@ export function buildExperimentGraph(t, { W, H, points = [], current = null, sho
       model.buffer = { x1: x(t.buffer.vLow), x2: x(t.buffer.vHigh), pKa: t.buffer.pKa };
       model.halfEq = { x: x(t.halfEq.v), y: y(t.halfEq.pH), v: t.halfEq.v, pH: t.halfEq.pH };
     }
+    if (t.buffers) model.buffers = t.buffers.map((b) => ({ ...b, x1: x(b.vLow), x2: x(b.vHigh) }));
     const items = [{ id: "eq", x: eqX, y: eqY, lines: ["Equivalence point", `${volText(t.veq)}, pH ${formatPH(t.eq.pH)}`] }];
     if (t.halfEq) items.push({ id: "half", x: model.halfEq.x, y: model.halfEq.y, lines: ["Half-equivalence", `pH = pKa = ${t.buffer.pKa.toFixed(2)}`] });
+    if (t.markers) {
+      model.markers = t.markers.map((m) => ({ ...m, x: x(m.v), y: y(m.pH) }));
+      for (const m of model.markers) if (!(m.kind === "eq" && m.index === 1)) items.push({ id: `m-${m.kind}${m.index}`, x: m.x, y: m.y, lines: [m.kind === "half" ? `Half-equivalence ${m.index}` : `Equivalence ${m.index}`, `${volText(m.v)}, pH ${formatPH(m.pH)}`] });
+    }
     items.push({ id: "steep", x: eqX, y: y((t.steep.pHLow + t.steep.pHHigh) / 2), lines: ["Steep region", `±1% of Veq`] });
     if (ind) {
       const ev = t.curve(t.axisMax).find((p, i, a) => i > 0 && (a[i - 1].pH - endpointPH(ind.id)) * (p.pH - endpointPH(ind.id)) <= 0);
       if (ev) { model.endpoint = { x: x(ev.v), y: y(endpointPH(ind.id)), v: ev.v, pH: endpointPH(ind.id) }; items.push({ id: "end", x: model.endpoint.x, y: model.endpoint.y, lines: ["Indicator endpoint", `pH ${endpointPH(ind.id).toFixed(1)}`] }); }
     }
     const fixed = [];
+    if (model.buffers) for (const b of model.buffers) fixed.push({ x: (b.x1 + b.x2) / 2 - 38, y: plot.y + 3, w: 76, h: 17 });
     if (model.buffer) fixed.push({ x: (model.buffer.x1 + model.buffer.x2) / 2 - 42, y: plot.y + 3, w: 84, h: 17 });
     model.bufferLabel = model.buffer ? { x: (model.buffer.x1 + model.buffer.x2) / 2, y: plot.y + 15 } : null;
     const obstacles = dense.map((p) => ({ x: p.px, y: p.py })).concat(studentPts.map((p) => ({ x: p.x, y: p.y })));
@@ -98,7 +104,8 @@ export function buildCompareGraph(set, { W, H }) {
 /** Text alternative for the chart (screen readers). */
 export function describeExperiment(t, current) {
   const parts = [`Titration curve of ${t.burette.label} added to ${t.flask.label}, pH against volume added.`, `Initial pH ${formatPH(t.initial.pH)}.`, `Equivalence point at ${volText(t.veq)}, pH ${formatPH(t.eq.pH)}.`];
-  if (t.buffer) parts.push(`Buffer region from ${volText(t.buffer.vLow)} to ${volText(t.buffer.vHigh)}; half-equivalence at ${volText(t.halfEq.v)} where pH equals pKa, ${t.buffer.pKa.toFixed(2)}.`);
+  if (t.markers) parts.push(`${t.poly.label} has ${t.poly.protons} protons, so the curve has ${t.poly.protons} equivalence points at ${t.markers.filter((m) => m.kind === "eq").map((m) => volText(m.v)).join(", ")}. Each half-equivalence pH is close to a pKa: ${t.poly.pKas.map((k) => k.toFixed(2)).join(", ")}.`);
+  else if (t.buffer) parts.push(`Buffer region from ${volText(t.buffer.vLow)} to ${volText(t.buffer.vHigh)}; half-equivalence at ${volText(t.halfEq.v)} where pH equals pKa, ${t.buffer.pKa.toFixed(2)}.`);
   else parts.push("There is no buffer region for this pair.");
   if (current) parts.push(`Now ${volText(current.v)} added, pH ${formatPH(current.pH)}.`);
   return parts.join(" ");

@@ -34,12 +34,15 @@ const DEFS = {
   K: { kind: "metal", color: "#8aa4f5" },
   Ca: { kind: "metal", color: "#66c2e0" },
   Br: { kind: "nonmetal", color: "#f5b86b" },
+  Si: { kind: "metalloid", color: "#c9ccd6" },
+  I: { kind: "nonmetal", color: "#7b45b8" },
+  Xe: { kind: "nonmetal", color: "#43aebf" },
 };
 
 /** Which elements each mode offers (display order = library order). */
 export const IONIC_METALS = ["Li", "Na", "K", "Mg", "Ca", "Al"];
 export const IONIC_NONMETALS = ["N", "O", "F", "S", "Cl", "Br"];
-export const COVALENT_ATOMS = ["H", "C", "N", "O", "F", "Cl", "S", "P", "Be", "B"];
+export const COVALENT_ATOMS = ["H", "C", "N", "O", "F", "Cl", "Br", "I", "S", "P", "Si", "Be", "B", "Al", "Xe"];
 export const METALLIC_METALS = ["Na", "Li", "K", "Mg", "Ca", "Al"];
 
 /** Distinct valence-electron colours; atom number i in a mode uses palette[i % n] (a different colour per atom). */

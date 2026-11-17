@@ -11,7 +11,7 @@
 // SOURCE UPDATE (2026-11-16): the first six values of Z = 3-20 and all of H and He were re-checked against the Wikipedia data page
 // "Ionization energies of the elements (data page)" (CRC Handbook 84th ed. / NIST Atomic Spectra Database values, kJ/mol; retrieved
 // 2026-11-16). Values that differed by more than 1.5 kJ/mol were replaced (see docs/sim-review/atomic-fixes.md for the list). IE7 and
-// above were NOT re-verified (no accessible source in this session): treat them as approximate textbook values.
+// above were re-checked on 2026-11-17 against the same page (all Z = 3-20, every value): everything agrees within 0.3 % after correcting P IE13 (59260 -> 59024) and Ca IE7 (12320 -> 12270).
 //
 // `neutralElectronConfiguration` is included for reference/display only;
 // the simulation itself derives configuration at every step from the
@@ -47,7 +47,7 @@ export const IONIZATION_DATA = [
   { atomicNumber: 14, symbol: "Si", name: "Silicon", neutralElectronConfiguration: "1s² 2s² 2p⁶ 3s² 3p²",
     successiveIonizationEnergies: [786, 1577, 3232, 4356, 16091, 19805, 23780, 29287, 33878, 38726, 45962, 50511, 235196, 257923] },
   { atomicNumber: 15, symbol: "P", name: "Phosphorus", neutralElectronConfiguration: "1s² 2s² 2p⁶ 3s² 3p³",
-    successiveIonizationEnergies: [1012, 1907, 2914, 4964, 6274, 21268, 25431, 29872, 35906, 40972, 46226, 54129, 59260, 271504, 296195] },
+    successiveIonizationEnergies: [1012, 1907, 2914, 4964, 6274, 21268, 25431, 29872, 35906, 40972, 46226, 54129, 59024, 271504, 296195] },
   { atomicNumber: 16, symbol: "S", name: "Sulfur", neutralElectronConfiguration: "1s² 2s² 2p⁶ 3s² 3p⁴",
     successiveIonizationEnergies: [1000, 2251, 3357, 4556, 7004, 8496, 27107, 31719, 36638, 43177, 48710, 54460, 62930, 68227, 311050, 337137] },
   { atomicNumber: 17, symbol: "Cl", name: "Chlorine", neutralElectronConfiguration: "1s² 2s² 2p⁶ 3s² 3p⁵",
@@ -57,7 +57,7 @@ export const IONIZATION_DATA = [
   { atomicNumber: 19, symbol: "K", name: "Potassium", neutralElectronConfiguration: "1s² 2s² 2p⁶ 3s² 3p⁶ 4s¹",
     successiveIonizationEnergies: [419, 3052, 4420, 5877, 7975, 9590, 11343, 14944, 16964, 48577, 54490, 60730, 68887, 75993, 83071, 93400, 99900, 444869, 476069] },
   { atomicNumber: 20, symbol: "Ca", name: "Calcium", neutralElectronConfiguration: "1s² 2s² 2p⁶ 3s² 3p⁶ 4s²",
-    successiveIonizationEnergies: [590, 1145, 4912, 6491, 8153, 10496, 12320, 14207, 18192, 20385, 57110, 63410, 70110, 78890, 86310, 94000, 104900, 111710, 494900, 527670] },
+    successiveIonizationEnergies: [590, 1145, 4912, 6491, 8153, 10496, 12270, 14207, 18192, 20385, 57110, 63410, 70110, 78890, 86310, 94000, 104900, 111710, 494900, 527670] },
 ];
 
 const byZ = new Map(IONIZATION_DATA.map((e) => [e.atomicNumber, e]));

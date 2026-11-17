@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { BarChart3, LineChart as LineChartIcon, TrendingUp } from "lucide-react";
 import { useSimulationPresentation } from "../../../components/interactive-shell/SimulationPresentation.js";
-import { FIRST_IE_TREND } from "../lib/ionizationData.js";
+import { FIRST_IE_TREND, IONIZATION_DATA } from "../lib/ionizationData.js";
 
-const W = 720;
-const H = 260;
+const W0 = 720;
+const H0 = 260;
+const W_WIDE = 1180; // wide, short band (standalone/fullscreen at desktop width): use the width instead of letterboxing a 720 x 260 plot
+const H_WIDE = 215;
 const PAD_L = 62;
 const PAD_B = 36;
 const PAD_T = 16;
@@ -25,17 +27,28 @@ const DIPS = {
  * steps are drawn unless `showAll`. (2) First IE against atomic number H-Kr (S1.3.8): clickable points, the B/Al and O/S dips annotated. */
 export default function IonizationGraph({ element, values, currentStep, removalOrder, revealedUpTo = Infinity, showAll = false, onSelectZ, selectableZ = () => false }) {
   const { isViewport } = useSimulationPresentation();
+  const boxRef = useRef(null);
+  const [wide, setWide] = useState(false);
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return undefined;
+    const ro = new ResizeObserver(() => setWide(isViewport && el.clientWidth > 900));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [isViewport]);
   const [view, setView] = useState("successive");
   const [mode, setMode] = useState("bar");
   const [hovered, setHovered] = useState(null);
   const [trendSel, setTrendSel] = useState(null);
+  const [cmpZ, setCmpZ] = useState(0); // IE-10: second element drawn beside the chosen one (Na vs Mg is the classic IB comparison)
+  const cmpEl = cmpZ && cmpZ !== element.atomicNumber ? IONIZATION_DATA.find((e) => e.atomicNumber === cmpZ) : null;
 
   const tabBtn = (id, label, Icon, active, onClick) => (
     <button key={id} type="button" aria-pressed={active} onClick={onClick} className={`flex items-center gap-1 px-2.5 py-1 text-[12px] font-medium ${active ? "bg-[#2f67c2] text-white" : "text-[#b4d0f3]"}`}><Icon size={12} aria-hidden="true" /> {label}</button>
   );
 
   return (
-    <div className={isViewport ? "sim-surface-dark flex h-full min-h-0 flex-col rounded-md border border-[#1c2740] bg-[#0a0f1e] p-2.5" : "sim-surface-dark rounded-md border border-[#1c2740] bg-[#0a0f1e] p-4"}>
+    <div ref={boxRef} className={isViewport ? "sim-surface-dark flex h-full min-h-0 flex-col rounded-md border border-[#1c2740] bg-[#0a0f1e] p-2.5" : "sim-surface-dark rounded-md border border-[#1c2740] bg-[#0a0f1e] p-4"}>
       <div className={isViewport ? "mb-1.5 flex shrink-0 flex-wrap items-center justify-between gap-2" : "mb-3 flex flex-wrap items-center justify-between gap-2"}>
         <h3 className="text-xs font-semibold uppercase tracking-wide text-[#a9c5ea]">{view === "successive" ? `Successive Ionization Energies — ${element.name}` : "First Ionization Energy, H to Kr"}</h3>
         <div className="flex flex-wrap gap-2">
@@ -43,6 +56,13 @@ export default function IonizationGraph({ element, values, currentStep, removalO
             {tabBtn("s", "Successive", BarChart3, view === "successive", () => setView("successive"))}
             {tabBtn("t", "First IE trend", TrendingUp, view === "trend", () => setView("trend"))}
           </div>
+          {view === "successive" && (
+            <label className="flex items-center gap-1 text-[12px] text-[#b4d0f3]">Compare with
+              <select value={cmpZ} onChange={(e) => setCmpZ(Number(e.target.value))} aria-label="Compare with another element" data-testid="ie-compare" className="rounded-md border border-[var(--sim-btn-border)] bg-[#0d1a33] px-1.5 py-1 text-[12px] text-[#eaf6ff]">
+                <option value={0}>none</option>
+                {IONIZATION_DATA.filter((e) => e.atomicNumber !== element.atomicNumber).map((e) => <option key={e.atomicNumber} value={e.atomicNumber}>{e.symbol} {e.name}</option>)}
+              </select></label>
+          )}
           {view === "successive" && (
             <div className="flex overflow-hidden rounded-md border border-[var(--sim-btn-border)]" role="group" aria-label="Chart type">
               {tabBtn("b", "Bar", BarChart3, mode === "bar", () => setMode("bar"))}
@@ -52,26 +72,28 @@ export default function IonizationGraph({ element, values, currentStep, removalO
         </div>
       </div>
 
-      {view === "successive" ? <Successive {...{ element, values, currentStep, removalOrder, revealedUpTo, showAll, mode, hovered, setHovered }} /> : (
-        <Trend {...{ trendSel, setTrendSel, currentZ: element.atomicNumber, onSelectZ, selectableZ, isViewport }} />
+      {view === "successive" ? <Successive {...{ element, values, currentStep, removalOrder, revealedUpTo, showAll, mode, hovered, setHovered, cmpEl, wide }} /> : (
+        <Trend {...{ trendSel, setTrendSel, currentZ: element.atomicNumber, onSelectZ, selectableZ, isViewport, wide }} />
       )}
     </div>
   );
 }
 
-function Successive({ element, values, currentStep, removalOrder, revealedUpTo, showAll, mode, hovered, setHovered }) {
+function Successive({ element, values, currentStep, removalOrder, revealedUpTo, showAll, mode, hovered, setHovered, cmpEl, wide }) {
   const { isViewport } = useSimulationPresentation();
+  const W = wide ? W_WIDE : W0; const H = wide ? H_WIDE : H0;
   const plotW = W - PAD_L - PAD_R;
   const plotH = H - PAD_T - PAD_B;
   const visible = showAll ? values.length : Math.min(values.length, revealedUpTo);
-  const n = values.length;
+  const cmpVals = cmpEl ? cmpEl.successiveIonizationEnergies : [];
+  const n = Math.max(values.length, cmpVals.length);
   const shown = values.slice(0, visible);
   // baseline: a whole decade BELOW the smallest value; top: a decade boundary above the largest of ALL values (the axis does not change as steps are revealed)
-  const lo = Math.floor(Math.log10(Math.min(...values))) - 0; const loDecade = Math.max(2, lo);
-  const hiDecade = Math.ceil(Math.log10(Math.max(...values)));
+  const lo = Math.floor(Math.log10(Math.min(...values, ...cmpVals))) - 0; const loDecade = Math.max(2, lo);
+  const hiDecade = Math.ceil(Math.log10(Math.max(...values, ...cmpVals)));
   const yFor = (v) => H - PAD_B - ((Math.log10(v) - (loDecade - 0.0)) / (hiDecade - loDecade || 1)) * plotH;
   const xFor = (i) => PAD_L + ((i + 0.5) / n) * plotW;
-  const barW = Math.max(5, (plotW / n) * 0.6);
+  const barW = Math.max(5, (plotW / n) * (cmpEl ? 0.38 : 0.6));
   const decades = []; for (let d = loDecade; d <= hiDecade; d += 1) decades.push(d);
   const active = hovered ?? (currentStep - 1 < visible ? currentStep - 1 : visible - 1);
 
@@ -87,13 +109,22 @@ function Successive({ element, values, currentStep, removalOrder, revealedUpTo, 
         <line x1={PAD_L} y1={PAD_T} x2={PAD_L} y2={H - PAD_B} stroke="#4d73a6" strokeWidth="1.5" />
         <line x1={PAD_L} y1={H - PAD_B} x2={W - PAD_R} y2={H - PAD_B} stroke="#4d73a6" strokeWidth="1.5" />
         {mode === "bar" && shown.map((v, i) => {
-          const step = i + 1; const isCurrent = step === currentStep; const x = xFor(i) - barW / 2; const y = yFor(v);
+          const step = i + 1; const isCurrent = step === currentStep; const x = xFor(i) - barW / 2 - (cmpEl ? barW / 2 + 0.5 : 0); const y = yFor(v);
           return (
             <g key={i} onMouseEnter={() => setHovered(i)} onMouseLeave={() => setHovered((h) => (h === i ? null : h))} onFocus={() => setHovered(i)} onBlur={() => setHovered(null)} tabIndex={0} role="img" aria-label={`IE${step}: ${v.toLocaleString()} kilojoules per mole`}>
               <rect x={x} y={y} width={barW} height={Math.max(1, H - PAD_B - y)} fill={isCurrent ? "#5ad1ff" : "#3d82cc"} opacity={hovered === i || isCurrent ? 1 : 0.85} rx="1.5" />
             </g>
           );
         })}
+        {cmpEl && mode === "bar" && cmpVals.map((v, i) => (
+          <rect key={`c${i}`} data-testid="ie-compare-bar" x={xFor(i) - barW / 2 + barW / 2 + 0.5} y={yFor(v)} width={barW} height={Math.max(1, H - PAD_B - yFor(v))} fill="#ffb454" opacity="0.9" rx="1.5"><title>{`${cmpEl.symbol} IE${i + 1}: ${v.toLocaleString()} kJ mol⁻¹`}</title></rect>
+        ))}
+        {cmpEl && mode === "line" && cmpVals.length > 0 && (
+          <>
+            <path d={cmpVals.map((v, i) => `${i === 0 ? "M" : "L"} ${xFor(i)} ${yFor(v)}`).join(" ")} fill="none" stroke="#ffb454" strokeWidth="1.75" strokeDasharray="5 3" />
+            {cmpVals.map((v, i) => <circle key={`cc${i}`} cx={xFor(i)} cy={yFor(v)} r="3" fill="#ffb454"><title>{`${cmpEl.symbol} IE${i + 1}: ${v.toLocaleString()} kJ mol⁻¹`}</title></circle>)}
+          </>
+        )}
         {mode === "line" && shown.length > 0 && (
           <>
             <path d={shown.map((v, i) => `${i === 0 ? "M" : "L"} ${xFor(i)} ${yFor(v)}`).join(" ")} fill="none" stroke="#5ad1ff" strokeWidth="1.75" />
@@ -104,7 +135,7 @@ function Successive({ element, values, currentStep, removalOrder, revealedUpTo, 
             ))}
           </>
         )}
-        {values.map((_, i) => <text key={i} x={xFor(i)} y={H - PAD_B + 14} fontSize="11" textAnchor="middle" fill="#b4d0f3">{i + 1}</text>)}
+        {Array.from({ length: n }, (_, i) => <text key={i} x={xFor(i)} y={H - PAD_B + 14} fontSize="11" textAnchor="middle" fill="#b4d0f3">{i + 1}</text>)}
         {active != null && active >= 0 && shown[active] != null && (
           <g transform={`translate(${Math.min(Math.max(xFor(active), PAD_L + 70), W - PAD_R - 70)}, ${Math.max(yFor(shown[active]) - 30, PAD_T + 14)})`} pointerEvents="none">
             <rect x={-68} y={-14} width={136} height={removalOrder?.[active] ? 42 : 26} rx="4" fill="#0d1a33" stroke="#4d73a6" />
@@ -115,12 +146,14 @@ function Successive({ element, values, currentStep, removalOrder, revealedUpTo, 
         <text x={(PAD_L + W - PAD_R) / 2} y={H - 3} fontSize="12" textAnchor="middle" fill="#b4d0f3">Ionization step (number of electrons removed)</text>
         <text x={15} y={PAD_T + plotH / 2} fontSize="12" textAnchor="middle" fill="#b4d0f3" transform={`rotate(-90 15 ${PAD_T + plotH / 2})`}>IE / kJ mol⁻¹ (log scale)</text>
       </svg>
-      {!showAll && visible < n && <p className="shrink-0 text-[11px] text-[#9db8dc]">Later steps appear as you predict and remove electrons (or tick “Show all values”).</p>}
+      {cmpEl && <p className="shrink-0 text-[11px] text-[#b4d0f3]" data-testid="ie-compare-note"><span className="text-[#5ad1ff]">{"■"} {element.symbol}</span> {" "}<span className="text-[#ffb454]">{"■"} {cmpEl.symbol}</span>: all {cmpEl.symbol} values are shown (the prediction gate applies to {element.symbol}). Look for the first very large jump: it marks the start of the inner (core) shell, so it comes after the last valence electron</p>}
+      {!showAll && visible < values.length && <p className="shrink-0 text-[11px] text-[#9db8dc]">Later steps appear as you predict and remove electrons (or tick “Show all values”).</p>}
     </>
   );
 }
 
-function Trend({ trendSel, setTrendSel, currentZ, onSelectZ, selectableZ, isViewport }) {
+function Trend({ trendSel, setTrendSel, currentZ, onSelectZ, selectableZ, isViewport, wide }) {
+  const W = wide ? W_WIDE : W0; const H = wide ? H_WIDE : H0;
   const plotW = W - PAD_L - PAD_R; const plotH = H - PAD_T - PAD_B;
   const max = 2500;
   const xFor = (z) => PAD_L + ((z - 0.5) / 36) * plotW;

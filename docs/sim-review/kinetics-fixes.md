@@ -35,7 +35,7 @@ Also delivered: predict-first panel with six experiments (temperature, concentra
 | AK-55 Rate readout vs graph | Fixed | Two defined rates, both from the same per-second counts: "rate in the last second" (gradient of the last graph segment, drawn in teal) and "average rate so far" (gradient from the origin, dashed amber). Readout at the end no longer contradicts the last bar. A rate-per-second bar graph was added. Tested against the graph data for six supply combinations. |
 | AK-56 Model not [A][B] | Partly | Kept as a stated qualitative analogy (35 % of the packs that could still be made each second); wording says so. Not changed to a stochastic bimolecular model. |
 | AK-57 Axes | Fixed | Numeric ticks, y label with units, correct y scaling per series, fixed time axis (no rescaling during the run), "FINISHED" button and message. |
-| AK-58 Pedagogy | Partly | "Think about it" questions with the reactant-concentration bridge, previous run overlay for comparison. No full predict/reveal widget here. |
+| AK-58 Pedagogy | Fixed (round 2) | "Think about it" questions with the reactant-concentration bridge, previous run overlay for comparison, and a predict-first strip whose reveal is computed from the model. |
 | AK-59 Accessibility | Fixed | `aria-live` announcement each second, focus rings, speed control (slow default under reduced motion). |
 | AK-60 Side effects in updater | Fixed | State is computed outside updaters (ref plus pure setters). |
 
@@ -45,7 +45,12 @@ Also delivered: predict-first panel with six experiments (temperature, concentra
 - `scripts/verify-kinetics.mjs` (Chromium, SwiftShader): last runs: 1366x768 light 123 checks, 910x512 and 390x844 light 205 checks, all three sizes dark 283 checks, 0 problems (headless Chromium, software rendering; worst case 100 particles at 2x about 56 frames/s).
 - Chained: `npm run test:collision` is the last step of `npm test`.
 
-## Not done / limits
-Real GPU, touch, Safari, Firefox and screen readers were not tested. The reverse reaction, heat of reaction, 3-D positions and real Ea scale are not modelled. Time is simulated time. `docs/sim-review/MASTER_PLAN.md` and the original review file were not edited.
+## Round 2 additions (2026-11-17)
+- Reaction (energy) profile, in the "More detail" popover of Collision Theory (`components/ReactionProfile.jsx`): reactants, peak at Ea, products, Ea from the slider, a second green path at the catalysed Ea with the same dH, and a note that a catalyst lowers Ea, not dH. dH is an illustration only: the vessel does not model heat, so Exothermic / Endothermic is a picture toggle, labelled as such, with |dH| capped at Ea/2 so an endothermic profile never has its peak below the products. Ea values are the demonstration scale (5-60 kJ/mol), not real values.
+- Chocolate Wrapping AK-58 now Fixed: a "Predict first" strip with two questions (more starting material; later seconds), a three-way prediction, and a reveal computed from the same model (`runToEnd`, `PREDICT_TASKS`), including the verdict and the numbers. The earlier "Think about it" text stays.
+- Tests: `scripts/test-collision-model.mjs` 55 checks (new predict-first check), `scripts/test-collision-ui.mjs` 25 checks (two new: profile, predict-first), `scripts/verify-kinetics.mjs` 551 checks, 0 problems in Chromium at 1366x768, 910x512 and 390x844, light and dark (adds: profile in the popover inside the viewport with every label inside its drawing; chocolate reveal and no overflow).
+- One jsdom run of `test-collision-ui.mjs` failed a chocolate input check once while the machine was loaded and passed on the next five runs; treat the jsdom UI suites as timing sensitive under load.
 
-Typed number fields are hidden when the controls column is narrow (the slider remains, and is what the verify script uses there). Known unrelated failure at the time of the last run: the ideal-gas suite check "instrument deck is DOM" (another agent's work), which stops `npm test` before the collision step; `npm run test:collision` passes alone.
+## Not done / limits
+AK-56 stays a stated qualitative analogy (not a stochastic bimolecular model). The reverse reaction, real heat of reaction, 3-D positions and a real-scale Ea (50-100 kJ/mol) are not modelled; the profile's dH is a picture. Time is simulated time. Real GPU, touch, Safari, Firefox and screen readers were not tested.
+Typed number fields are hidden when the controls column is narrow (the slider remains, and is what the verify script uses there). `npm test` end to end was not shown green in round 2 (load-dependent failures in the auth sign-up and resource-folders suites, see acids-fixes.md); `npm run test:collision` passes alone.

@@ -25,3 +25,4 @@
 .hoh-msg { padding: 6px 10px; border: 1px solid var(--ab-line-soft); border-radius: 8px; background: var(--ab-panel); font-size: 12.5px; }
 @container (max-width: 760px) { .hoh-grid { grid-template-columns: minmax(0, 1fr); } .hoh-chart { min-height: 260px; } }
 @media (max-width: 760px) { .ab-root.hoh { grid-template-rows: auto auto auto; } }
+.hoh-temp input[type=range] { width: 100%; accent-color: var(--sim-btn-accent, #4d60e0); min-height: 24px; } .hoh-temp strong { color: var(--ab-ink); }

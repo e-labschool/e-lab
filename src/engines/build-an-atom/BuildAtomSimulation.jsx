@@ -14,6 +14,7 @@ import ConceptStrip from "./components/ConceptStrip.jsx";
 import MiniPeriodicTable from "./components/MiniPeriodicTable.jsx";
 import IsotopeComparison from "./components/IsotopeComparison.jsx";
 import ChallengeMode from "./components/ChallengeMode.jsx";
+import IsotopeMixer from "./components/IsotopeMixer.jsx";
 import ShellPanel from "./components/ShellPanel.jsx";
 
 // Container width (px) of the simulation's own box at which the side-by-side
@@ -30,6 +31,7 @@ export default function BuildAtomSimulation({ compact = false, standalone = fals
   const [lastChange, setLastChange] = useState(null);
   const [flights, setFlights] = useState([]);
   const [notice, setNotice] = useState(null);
+  const [undoStack, setUndoStack] = useState([]); // BA-12: one-level-per-click undo for every change, element choice and wipe
   const flightIdRef = useRef(0);
 
   const derived = deriveAtom(atom);
@@ -48,6 +50,7 @@ export default function BuildAtomSimulation({ compact = false, standalone = fals
     const next = result.atom;
     setNotice(result.notes.length ? { kind: "adjusted", text: result.notes.join(" ") } : null);
     if (next === atom) return;
+    setUndoStack((u) => [...u.slice(-29), { atom, autoBalance }]);
     setAtom(next);
     record(type, atom, next, autoBalance ? autoBalanceLines(type, atom, next) : []);
     flightIdRef.current += 1;
@@ -62,6 +65,7 @@ export default function BuildAtomSimulation({ compact = false, standalone = fals
     const next = result.atom;
     setNotice(result.notes.length ? { kind: "adjusted", text: result.notes.join(" ") } : null);
     if (next === atom) return;
+    setUndoStack((u) => [...u.slice(-29), { atom, autoBalance }]);
     setAtom(next);
     record("proton", atom, next, autoBalance ? autoBalanceLines("proton", atom, next) : []);
   }
@@ -73,8 +77,9 @@ export default function BuildAtomSimulation({ compact = false, standalone = fals
     if (next !== atom) { setAtom(next); setLastChange(null); }
   }
 
-  function handleStartEmpty() { setAtom(EMPTY_ATOM); setLastChange(null); setFlights([]); setNotice(null); setAutoBalance(false); }
-  function handleResetCarbon() { setAtom(CARBON_12); setLastChange(null); setFlights([]); setNotice(null); setAutoBalance(false); }
+  function handleUndo() { const last = undoStack[undoStack.length - 1]; if (!last) return; setUndoStack((u) => u.slice(0, -1)); setAtom(last.atom); setAutoBalance(last.autoBalance); setLastChange(null); setNotice({ kind: "adjusted", text: "Undid the last change." }); }
+  function handleStartEmpty() { setUndoStack((u) => [...u.slice(-29), { atom, autoBalance }]); setAtom(EMPTY_ATOM); setLastChange(null); setFlights([]); setNotice(null); setAutoBalance(false); }
+  function handleResetCarbon() { setUndoStack([]); setAtom(CARBON_12); setLastChange(null); setFlights([]); setNotice(null); setAutoBalance(false); }
 
   const change = lastChange ? describeChange(lastChange.type, lastChange.delta, lastChange.prevDerived, lastChange.nextDerived, lastChange.extra) : null;
   const highlightType = lastChange?.type;
@@ -93,6 +98,8 @@ export default function BuildAtomSimulation({ compact = false, standalone = fals
         handleToggleAutoBalance={handleToggleAutoBalance}
         handleSelectElement={handleSelectElement}
         handleStartEmpty={handleStartEmpty}
+        handleUndo={handleUndo}
+        canUndo={undoStack.length > 0}
         handleResetCarbon={handleResetCarbon}
         change={change}
         highlightType={highlightType}
@@ -111,7 +118,7 @@ export default function BuildAtomSimulation({ compact = false, standalone = fals
 //   stacked (narrower): atom stage on top, panels below (in fullscreen / new
 //     tab the panels scroll inside their own region; embedded they flow).
 function BuildAtomWorkspace(props) {
-  const { atom, derived, autoBalance, notice, flights, removeFlight, handleChange, handleToggleAutoBalance, handleSelectElement, handleStartEmpty, handleResetCarbon, change, highlightType, unstable } = props;
+  const { atom, derived, autoBalance, notice, flights, removeFlight, handleChange, handleToggleAutoBalance, handleSelectElement, handleStartEmpty, handleResetCarbon, handleUndo, canUndo, change, highlightType, unstable } = props;
   const { isViewport } = useSimulationPresentation();
   const [rootRef, { width, height }] = useSize();
   // Sticky controls only when the container is tall enough to leave room for the panels below them.
@@ -122,6 +129,9 @@ function BuildAtomWorkspace(props) {
     <div className="flex flex-wrap items-center justify-between gap-2">
       <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">{"S1.2 • The Nuclear Atom"}</p>
       <div className="flex flex-wrap gap-2">
+        <button type="button" onClick={handleUndo} disabled={!canUndo} className="rounded-md border border-[var(--color-line)] px-2.5 py-1 text-xs font-medium text-[var(--color-ink-soft)] hover:bg-[var(--color-line)]/30 disabled:cursor-not-allowed disabled:opacity-50" data-testid="atom-undo" title="Undo the last change (Start From Empty and element changes included)">
+          Undo
+        </button>
         <button type="button" onClick={handleStartEmpty} className="rounded-md border border-[var(--color-line)] px-2.5 py-1 text-xs font-medium text-[var(--color-ink-soft)] hover:bg-[var(--color-line)]/30" data-testid="atom-start-empty">
           Start From Empty
         </button>
@@ -175,6 +185,7 @@ function BuildAtomWorkspace(props) {
   const secondary = (
     <div className="flex flex-col gap-3">
       <ChallengeMode atom={atom} derived={derived} />
+      <IsotopeMixer initialZ={atom.protons} />
       <MiniPeriodicTable currentAtomicNumber={atom.protons} maxAtomicNumber={LIMITS.protons} onSelectElement={handleSelectElement} />
       <div>
         <p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-[var(--color-ink-faint)]">What Changed?</p>

@@ -21,3 +21,9 @@ export function detectQualityTier() {
 export function pointsPerOrbitalFor(tier) {
   return QUALITY_TIERS[tier] ?? QUALITY_TIERS.high;
 }
+
+/** OE-10: more orbitals on screen means fewer points each (about 120,000 points in all at most), never below 2,500. */
+export function pointsForCount(basePoints, orbitalCount) {
+  const total = 12 * basePoints;
+  return Math.max(2500, Math.min(basePoints, Math.round(total / Math.max(1, orbitalCount) / 500) * 500));
+}

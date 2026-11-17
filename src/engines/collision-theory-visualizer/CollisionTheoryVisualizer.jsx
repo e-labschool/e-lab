@@ -15,6 +15,7 @@ import { useBox, useReducedMotion } from "./useBox.js";
 import { SPECIES } from "./theme.js";
 import MbGraph, { HIST_BIN, XMAX } from "./components/MbGraph.jsx";
 import RateGraph from "./components/RateGraph.jsx";
+import ReactionProfile from "./components/ReactionProfile.jsx";
 import { CollisionViewer } from "./components/CollisionViewer.jsx";
 import PredictPanel from "./components/PredictPanel.jsx";
 import "./CollisionTheory.css";
@@ -318,6 +319,7 @@ function Workspace({ seedProp }) {
       <p><b>Rate</b> = successful collisions per second (simulated time), averaged over the last {RATE_WINDOW} s: {snap.succ} reactions so far. It is proportional to the gradient of the products graph, and noisy because collisions are random (±{sigma.toFixed(2)} s{"⁻¹"} now).</p>
       <p><b>Collision energy</b> is the kinetic energy along the line of centres. A collision reacts only if that is at least Ea <i>and</i> both reactive sites face each other (here {stericPct} % of contacts). Collisions with enough energy: about e<sup>{"−"}Ea/RT</sup> = {formatFraction(snap.arrhenius)} (Arrhenius factor).</p>
       <p><b>Shaded area</b> = exact fraction of molecules with kinetic energy of at least Ea (see the readout under the graph). It is a different quantity from the fraction of collisions, which favours faster molecules.</p>
+          <ReactionProfile ea={p.ea} eaEff={eaEff} catalyst={p.catalyst} />
     </div>
   );
 

@@ -125,7 +125,7 @@ if (want("gl")) {
 if (want("ig")) {
   console.log("\n== Ideal Gas Simulation");
   const { page, ctx, errors } = await open("ideal-gas-simulation", [1366, 768]);
-  check((await txt(page, '[data-testid="live-P"]')).replace(/\s+/g, " ").includes("100.0 kPa"), "IG: opening state is 100 kPa (not 30 atm)");
+  check(/^P 100(\.0)? kPa$/.test((await txt(page, '[data-testid="live-P"]')).replace(/\s+/g, " ").trim()), "IG: opening state is 100 kPa (not 30 atm)");
   check(!/strong/i.test(await txt(page, '[data-testid="deviation"]')), `IG: opening badge does not say 'strong deviation' (${(await txt(page, '[data-testid="deviation"]')).replace(/\s+/g, " ")})`);
   check((await txt(page, '[data-testid="live-V"]')).includes("dm"), "IG: volume in dm³");
   // typed STP-like values
@@ -150,8 +150,9 @@ if (want("ig")) {
   await page.locator('[data-testid="input-ig-P"]').fill("4000"); await page.locator('[data-testid="input-ig-P"]').press("Enter"); await sleep(300);
   const body = await txt(page, '[data-testid="control-panel"]');
   check(/qualitative|limit|outside/i.test(body), `IG: condensation / limit message is shown and labelled (${body.replace(/\s+/g, " ").slice(-160)})`);
-  // readings
-  await page.locator('[data-testid="graph-toggle"]').click(); await sleep(400);
+  // readings (GS-10: choosing Real Gas already opened the graph, so only toggle if it is not shown)
+  check(await page.locator('[data-testid="graph-panel"]').count() === 1, "IG: GS-10 choosing Real Gas opens the Z-vs-P graph by itself");
+  if (!(await page.locator('[data-testid="view-switch"]').count())) { await page.locator('[data-testid="graph-toggle"]').click(); await sleep(400); }
   await page.locator('[data-testid="view-switch"] [role=radio]').nth(1).click(); await sleep(200);
   for (const P of [200, 500, 1000, 2000]) { await page.locator('[data-testid="input-ig-P"]').fill(String(P)); await page.locator('[data-testid="input-ig-P"]').press("Enter"); await sleep(150); await page.locator('[data-testid="record-reading"]').click(); await sleep(60); }
   check((await page.locator('[data-testid="reading-row"]').count()) >= 3, "IG: readings recorded");
@@ -160,7 +161,7 @@ if (want("ig")) {
   await page.screenshot({ path: `${out}/ig-1366.png` });
   // reset restores everything
   await page.locator('[data-testid="reset"]').click(); await sleep(400);
-  check((await txt(page, '[data-testid="live-P"]')).replace(/\s+/g, " ").includes("100.0 kPa") && (await page.locator('[data-testid="reading-row"]').count()) === 0, "IG: Reset restores the opening state and clears readings");
+  check(/^P 100(\.0)? kPa$/.test((await txt(page, '[data-testid="live-P"]')).replace(/\s+/g, " ").trim()) && (await page.locator('[data-testid="reading-row"]').count()) === 0, "IG: Reset restores the opening state and clears readings");
   check(errors.length === 0, `IG: no console errors (${errors.slice(0, 2).join(" | ")})`);
   await ctx.close();
   for (const sz of SIZES) for (const dark of [false, true]) {
@@ -299,6 +300,155 @@ if (want("hc")) {
   await ctx.close();
   const rm = await open("phase-change-heating-curve", [1366, 768], { reduced: true });
   check(rm.errors.length === 0, "HC: reduced motion loads without errors"); await rm.ctx.close();
+}
+
+// ============================================================== ROUND 2
+if (want("r2")) {
+  console.log("\n== Round 2 additions");
+  // ---- Ideal gas: gases, compare overlay, reachable slider max, outside-ideal banner, one R, literature value
+  {
+    const { page, ctx, errors } = await open("ideal-gas-simulation", [1366, 768]);
+    check(await page.locator('[data-testid="gas-id-switch"] [role=radio]').count() === 4, "R2 IG: four gases can be chosen (He, N2, CO2, NH3)");
+    // one R: record a reading in kPa/dm3 and read PV/nT from the table
+    await page.locator('[data-testid="record-from-controls"]').click(); await sleep(150);
+    await page.locator('[data-testid="graph-toggle"]').click(); await sleep(300);
+    await page.locator('[data-testid="view-switch"] [role=radio]').nth(1).click(); await sleep(250);
+    const row = (await page.locator('[data-testid="reading-row"]').first().innerText()).replace(/\s+/g, " ");
+    check(/\b8\.31\b/.test(row), `R2 IG: recorded PV/nT = 8.31 kPa dm3 mol-1 K-1 exactly, one constant (${row})`);
+    await page.locator('[data-testid="view-switch"] [role=radio]').nth(0).click(); await sleep(150);
+    // real mode + NH3 at 250 K: slider end is the reachable pressure and the live strip agrees
+    await page.locator('[data-testid="gas-switch"] [role=radio]').nth(1).click(); await sleep(150);
+    await page.locator('[data-testid="gas-id-switch"] [role=radio]').nth(3).click(); await sleep(250);
+    await page.locator('[data-testid="input-ig-T"]').fill("250"); await page.locator('[data-testid="input-ig-T"]').press("Enter"); await sleep(250);
+    const maxTxt = (await page.locator('[data-testid="block-P"] .sd-end--max').innerText()).replace(/\s+/g, " ");
+    await page.locator('[data-testid="slider-P"]').focus(); await page.keyboard.press("End"); await sleep(400);
+    const liveP = (await page.locator('[data-testid="live-P"]').innerText()).replace(/\s+/g, " ");
+    const badge = (await page.locator('[data-testid="chip-P"]').innerText()).replace(/\s+/g, " ");
+    check(!/500|50663/.test(maxTxt) && /kPa/.test(maxTxt), `R2 IG GS-05: real NH3 at 250 K: the pressure slider ends at its reachable maximum (${maxTxt})`);
+    const num = (x) => Number((/[\d.]+/.exec(x.replace(/^P\s*/, "")) || [])[0]);
+    check(Math.abs(num(liveP) - num(badge)) / num(badge) < 0.01, `R2 IG GS-05: slider badge and live strip agree at the end (${badge} / ${liveP})`);
+    // compare gases overlay
+    await page.locator('[data-testid="graph-compare-gases"]').check(); await sleep(400);
+    check(await page.locator('[data-testid^="graph-gas-"]').count() === 3 && await page.locator('[data-testid="graph-real"]').count() === 1, "R2 IG GS-08: compare overlay draws the other three gases beside the live one");
+    check(/falls furthest/.test(await page.locator('[data-testid="compare-note"]').innerText()), "R2 IG GS-08: overlay is explained with the intermolecular forces");
+    await page.screenshot({ path: `${out}/r2-ig-compare-1366.png` });
+    // CO2 condensation message quotes the literature value
+    await page.locator('[data-testid="gas-id-switch"] [role=radio]').nth(2).click(); await sleep(200);
+    await page.locator('[data-testid="input-ig-T"]').fill("250"); await page.locator('[data-testid="input-ig-T"]').press("Enter"); await sleep(250);
+    await page.locator('[data-testid="control-switch"] [role=radio]').nth(1).click(); await sleep(250);
+    await setRange(page, "slider-V", 0); await sleep(300);
+    const cp = (await page.locator('[data-testid="control-panel"]').innerText()).replace(/\s+/g, " ");
+    const dev = (await page.locator('[data-testid="deviation"]').innerText()).replace(/\s+/g, " ");
+    check(/literature|condens|outside|unreliable|limit/i.test(cp + dev), `R2 IG GS-06: a limit is shown at small volume (${(dev + " | " + cp).slice(0, 140)})`);
+    // outside-ideal banner (ideal mode, V = 0.01 dm3 at 700 K)
+    await page.locator('[data-testid="gas-switch"] [role=radio]').nth(0).click(); await sleep(200);
+    await page.locator('[data-testid="input-ig-T"]').fill("700"); await page.locator('[data-testid="input-ig-T"]').press("Enter"); await sleep(250);
+    await setRange(page, "slider-V", 0); await sleep(350);
+    check(await page.locator('[data-testid="outside-ideal"]').count() === 1, "R2 IG GS-07: 'Outside the ideal-gas regime' warning at 0.01 dm3 and 700 K in Ideal mode");
+    await page.screenshot({ path: `${out}/r2-ig-outside-1366.png` });
+    check(errors.length === 0, `R2 IG: no console errors (${errors.slice(0, 2).join(" | ")})`);
+    await ctx.close();
+    for (const sz of SIZES) for (const dark of [false, true]) {
+      const o = await open("ideal-gas-simulation", sz, { dark });
+      await o.page.locator('[data-testid="gas-switch"] [role=radio]').nth(1).click(); await sleep(400);
+      const ov = await noOverflow(o.page);
+      const strip = await o.page.evaluate(() => { const l = document.querySelector('[data-testid="live-P"]')?.getBoundingClientRect(); const f = document.querySelector(".sd-footer, footer")?.getBoundingClientRect(); return { l: l && Math.round(l.bottom), f: f && Math.round(f.top), h: window.innerHeight }; });
+      check(!ov.docScrollX && ov.bad.length === 0, `R2 IG ${sz.join("x")} ${dark ? "dark" : "light"} (gas picker + auto graph): nothing clipped ${ov.bad.join("; ")}`);
+      if (sz[0] === 390) check(!strip.f || strip.l <= strip.f + 1, `R2 IG GS-12: live strip is not cut by the footer at 390x844 (strip bottom ${strip.l}, footer top ${strip.f})`);
+      await o.page.screenshot({ path: `${out}/r2-ig-${sz.join("x")}-${dark ? "dark" : "light"}.png` });
+      check(o.errors.length === 0, `R2 IG ${sz.join("x")}: no console errors (${o.errors[0] || ""})`);
+      await o.ctx.close();
+    }
+  }
+  // ---- Gas laws: accessible names, reachable hint, carry note, Avogadro two gases
+  {
+    const { page, ctx, errors } = await open("gas-laws-explorer", [1366, 768]);
+    const names = await page.evaluate(() => [...document.querySelectorAll('input[type=range]')].map((el) => ({ id: el.id, label: el.labels?.[0]?.textContent?.trim() ?? null, vt: el.getAttribute("aria-valuetext") })));
+    check(names.length >= 1 && names.every((n) => n.label && n.vt), `R2 GL GS-20: range inputs expose a label and a value text (${JSON.stringify(names).slice(0, 120)})`);
+    await page.locator('[data-testid="tab-vt"]').click(); await sleep(200);
+    check(/Reachable: \d+ to \d+ K \(full range 100 to 800/.test(await page.locator('[data-testid="limit-T"]').innerText()), "R2 GL GS-16: the reachable part of the temperature range is stated on the slider");
+    await page.locator('[data-testid="tab-pv"]').click(); await sleep(200); await setRange(page, "slider-V", 40); await sleep(150);
+    await page.locator('[data-testid="tab-pt"]').click(); await sleep(500);
+    check(/carried over/.test(await page.locator('body').innerText()), "R2 GL GS-17: switching tab says the values were carried over");
+    await page.locator('[data-testid="tab-vn"]').click(); await sleep(200);
+    await page.locator('[data-testid="graph-toggle"]').click(); await sleep(400);
+    await page.locator('[data-testid="view-switch"] [role=radio]').nth(2).click(); await sleep(300);
+    const mol = await Promise.all(["A", "B"].map((v) => page.locator(`[data-testid="avo-molecules-${v}"]`).innerText()));
+    check(mol[0] === mol[1] && await page.locator('[data-testid^="avo-cyl-"]').count() === 2, `R2 GL GS-19: two cylinders, same molecules (${mol.join(" / ")})`);
+    await page.locator('[data-testid="avo-guess"] [role=radio]').nth(0).click(); await page.locator('[data-testid="avo-reveal"]').click(); await sleep(150);
+    check(/^Not quite/.test(await page.locator('[data-testid="avo-answer"]').innerText()), "R2 GL GS-19: a wrong prediction is corrected with the reason");
+    await page.screenshot({ path: `${out}/r2-gl-avogadro-1366.png` });
+    check(errors.length === 0, `R2 GL: no console errors (${errors.slice(0, 2).join(" | ")})`);
+    await ctx.close();
+    for (const sz of SIZES) for (const dark of [false, true]) {
+      const o = await open("gas-laws-explorer", sz, { dark });
+      await o.page.locator('[data-testid="tab-vn"]').click(); await sleep(200);
+      await o.page.locator('[data-testid="graph-toggle"]').click().catch(() => {}); await sleep(300);
+      await o.page.locator('[data-testid="view-switch"] [role=radio]').nth(2).click().catch(() => {}); await sleep(300);
+      const ov = await noOverflow(o.page);
+      check(!ov.docScrollX && ov.bad.length === 0, `R2 GL ${sz.join("x")} ${dark ? "dark" : "light"} (Avogadro view): nothing clipped ${ov.bad.join("; ")}`);
+      await o.page.screenshot({ path: `${out}/r2-gl-avo-${sz.join("x")}-${dark ? "dark" : "light"}.png` });
+      check(o.errors.length === 0, `R2 GL ${sz.join("x")}: no console errors (${o.errors[0] || ""})`);
+      await o.ctx.close();
+    }
+  }
+  // ---- Explore matter: predict step
+  {
+    const { page, ctx, errors } = await open("explore-matter-and-states", [1366, 768]);
+    const nextBtn = () => page.getByRole("button", { name: /^Next/ }).first().click();
+    for (let i = 0; i < 6; i++) { await nextBtn(); await sleep(80); } // to Solid - macro
+    check(await page.locator('[data-testid="predict-q1"]').count() === 1, "R2 EM GS-27: the Solid macro scene asks for a prediction before it reveals");
+    check(await page.locator("text=FIXED SHAPE").count() === 0, "R2 EM GS-27: the answer is NOT shown before the student commits");
+    await page.locator('[data-testid="predict-q1-no"]').click(); await sleep(150);
+    check(await page.locator("text=FIXED SHAPE").count() === 1 && /matches/.test(await page.locator('[data-testid="predict-q1-feedback"]').innerText()), "R2 EM GS-27: a right prediction reveals the answer and says it matches");
+    await page.locator('[data-testid="predict-q2-yes"]').click(); await sleep(150);
+    check(/Not this time/.test(await page.locator('[data-testid="predict-q2-feedback"]').innerText()), "R2 EM GS-27: a wrong prediction is corrected");
+    check(/Predictions: 1 of 2 matched/.test(await page.locator('[data-testid="predict-tally"]').innerText()), "R2 EM GS-27: the tally of predictions is kept");
+    await page.locator('[data-testid="predict-q1-no"]').first().isDisabled().catch(() => {});
+    await page.getByRole("button", { name: /Compare/ }).first().click(); await sleep(200);
+    const tb = await page.evaluate(() => [...document.querySelectorAll("button")].filter((b) => /Previous|Next|Reveal all|Reset/.test(b.textContent)).map((b) => Math.round(b.getBoundingClientRect().height)));
+    check(tb.length >= 3 && tb.every((h) => h >= 34), `R2 EM GS-28: toolbar buttons are at least 34 px tall (${tb.join(",")})`);
+    check(errors.length === 0, `R2 EM: no console errors (${errors.slice(0, 2).join(" | ")})`);
+    await ctx.close();
+    for (const sz of SIZES) for (const dark of [false, true]) {
+      const o = await open("explore-matter-and-states", sz, { dark });
+      for (let i = 0; i < 6; i++) { await o.page.getByRole("button", { name: /^Next/ }).first().click(); await sleep(60); }
+      const x = await o.page.evaluate(() => { const d = document.documentElement; return d.scrollWidth > d.clientWidth + 1; });
+      check(!x, `R2 EM ${sz.join("x")} ${dark ? "dark" : "light"} (predict scene): no horizontal scroll`);
+      await o.page.screenshot({ path: `${out}/r2-em-${sz.join("x")}-${dark ? "dark" : "light"}.png` });
+      check(o.errors.length === 0, `R2 EM ${sz.join("x")}: no console errors`);
+      await o.ctx.close();
+    }
+  }
+  // ---- Heating curve: predict (hide curve), zoomed KE bar, screen-reader summary, ticks
+  {
+    const { page, ctx, errors } = await open("phase-change-heating-curve", [1366, 768]);
+    check(await page.locator('[data-testid="hc-curve-full"]').count() === 1, "R2 HC: the faint full curve is shown by default (front-page behaviour unchanged)");
+    await page.locator('[data-testid="hc-hide-curve"]').check(); await sleep(200);
+    check(await page.locator('[data-testid="hc-curve-full"]').count() === 0, "R2 HC GS-40: 'Hide the curve' removes the answer curve");
+    await setRange(page, "hc-slider", 400); await sleep(250);
+    check(await page.locator('[data-testid="hc-curve-done"]').count() === 1, "R2 HC GS-40: the travelled part is still drawn as you go");
+    const ticks = await page.evaluate(() => [...document.querySelectorAll('[data-testid="hc-graph"] text')].map((t) => t.textContent.trim()).filter((t) => /^[-−]?\d+$/.test(t)).map((t) => Number(t.replace("−", "-"))));
+    check(ticks.length >= 5 && ticks.every((t) => t % 25 === 0), `R2 HC GS-40: y ticks are evenly spaced (${ticks.join(",")})`);
+    await page.locator('[data-testid="hc-hide-curve"]').uncheck();
+    await setRange(page, "hc-slider", 0); await sleep(200);
+    const k0 = Number(await page.locator('[data-testid="hc-ke"]').getAttribute("data-value"));
+    await page.locator('[data-testid="hc-zoom-ke"]').check(); await sleep(150);
+    const k1 = Number(await page.locator('[data-testid="hc-ke"]').getAttribute("data-value"));
+    check(k0 > 0.6 && k1 < 0.05, `R2 HC GS-41: zoomed energy bar starts near 0 (${k1.toFixed(2)}) instead of ${k0.toFixed(2)}`);
+    await setRange(page, "hc-slider", 500); await sleep(800);
+    check(/Heating water/i.test(await page.locator('[data-testid="hc-sr-summary"]').textContent()), `R2 HC GS-42: screen-reader summary of the state (${(await page.locator('[data-testid="hc-sr-summary"]').textContent()).slice(0, 80)})`);
+    check(errors.length === 0, `R2 HC: no console errors (${errors.slice(0, 2).join(" | ")})`);
+    await ctx.close();
+    for (const sz of SIZES) for (const dark of [false, true]) {
+      const o = await open("phase-change-heating-curve", sz, { dark }); const p = o.page; await sleep(500);
+      const g = await p.evaluate(() => { const r = (t) => document.querySelector(`[data-testid="${t}"]`).getBoundingClientRect(); const pp = r("hc-particle-panel"); const cv = r("hc-particle-wrap"); const gp = r("hc-graph-panel"); const ctl = r("hc-controls"); const d = document.documentElement; return { ok: cv.bottom <= pp.bottom + 1 && d.scrollWidth <= d.clientWidth + 1 && ctl.top >= Math.max(pp.bottom, gp.bottom) - 1 }; });
+      check(g.ok, `R2 HC ${sz.join("x")} ${dark ? "dark" : "light"} (two more controls): canvas in panel, controls below, no h-scroll`);
+      await p.screenshot({ path: `${out}/r2-hc-${sz.join("x")}-${dark ? "dark" : "light"}.png` });
+      check(o.errors.length === 0, `R2 HC ${sz.join("x")}: no console errors`);
+      await o.ctx.close();
+    }
+  }
 }
 
 await browser.close();

@@ -175,10 +175,9 @@ await unmount();
 console.log("Registry guard: every registered simulation is wrapped by the shell");
 const componentSrc = fs.readFileSync(new URL("../src/data/simulationEngineComponents.js", import.meta.url), "utf8");
 const entries = [...componentSrc.matchAll(/"([^"]+)": lazy\(\(\) => import\("\.\.\/([^"]+)"\)/g)].map((m) => ({ id: m[1], file: m[2] }));
-// Hidden from students (catalogue status "planned": placeholder art) but still embeddable in lessons, so it stays in the component map only.
-// It has no /simulation/:id route, so its frame has no New Tab target by design.
-const HIDDEN_BUT_EMBEDDABLE = new Set(["mixture-separation-explorer"]);
-await test("component map and registry list the same simulations (apart from those hidden from students)", () => {
+// Every engine in the component map is live and registered (the Mixture Separation Explorer was rebuilt and is live again).
+const HIDDEN_BUT_EMBEDDABLE = new Set();
+await test("component map and registry list the same simulations (none are hidden from students any more)", () => {
   assert.deepEqual(entries.map((e) => e.id).filter((id) => !HIDDEN_BUT_EMBEDDABLE.has(id)).sort(), Object.keys(SIMULATION_REGISTRY).sort());
   for (const id of HIDDEN_BUT_EMBEDDABLE) assert.ok(!(id in SIMULATION_REGISTRY), `${id} must not be in the student-facing registry`);
 });

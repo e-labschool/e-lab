@@ -86,7 +86,8 @@ await test("every live simulation is ['ib-dp'] (verified by IB syllabus codes); 
   assert.ok(live.length >= 24);
   for (const e of live) {
     assert.deepEqual([...e.curriculum], ["ib-dp"], e.id);
-    assert.ok(e.syllabus.length > 0 && e.syllabus.every((c) => /^[SR]\d/.test(c)), `${e.id}: IB DP syllabus codes back the mapping`);
+    // Mole Lab is deliberately a single simulation with no syllabus tags (owner decision), so codes are checked only when present.
+    assert.ok(e.syllabus.every((c) => /^[SR]\d/.test(c)) && (e.syllabus.length > 0 || e.id === "mole-lab"), `${e.id}: IB DP syllabus codes back the mapping`);
     assert.ok(Object.isFrozen(e.curriculum));
   }
   const soon = cat.SIMULATION_CATALOGUE.filter((e) => !cat.isLive(e));

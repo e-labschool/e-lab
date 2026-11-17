@@ -4,13 +4,14 @@ import { useSimulationPresentation } from "../../components/interactive-shell/Si
 import "../../lib/acidbase/acidbase-ui.css";
 import "./Neutralization.css";
 import { formatPH } from "../../lib/acidbase/format.js";
+import { strongPH } from "../../lib/acidbase/solver.js";
 import { neutralisation, MIN_PARTICLES, MAX_PARTICLES, BEAKER_CM3 } from "./lib/model.js";
 import { createWorld, startMix, stepWorld, TYPES, BEAKERS } from "./lib/sim.js";
 
 const DEFAULT_N = 4;
 const prefersReduced = () => typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-function Beaker({ b, label, sub, fillColour }) {
+function Beaker({ b, label, sub, sub2, fillColour }) {
   const top = b.y - 22; // meniscus a little above the particle area
   return (
     <g>
@@ -20,6 +21,7 @@ function Beaker({ b, label, sub, fillColour }) {
       <line x1={b.x - 5} x2={b.x + b.w + 5} y1={top} y2={top} stroke="#cbd5e1" strokeWidth="1.5" />
       <text x={b.x + b.w / 2} y={b.y + b.h + 38} textAnchor="middle" fontSize="15" fontWeight="700" fill="#f1f5f9">{label}</text>
       {sub && <text x={b.x + b.w / 2} y={b.y + b.h + 55} textAnchor="middle" fontSize="12" fill="#b9c4d4">{sub}</text>}
+      {sub2 && <text x={b.x + b.w / 2} y={b.y + b.h + 73} textAnchor="middle" fontSize="12.5" fontWeight="700" fill="#5eead4">{sub2}</text>}
     </g>
   );
 }
@@ -73,12 +75,12 @@ function Body() {
     <section className={"ab-root neu sim-surface-dark" + (isViewport ? " is-viewport" : "")}>
       <div className="neu-main">
         <div className="ab-panel neu-stage">
-          <svg viewBox="0 0 600 420" className="ab-svg neu-svg" role="img" aria-label={`Particle diagram: ${nA} HCl formula units and ${nNaOHText(nB)} ${separate ? "in separate beakers" : done ? "after mixing" : "mixing"}. ${status}`}>
+          <svg viewBox="0 82 600 346" className="ab-svg neu-svg" role="img" aria-label={`Particle diagram: ${nA} HCl formula units and ${nNaOHText(nB)} ${separate ? "in separate beakers" : done ? "after mixing" : "mixing"}. ${status}`}>
             {separate ? (<>
-              <Beaker b={BEAKERS.left} label="HCl(aq)" sub={`${m.cHCl.toFixed(3)} mol dm\u207B\u00B3, ${BEAKER_CM3.toFixed(1)} cm\u00B3`} fillColour="rgba(232,121,100,0.22)" />
-              <Beaker b={BEAKERS.right} label="NaOH(aq)" sub={`${m.cNaOH.toFixed(3)} mol dm\u207B\u00B3, ${BEAKER_CM3.toFixed(1)} cm\u00B3`} fillColour="rgba(108,134,238,0.24)" />
+              <Beaker b={BEAKERS.left} label="HCl(aq)" sub={`${m.cHCl.toFixed(3)} mol dm\u207B\u00B3, ${BEAKER_CM3.toFixed(1)} cm\u00B3`} sub2={`pH ${formatPH(strongPH(m.cHCl))}`} fillColour="rgba(232,121,100,0.22)" />
+              <Beaker b={BEAKERS.right} label="NaOH(aq)" sub={`${m.cNaOH.toFixed(3)} mol dm\u207B\u00B3, ${BEAKER_CM3.toFixed(1)} cm\u00B3`} sub2={`pH ${formatPH(strongPH(-m.cNaOH))}`} fillColour="rgba(108,134,238,0.24)" />
             </>) : (
-              <Beaker b={BEAKERS.mixed} label={done ? "Final solution" : "Mixed solution"} sub={`${2 * BEAKER_CM3} cm\u00B3`} fillColour="rgba(150,175,215,0.2)" />
+              <Beaker b={BEAKERS.mixed} label={done ? "Final solution" : "Mixed solution"} sub={`${2 * BEAKER_CM3} cm\u00B3`} sub2={done ? `pH ${formatPH(m.pH)} (${m.result})` : null} fillColour="rgba(150,175,215,0.2)" />
             )}
             {w && w.particles.map((p) => { const t = TYPES[p.type]; return (
               <g key={p.id}><circle cx={p.x} cy={p.y} r={t.r} fill={t.colour} stroke="#0e1520" strokeWidth="1" /><text x={p.x} y={p.y + 3.5} textAnchor="middle" fontSize={p.type === "OH" || p.type === "W" ? 8.5 : 9.5} fontWeight="700" fill="#fff">{t.label}</text></g>); })}

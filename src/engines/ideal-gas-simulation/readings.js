@@ -38,7 +38,7 @@ export function theoryFor(state, xKey, yKey, columns) {
   const Vs = Array.from({ length: 41 }, (_, i) => state.V * (0.25 + (3.75 * i) / 40)); // 0.25 V ... 4 V
   const ideal = (V) => ({ P: (n * R_GAS * T) / V, V, invV: 1 / V, PV: n * R_GAS * T, PVoverNT: R_GAS, Z: 1, T, n });
   if (state.mode === "real" && xKey === "P" && yKey === "Z") {
-    const c = generateZCurve(n, T, "real");
+    const c = generateZCurve(n, T, "real", undefined, state.gasId);
     return c.points.map((p) => ({ x: p.P * sc("P"), y: p.Z }));
   }
   const ok = { "V|P": 1, "invV|P": 1, "P|Z": 1, "P|PVoverNT": 1, "V|PV": 1, "invV|PV": 1 };

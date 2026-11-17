@@ -1,7 +1,7 @@
 # Bonding Visualizer
 
-Simulation id `bonding-visualizer`. Three models only: **Ionic | Covalent | Metallic**. No VSEPR, geometry, angles,
-polarity, electronegativity, hybridisation, sigma/pi, or conductivity/malleability simulations.
+Simulation id `bonding-visualizer`. Three models: **Ionic | Covalent | Metallic**. Covalent (round 2) recognises molecules from the placed atoms and shows
+bond polarity and a shape hint; no hybridisation, sigma/pi, or conductivity/malleability simulations.
 
 ## Layout of the code (`src/engines/bonding-visualizer/`)
 
@@ -60,21 +60,26 @@ Layout is the shared `SimulationDashboard` (container-driven: stacked only when 
   instance matrices directly (no objects created per frame), uses the delta time (capped at 50 ms), and the canvas switches to on-demand rendering
   while paused. The unit-cell outlines and floor grid of the old floor-only view were replaced by the cube.
 
-## Covalent display
+## Covalent display (round 2: recognise, then form)
 
-* **During bond formation** the electron-sharing animation is unchanged for molecules whose shells fit. Crowding is decided by geometry
-  (`isCrowded`): with the normal lens overlap between bonded atoms, do the full outer shells of two atoms that are not bonded to each other
-  overlap? (Today that is PCl5 and SF6; nothing is looked up by name.) Those molecules switch to a **valence-electron-dot drawing**: the shell
-  rings and overlap tints fade out, inner-shell electrons gather on a compact kernel ring, valence electrons sit on a dot ring, and then move to
-  the shared pairs (one electron from each atom) and lone pairs exactly as before. Every electron is kept, colours stay by atom of origin.
-* **After bond formation** the picture holds for about 1.3 s, then cross-fades into the final **sphere-and-bond structure**
-  (`scene/moleculeStructure.js`, `components/MoleculeView.jsx`, loaded lazily): a rotatable react-three-fiber model (orbit controls, zoom,
-  centred and scaled to the canvas) with labelled atoms and single/double/triple bonds drawn as 1/2/3 parallel cylinders. Without WebGL a flat SVG
-  of the same structure is shown. SF6: S at the centre, F on +-x, +-y, +-z, six single bonds. Other molecules use one fixed display arrangement
-  (diatomics linear, H2O and NH3 bent/pyramidal, CH4 tetrahedral, BF3 planar, BeCl2 linear, PCl5 trigonal bipyramid). The structure is a final
-  picture only: no angles, geometry names, polarity or hybridisation are shown. Lone pairs are not drawn on the spheres; the Lewis counts
-  (shared pairs, lone pairs, electrons around the central atom, the "S has 12 electrons" pill) stay in the strip above and below.
-* Replay returns to the electron-sharing picture; Reset returns to two hydrogen atoms; Pause also pauses the hand-over and the slow spin.
+The covalent tab no longer has a molecule table. The student places atoms (library click/drag, or the searchable "Pick a molecule" list of 100+ species),
+sets an optional overall **Charge**, and the app works out what those atoms make:
+
+* `src/lib/lewis/` is the pure engine (no React): `recognise(symbols, { charge, beyond })` combines a hand-verified library (`library.js`, SMILES written by hand
+  with explicit formal charges) with a resolver (`resolve.js`) that finds any composition it can: centre choice, single/double/triple/dative bonds, lone pairs,
+  formal charges, octet/duet, resonance, isomers. Expanded octets and odd-electron species are refused with a reason until **Beyond the course (HL)** is on.
+  Failures never go silent: `needs-charge` ("C + 3 O needs a charge: carbonate CO3 2-", with one-click buttons), `needs-beyond`, `few`, `none`, each with a message
+  and, where possible, "add these atoms" suggestions. Polarity uses the data-booklet Pauling electronegativities (`polarity.js`, also re-exported by `model/polarity.js`).
+* **Form molecule** animates the atoms together (`scene/formation.js`: pure `planFormation` + `formationFrame(p)`, a pure function of the slider position `p`),
+  valence shells overlap, shared pairs sit in the overlap lens (coloured by the atom each electron came from, gold ring = shared), double/triple bonds are 2/3 pairs,
+  lone pairs stay at their atom. The **Far apart / Bonded** slider scrubs the same function; Replay, Pause, reduced motion (a 0.4 s plain move, no spin) are honoured.
+* Dragging an atom next to a bonding partner snaps and forms the bond when every atom is joined, otherwise says what is missing; two atoms that do not bond
+  explain why (full shells, or "not bonded to each other in CO2"). Keyboard: focus the canvas, N / [ / ] select an atom, arrows move it, Delete removes, Enter forms.
+* **Only outer-shell electrons** (checkbox, ON by default, remembered per browser session in `sessionStorage` key `bv.outerOnly`): inner shells and inner electrons are
+  hidden, each atom shows its valence shell and a small labelled core ("core 6+"). Off: all shells.
+* Side card (`RecognitionCard`): formula, name, structural formula, valence electrons, bonding / lone pairs, shared electrons, charge, bond list with delta-EN, shape hint
+  (VSEPR/AXE), polarity, octet text, formal charges, "what you built", alternative isomers. The 3D tab (`MoleculeView`, three.js, lazy) shows the same structure with
+  delta labels and a dipole arrow; WebGL loss is handled by `shared-3d`.
 
 ## Lesson integration
 
@@ -85,7 +90,7 @@ At least one mode is always allowed and the initial mode always lies inside the 
 
 ## Tests
 
-* `npm run test:bonding` runs `scripts/test-bonding-model.mjs` (pure model and scenes: 200-atom cap and clamping, counters, lattice positions inside the
+* `npm run test:bonding` runs `scripts/test-lewis-engine.mjs` (the recognition engine: whole library, random multisets, refusals, geometry, polarity), then `scripts/test-bonding-model.mjs` (pure model and scenes: 200-atom cap and clamping, counters, lattice positions inside the
   cube for every metal at several counts, BCC coordination 8, engine bounds and no per-step allocation, crowding detection, SF6 structure,
   every molecule's final structure against the molecule table, no overlapping spheres) then `scripts/test-bonding-ui.mjs` (jsdom: add buttons,
   clamping, disabled limit state, hand-over to the structure view for every molecule; jsdom has no WebGL so the SVG fallback is what is inspected).

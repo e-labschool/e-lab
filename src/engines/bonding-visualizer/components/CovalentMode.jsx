@@ -1,63 +1,53 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Merge, Pause, Play, Repeat, RotateCcw, Trash2, Shrink } from "lucide-react";
+import { Merge, Minus, Pause, Play, Plus, Repeat, RotateCcw, Shapes, Trash2 } from "lucide-react";
 import { MiniSwitch } from "../../../components/simulation/SimulationDashboard.jsx";
 import ElementLibrary from "./ElementLibrary.jsx";
 import ModeShell, { Tool, Toolbar } from "./ModeShell.jsx";
-import { AtomBody, Electrons } from "./AtomLayers.jsx";
+import FormationStage from "./FormationStage.jsx";
+import MoleculePicker from "./MoleculePicker.jsx";
+import RecognitionCard from "./RecognitionCard.jsx";
+import { HtmlSubs } from "./subs.jsx";
 import { spawnPosition, useAtomDrag, useFrameLoop, useReducedMotion, useWorld } from "./hooks.js";
 import { COVALENT_ATOMS } from "../model/elements.js";
-import {
-  BOND_ORDERS, COVALENT_GROUPS, electronsAround, examplesForGroup, examplesForOrder, explainUnsupported, findMolecule, getMolecule,
-  dativeBonds, totalLonePairs, totalSharedPairs, uniformBondOrder,
-} from "../model/covalent.js";
-import { atomsAreClose, covalentScene, covalentSize, gatherTargets, layoutMolecule } from "../scene/covalentScene.js";
-import { ringRadius } from "../scene/atomGeometry.js";
-import { getBondingElement } from "../model/elements.js";
+import { assignCanvasAtoms, formationFrame, freeFrame, phaseCaption, planFormation } from "../scene/formation.js";
+import { buildSummary, chargeLabel, describeStructure, lewisElement, recognise } from "../../../lib/lewis/index.js";
 
-// The final sphere-and-bond structure (three.js) is loaded only when a molecule has been bonded.
+// The rotatable 3D structure (three.js) is loaded only when the student asks for it.
 const MoleculeView = lazy(() => import("./MoleculeView.jsx"));
-const HOLD = 1.3; // seconds the finished electron-sharing picture stays before the structure fades in
-const FADE = 0.9;
-const SUBS = "₀₁₂₃₄₅₆₇₈₉";
-/** Splits "SF₆" into [{t:"SF"},{t:"6",sub:true}] so subscripts can be drawn as real subscripts. */
-function subParts(str) {
-  const out = [];
-  for (const ch of str) {
-    const k = SUBS.indexOf(ch);
-    const sub = k >= 0;
-    const t = sub ? String(k) : ch;
-    if (out.length && !!out[out.length - 1].sub === sub) out[out.length - 1].t += t; else out.push({ t, sub });
-  }
-  return out;
-}
-const HtmlSubs = ({ text }) => subParts(text).map((q, i) => (q.sub ? <sub key={i}>{q.t}</sub> : <span key={i}>{q.t}</span>));
-const SvgSubs = ({ text, size }) => subParts(text).map((q, i) => (q.sub ? <tspan key={i} dy={size * 0.22} fontSize={size * 0.68}>{q.t}</tspan> : <tspan key={i} dy={i && subParts(text)[i - 1].sub ? -size * 0.22 : undefined}>{q.t}</tspan>));
 
-const MAX_ATOMS = 8;
-const DUR_BOND = 4.2;
+export const MAX_ATOMS = 14; // the resolver's limit (lib/lewis MAX_ATOMS)
+const DURATION = 5.2; // seconds of the formation animation
+const REDUCED_DURATION = 0.4; // reduced motion: a short, plain move to the end
+const SYNC_LIMIT = 4; // up to this many atoms recognition is instant; bigger sets are worked out after a short pause
 const GROUPS = [
-  { id: "nonmetals", title: "Non-metals", symbols: COVALENT_ATOMS.filter((s) => !["Be", "B"].includes(s)) },
-  { id: "exceptions", title: "Octet exceptions", symbols: ["Be", "B"] },
+  { id: "nonmetals", title: "Non-metals", symbols: COVALENT_ATOMS.filter((s) => !["Be", "B", "Al"].includes(s)) },
+  { id: "exceptions", title: "Octet exceptions", symbols: ["Be", "B", "Al"] },
 ];
-const DEFAULT_EXAMPLE = { normal: "CH4", incomplete: "BF3", expanded: "SF6", carbon: "C2H4", coordinate: "NH4+" };
 
-const octetWord = { normal: "octet", incomplete: "incomplete octet", expanded: "expanded octet", carbon: "octet", coordinate: "octet" };
+/** A boolean / number remembered for the browser session only (guarded: storage can be blocked). */
+function useSession(key, initial) {
+  const [v, setV] = useState(() => {
+    try { const s = window.sessionStorage.getItem(`bv.${key}`); return s === null ? initial : JSON.parse(s); } catch { return initial; }
+  });
+  const set = useCallback((x) => {
+    setV(x);
+    try { window.sessionStorage.setItem(`bv.${key}`, JSON.stringify(x)); } catch { /* storage blocked: keep it for this page only */ }
+  }, [key]);
+  return [v, set];
+}
 
-function explainBonded(m) {
-  const pairs = totalSharedPairs(m);
-  const base = `${m.formula}: ${pairs} shared pair${pairs > 1 ? "s" : ""}, ${totalLonePairs(m)} lone pair${totalLonePairs(m) === 1 ? "" : "s"}. Electrons are shared, not transferred.`;
-  if (m.note) return `${m.formula}: ${m.note}`;
-  if (m.id === "CO") return "CO: a triple bond, 3 shared pairs. Two pairs have one electron from each atom; the third pair is a coordinate (dative) bond, both electrons from O. Each atom ends with an octet.";
-  if (m.id === "CO2") return "CO₂: two double bonds, 4 shared pairs. Each oxygen has 2 lone pairs, so every atom has an octet.";
-  if (m.id === "HCN") return "HCN: one single bond (C–H) and one triple bond (C≡N): 4 shared pairs, 1 lone pair on N.";
-  if (m.id === "C2H4") return "C₂H₄: C=C double bond and four C–H single bonds: 6 shared pairs, no lone pairs; each carbon has an octet.";
-  if (m.id === "C2H2") return "C₂H₂: C≡C triple bond and two C–H single bonds: 5 shared pairs; each carbon has an octet.";
-  if (m.id === "H2") return "H₂: one shared pair = 2 electrons, one from each H. Shared, not transferred.";
-  if (m.group === "incomplete") return `${m.formula}: ${m.atoms[m.central]} has only ${electronsAround(m, m.central)} electrons (incomplete octet).`;
-  if (m.group === "expanded") return `${m.formula}: ${m.atoms[m.central]} has ${electronsAround(m, m.central)} electrons (expanded octet, period 3).`;
-  if (uniformBondOrder(m) === 2) return "O₂: double bond = 2 shared pairs (4 electrons shared).";
-  if (uniformBondOrder(m) === 3) return "N₂: triple bond = 3 shared pairs (6 electrons shared).";
-  return base;
+const pairKey = (a, b) => (a < b ? `${a}|${b}` : `${b}|${a}`);
+
+/** Why two atoms that were dropped together do not bond (or that they do). Returns a sentence. */
+export function contactMessage(sa, sb, result) {
+  const ea = lewisElement(sa); const eb = lewisElement(sb);
+  if (ea && eb && ea.valence === 8 && eb.valence === 8) return `${sa} and ${sb} both have full outer shells (8 electrons): neither has room for more, so they do not share electrons.`;
+  if (result && result.status === "ok") {
+    const bonded = result.structure.bonds.some(([i, j]) => pairKey(result.structure.atoms[i], result.structure.atoms[j]) === pairKey(sa, sb));
+    if (!bonded) return `In ${result.info.formula} ${sa} and ${sb} are not bonded to each other${sa === sb ? " (each bonds to a different atom)" : ""}. Move them next to the atoms they bond with, or press Form molecule.`;
+    return null;
+  }
+  return result?.message ?? null;
 }
 
 export default function CovalentMode({ tabs, onReset }) {
@@ -66,98 +56,100 @@ export default function CovalentMode({ tabs, onReset }) {
   const counter = useRef({ id: 2, color: 2 });
   const [atoms, setAtoms] = useState([{ id: "a1", symbol: "H", x: 270, y: 280, colorIdx: 0 }, { id: "a2", symbol: "H", x: 630, y: 280, colorIdx: 1 }]);
   const pristine = useRef(true);
-  const [anim, setAnim] = useState({ stage: "setup", p: 0 });
-  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [charge, setCharge] = useState(0);
+  const [beyond, setBeyond] = useSession("beyond", false);
+  const [outerOnly, setOuterOnly] = useSession("outerOnly", true);
+  const [legendChoice, setLegendChoice] = useSession("legend", null);
+  const [small, setSmall] = useState(false);
+  const [p, setP] = useState(0);
+  const [run, setRun] = useState(false);
   const [playing, setPlaying] = useState(true);
   const [time, setTime] = useState(0);
-  const [bondedT, setBondedT] = useState(0);
   const [selected, setSelected] = useState(null);
-  const [groupState, setGroupState] = useState("normal");
-  const [orderState, setOrderState] = useState(1);
+  const [altIndex, setAltIndex] = useState(0);
+  const [view, setView] = useState("lewis");
   const [note, setNote] = useState("");
-  const tween = useRef(null);
+  const [autoForm, setAutoForm] = useState(false);
+  const [deferred, setDeferred] = useState({ key: "", value: null });
+
+  // a small canvas starts with the key folded away (it would hide the molecule); the student's own choice wins and is remembered
+  useEffect(() => {
+    const el = boxRef.current; if (!el) return undefined;
+    const m = () => { const r = el.getBoundingClientRect(); setSmall(r.height < 400 || r.width < 520); };
+    m();
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(m) : null; ro?.observe(el);
+    return () => ro?.disconnect();
+  }, [boxRef]);
+  const legendOpen = legendChoice === null ? !small : legendChoice;
+  const setLegendOpen = setLegendChoice;
 
   const symbols = useMemo(() => atoms.map((a) => a.symbol), [atoms]);
-  const molecule = useMemo(() => findMolecule(symbols), [symbols]);
-  const S = covalentSize(world, molecule);
-  const stage = anim.stage;
-  const inSetup = stage === "setup";
-  const close = useMemo(() => atomsAreClose(atoms, S), [atoms, S]);
-  const group = molecule?.group ?? groupState;
-  const order = (molecule && uniformBondOrder(molecule)) || orderState;
+  const key = `${symbols.join(",")}|${charge}|${beyond ? 1 : 0}`;
+  const atomsRef = useRef(atoms); atomsRef.current = atoms;
+
+  // ---- recognition: instant for small sets, after a short pause (debounced) for bigger ones ----
+  const syncResult = useMemo(() => (symbols.length <= SYNC_LIMIT ? recognise(symbols, { charge, beyond }) : null), [symbols, charge, beyond]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (symbols.length <= SYNC_LIMIT) return undefined;
+    const t = setTimeout(() => setDeferred({ key, value: recognise(symbols, { charge, beyond }) }), 160);
+    return () => clearTimeout(t);
+  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  const pending = symbols.length > SYNC_LIMIT && deferred.key !== key;
+  const result = symbols.length <= SYNC_LIMIT ? syncResult : (pending ? null : deferred.value);
+  const ok = result?.status === "ok";
+
+  // the structure on show (the best one, or an alternative the student picked)
+  const shown = useMemo(() => {
+    if (!ok) return null;
+    if (altIndex === 0 || !result.alternatives[altIndex - 1]) return result;
+    const a = result.alternatives[altIndex - 1];
+    const info = describeStructure(a.structure, { entry: a.entry });
+    return { ...result, structure: a.structure, info, summary: buildSummary(a.structure, info, a.entry), entry: a.entry, source: a.entry ? "library" : "algorithm", expandedNote: null };
+  }, [ok, result, altIndex]);
+
+  const plan = useMemo(() => (shown ? planFormation(shown.structure, { outerOnly, world }) : null), [shown, outerOnly, world]);
+  const map = useMemo(() => (plan ? assignCanvasAtoms(plan, atoms) : null), [plan, atoms]);
+  const starts = useMemo(() => (plan && map ? plan.structure.atoms.map((_, i) => (map[i] >= 0 ? { x: atoms[map[i]].x, y: atoms[map[i]].y } : plan.final[i])) : null), [plan, map, atoms]);
+
+  // any change to the atoms, the charge, the HL switch or the structure picked: back to "atoms apart"
+  useEffect(() => { setP(0); setRun(false); setAltIndex(0); setNote(""); setView("lewis"); }, [key]);
+  useEffect(() => { setP(0); setRun(false); }, [altIndex]);
+  useEffect(() => { if (autoForm && result && (ok || result.status)) { setAutoForm(false); if (ok) { setP(0); setRun(true); setPlaying(true); } } }, [autoForm, result, ok]);
 
   // keep the two starting hydrogens at 30% / 70% of the (measured) canvas until the student touches anything
   useEffect(() => {
     if (!pristine.current) return;
-    setAtoms((l) => l.map((a, i) => ({ ...a, x: world.W * (i === 0 ? 0.3 : 0.7), y: world.H * 0.5 })));
+    setAtoms((l) => l.map((a, i) => ({ ...a, x: world.W * (i === 0 ? 0.3 : 0.7), y: world.H * 0.47 })));
   }, [world.W, world.H]);
 
   useFrameLoop((dt) => {
-    if (tween.current) {
-      const tw = tween.current; tw.t = Math.min(1, tw.t + dt / 0.5);
-      const e = tw.t * tw.t * (3 - 2 * tw.t);
-      setAtoms((l) => l.map((a) => { const f = tw.from[a.id]; const to = tw.to[a.id]; return f && to ? { ...a, x: f.x + (to.x - f.x) * e, y: f.y + (to.y - f.y) * e } : a; }));
-      if (tw.t >= 1) tween.current = null;
-    }
-    if (stage !== "bonded") setBondedT((t) => (t === 0 ? t : 0));
     if (!playing) return;
-    setBondedT((t) => (stage === "bonded" ? t + dt : t));
     if (!reduced) setTime((t) => t + dt);
-    setAnim((a) => {
-      if (a.stage !== "bonding") return a;
-      const p = a.p + (dt * (reduced ? 8 : 1)) / DUR_BOND;
-      return p < 1 ? { stage: "bonding", p } : { stage: "bonded", p: 1 };
-    });
-  });
-
-  const settle = stage === "bonded" && molecule ? Math.min(1, Math.max(0, (bondedT - (reduced ? 0.2 : HOLD)) / (reduced ? 0.2 : FADE))) : 0;
-  const smooth = settle * settle * (3 - 2 * settle);
-  const scene = useMemo(() => covalentScene({ atoms, molecule, stage, p: anim.p, time, world, offset }), [atoms, molecule, stage, anim.p, time, world, offset]);
-
-  const touch = () => { pristine.current = false; };
-
-  const loadMolecule = useCallback((m) => {
-    touch();
-    const n = m.atoms.length;
-    const c = { x: world.W / 2, y: world.H / 2 };
-    const list = [];
-    if (n === 2) {
-      const d = Math.min(world.W * 0.3, 260);
-      m.atoms.forEach((sym, i) => list.push({ symbol: sym, x: c.x + (i ? d : -d), y: c.y }));
-    } else if (m.layout) {
-      const Sm = covalentSize(world, m); const lay = layoutMolecule(m);
-      m.atoms.forEach((sym, i) => list.push({ symbol: sym, x: Math.min(world.W - 40, Math.max(40, c.x + lay.pos[i].x * Sm * 1.7)), y: Math.min(world.H - 60, Math.max(40, c.y + lay.pos[i].y * Sm * 1.7)) }));
-    } else {
-      const Sm = covalentSize(world, m);
-      const lim = Math.max(...m.atoms.slice(1).map((s) => (ringRadius(getBondingElement(m.atoms[0]).shells.length) + ringRadius(getBondingElement(s).shells.length) + 36) * Sm));
-      const R = Math.min(250, Math.max(world.H * 0.34, lim * 1.2));
-      list.push({ symbol: m.atoms[0], x: c.x, y: c.y });
-      m.atoms.slice(1).forEach((sym, i) => {
-        // an even number of ligands starts half a step round, so none sits exactly above / below the centre: the canvas is wider than tall, and the top / bottom atoms were clipped (4 ligands) or touched the edge (2)
-        const cnt = n - 1; const ang = -Math.PI / 2 + (cnt % 2 === 0 ? Math.PI / cnt : 0) + (2 * Math.PI * i) / cnt;
-        list.push({ symbol: sym, x: Math.min(world.W - 40, Math.max(40, c.x + R * 1.25 * Math.cos(ang))), y: c.y + R * Math.sin(ang) });
+    if (run) {
+      setP((v) => {
+        const nv = v + dt / (reduced ? REDUCED_DURATION : DURATION);
+        if (nv >= 1) { setRun(false); return 1; }
+        return nv;
       });
     }
-    counter.current = { id: n, color: n };
-    setAtoms(list.map((a, i) => ({ id: `a${i + 1}`, ...a, colorIdx: i })));
-    setAnim({ stage: "setup", p: 0 }); setOffset({ x: 0, y: 0 }); setSelected(null); setNote("");
-    setGroupState(m.group); setOrderState(uniformBondOrder(m) ?? 1);
-  }, [world]);
+  });
 
-  const pickGroup = (g) => { loadMolecule(getMolecule(DEFAULT_EXAMPLE[g])); };
-  const pickOrder = (o) => { loadMolecule(examplesForOrder(o)[0]); };
+  const touch = () => { pristine.current = false; };
+  const inSetup = p <= 0 && !run;
 
+  // ---- editing the atoms ----
   const addAtom = useCallback((symbol, client) => {
-    if (!inSetup) return;
-    if (atoms.length >= MAX_ATOMS) { setNote(`Maximum ${MAX_ATOMS} atoms on the canvas.`); return; }
+    if (!inSetup) { setP(0); setRun(false); }
+    if (atomsRef.current.length >= MAX_ATOMS) { setNote(`Up to ${MAX_ATOMS} atoms: bigger species are beyond what this model can work out.`); return; }
     touch();
     const w = client ? toWorld(client.clientX, client.clientY) : null;
-    const pos = w ? { x: Math.min(world.W - 40, Math.max(40, w.x)), y: Math.min(world.H - 40, Math.max(40, w.y)) } : spawnPosition(atoms.length, world);
+    const n = atomsRef.current.length;
+    const pos = w ? { x: Math.min(world.W - 40, Math.max(40, w.x)), y: Math.min(world.H - 40, Math.max(40, w.y)) } : spawnPosition(n, world);
     const id = `a${++counter.current.id}`;
     const colorIdx = counter.current.color++;
     setAtoms((l) => [...l, { id, symbol, x: pos.x, y: pos.y, colorIdx }]);
     setNote("");
-  }, [inSetup, atoms.length, toWorld, world]);
+  }, [inSetup, toWorld, world]);
 
   const removeSelected = useCallback(() => {
     if (!selected || !inSetup) return;
@@ -167,10 +159,59 @@ export default function CovalentMode({ tabs, onReset }) {
   }, [selected, inSetup]);
 
   const moveAtom = useCallback((id, x, y) => { touch(); setAtoms((l) => l.map((a) => (a.id === id ? { ...a, x, y } : a))); }, []);
-  const groupMove = useCallback((dx, dy) => setOffset((o) => ({ x: o.x + dx, y: o.y + dy })), []);
-  const bind = useAtomDrag({ toWorld, world, enabled: inSetup, onMove: moveAtom, onSelect: setSelected, onGroupMove: groupMove, groupEnabled: stage === "bonded" && settle === 0 });
+  const bind = useAtomDrag({ toWorld, world, enabled: inSetup, onMove: moveAtom, onSelect: setSelected });
 
+  const startForming = useCallback(() => { setSelected(null); setNote(""); setPlaying(true); setP(0); setRun(true); }, []);
+
+  // ---- manual approach: when a dragged atom is released next to others ----
+  const frameRadiusRef = useRef(40);
+  const onDrop = useCallback((id) => {
+    const list = atomsRef.current;
+    const me = list.find((a) => a.id === id);
+    if (!me) return;
+    const near = (a, b) => Math.hypot(a.x - b.x, a.y - b.y) < frameRadiusRef.current * 1.7;
+    const close = list.filter((a) => a.id !== id && near(a, me));
+    if (!close.length) { setNote(""); return; }
+    if (!ok) { const msg = contactMessage(me.symbol, close[0].symbol, result) ?? result?.message; if (msg) setNote(msg); return; }
+    const st = shown.structure; const bondSet = new Set(st.bonds.map(([i, j]) => pairKey(st.atoms[i], st.atoms[j])));
+    const good = close.filter((a) => bondSet.has(pairKey(a.symbol, me.symbol)));
+    if (!good.length) { setNote(contactMessage(me.symbol, close[0].symbol, result)); return; }
+    // are all atoms joined into one group by contacts that are bonds in the structure?
+    const seen = new Set([list[0].id]); const queue = [list[0]];
+    while (queue.length) {
+      const u = queue.pop();
+      list.forEach((v) => { if (!seen.has(v.id) && near(u, v) && bondSet.has(pairKey(u.symbol, v.symbol))) { seen.add(v.id); queue.push(v); } });
+    }
+    if (seen.size === list.length) { setNote(`The atoms are in contact: they bond to form ${shown.info.name ? shown.info.name.toLowerCase() + ", " : ""}${shown.info.formula}.`); startForming(); }
+    else setNote(`${me.symbol} is next to a bonding partner. ${list.length - seen.size} more atom${list.length - seen.size === 1 ? " is" : "s are"} still apart: bring ${list.length - seen.size === 1 ? "it" : "them"} close too, or press Form molecule.`);
+  }, [ok, result, shown, startForming]);
+
+  // ---- the frame on show ----
+  const frame = useMemo(() => {
+    if (plan && starts) return formationFrame(plan, starts, p, { time, reduced });
+    return freeFrame(atoms, { outerOnly, world, time, reduced });
+  }, [plan, starts, p, time, reduced, atoms, outerOnly, world]);
+  frameRadiusRef.current = frame.atoms.length ? Math.min(...frame.atoms.map((a) => a.r)) : 40;
+  const frameIndexOf = useCallback((canvasId) => (plan && map ? map.findIndex((k) => k >= 0 && atoms[k].id === canvasId) : atoms.findIndex((a) => a.id === canvasId)), [plan, map, atoms]);
+  const selectedIndex = selected ? frameIndexOf(selected) : -1;
+  const dragFor = useCallback((fi) => {
+    if (!inSetup) return null;
+    const cid = plan && map ? atoms[map[fi]]?.id : atoms[fi]?.id;
+    if (!cid) return null;
+    const h = bind(cid, () => { const a = atomsRef.current.find((x) => x.id === cid); return { x: a.x, y: a.y }; });
+    return { ...h, onPointerUp: (e) => { h.onPointerUp(e); onDrop(cid); } };
+  }, [inSetup, plan, map, atoms, bind, onDrop]);
+
+  // ---- keyboard on the canvas ----
   const onKeyDown = (e) => {
+    if (e.target !== e.currentTarget) return;
+    if (e.key === "n" || e.key === "N" || e.key === "]" || e.key === "[") {
+      e.preventDefault();
+      const i = atoms.findIndex((a) => a.id === selected); const step = e.key === "N" || e.key === "[" ? -1 : 1;
+      if (atoms.length) setSelected(atoms[(i + step + atoms.length) % atoms.length].id);
+      return;
+    }
+    if (e.key === "Enter") { e.preventDefault(); formMolecule(); return; }
     if (!selected || !inSetup) return;
     const step = e.shiftKey ? 30 : 12;
     const d = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
@@ -178,127 +219,138 @@ export default function CovalentMode({ tabs, onReset }) {
     else if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); removeSelected(); }
   };
 
-  const formBond = () => { if (!molecule || !close || !inSetup) return; touch(); setSelected(null); setPlaying(true); setAnim({ stage: "bonding", p: 0 }); };
-  const bring = () => {
-    if (!molecule || !inSetup) return;
+  // ---- actions ----
+  const formMolecule = () => {
     touch();
-    const to = Object.fromEntries(gatherTargets(molecule, atoms, world).map((t) => [t.id, t]));
-    tween.current = { t: 0, from: Object.fromEntries(atoms.map((a) => [a.id, { x: a.x, y: a.y }])), to };
+    if (pending) { setNote("Still working out the structure: one moment."); return; }
+    if (!ok) { setNote(result?.message ?? "Add atoms first."); return; }
+    startForming();
   };
-  const replay = () => { if (inSetup) return; setPlaying(true); setAnim({ stage: "bonding", p: 0 }); };
+  const replay = () => { if (!ok) return; startForming(); };
+  const scrub = (v) => { if (!ok) return; setRun(false); setPlaying(true); setP(v); };
+  const pickMolecule = (entry) => {
+    touch();
+    const st = (!entry.beyond && entry.octetStructure) ? entry.octetStructure : entry.structure;
+    const n = st.atoms.length;
+    // the atoms start spread round an ellipse, well apart, then bond on their own
+    const rx = world.W * 0.34; const ry = world.H * 0.3; const cx = world.W / 2; const cy = world.H * 0.47;
+    const list = st.atoms.map((symbol, i) => {
+      const ang = -Math.PI / 2 + (2 * Math.PI * i) / n + (n % 2 === 0 ? Math.PI / n : 0);
+      return { id: `a${i + 1}`, symbol, x: n === 1 ? cx : cx + rx * Math.cos(ang), y: n === 1 ? cy : cy + ry * Math.sin(ang), colorIdx: i };
+    });
+    counter.current = { id: n, color: n };
+    setAtoms(list); setSelected(null); setCharge(entry.charge); if (entry.beyond) setBeyond(true);
+    setAutoForm(true); setNote("");
+  };
+  const applyAdditions = (add) => { add.forEach((s) => addAtom(s)); };
+  const clearAll = () => { touch(); setAtoms([]); setSelected(null); setCharge(0); };
 
-  const explain = useMemo(() => {
+  // ---- text ----
+  const caption = ok && p > 0 ? phaseCaption(p, shown.structure) : "";
+  const explain = (() => {
     if (note) return note;
-    if (stage === "bonding") return "Electron clouds overlap. Each atom shares one electron per bond; both colours are kept.";
-    if (stage === "bonded" && molecule) return explainBonded(molecule);
-    if (!molecule) return explainUnsupported(symbols);
-    return close ? `${molecule.formula}: atoms are close. Form Bond to share electrons.` : `${molecule.formula}: drag the atoms closer (or use Bring together), then Form Bond.`;
-  }, [note, stage, molecule, symbols, close]);
+    if (pending) return "Working out the structure of these atoms...";
+    if (!result) return "Add atoms from the library, or pick a molecule from the list.";
+    if (!ok) return result.message;
+    if (p >= 1) return shown.summary;
+    if (p > 0) return caption;
+    return `${shown.info.name ? `${shown.info.name}, ` : ""}${shown.info.formula}: recognised from the atoms. Press Form molecule to watch them bond, or drag the atoms together.`;
+  })();
 
-  const done = molecule && stage !== "setup";
-  const centralText = molecule && stage === "bonded" ? (molecule.central !== null
-    ? `${molecule.atoms[molecule.central]} has ${electronsAround(molecule, molecule.central)} electrons around it (${octetWord[molecule.group]})`
-    : [...new Set(molecule.atoms)].map((s) => `${s}: ${electronsAround(molecule, molecule.atoms.indexOf(s))}`).join(" · ") + " electrons") : "";
-
+  const info = ok ? shown.info : null;
+  const sgn = (q) => (q === 0 ? "0" : q > 0 ? `+${q}` : `−${-q}`);
+  const centreSym = ok && shown.structure.centre != null ? shown.structure.atoms[shown.structure.centre] : null;
   const live = [
-    { id: "mol", label: "Molecule", value: molecule ? `${molecule.formula}  ${molecule.structural}` : "–", bg: "#e8f7ef", testId: "live-molecule" },
-    { id: "shared", label: "Shared pairs", value: done ? String(totalSharedPairs(molecule)) : "–", bg: "#eaf1ff", testId: "live-shared" },
-    { id: "lone", label: "Lone pairs", value: done ? String(totalLonePairs(molecule)) : "–", bg: "#fff1e0", testId: "live-lone" },
-    { id: "centre", label: molecule?.central !== null && molecule ? `e⁻ around ${molecule.atoms[molecule.central]}` : "e⁻ per atom", value: done && stage === "bonded" ? (molecule.central !== null ? String(electronsAround(molecule, molecule.central)) : [...new Set(molecule.atoms)].map((s) => electronsAround(molecule, molecule.atoms.indexOf(s))).join(", ")) : "–", bg: "#f1ebfb", testId: "live-central" },
-    { id: "charge", label: "Net charge", value: done && stage === "bonded" ? (molecule.charge === 0 ? "0" : molecule.charge > 0 ? `+${molecule.charge}` : `−${-molecule.charge}`) : "–", bg: "#f3f4f8", testId: "live-charge" },
+    { id: "mol", label: "Molecule", value: ok ? `${info.formula}  ${info.structural}` : pending ? "..." : "–", bg: "#e8f7ef", testId: "live-molecule" },
+    { id: "shared", label: "Shared pairs", value: ok ? String(info.bondingPairs) : "–", bg: "#eaf1ff", testId: "live-shared" },
+    { id: "lone", label: "Lone pairs", value: ok ? String(info.lonePairs) : "–", bg: "#fff1e0", testId: "live-lone" },
+    { id: "centre", label: centreSym ? `Central atom` : "Central atom", value: ok ? (centreSym ?? "none") : "–", bg: "#f1ebfb", testId: "live-central" },
+    { id: "charge", label: "Net charge", value: ok ? sgn(info.charge) : sgn(charge), bg: "#f3f4f8", testId: "live-charge" },
   ];
 
-  const lockReason = !inSetup ? "Reset to add more atoms." : null;
-
-  const examples = group === "normal" ? examplesForOrder(order) : examplesForGroup(group);
+  // ---- options row ----
   const options = (
     <div className="bv-options" data-testid="covalent-options">
-      <MiniSwitch
-        ariaLabel="Octet rule" testId="octet-tabs" value={group} onChange={pickGroup}
-        options={COVALENT_GROUPS.map((g) => ({ id: g.id, label: g.label, title: g.ahl ? "Higher level only" : undefined }))}
-      />
-      {group === "normal" && (
-        <MiniSwitch ariaLabel="Bond order" testId="order-tabs" value={order} onChange={pickOrder} options={BOND_ORDERS.map((b) => ({ id: b.id, label: b.label, title: b.title }))} />
-      )}
-      <div className="bv-examples" role="group" aria-label="Examples" data-testid="examples">
-        <span className="bv-examples-label">Examples</span>
-        {examples.map((m) => (
-          <button key={m.id} type="button" className="bv-example" aria-pressed={molecule?.id === m.id} onClick={() => loadMolecule(m)} data-testid={`example-${m.id}`} title={`${m.name}: load ${m.formula}`}>{m.formula}</button>
-        ))}
-        {group === "expanded" && <span className="bv-ahl" title="Higher level only">AHL</span>}
+      <MoleculePicker onPick={pickMolecule} beyond={beyond} />
+      <div className="bv-charge" role="group" aria-label="Overall charge of the species" data-testid="charge-control">
+        <span className="bv-charge-label" id="bv-charge-label">Charge</span>
+        <button type="button" className="bv-step" onClick={() => setCharge((c) => Math.max(-3, c - 1))} disabled={charge <= -3} aria-label="Decrease charge" data-testid="charge-minus"><Minus size={13} aria-hidden="true" /></button>
+        <output className="bv-charge-value" aria-labelledby="bv-charge-label" data-testid="charge-value">{charge === 0 ? "0" : chargeLabel(charge)}</output>
+        <button type="button" className="bv-step" onClick={() => setCharge((c) => Math.min(3, c + 1))} disabled={charge >= 3} aria-label="Increase charge" data-testid="charge-plus"><Plus size={13} aria-hidden="true" /></button>
       </div>
+      <label className="bv-check" data-testid="outer-only-label" title="Show only the outermost (valence) shell of each atom and its electrons. Inner shells are replaced by a small labelled core.">
+        <input type="checkbox" checked={outerOnly} onChange={(e) => setOuterOnly(e.target.checked)} data-testid="outer-only" />
+        <span>Only outer-shell electrons</span>
+      </label>
+      <label className="bv-check bv-check--hl" title="Allow expanded octets (SF6, PCl5) and odd-electron species (NO, NO2). Beyond the IB course." data-testid="beyond-label">
+        <input type="checkbox" checked={beyond} onChange={(e) => setBeyond(e.target.checked)} data-testid="beyond-toggle" />
+        <span>Beyond the course (HL)</span>
+      </label>
+      <MiniSwitch
+        ariaLabel="View" testId="view-tabs" value={view} onChange={(v) => { if (v === "3d" && !ok) { setNote("Form a molecule first: the 3D view needs a recognised structure."); return; } setView(v); }}
+        options={[{ id: "lewis", label: "Electrons", title: "Electron sharing view" }, { id: "3d", label: "3D", title: "Rotatable 3D structure" }]}
+      />
     </div>
   );
 
-  const library = <ElementLibrary groups={GROUPS} onAdd={addAtom} dropRef={boxRef} disabledReason={lockReason} mode="covalent" hint="Start with two H, or load an example above the canvas." />;
+  const library = <ElementLibrary groups={GROUPS} onAdd={addAtom} dropRef={boxRef} mode="covalent" hint="Click or drag atoms onto the canvas, or pick a molecule above the canvas." />;
 
+  const showLabel = ok && p >= 0.88 && view === "lewis";
   const canvas = (
-    <div className="bv-canvas" ref={boxRef} tabIndex={0} onKeyDown={onKeyDown} data-testid="canvas" data-stage={stage} data-formula={molecule?.id ?? ""} data-atoms={atoms.length} data-close={close ? "1" : "0"} data-crowded={scene.crowded ? "1" : "0"} data-view={settle >= 1 ? "structure" : "lewis"} aria-label="Covalent bonding canvas. Arrow keys move the selected atom.">
-      <svg ref={svgRef} className="bv-svg" style={settle > 0 ? { opacity: 1 - smooth } : undefined} viewBox={`0 0 ${world.W} ${world.H}`} preserveAspectRatio="xMidYMid meet" onPointerDown={(e) => { if (e.target === e.currentTarget) setSelected(null); }} role="img" aria-label={atoms.length ? `${atoms.length} atoms` : "Empty canvas"}>
-        <defs>
-          {scene.lenses.map((l, i) => (
-            <g key={`d${i}`}>
-              <clipPath id={`bv-clip-${i}`}><circle cx={l.ax} cy={l.ay} r={l.ar} /></clipPath>
-              <linearGradient id={`bv-grad-${i}`} gradientUnits="userSpaceOnUse" x1={l.ax} y1={l.ay} x2={l.bx} y2={l.by}><stop offset="0" stopColor={l.ca} /><stop offset="1" stopColor={l.cb} /></linearGradient>
-            </g>
-          ))}
-        </defs>
-        {settle < 1 && scene.atoms.map((a) => {
-          const src = atoms.find((x) => x.id === a.id);
-          const el = a.electrons.find((e) => !e.core);
-          return <AtomBody key={a.id} a={a} cloud={done ? el?.color : null} testId={`atom-${a.symbol}`} selected={selected === a.id && inSetup} dragProps={bind(a.id, () => ({ x: src.x, y: src.y }))} />;
-        })}
-        {settle < 1 && scene.lenses.map((l, i) => (
-          <circle key={`l${i}`} cx={l.bx} cy={l.by} r={l.br} fill={`url(#bv-grad-${i})`} fillOpacity={0.38 * l.opacity} clipPath={`url(#bv-clip-${i})`} data-testid="overlap" pointerEvents="none" />
-        ))}
-        {settle < 1 && <Electrons atoms={scene.atoms} />}
-        {settle < 1 && scene.dative.map((d, i) => {
-          const dx = d.to.x - d.from.x; const dy = d.to.y - d.from.y; const l = Math.hypot(dx, dy) || 1; const ux = dx / l; const uy = dy / l;
-          const x1 = d.from.x + ux * l * 0.2; const y1 = d.from.y + uy * l * 0.2; const x2 = d.from.x + ux * l * 0.8; const y2 = d.from.y + uy * l * 0.8;
-          return (
-            <g key={`dat${i}`} pointerEvents="none" opacity={d.opacity} data-testid="dative-arrow">
-              <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#d97706" strokeWidth="3" strokeLinecap="round" />
-              <polygon points={`${x2},${y2} ${x2 - ux * 12 - uy * 7},${y2 - uy * 12 + ux * 7} ${x2 - ux * 12 + uy * 7},${y2 - uy * 12 - ux * 7}`} fill="#d97706" />
-            </g>
-          );
-        })}
-        {stage === "bonded" && molecule && settle < 1 && (
-          <g pointerEvents="none" data-testid="molecule-label">
-            <text x={scene.centroid.x} y={Math.min(world.H - 30, scene.bottom + 38)} textAnchor="middle" fontSize="26" fontWeight="800" fill="#14226b"><SvgSubs text={molecule.formula} size={26} /></text>
-            <text x={scene.centroid.x} y={Math.min(world.H - 8, scene.bottom + 62)} textAnchor="middle" fontSize="19" fontWeight="700" fill="#33415f" letterSpacing="1"><SvgSubs text={molecule.structural} size={19} /></text>
-          </g>
+    <div className="bv-covwrap">
+      <div className="bv-canvas" ref={boxRef} tabIndex={0} onKeyDown={onKeyDown} data-testid="canvas" data-stage={frame.stage} data-p={p.toFixed(3)} data-formula={ok ? info.formula : ""} data-atoms={atoms.length} data-status={pending ? "pending" : (result?.status ?? "empty")} data-view={view} data-outer={outerOnly ? "1" : "0"} data-small={small ? "1" : "0"} aria-label="Covalent bonding canvas. N selects the next atom, arrow keys move it, Delete removes it, Enter forms the molecule.">
+        {view === "lewis" && atoms.length > 0 && (
+          <FormationStage frame={frame} outerOnly={outerOnly} dragFor={dragFor} selectedIndex={selectedIndex} world={world} svgRef={svgRef} onBackgroundDown={() => setSelected(null)} label={ok ? `${info.formula} forming from ${atoms.length} atoms` : `${atoms.length} atoms`} />
         )}
-      </svg>
-      {settle > 0 && molecule && (
-        <div className="bv-structure" data-on={settle >= 1 ? "1" : "0"} style={{ opacity: smooth }} data-testid="structure-layer">
-          <Suspense fallback={null}><MoleculeView molecule={molecule} playing={playing} reduced={reduced} /></Suspense>
-          <div className="bv-mol-label" data-testid="molecule-label"><b><HtmlSubs text={molecule.formula} /></b><span><HtmlSubs text={molecule.structural} /></span></div>
-        </div>
-      )}
-      {atoms.length === 0 && <p className="bv-placeholder">Click or drag an atom from the library</p>}
-      {centralText && <span className="bv-pill" data-testid="central-count">{centralText}</span>}
-      {stage === "bonding" && <span className="bv-badge bv-badge--green" data-testid="stage-badge">{scene.crowded ? "Sharing electrons (valence dots only)" : "Sharing electrons"}</span>}
-      {stage === "bonded" && molecule && dativeBonds(molecule).length > 0 && <span className="bv-badge bv-badge--amber" data-testid="dative-note" style={{ top: 46 }}>Orange arrow: coordinate (dative) bond. Both electrons come from the donor atom.</span>}
-      {stage === "bonded" && (settle < 1
-        ? <p className="bv-note" data-testid="lewis-note">Each shared pair has one electron from each atom (colours kept). Lewis diagram: electrons only, not molecular shape.</p>
-        : <p className="bv-note" data-testid="structure-note">Final structure: spheres are atoms, bonds are shared pairs (2 or 3 lines for double or triple). Drag to rotate.</p>)}
-      {selected && inSetup && (
-        <button type="button" className="bv-corner-btn" onClick={removeSelected} data-testid="tool-remove" aria-label="Remove selected atom" title="Remove selected atom"><Trash2 size={15} aria-hidden="true" /></button>
-      )}
+        {view === "lewis" && atoms.length === 0 && <><svg ref={svgRef} className="bv-svg" viewBox={`0 0 ${world.W} ${world.H}`} aria-hidden="true" /><p className="bv-placeholder">Click or drag an atom from the library, or pick a molecule</p></>}
+        {view === "3d" && ok && (
+          <div className="bv-structure" data-on="1" data-testid="structure-layer">
+            <Suspense fallback={<div className="bv-loading" role="status">Loading 3D view</div>}><MoleculeView molecule={shown.structure} playing={playing} reduced={reduced} formulaId={info.formula} /></Suspense>
+            <div className="bv-mol-label" data-testid="molecule-label"><b><HtmlSubs text={info.formula} /></b><span><HtmlSubs text={info.structural} /></span></div>
+          </div>
+        )}
+        {view === "lewis" && <span className="bv-badge bv-badge--green" data-testid="stage-badge">{outerOnly ? "Outer-shell electrons only" : "All shells shown"}{p > 0 && p < 1 ? ` · ${Math.round(p * 100)}%` : ""}</span>}
+        {showLabel && (
+          <div className="bv-mol-label" data-testid="molecule-label"><b><HtmlSubs text={info.formula} /></b><span><HtmlSubs text={info.structural} /></span></div>
+        )}
+        {view === "lewis" && atoms.length > 0 && (
+          <div className="bv-keypanel" data-open={legendOpen ? "1" : "0"} data-testid="legend">
+            <button type="button" className="bv-keypanel-toggle" aria-expanded={legendOpen} onClick={() => setLegendOpen(!legendOpen)} data-testid="legend-toggle">Key</button>
+            {legendOpen && (
+              <ul>
+                <li><i className="bv-key bv-key--own" aria-hidden="true" /> Own electron (colour of its atom)</li>
+                <li><i className="bv-key bv-key--shared" aria-hidden="true" /> Shared electron (gold ring)</li>
+                <li><i className="bv-key bv-key--lens" aria-hidden="true" /> Overlap of two valence shells</li>
+                <li><i className="bv-key bv-key--core" aria-hidden="true" /> {outerOnly ? "Core: nucleus + inner electrons (n+)" : "Nucleus"}</li>
+              </ul>
+            )}
+          </div>
+        )}
+        {caption && view === "lewis" && <p className="bv-note" data-testid="phase-caption">{caption}</p>}
+        {!caption && view === "lewis" && atoms.length > 0 && inSetup && <p className="bv-note" data-testid="hint-note">Drag atoms together to bond them, or press Form molecule. Keyboard: N selects an atom, arrows move it.</p>}
+        {selected && inSetup && view === "lewis" && (
+          <button type="button" className="bv-corner-btn" onClick={removeSelected} data-testid="tool-remove" aria-label="Remove selected atom" title="Remove selected atom"><Trash2 size={15} aria-hidden="true" /></button>
+        )}
+      </div>
+      <RecognitionCard result={result} shown={shown} pending={pending} altIndex={altIndex} onAlt={setAltIndex} onSetCharge={setCharge} onAddAtoms={applyAdditions} onBeyond={() => setBeyond(true)} charge={charge} />
     </div>
   );
 
-  const reasonBond = !molecule ? explainUnsupported(symbols) : !close ? "Drag the atoms closer together first" : "Share electrons between the atoms";
+  const formTitle = pending ? "Working out the structure" : !ok ? (result?.message ?? "Add atoms first") : "Bring the atoms together and form the bonds automatically";
   const toolbar = (
     <Toolbar label="Covalent bonding controls">
-      <Tool icon={<Shrink size={15} aria-hidden="true" />} label="Bring together" title="Move the atoms next to each other" disabled={!molecule || !inSetup || close} onClick={bring} testId="tool-bring" />
-      <Tool primary icon={<Merge size={15} aria-hidden="true" />} label="Form Bond" title={reasonBond} disabled={!molecule || !close || !inSetup} onClick={formBond} testId="tool-form-bond" />
-      <Tool icon={playing ? <Pause size={15} aria-hidden="true" /> : <Play size={15} aria-hidden="true" />} label={playing ? "Pause" : "Play"} onClick={() => setPlaying((p) => !p)} testId="tool-pause" pressed={!playing} />
-      <Tool icon={<Repeat size={15} aria-hidden="true" />} label="Replay" title="Replay the bond formation" disabled={inSetup} onClick={replay} testId="tool-replay" />
+      <Tool primary icon={<Merge size={15} aria-hidden="true" />} label="Form molecule" title={formTitle} disabled={atoms.length === 0} onClick={formMolecule} testId="tool-form-bond" />
+      <label className="bv-bring" title={ok ? "Drag to move the atoms from far apart to bonded" : "Needs a recognised molecule"}>
+        <span className="bv-bring-label">Far apart</span>
+        <input type="range" min="0" max="1000" step="1" value={Math.round(p * 1000)} disabled={!ok} onChange={(e) => scrub(Number(e.target.value) / 1000)} aria-label="Bring the atoms together: far apart to bonded" aria-valuetext={`${Math.round(p * 100)} percent bonded`} data-testid="tool-bring" />
+        <span className="bv-bring-label">Bonded</span>
+      </label>
+      <Tool icon={playing ? <Pause size={15} aria-hidden="true" /> : <Play size={15} aria-hidden="true" />} label={playing ? "Pause" : "Play"} onClick={() => setPlaying((v) => !v)} testId="tool-pause" pressed={!playing} />
+      <Tool icon={<Repeat size={15} aria-hidden="true" />} label="Replay" title="Replay the bond formation" disabled={!ok} onClick={replay} testId="tool-replay" />
+      <Tool icon={<Shapes size={15} aria-hidden="true" />} label="Clear" title="Remove all atoms" disabled={atoms.length === 0} onClick={clearAll} testId="tool-clear" />
       <Tool icon={<RotateCcw size={15} aria-hidden="true" />} label="Reset" title="Back to two hydrogen atoms" onClick={onReset} testId="tool-reset" />
     </Toolbar>
   );
 
-  return <ModeShell mode="covalent" state={stage} tabs={tabs} onReset={onReset} library={library} options={options} canvas={canvas} toolbar={toolbar} live={live} explain={explain} />;
+  return <ModeShell mode="covalent" state={frame.stage} tabs={tabs} onReset={onReset} library={library} options={options} canvas={canvas} toolbar={toolbar} live={live} explain={explain} />;
 }
-

@@ -269,6 +269,12 @@ test("the rate falls as the supplies fall (20+20: 7,5,3,2,1,1,1) and never rises
   assert.deepEqual(ev, [7, 5, 3, 2, 1, 1, 1]); for (let i = 1; i < ev.length; i++) assert.ok(ev[i] <= ev[i - 1]);
 });
 test("advanceTick never mutates its input", () => { const s = CW.createInitialState(10, 10, 1); const copy = JSON.stringify(s); CW.advanceTick(s, 1); assert.equal(JSON.stringify(s), copy); });
+test("predict-first tasks (AK-58): answers come from runToEnd; 40+40 starts faster than 20+20; the fourth second is slower than the first", () => {
+  const a = CW.runToEnd(CW.WRAPPING_RULES.rule1, 20, 20); assert.deepEqual(a.slice(1).map((r) => r.rate), [7, 5, 3, 2, 1, 1, 1]); assert.equal(a[a.length - 1].packs, 20);
+  const b = CW.runToEnd(CW.WRAPPING_RULES.rule1, 40, 40); assert.equal(b[1].rate, 14); assert.equal(b[b.length - 1].packs, 40);
+  assert.equal(CW.PREDICT_TASKS[0].run().answer, "higher"); assert.equal(CW.PREDICT_TASKS[1].run().answer, "lower"); assert.match(CW.PREDICT_TASKS[0].run().text, /7 packs.*14/);
+  { const none = CW.runToEnd(CW.WRAPPING_RULES.rule2, 1, 5); assert.ok(none.length <= 2 && none[none.length - 1].packs === 0 && none[none.length - 1].time === 0, "nothing can be made: terminates with 0 packs and no time passing"); }
+});
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

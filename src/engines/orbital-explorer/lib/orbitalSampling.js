@@ -34,7 +34,7 @@ import { makeSeededRandom } from "./seededRandom.js";
  * attempts sampling in empty space far from any real density, nor
  * clips off a meaningful tail of the true distribution. */
 export function boundingRadiusFor(n) {
-  return { 1: 6, 2: 14, 3: 24, 4: 36 }[n] ?? 24;
+  return { 1: 6, 2: 14, 3: 24, 4: 48 }[n] ?? 24; // 4s: 48 a0 keeps ~99 % of the density (36 a0 clipped about 5.6 %, OE-11)
 }
 
 /** Finds the max of g(r) = r^2 * R_nl(r)^2 (the radial probability

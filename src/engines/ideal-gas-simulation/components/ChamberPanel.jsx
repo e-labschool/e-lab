@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Pause, Play, TriangleAlert } from "lucide-react";
 import { DashPanel } from "../../../components/simulation/SimulationDashboard.jsx";
 import GasCanvas from "./GasCanvas.jsx";
-import { DEVIATION_CLASSES, GAS, IB_UNITS, Z_BOUNDS, fmtVolume, unitLabelV } from "../model.js";
+import { DEVIATION_CLASSES, IB_UNITS, Z_BOUNDS, fmtPressure, fmtVolume, unitLabelP, unitLabelV } from "../model.js";
 
 const THRESHOLD_HELP =
   `Deviation from ideal behaviour is judged from |Z - 1|, where Z = PV/(nRT): ` +
@@ -10,8 +10,8 @@ const THRESHOLD_HELP =
   `Z < 1: attractions dominate. Z > 1: molecular size dominates.`;
 
 const LIMIT_SHORT = {
-  condensation: "Model limit: CO₂ would condense",
-  "two-phase": "Model limit: CO₂ would condense",
+  condensation: "Model limit: gas would condense",
+  "two-phase": "Model limit: gas would condense",
   "excluded-volume": "Model limit: molecules fill the volume",
   "unstable-region": "Model limit: unstable state",
   "out-of-range": "Outside the piston range",
@@ -26,7 +26,7 @@ export function DeviationBadge({ state }) {
   if (real && state.limit) {
     return (
       <div className="ig-dev ig-dev--limit" data-testid="deviation" data-class="limit" title={state.limit.text}>
-        <span className="ig-dev-main"><TriangleAlert size={13} aria-hidden="true" /> <b data-testid="deviation-label">{LIMIT_SHORT[state.limit.reason] ?? "Model limit"}</b></span>
+        <span className="ig-dev-main"><TriangleAlert size={13} aria-hidden="true" /> <b data-testid="deviation-label">{(LIMIT_SHORT[state.limit.reason] ?? "Model limit").replace("gas", state.gas.tag)}</b></span>
       </div>
     );
   }
@@ -40,10 +40,23 @@ export function DeviationBadge({ state }) {
       {!real && (
         <span className="ig-dev-sub" data-testid="deviation-ref">
           {ref.status === "ok"
-            ? <>Real {GAS.formula.replace("2", "₂")} here: Z = {ref.Z.toFixed(3)} ({DEVIATION_CLASSES[ref.cls.index].label.toLowerCase()})</>
+            ? <>Real {state.gas.tag} here: Z = {ref.Z.toFixed(3)} ({DEVIATION_CLASSES[ref.cls.index].label.toLowerCase()})</>
             : <>Real gas: model limit here</>}
         </span>
       )}
+    </div>
+  );
+}
+
+// GS-07: the ideal-gas formula still gives a number at states where no real gas is a gas. Say so, in Ideal mode as well.
+export function OutsideIdealBanner({ state, units = IB_UNITS }) {
+  if (!state.outsideIdeal) return null;
+  const why = state.pIdeal > 500 + 1e-9
+    ? `PV = nRT gives ${fmtPressure(state.pIdeal, units)} ${unitLabelP(units)} here, far above the pressure range of the simulation.`
+    : state.ref?.reason === "condensation" ? `Real ${state.gas.tag} would condense under these conditions.` : `The molecules' own volume would fill the container.`;
+  return (
+    <div className="ig-outside" data-testid="outside-ideal" role="status">
+      <TriangleAlert size={13} aria-hidden="true" /> <span><b>Outside the ideal-gas regime.</b> {why} A real gas is not an ideal gas here, so treat this number as the formula's, not a measurement.</span>
     </div>
   );
 }
@@ -80,6 +93,7 @@ export default function ChamberPanel({ sim, state, reducedMotion, playing, onTog
       <div className="sd-chamber" data-testid="chamber">
         <GasCanvas sim={sim} reducedMotion={reducedMotion} label={label} />
         <DeviationBadge state={state} />
+        <OutsideIdealBanner state={state} units={units} />
         {showWall && <WallGauge sim={sim} real={real} />}
         <button
           type="button" className="sd-chamber-btn" onClick={onTogglePlay} data-testid="play-pause"

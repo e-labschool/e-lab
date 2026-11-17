@@ -58,10 +58,35 @@ export const RANK_SETS = [
       { id: "ethanol", label: "CH₃CH₂OH", name: "ethanol, M = 46", bp: 78, forces: ["hb", "ldf"], why: "O-H allows hydrogen bonding between molecules: the strongest of the three." },
     ] },
 ];
+// Two more kinds of task (BS-27): VOLATILITY (the same boiling points read the other way round: the weaker the forces, the more volatile)
+// and SOLUBILITY IN WATER. `quantity` names what is ranked; `ends` labels the first and last place; items of a solubility set carry `value`
+// (g per 100 g water, approximate: Britannica "Physical properties of alcohols", temperature not stated there; not re-checked in a data table).
+RANK_SETS.push(
+  { id: "volatility", title: "Volatility", quantity: "volatility", ends: ["most volatile", "least volatile"], unit: "°C boiling point", level: "sl",
+    idea: "The weaker the intermolecular forces, the less energy is needed to separate the molecules, so the more volatile the liquid. Volatility runs opposite to boiling point.",
+    items: [
+      { id: "pentane", label: "C₅H₁₂", name: "pentane, bp 36 °C", bp: 36, forces: ["ldf"], why: "Non-polar: only London dispersion forces, the weakest forces here, so it evaporates most easily." },
+      { id: "propanone", label: "CH₃COCH₃", name: "propanone, bp 56 °C", bp: 56, forces: ["dd", "ldf"], why: "Polar C=O gives dipole-dipole forces as well as dispersion, but no H on O, so no hydrogen bonding." },
+      { id: "ethanol", label: "C₂H₅OH", name: "ethanol, bp 78 °C", bp: 78, forces: ["hb", "ldf"], why: "O-H allows hydrogen bonding between molecules: stronger forces, so less volatile." },
+      { id: "water", label: "H₂O", name: "water, bp 100 °C", bp: 100, forces: ["hb", "ldf"], why: "Two H to donate and two lone pairs to accept: the most extensive hydrogen bonding, so the least volatile." },
+    ] },
+  { id: "solubility", title: "Solubility in water", quantity: "solubility in water", ends: ["least soluble", "most soluble"], unit: "g per 100 g water (about)", level: "hl",
+    idea: "All four alcohols can hydrogen-bond to water through -OH, but the longer the non-polar hydrocarbon chain, the more it disrupts the hydrogen bonds between water molecules without forming equally strong ones, so solubility falls as the chain grows.",
+    items: [
+      { id: "heptanol", label: "C₇H₁₅OH", name: "heptan-1-ol", bp: 176, value: 0.1, forces: ["hb", "ldf"], why: "Longest chain here: the large non-polar part outweighs the one -OH group, so it is the least soluble." },
+      { id: "hexanol", label: "C₆H₁₃OH", name: "hexan-1-ol", bp: 157, value: 0.6, forces: ["hb", "ldf"], why: "One carbon fewer than heptan-1-ol: slightly more soluble." },
+      { id: "pentanol", label: "C₅H₁₁OH", name: "pentan-1-ol", bp: 138, value: 2.7, forces: ["hb", "ldf"], why: "A shorter chain: the -OH group matters more, so it dissolves better." },
+      { id: "butanol", label: "C₄H₉OH", name: "butan-1-ol", bp: 118, value: 9, forces: ["hb", "ldf"], why: "The shortest chain here: hydrogen bonding to water outweighs the small non-polar part, so it is the most soluble." },
+    ] },
+);
+/** The number ranked: boiling point unless the set ranks something else (solubility). */
+export const rankValue = (item) => item.value ?? item.bp;
+export const rankUnit = (set) => set.unit ?? "°C";
+export const rankEnds = (set) => set.ends ?? ["lowest boiling point", "highest boiling point"];
 export const RANK_SET_BY_ID = Object.fromEntries(RANK_SETS.map((s) => [s.id, s]));
 
 /** Correct order, lowest boiling point first. */
-export const correctOrder = (setId) => [...RANK_SET_BY_ID[setId].items].sort((a, b) => a.bp - b.bp).map((i) => i.id);
+export const correctOrder = (setId) => [...RANK_SET_BY_ID[setId].items].sort((a, b) => rankValue(a) - rankValue(b)).map((i) => i.id);
 
 /** Deterministic shuffle (never returns the correct order) so the same round always starts the same way. */
 export function shuffledOrder(setId, seed = 1) {

@@ -17,6 +17,8 @@ import ControlPanel, { GasLawsSettings } from "./components/ControlPanel.jsx";
 import { ChamberPanel, LiveValues } from "./components/ChamberPanel.jsx";
 import GraphPanel from "./components/GraphPanel.jsx";
 import { ExplanationDetails, PredictPanel } from "./components/BottomPanels.jsx";
+import AvogadroCompare from "./components/AvogadroCompare.jsx";
+import { useSimulationSessionState } from "../../components/interactive-shell/simulationSession.js";
 
 // Gas Laws Explorer (IB DP Chemistry S1.5.1-S1.5.3). React owns the controls;
 // model.js owns the physics of PV = nRT (one source of truth: mode, P, V, T, n);
@@ -52,21 +54,23 @@ export default function GasLawsExplorer({ compact = false, standalone = false })
 function Workspace() {
   const reducedMotion = useReducedMotion();
   const [sim] = useState(() => createSimulation({ seed: (Math.random() * 2 ** 32) >>> 0 }));
-  const [state, setState] = useState(() => defaultState("pv"));
+  // GS-18: restored after a reload / navigating away and back (sessionStorage per Learn block; plain useState elsewhere).
+  const [state, setState] = useSimulationSessionState("state", () => defaultState("pv"), (v) => v && MODE_IDS.includes(v.mode) && ["P", "V", "T", "n"].every((k) => Number.isFinite(v[k])));
   const [phase, setPhase] = useState("ready");
-  const [unit, setUnit] = useState("mol");
-  const [unitSystem, setUnitSystem] = useState("ib");
+  const [unit, setUnit] = useSimulationSessionState("unit", "mol", (v) => v === "mol" || v === "molecules");
+  const [unitSystem, setUnitSystem] = useSimulationSessionState("unitSystem", "ib", (v) => v === "ib" || v === "atm");
   const [view, setView] = useState("theory");
-  const [readings, setReadings] = useState(() => Object.fromEntries(MODE_IDS.map((id) => [id, createReadings()])));
+  const [readings, setReadings] = useSimulationSessionState("readings", () => Object.fromEntries(MODE_IDS.map((id) => [id, createReadings()])), (v) => v && MODE_IDS.every((id) => Array.isArray(v[id]?.rows)));
   const units = useMemo(() => ({ pressure: UNIT_SYSTEMS[unitSystem].pressure, volume: UNIT_SYSTEMS[unitSystem].volume }), [unitSystem]);
   const [display, setDisplay] = useState({ trails: true, collisions: false });
   const [playing, setPlaying] = useState(true);
-  const [showGraph, setShowGraph] = useState(false);
-  const [graphId, setGraphId] = useState(() => defaultGraphId("pv"));
+  const [showGraph, setShowGraph] = useSimulationSessionState("showGraph", false, (v) => typeof v === "boolean");
+  const [graphId, setGraphId] = useState(() => defaultGraphId(state.mode));
   const [allView, setAllView] = useState(false);
   const [revealed, setRevealed] = useState(false);
   const [history, setHistory] = useState([]);
-  const [explain, setExplain] = useState(() => defaultExplanation("pv"));
+  const [explain, setExplain] = useState(() => defaultExplanation(state.mode));
+  const carryRef = useRef(null); // GS-17: set when a tab switch carried the previous values over
   const baselineRef = useRef(state);
   const settledRef = useRef(null);
 
@@ -81,7 +85,9 @@ function Workspace() {
     if (settledRef.current == null) { settledRef.current = state; return undefined; }
     if (settledRef.current.mode !== state.mode) {
       settledRef.current = state;
-      setExplain(defaultExplanation(state.mode));
+      const base = defaultExplanation(state.mode);
+      setExplain(carryRef.current ? { ...base, id: base.id + "-carried", text: `${base.text} ${carryRef.current}` } : base);
+      carryRef.current = null;
       return undefined;
     }
     const t = setTimeout(() => {
@@ -129,6 +135,10 @@ function Workspace() {
   const handleMode = useCallback((mode) => {
     if (mode === state.mode) return;
     const next = switchMode(state, mode);
+    // GS-17: values carry over between tabs (nothing jumps); say so when they are not the standard start, and offer the way back.
+    const std = defaultState(mode);
+    const same = ["P", "V", "T", "n"].every((k) => Math.abs(std[k] - next[k]) < 1e-6 * Math.max(1, Math.abs(std[k])));
+    carryRef.current = same ? null : "The values were carried over from the previous tab. Settings > Initial conditions > Standard start goes back to 1.00 mol, 300 K, 25 dm\u00b3.";
     baselineRef.current = next;
     setState(next);
     resetInvestigationUi(mode);
@@ -177,6 +187,18 @@ function Workspace() {
     settledRef.current = next;
     setExplain(defaultExplanation(state.mode));
   }, [state.mode, sim, resetInvestigationUi]);
+
+  const handleStandardStart = useCallback(() => {
+    const next = defaultState(state.mode);
+    baselineRef.current = next;
+    setState(next);
+    setPhase("ready");
+    setHistory([]);
+    setRevealed(false);
+    carryRef.current = null;
+    settledRef.current = next;
+    setExplain(defaultExplanation(state.mode));
+  }, [state.mode, setState]);
 
   const handleBackToStart = useCallback(() => {
     setState(baselineRef.current);
@@ -227,7 +249,7 @@ function Workspace() {
       graphWide={showGraph && allView}
       settings={
         <GasLawsSettings state={state} phase={phase} unit={unit} onUnit={setUnit} units={units} unitSystem={unitSystem} onUnitSystem={setUnitSystem} onPreset={handlePreset} display={display}
-          onDisplay={(d) => setDisplay((x) => ({ ...x, ...d }))} onSetInitial={handleSetInitial} onBackToStart={handleBackToStart} accent={accent} />
+          onDisplay={(d) => setDisplay((x) => ({ ...x, ...d }))} onSetInitial={handleSetInitial} onBackToStart={handleBackToStart} onStandardStart={handleStandardStart} accent={accent} />
       }
       tabs={<DashboardTabs segmented tabs={tabs} value={state.mode} onChange={handleMode} ariaLabel="Gas law relationship" idPrefix="gl-tab" controls="gl-workspace" testId="mode-tabs" />}
       controls={<ControlPanel state={state} unit={unit} units={units} onChange={handleChange} accent={accent} onRecord={handleRecord} readingCount={modeReadings.rows.length} onCalc={handleCalc} />}
@@ -237,7 +259,8 @@ function Workspace() {
       graph={
         <GraphPanel state={state} accent={accent} graphId={graphId} onGraphId={setGraphId} allView={allView}
           onToggleAll={() => setAllView((v) => !v)} onResetGraph={handleResetGraph} onOpenMode={handleOpenFromGrid} trail={history}
-          units={units} view={view} onView={setView} readingsCount={modeReadings.rows.length} readingsNode={readingsNode} />
+          units={units} view={view} onView={setView} readingsCount={modeReadings.rows.length} readingsNode={readingsNode}
+          compareNode={state.mode === "vn" ? <AvogadroCompare state={state} units={units} /> : null} />
       }
       live={<LiveValues state={state} unit={unit} note={explain.text} units={units} />}
       predict={<PredictPanel state={state} revealed={revealed} onToggle={() => setRevealed((r) => !r)} units={units} />}

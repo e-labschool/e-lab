@@ -90,8 +90,11 @@ export default function StateParticleScene({ state, forceToken }) {
       </div>
 
       <div className="grid gap-2.5 sm:grid-cols-2">
-        {content.reveals.map((r) => (
-          <RevealChip key={r.label} label={r.label} forceToken={forceToken}>
+        {content.reveals.map((r, i) => (
+          <RevealChip
+            key={r.label} label={r.label} forceToken={forceToken}
+            predict={i === 0 ? { question: "are the particles in a " + state + " close together or far apart?", choices: [{ id: "close", label: "Close together" }, { id: "far", label: "Far apart" }], correct: state === "gas" ? "far" : "close", testId: "predict-spacing" } : null}
+          >
             <ConclusionBadge tone="yes">{r.text}</ConclusionBadge>
           </RevealChip>
         ))}

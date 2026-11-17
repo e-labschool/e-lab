@@ -27,7 +27,7 @@ const atoms = (...syms) => syms.map((symbol, i) => ({ id: `a${i}`, symbol, x: 20
 const world = { W: 900, H: 560 };
 
 console.log("Elements and electron arrangements (source of truth: electron-configuration engine)");
-const ORACLE = { H: "1", Li: "2,1", Be: "2,2", B: "2,3", C: "2,4", N: "2,5", O: "2,6", F: "2,7", Na: "2,8,1", Mg: "2,8,2", Al: "2,8,3", P: "2,8,5", S: "2,8,6", Cl: "2,8,7", K: "2,8,8,1", Ca: "2,8,8,2", Br: "2,8,18,7" };
+const ORACLE = { H: "1", Li: "2,1", Be: "2,2", B: "2,3", C: "2,4", N: "2,5", O: "2,6", F: "2,7", Na: "2,8,1", Mg: "2,8,2", Al: "2,8,3", P: "2,8,5", S: "2,8,6", Cl: "2,8,7", K: "2,8,8,1", Ca: "2,8,8,2", Br: "2,8,18,7", Si: "2,8,4", I: "2,8,18,18,7", Xe: "2,8,18,18,8" };
 test("[check 1] lithium is exactly 2,1", () => assert.equal(sh("Li"), "2,1"));
 test("[check 2] chlorine is exactly 2,8,7", () => assert.equal(sh("Cl"), "2,8,7"));
 test("every library element matches an independent textbook shell table", () => {

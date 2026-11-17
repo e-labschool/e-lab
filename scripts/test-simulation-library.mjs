@@ -86,14 +86,13 @@ await test("every simulation in simulationRegistry has catalogue metadata (and a
 });
 await test("every live catalogue entry is in simulationRegistry AND has an engine component (and vice versa)", () => {
   assert.deepEqual(live.map((e) => e.id).sort(), Object.keys(SIMULATION_REGISTRY).sort());
-  // mixture-separation-explorer is deliberately NOT live (placeholder art): its engine stays registered here so existing Learn embeds
-  // still render, but it is not in the catalogue's live list / SIMULATION_REGISTRY, so it is not offered or openable at /simulation/:id.
-  const HIDDEN_BUT_REGISTERED = ["mixture-separation-explorer"];
-  assert.deepEqual(live.map((e) => e.id).concat(HIDDEN_BUT_REGISTERED).sort(), Object.keys(SIMULATION_COMPONENTS).sort());
-  assert.equal(cat.getCatalogueEntry("mixture-separation-explorer")?.status, "planned");
+  // mixture-separation-explorer was rebuilt (docs/sim-review/mixture-separation-rebuild.md) and is live again: it is in the registry,
+  // the component map and the catalogue like every other simulation.
+  assert.deepEqual(live.map((e) => e.id).sort(), Object.keys(SIMULATION_COMPONENTS).sort());
+  assert.equal(cat.getCatalogueEntry("mixture-separation-explorer")?.status, "live");
 });
-await test("registry key order unchanged (the historical engine order, minus the hidden mixture-separation-explorer = 24)", () => {
-  assert.equal(Object.keys(SIMULATION_REGISTRY).length, 24);
+await test("registry key order unchanged (the historical engine order, now including the rebuilt mixture-separation-explorer + mole-lab = 26)", () => {
+  assert.equal(Object.keys(SIMULATION_REGISTRY).length, 26);
   assert.deepEqual(Object.keys(SIMULATION_REGISTRY).slice(0, 3), ["electron-configuration", "vsepr-explorer-3d", "explore-matter-and-states"]);
   assert.equal(Object.keys(SIMULATION_REGISTRY).at(-1), "spectroscopy-studio");
 });

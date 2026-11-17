@@ -3,6 +3,10 @@ import { formatPH } from "../../../lib/acidbase/format.js";
 
 export function explainPair(t) {
   const eq = formatPH(t.eq.pH);
+  if (t.kind === "POLY") {
+    const k = t.poly.pKas; const n = t.poly.protons;
+    return { title: `${t.poly.name} is ${n === 2 ? "diprotic" : "triprotic"}: ${n} equivalence points`, text: `Each proton is removed in its own step, so the curve has ${n} steps. At each half-equivalence point the flask holds equal amounts of an acid and its conjugate base, so pH ≈ pKa (${k.map((x, i) => `pKa${i + 1} = ${x.toFixed(2)}`).join(", ")}). The first equivalence pH is about (pKa1 + pKa2) / 2 = ${((k[0] + k[1]) / 2).toFixed(2)} because HA⁻ is amphiprotic.${n === 3 ? " The third proton is so weak (pKa3 12.32) that its step is lost in the OH⁻ from water, so no third jump is seen." : ""} Every step needs the same volume of NaOH (veq = ${t.veq.toFixed(1)} cm³ each). Each step has its own buffer region, where the acid and its conjugate base are between 1:10 and 10:1 (pH = pKa ± 1, orange bands); between the regions, near each equivalence point, the pH rises steeply.` };
+  }
   if (!t.buffer && (t.kind === "WA-SB" || t.kind === "SA-WB")) {
     const weakAcidTitrant = t.kind === "WA-SB";
     return { title: `Strong ${weakAcidTitrant ? "base" : "acid"} titrated with a weak ${weakAcidTitrant ? "acid" : "base"}: no buffer region before equivalence`, text: `The flask starts with a strong ${weakAcidTitrant ? "base" : "acid"} and the weak titrant is used up as it enters, so nothing in the flask can resist change until equivalence. The equivalence pH is ${eq} (${t.eq.pH > 7 ? "above" : "below"} 7) because the salt left is a weak ${weakAcidTitrant ? "base" : "acid"}. The jump is only ${t.steep.jump.toFixed(1)} units within \u00B11% of Veq.` };
@@ -24,7 +28,7 @@ export function explainPair(t) {
 
 /** Extra note when the weak reagent is the titrant (no buffer before equivalence). */
 export function titrantNote(t) {
-  if (t.kind === "WA-WB" || t.kind === "SA-SB" || t.buffer) return null;
+  if (t.kind === "WA-WB" || t.kind === "SA-SB" || t.kind === "POLY" || t.buffer) return null;
   return `The ${t.burette.strong ? "" : "weak "}${t.burette.label} is in the burette, so the flask has no weak partner before equivalence: no buffer region there. After equivalence the excess weak titrant and its salt form a buffer, so the curve flattens again.`;
 }
 

@@ -4,9 +4,29 @@ import NumberField from "../../components/interactive-shell/NumberField.jsx";
 import { ChocolateIcon, WrapperIcon, PackIcon } from "./components/Icons.jsx";
 import {
   WRAPPING_RULES, MIN_QUANTITY, MAX_QUANTITY, DECAY_FRACTION, advanceTick, createInitialState, historyRow, normaliseQuantity,
-  packsPossible, rateAverage, rateLastSecond, startBlocker,
+  packsPossible, rateAverage, rateLastSecond, startBlocker, PREDICT_TASKS,
 } from "./lib/wrappingModel.js";
 import "./ChocolateWrappingRate.css";
+
+/** AK-58: pick a prediction, then reveal what the model gives for exactly that experiment. */
+function PredictTask() {
+  const [i, setI] = useState(0); const [pick, setPick] = useState(null); const [shown, setShown] = useState(false);
+  const task = PREDICT_TASKS[i]; const res = useMemo(() => task.run(), [task]);
+  const next = () => { setI((x) => (x + 1) % PREDICT_TASKS.length); setPick(null); setShown(false); };
+  return (
+    <div className="cw-predict" data-testid="cw-predict" role="group" aria-label="Predict first">
+      <p className="cw-predict-q"><b>Predict first.</b> {task.question}</p>
+      <div className="cw-predict-row" role="radiogroup" aria-label="Your prediction">
+        {["higher", "the same", "lower"].map((o) => (
+          <button key={o} type="button" role="radio" aria-checked={pick === o} className={"cw-btn" + (pick === o ? " cw-btn--primary" : "")} onClick={() => { setPick(o); setShown(false); }} data-testid={`cw-pick-${o.replace(" ", "-")}`}>{o}</button>
+        ))}
+        <button type="button" className="cw-btn" disabled={!pick} onClick={() => setShown(true)} data-testid="cw-reveal" title={pick ? undefined : "Choose a prediction first"}>Reveal</button>
+        <button type="button" className="cw-btn" onClick={next} data-testid="cw-next-task">Next question</button>
+      </div>
+      <p className="cw-predict-a" role="status" data-testid="cw-predict-result">{shown ? `${pick === res.answer ? "Correct: " : `Not quite (the answer is ${res.answer}): `}${res.text}` : ""}</p>
+    </div>
+  );
+}
 
 const MAX_RENDERED_PIECES = 14; // a capped pile: the number is authoritative, the drawing is a sample
 const SPEEDS = { slow: { label: "Slow", ms: 1800 }, normal: { label: "Normal", ms: 900 }, fast: { label: "Fast", ms: 400 } };
@@ -216,6 +236,7 @@ export default function ChocolateWrappingRate({ compact = false, standalone = fa
                 : "Steeper graph = faster change; flat = no change."}
             {previous && " Dashed grey: the previous run."}
           </p>
+          <PredictTask />
           <details className="cw-think">
             <summary>Think about it</summary>
             <p><b>1.</b> Why do fewer packs get wrapped each second as time goes on? (Each second {Math.round(DECAY_FRACTION * 100)} % of the packs that could still be made are wrapped, so less supply means fewer packs.)</p>

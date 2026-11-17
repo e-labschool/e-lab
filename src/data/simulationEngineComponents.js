@@ -32,5 +32,6 @@ export const SIMULATION_COMPONENTS = {
   "bonding-visualizer": lazy(() => import("../engines/bonding-visualizer/BondingVisualizer.jsx")),
   "hybridisation-explorer": lazy(() => import("../engines/hybridisation-explorer/HybridisationExplorer.jsx")),
   "intermolecular-forces-visualiser": lazy(() => import("../engines/intermolecular-forces-visualiser/IntermolecularForcesVisualiser.jsx")),
+  "mole-lab": lazy(() => import("../engines/mole-lab/MoleLab.jsx")),
   "spectroscopy-studio": lazy(() => import("../engines/spectroscopy-studio/SpectroscopyStudio.jsx")),
 };

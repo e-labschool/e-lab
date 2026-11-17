@@ -1,6 +1,57 @@
-# Gases and states of matter: fixes (round 1)
+# Gases and states of matter: fixes (rounds 1 and 2)
 
 Companion to `gases-states.md` (findings GS-01..GS-49). Everything below was run in this repository; "verified" names the check.
+
+# Round 2 (supersedes the round-1 status below where they differ)
+
+## What was verified in round 2, and how
+| Level | What ran |
+| --- | --- |
+| Unit and jsdom | ideal-gas 71, gas-laws UI 19, IMF model 106, IMF UI 25, heating curve 31: all pass. Full `npm test` ran every suite in the chain and passed except one: `scripts/test-bonding-ui.mjs` check 9 ("Form molecule ... far-apart atoms", expects a state other than "setup"). It fails when run alone, bonding was not touched and shares no import with these sims, so it is another workstream's in-progress change. Not fixed here. |
+| Chromium, headless SwiftShader | `node scripts/verify-gases.mjs`: 222/222 (sections gl, ig, pm, em, hc plus new `r2`; `ONLY=r2` runs only the round-2 checks). `SIMS=imf node scripts/verify-bonding-group.mjs`: 75 checks, 0 problems, including the WebGL-off flat cube. Sizes 1366x768, 910x512, 390x844, light and dark, console errors. |
+| Build | `npm run build` succeeded (only the existing chunk-size warning). |
+| NOT covered | Real GPU, touch, Safari, Firefox, screen readers, real browser zoom. Persistence (GS-18) is verified in jsdom inside a Learn session provider only, not in the standalone browser route. |
+
+## One gas constant
+`R_IB = 8.31` in `src/lib/gas/gasUnits.js` is the only constant. The ideal-gas model uses `R_GAS = R_IB / 101.325` (atm L), so PV/nT reads 8.31 kPa dm3 mol-1 K-1 in both engines (browser check on a recorded reading). The round-1 "known issue" is closed. The van der Waals a and b values are unchanged.
+
+## Round-2 status
+| ID | Status | Note |
+| --- | --- | --- |
+| GS-05 | Fixed | In Real mode the pressure slider ends at the pressure the model can reach (`pReachMax`); badge and live strip agree at the end (browser check, NH3 at 250 K). |
+| GS-06 | Partly | CO2 condensation message quotes a literature vapour pressure, not only the vdW value. The table is a secondary source and its unit label was not confirmed; treat as indicative. Other gases keep the generic wording. |
+| GS-07 | Fixed | "Outside the ideal-gas regime" banner (for example 0.01 dm3 at 700 K in Ideal mode). |
+| GS-08 | Fixed | Four gases (He, N2, CO2, NH3) with a picker; "Compare gases at this temperature" overlay with an explanation by intermolecular forces. |
+| GS-10 | Fixed | The Z graph opens automatically the first time Real is chosen. |
+| GS-12 | Partly | The 390x844 live strip is not cut by the footer (measured, no footer element found to compare, so only the strip position was checked). |
+| GS-16 | Partly | The reachable range is stated on the slider; the track is not greyed. |
+| GS-17 | Fixed | Tab switches say which values were carried over. |
+| GS-18 | Partly | Session persistence added in a Learn session scope only (see above). |
+| GS-19 | Partly | Two-gas Avogadro view with a predict step; it is static, not animated. |
+| GS-20 | Fixed | Range inputs expose a label and a value text (browser check). |
+| GS-27 | Fixed | Solid macro scene asks for a prediction before revealing; right and wrong predictions are handled; a tally is kept. |
+| GS-28 | Fixed | Toolbar buttons at least 34 px tall (measured 36). |
+| GS-38 | Not done | No verified second-substance data, so no substance selector. |
+| GS-40, GS-41, GS-42 | Fixed | Heating curve: optional "Hide the curve" (predict), even y ticks, optional zoomed energy bar, screen-reader summary. All additive; the default front-page view is unchanged (checked). |
+| GS-35 | Not done | Particle Model clock warning, outside the five sims listed for this round. |
+| IMF BS-27 | Fixed | Volatility and solubility ranking tasks added alongside boiling point. Solubility values are approximate (secondary source, no temperature stated). |
+| IMF BS-30 | Fixed | Flat cube fallback when WebGL is unavailable (checked with WebGL off). |
+| IMF BS-28 | Partly | Cluster still fills a small part of the cube (a larger spacing broke an existing spacing test, so it was reverted). |
+| IMF BS-33 | Not done | Owner decision. |
+| Explore Matter IB tags | Not done | S1.1.x syllabus codes were not added because the syllabus text was not verified. |
+
+## Test assertions changed in round 2, and why
+- Ideal gas: independent test constants use R = 8.31/101.325 (one constant); expected Tc about 308.2 K and T_Boyle about 1040.1 K follow; default V is 12.465 dm3 for 0.50 mol, 300 K, 100 kPa; the old "70 %" condensation wording assertion now checks the literature text.
+- IMF model: rank sets 9, with distinctness of the displayed rank values.
+- `verify-gases.mjs`: accepts "100" or "100.0 kPa"; GS-10 check expects the graph already open.
+
+## Decisions for the owner (round 2)
+1. Second substance for the heating curve and a substance selector: needs a verified data source.
+2. The CO2 literature vapour-pressure table: confirm source and unit before relying on it.
+3. IB S1.1.x tags in Explore Matter: supply the approved syllabus wording.
+4. BS-33 as in the bonding notes.
+
+# Round 1 (kept for history; see round 2 above for later status)
 
 ## What was verified, and how
 

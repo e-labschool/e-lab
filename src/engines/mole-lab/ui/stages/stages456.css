@@ -1,0 +1,36 @@
+/* Mole Lab Stages 4-6: every rule is scoped under .ml-root and uses ml4- / ml5- names that only this simulation renders. */
+.ml-root .ml4-empty { padding: 4px 2px; }
+.ml-root .ml4-right { color: var(--ml-ok); }
+.ml-root .ml4-wrong { color: var(--ml-warn); }
+.ml-root .ml4-gases { display: flex; flex-wrap: wrap; gap: 6px; }
+.ml-root .ml4-gas { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 0; min-width: 62px; padding: 5px 9px; border: 1.5px solid var(--ml-line); border-radius: 10px; background: var(--ml-surface); color: var(--ml-ink); font: inherit; cursor: pointer; text-align: left; }
+.ml-root .ml4-gas b { font-size: 15px; line-height: 1.1; }
+.ml-root .ml4-gas small { font-size: 10.5px; color: var(--ml-ink-soft); }
+.ml-root .ml4-gas[aria-checked="true"] { background: var(--ml-accent); border-color: var(--ml-accent); color: var(--ml-accent-ink); }
+.ml-root .ml4-gas[aria-checked="true"] small { color: inherit; opacity: 0.85; }
+.ml-root .ml4-gas:disabled { opacity: 0.55; cursor: not-allowed; }
+.ml-root .ml4-gas:focus-visible, .ml-root .ml4-btn:focus-visible { outline: 3px solid var(--ml-accent); outline-offset: 2px; }
+.ml-root .ml4-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; }
+.ml-root .ml4-banner { padding: 6px 9px; border-radius: 9px; border: 1px solid var(--ml-hair); background: color-mix(in srgb, var(--ml-accent) 7%, var(--ml-surface)); font-size: 12px; }
+.ml-root .ml4-banner--warn { border-color: var(--ml-warn); background: color-mix(in srgb, var(--ml-warn) 10%, var(--ml-surface)); }
+.ml-root .ml4-tablewrap { overflow-x: auto; }
+.ml-root .ml4-table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+.ml-root .ml4-table th, .ml-root .ml4-table td { padding: 4px 7px; border-bottom: 1px solid var(--ml-hair); text-align: right; white-space: nowrap; }
+.ml-root .ml4-table th:first-child { text-align: left; font-weight: 600; }
+.ml-root .ml4-table thead th { font-size: 11px; color: var(--ml-ink-soft); font-weight: 600; }
+.ml-root .ml4-table tr[data-limiting="1"] { background: color-mix(in srgb, var(--ml-warn) 12%, transparent); }
+.ml-root .ml4-cap { text-align: left; font-weight: 700; padding: 0 0 4px; font-size: 12px; }
+.ml-root .ml4-tag { margin-left: 4px; font-weight: 400; color: var(--ml-ink-soft); font-size: 11px; }
+.ml-root .ml4-eq { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 16px; font-weight: 600; line-height: 1.5; }
+.ml-root .ml4-eq .ml4-sp { padding: 1px 7px; border-radius: 8px; border: 1px solid var(--ml-hair); background: var(--ml-surface); }
+.ml-root .ml4-eq .ml4-sp small { font-weight: 400; color: var(--ml-ink-soft); font-size: 11px; margin-left: 2px; }
+.ml-root .ml4-eq .ml4-arrow { color: var(--ml-ink-soft); }
+.ml-root .ml4-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11.5px; color: var(--ml-ink-soft); }
+.ml-root .ml4-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.35); margin-right: 4px; vertical-align: -1px; }
+.ml-root .ml4-run { display: flex; flex-wrap: wrap; gap: 6px; }
+.ml-root .ml4-fb { padding: 6px 9px; border-radius: 9px; border: 1px solid var(--ml-hair); font-size: 12.5px; }
+.ml-root .ml4-fb[data-tone="warn"] { border-color: var(--ml-warn); }
+.ml-root .ml4-fb[data-tone="ok"] { border-color: var(--ml-ok); }
+.ml-root .ml4-notes { margin: 0; padding-left: 16px; font-size: 12px; color: var(--ml-ink-soft); }
+.ml-root .ml4-pin-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.ml-root .ml4-overlay-pill { max-width: 100%; white-space: normal; }

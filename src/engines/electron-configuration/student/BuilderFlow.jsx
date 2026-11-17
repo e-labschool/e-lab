@@ -17,7 +17,7 @@ function shellsToShow(config) {
 /** Electron-by-electron builder. The student chooses the subshell, the orbital and the spin. Pauli exclusion and Hund's rule are
  * enforced with explained refusals; Aufbau, capacity-per-subshell choices, ion removal order and the Cr/Cu exceptions are judged
  * by Check, with the reason. Nothing about the answer is displayed before the student has tried (hints are opt-in, graded). */
-export default function BuilderFlow({ z, charge, config }) {
+export default function BuilderFlow({ z, charge, config , onChecked }) {
   const reduced = useReducedMotion();
   const [animate, setAnimate] = useState(!reduced);
   const shells = shellsToShow(config);
@@ -65,7 +65,7 @@ export default function BuilderFlow({ z, charge, config }) {
       if (target) gridRef.current.querySelector(`[data-orbital="${target}:${Math.min(index, state.boxes[target].length - 1)}"]`)?.focus();
     }
   }
-  function check() { setResult(diagnose(state)); }
+  function check() { const r = diagnose(state); setResult(r); if (r.complete) onChecked?.(r.correct); }
   function clearAll() { setState(newBuilder(z, charge, Array.from({ length: shells }, (_, i) => i + 1))); setMsg(null); setResult(null); setLastKey(null); setHintLevel(0); }
   const hintText = hintLevel > 0 ? hint(state, hintLevel).text : null;
   const correct = result?.correct;

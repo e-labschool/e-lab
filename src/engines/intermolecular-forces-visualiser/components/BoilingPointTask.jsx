@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, Check, RotateCcw, Shuffle } from "lucide-react";
-import { ALKANE_MAX, FORCE_TAGS, RANK_SETS, RANK_SET_BY_ID, alkaneExplanation, alkaneSeries, moveItem, scoreRanking, shuffledOrder } from "../model/ranking.js";
+import { ALKANE_MAX, FORCE_TAGS, RANK_SETS, RANK_SET_BY_ID, alkaneExplanation, alkaneSeries, moveItem, rankEnds, rankUnit, rankValue, scoreRanking, shuffledOrder } from "../model/ranking.js";
 
 /** Panel of boiling-point sets (the "controls" column). */
 export function RankSetList({ setId, onPick, results }) {
@@ -8,7 +8,7 @@ export function RankSetList({ setId, onPick, results }) {
     <div className="imf-subs imf-ranksets" role="radiogroup" aria-label="Substances to rank">
       {RANK_SETS.map((s) => (
         <button key={s.id} type="button" role="radio" aria-checked={setId === s.id} className="imf-sub" onClick={() => onPick(s.id)} data-testid={`rankset-${s.id}`}>
-          <b>{s.title}{results[s.id]?.perfect ? " ✓" : ""}</b><span>{s.items.length} substances{s.level === "hl" ? " · HL" : ""}</span>
+          <b>{s.title}{results[s.id]?.perfect ? " ✓" : ""}</b><span>{s.items.length} substances · {s.quantity ?? "boiling point"}{s.level === "hl" ? " · HL" : ""}</span>
         </button>
       ))}
     </div>
@@ -61,15 +61,15 @@ export default function BoilingPointTask({ setId, order, onOrder, revealed, onRe
   const score = revealed ? scoreRanking(setId, order) : null;
   const [live, setLive] = useState("");
   const move = (i, d) => { onOrder(moveItem(order, i, i + d)); setLive(`${byId[order[i]].label} moved to position ${Math.max(1, Math.min(order.length, i + d + 1))} of ${order.length}`); };
-  const right = revealed ? [...set.items].sort((a, b) => a.bp - b.bp).map((x) => x.id) : null;
+  const ends = rankEnds(set); const unit = rankUnit(set); const quantity = set.quantity ?? "boiling point";
   return (
     <div className="imf-rank" data-testid="rank-task" data-set={setId} data-revealed={revealed ? "1" : "0"}>
       <header className="imf-rank-head">
         <h3>{set.title}</h3>
-        <p>{revealed ? "Compare with your prediction." : <>Put these substances in order of <b>boiling point</b>, lowest at the top. Decide before you check.</>}</p>
+        <p>{revealed ? "Compare with your prediction." : <>Put these substances in order of <b>{quantity}</b>, {ends[0]} at the top. Decide before you check.</>}</p>
       </header>
-      <ol className="imf-rank-list" aria-label="Your prediction, lowest boiling point first">
-        <li className="imf-rank-end" aria-hidden="true">lowest boiling point</li>
+      <ol className="imf-rank-list" aria-label={`Your prediction, ${ends[0]} first`}>
+        <li className="imf-rank-end" aria-hidden="true">{ends[0]}</li>
         {order.map((id, i) => {
           const it = byId[id]; const pl = score?.places.find((p) => p.id === id);
           return (
@@ -84,7 +84,7 @@ export default function BoilingPointTask({ setId, order, onOrder, revealed, onRe
               )}
               {revealed && (
                 <span className="imf-rank-reveal">
-                  <span className="imf-rank-bp" data-testid={`rank-bp-${id}`}>{it.bp} °C</span>
+                  <span className="imf-rank-bp" data-testid={`rank-bp-${id}`}>{rankValue(it)} {unit}</span>
                   <span className="imf-rank-tags">{it.forces.map((f) => <i key={f} data-f={f}>{FORCE_TAGS[f]}</i>)}</span>
                   <span className="imf-rank-why">{pl.ok ? "✓ " : `Correct place: ${pl.actual + 1}. `}{it.why}</span>
                 </span>
@@ -92,7 +92,7 @@ export default function BoilingPointTask({ setId, order, onOrder, revealed, onRe
             </li>
           );
         })}
-        <li className="imf-rank-end" aria-hidden="true">highest boiling point</li>
+        <li className="imf-rank-end" aria-hidden="true">{ends[1]}</li>
       </ol>
       <p className="imf-sr" aria-live="polite">{live}</p>
       {revealed && (

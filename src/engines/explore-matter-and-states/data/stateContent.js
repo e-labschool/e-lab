@@ -15,6 +15,7 @@ export const STATE_MACRO = {
     r1: "FIXED SHAPE",
     q2: "Does its volume change between containers?",
     r2: "FIXED VOLUME",
+    a1: false, a2: false, // does the shape / volume change?
   },
   liquid: {
     label: "Liquid",
@@ -22,6 +23,7 @@ export const STATE_MACRO = {
     r1: "NO FIXED SHAPE",
     q2: "Does its volume change between containers?",
     r2: "FIXED VOLUME",
+    a1: true, a2: false,
   },
   gas: {
     label: "Gas",
@@ -29,6 +31,7 @@ export const STATE_MACRO = {
     r1: "NO FIXED SHAPE",
     q2: "Does it fill the whole container, whatever its size?",
     r2: "NO FIXED VOLUME \u2014 FILLS AVAILABLE CONTAINER",
+    a1: true, a2: true, // yes: it takes the shape / yes: it fills the container
   },
 };
 

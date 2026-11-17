@@ -26,3 +26,17 @@ export const REAGENTS = {
   NaOH: { id: "NaOH", label: "NaOH", name: "Sodium hydroxide", kind: "base", strong: true },
   NH3: { id: "NH3", label: "NH₃", name: "Ammonia", kind: "base", strong: false, pKb: PKB_AMMONIA, pKa: PKA_AMMONIUM, pKaLabel: "pKa(NH₄⁺)" },
 };
+
+/** Ionic product of water against temperature (degC -> Kw, mol2 dm-6). Rows at 0, 10, 20, 30, 40, 50 and 100 degC are from
+ *  chemguide.co.uk (Clark), which agrees with the CRC Handbook; 25 degC uses the IB data-booklet value 1.00e-14 (CRC 1.008e-14). */
+export const KW_TABLE = Object.freeze([[0, 1.14e-15], [10, 2.93e-15], [20, 6.81e-15], [25, 1.0e-14], [30, 1.47e-14], [40, 2.92e-14], [50, 5.48e-14], [100, 5.13e-13]]);
+export const KW_TABLE_TEMPS = Object.freeze(KW_TABLE.map((r) => r[0]));
+/** Kw at a Celsius temperature 0..100: exact at the tabulated rows, pKw linear in 1/T between them (so 75 degC gives pKw 12.74, CRC about 12.72). */
+export function kwAt(tC) {
+  const t = Math.max(0, Math.min(100, tC));
+  const exact = KW_TABLE.find((r) => r[0] === t); if (exact) return exact[1];
+  const i = KW_TABLE.findIndex((r) => r[0] > t); const [t0, k0] = KW_TABLE[i - 1]; const [t1, k1] = KW_TABLE[i];
+  const inv = (x) => 1 / (x + 273.15); const f = (inv(t0) - inv(t)) / (inv(t0) - inv(t1));
+  return Math.pow(10, Math.log10(k0) + f * (Math.log10(k1) - Math.log10(k0)));
+}
+export const pKwAt = (tC) => -Math.log10(kwAt(tC));

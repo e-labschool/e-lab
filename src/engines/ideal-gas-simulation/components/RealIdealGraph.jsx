@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { GAS, IB_UNITS, Z_P_MAX, Z_P_MIN, fmtPressure, unitLabelP, generateZCurve, vdwCriticalConstants, vdwSaturationPressure, zAxisRange, zMarker } from "../model.js";
+import { GAS, GASES, GAS_IDS, IB_UNITS, setActiveGas, Z_P_MAX, Z_P_MIN, fmtPressure, unitLabelP, generateZCurve, vdwCriticalConstants, vdwSaturationPressure, zAxisRange, zMarker } from "../model.js";
 
 // "Real vs Ideal Gas Behaviour": compressibility factor Z = PV/(nRT) against pressure for the SAME gas
 // (CO2) at the CURRENT temperature. Plain SVG drawn from model.generateZCurve() / model.zMarker();
@@ -11,6 +11,7 @@ import { GAS, IB_UNITS, Z_P_MAX, Z_P_MIN, fmtPressure, unitLabelP, generateZCurv
 const C_IDEAL = "#2F7BF5";
 const C_REAL = "#E8590C";
 const C_MARK = "#14226B";
+const GAS_COLOURS = { he: "#0E8F6B", n2: "#6B7A99", co2: C_REAL, nh3: "#8B5CF6" };
 const M0 = { l: 44, r: 12, t: 8, b: 34 };
 const LOG_MIN = Math.log10(Z_P_MIN);
 const LOG_SPAN = Math.log10(Z_P_MAX) - LOG_MIN;
@@ -70,9 +71,20 @@ export default function RealIdealGraph({ state, units = IB_UNITS }) {
   const real = state.mode === "real";
   const { n, T } = state;
   // The curve depends only on n, T and the gas model: moving V or P just moves the marker.
-  const curve = useMemo(() => generateZCurve(n, T, state.mode), [n, T, state.mode]);
+  const curve = useMemo(() => generateZCurve(n, T, state.mode, undefined, state.gasId), [n, T, state.mode, state.gasId]);
+  // Compare-gases overlay: the real Z(P) curve of every gas at this T (the ideal gas is the same line for all of them).
+  const [compare, setCompare] = useState(false);
+  const others = useMemo(() => (compare ? GAS_IDS.map((id) => ({ id, curve: generateZCurve(n, T, "real", undefined, id) })) : []), [compare, n, T]);
   const marker = useMemo(() => zMarker(state), [state]);
-  const axis = useMemo(() => zAxisRange(curve, marker), [curve, marker]);
+  const gas = GASES[state.gasId] ?? GAS;
+  const axis = useMemo(() => {
+    const a = zAxisRange(curve, marker);
+    if (!others.length) return a;
+    let lo = a.yMin, hi = a.yMax;
+    for (const o of others) for (const p of o.curve.points) { lo = Math.min(lo, p.Z); hi = Math.max(hi, p.Z); }
+    return { ...a, yMin: Math.max(0, Math.floor((lo - 0.02) * 10) / 10), yMax: Math.min(2.4, Math.max(a.yMax, Math.ceil((hi + 0.02) * 10) / 10)) };
+  }, [curve, marker, others]);
+  setActiveGas(state.gasId); // the overlay loop above leaves the last gas active
   const { Tc } = vdwCriticalConstants();
   const psat = vdwSaturationPressure(T);
 
@@ -89,7 +101,7 @@ export default function RealIdealGraph({ state, units = IB_UNITS }) {
 
   const zText = marker.status === "ok" || marker.status === "limit" ? marker.Z.toFixed(3) : null;
   const label =
-    `Real vs Ideal Gas Behaviour: compressibility factor Z against pressure in ${uP} (log scale) for ${GAS.name} at ${Math.round(T)} kelvin. ` +
+    `Real vs Ideal Gas Behaviour: compressibility factor Z against pressure in ${uP} (log scale) for ${gas.name} at ${Math.round(T)} kelvin. ` +
     `Ideal gas reference line at Z equals 1. Real gas curve. ` +
     (marker.status === "limit" ? `Current state is outside the model: ${marker.text}` : `Current state: P ${fmtP(marker.P)} ${uP}, Z ${zText}.` + (marker.real ? ` Real gas at the same conditions: Z ${marker.real.Z.toFixed(3)}.` : ""));
 
@@ -124,7 +136,7 @@ export default function RealIdealGraph({ state, units = IB_UNITS }) {
   const ry = rm ? clampY(rm.Z) : null;
 
   const regime = T < Tc
-    ? `T < Tᶜ (${Tc.toFixed(0)} K): CO₂ condenses above ${psat ? fmtP(psat) : "P_sat"} ${uP} (van der Waals, qualitative)`
+    ? `T < Tᶜ (${Tc.toFixed(0)} K): ${gas.tag} condenses above ${psat ? fmtP(psat) : "P_sat"} ${uP} (van der Waals, qualitative)`
     : `T > Tᶜ (${Tc.toFixed(0)} K): supercritical, no condensation`;
   const notes = [
     curve.end ? `Curve ends at ${fmtP(curve.end.P)} ${uP}: ${curve.end.text}` : null,
@@ -139,7 +151,7 @@ export default function RealIdealGraph({ state, units = IB_UNITS }) {
         <h4 className="text-[length:calc(var(--sd-fs)_+_1.5px)] font-bold text-[#14226B]" data-testid="graph-title">Z = PV/nRT vs pressure</h4>
         <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0 text-[length:var(--sd-fs-sm)] text-[#33415F]" data-testid="graph-legend">
           <LegendSwatch color={C_IDEAL}>Ideal (Z = 1)</LegendSwatch>
-          <LegendSwatch color={C_REAL} dash="7 4">Real CO{"₂"}</LegendSwatch>
+          <LegendSwatch color={C_REAL} dash="7 4">Real {gas.tag}</LegendSwatch>
           <LegendSwatch color={C_MARK} dot>Now</LegendSwatch>
           {!real && rm && <LegendSwatch color={C_REAL} dot hollow>Real, same {state.control === "pressure" ? "P" : "V"}</LegendSwatch>}
         </div>
@@ -178,6 +190,9 @@ export default function RealIdealGraph({ state, units = IB_UNITS }) {
 
           <g clipPath={`url(#${clipId})`}>
             <line x1={sx(Z_P_MIN)} x2={sx(Z_P_MAX)} y1={sy(1)} y2={sy(1)} stroke={C_IDEAL} strokeWidth="2.6" data-testid="graph-ideal" />
+            {others.filter((o) => o.id !== state.gasId && o.curve.points.length > 1).map((o) => (
+              <path key={o.id} d={path(o.curve.points)} fill="none" stroke={GAS_COLOURS[o.id]} strokeWidth="1.8" opacity="0.9" strokeLinejoin="round" data-testid={`graph-gas-${o.id}`} />
+            ))}
             {curve.points.length > 1 && (
               <path d={path(curve.points)} fill="none" stroke={C_REAL} strokeWidth="2.6" strokeDasharray="7 4" strokeLinejoin="round" data-testid="graph-real" />
             )}
@@ -216,9 +231,22 @@ export default function RealIdealGraph({ state, units = IB_UNITS }) {
         )}
       </div>
 
-      <p className="shrink-0 truncate text-[length:var(--sd-fs-sm)] text-[#4a5a82]" data-testid="graph-subtitle" title={`${GAS.name}, van der Waals a = ${GAS.a}, b = ${GAS.b}`}>
-        {GAS.name} at {Math.round(T)} K &middot; {regime}
+      <p className="shrink-0 truncate text-[length:var(--sd-fs-sm)] text-[#4a5a82]" data-testid="graph-subtitle" title={`${gas.name}, van der Waals a = ${gas.a} L\u00b2 atm mol\u207b\u00b2, b = ${gas.b} L mol\u207b\u00b9. Z = PV/nRT is exactly 1 for an ideal gas.`}>
+        {gas.name} at {Math.round(T)} K &middot; {regime}
       </p>
+      <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-0 text-[length:var(--sd-fs-sm)] text-[#33415F]">
+        <label className="inline-flex cursor-pointer items-center gap-1.5">
+          <input type="checkbox" checked={compare} onChange={(e) => setCompare(e.target.checked)} data-testid="graph-compare-gases" />
+          Compare gases at this temperature
+        </label>
+        {compare && GAS_IDS.map((id) => (
+          <span key={id} className="inline-flex items-center gap-1 whitespace-nowrap" data-testid={`compare-key-${id}`}>
+            <svg width="16" height="8" aria-hidden="true"><line x1="0" y1="4" x2="16" y2="4" stroke={id === state.gasId ? C_REAL : GAS_COLOURS[id]} strokeWidth="2.4" strokeDasharray={id === state.gasId ? "5 3" : undefined} /></svg>
+            {GASES[id].tag}
+          </span>
+        ))}
+      </div>
+      {compare && <p className="shrink-0 text-[length:var(--sd-fs-sm)] leading-snug text-[#4a5a82]" data-testid="compare-note">Z = PV/nRT = 1 for an ideal gas. {GASES.nh3.tag} ({GASES.nh3.imf}) falls furthest below 1; {GASES.he.tag} ({GASES.he.imf}) stays closest to the ideal line.</p>}
       {notes.length > 0 && (
         <p className="shrink-0 text-[length:var(--sd-fs-sm)] font-medium leading-snug text-[#8a5300]" data-testid="graph-note">{notes.join(" ")}</p>
       )}

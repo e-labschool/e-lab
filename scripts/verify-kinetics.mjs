@@ -172,6 +172,12 @@ async function collisionPass(W, H, theme) {
   await p.waitForSelector(T("predict-result"), { timeout: 60000 }); const pn = await txt(p, "predict-numbers"); check(/Measured: [\d.]+ → [\d.]+ reactions/.test(pn), `${size}: predict reveal shows measured numbers (${pn.slice(0, 60)})`);
   await p.screenshot({ path: `${out}/ct-${W}x${H}-${theme}-4-predict.png` }); await p.keyboard.press("Escape");
 
+  // reaction profile in the detail popover (round 2)
+  await p.click(T("explain-info")); await sleep(200);
+  check((await p.locator(T("reaction-profile")).count()) === 1, `${size}: reaction profile is in the detail popover`);
+  { const r = await p.evaluate(() => { const el = document.querySelector('[data-testid="reaction-profile"]'); const pn = el.closest('[data-testid="explain-info-panel"]') ?? el; const b = el.getBoundingClientRect(); const pb = pn.getBoundingClientRect(); const svg = el.querySelector("svg").getBoundingClientRect(); const txts = [...el.querySelectorAll("svg text")].map((t) => t.getBoundingClientRect()); return { inView: b.left >= -1 && b.right <= innerWidth + 1 && svg.width > 100, textsInside: txts.every((t) => t.left >= svg.left - 1 && t.right <= svg.right + 1 && t.top >= svg.top - 1 && t.bottom <= svg.bottom + 1), vis: pb.top >= -1 || pn.scrollHeight > 0 }; });
+    check(r.inView, `${size}: profile is inside the viewport`); check(r.textsInside, `${size}: every profile label is inside its drawing`); }
+  await p.screenshot({ path: `${out}/ct-${W}x${H}-${theme}-4b-profile.png` }); await p.keyboard.press("Escape");
   // solid system and graph variants at this size
   await p.click(`${T("system-tabs")} [role=radio]:nth-child(2)`); await sleep(1500); REPORT(await p.evaluate(AUDIT), `${size} solid`); await p.screenshot({ path: `${out}/ct-${W}x${H}-${theme}-5-solid.png` });
   if (wide && H < 620) { await p.click(`${T("graph-tab")} [role=radio]:nth-child(2)`); await sleep(400); REPORT(await p.evaluate(AUDIT), `${size} rate tab`); await p.screenshot({ path: `${out}/ct-${W}x${H}-${theme}-6-ratetab.png` }); }
@@ -254,6 +260,9 @@ async function chocolatePass(W, H, theme) {
   await p.click(T("cw-reset")); await sleep(100); check((await p.inputValue(T("cw-chocolates"))) === "20", `${size}: reset unlocks the fields`);
   // keyboard focus visible on buttons/selects
   await p.focus(T("cw-reset")); for (let k = 0; k < 6 && (await p.evaluate(() => document.activeElement?.getAttribute("data-testid"))) !== "cw-start"; k++) await p.keyboard.press("Shift+Tab"); const ring = await p.evaluate(() => { const cs = getComputedStyle(document.activeElement); return parseFloat(cs.outlineWidth) >= 2 && cs.outlineStyle !== "none"; }); check(ring, `${size}: Start has a visible focus ring`);
+  { await p.click(T("cw-reset")).catch(() => {}); await p.click(T("cw-pick-lower")).catch(() => {}); await p.click(T("cw-reveal")); await sleep(100);
+    const t = await txt(p, "cw-predict-result"); check(/Not quite \(the answer is higher\)|Correct/.test(t) && /packs/.test(t), `${size}: chocolate predict-first reveals a model-computed answer (${t.slice(0, 50)})`);
+    const ov = await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1); check(ov, `${size}: chocolate page has no horizontal overflow with the predict strip`); }
   check(errors.length === 0, `${size}: errors ${errors.slice(0, 3).join(" | ")}`);
   await ctx.close();
 }

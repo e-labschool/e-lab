@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { IB_UNITS, LIMITS, fmtPressure, fmtVolume, pFromDisplay, pToDisplay, unitLabelP, unitLabelV, vFromDisplay, vToDisplay } from "../model.js";
+import { GASES, GAS_IDS, IB_UNITS, LIMITS, fmtPressure, fmtVolume, pFromDisplay, pToDisplay, unitLabelP, unitLabelV, vFromDisplay, vToDisplay } from "../model.js";
 import { PRESSURE_UNITS, VOLUME_UNITS } from "../../../lib/gas/gasUnits.js";
 import { REASON_TEXT } from "../../../components/interactive-shell/readings/readingsModel.js";
 import NumberField from "../../../components/interactive-shell/NumberField.jsx";
@@ -36,7 +36,9 @@ const KPA = 101.325;
 export default function ControlsPanel({ controls, state, onChange, units = IB_UNITS, onRecord, readingCount = 0 }) {
   const pressureMode = controls.control === "pressure";
   const targetP = state.pTarget ?? state.pressure;
-  const pValue = pressureMode ? controls.P : Math.min(LIMITS.P.max, Math.max(LIMITS.P.min, state.pressure));
+  // GS-05: in Real mode the slider ends at the highest pressure this gas can actually reach (it would condense or run out of free volume above it).
+  const pTop = Math.min(LIMITS.P.max, state.pReachMax ?? LIMITS.P.max);
+  const pValue = pressureMode ? Math.min(controls.P, pTop) : Math.min(LIMITS.P.max, Math.max(LIMITS.P.min, state.pressure));
   const [notice, setNotice] = useState({});
   const note = state.note;
   const uP = unitLabelP(units); const uV = unitLabelV(units);
@@ -44,7 +46,7 @@ export default function ControlsPanel({ controls, state, onChange, units = IB_UN
   const dP = (atm) => pToDisplay(atm, units); const dV = (L) => vToDisplay(L, units);
   const setN = (k) => (text) => setNotice((n) => ({ ...n, [k]: text }));
   const typedP = (
-    <NumberField value={dP(targetP)} min={dP(LIMITS.P.min)} max={dP(LIMITS.P.max)} decimals={units.pressure === "kPa" ? 1 : 3} unit={uP} label="Type a pressure"
+    <NumberField value={dP(targetP)} min={dP(LIMITS.P.min)} max={dP(pTop)} decimals={units.pressure === "kPa" ? 1 : 3} unit={uP} label="Type a pressure"
       onCommit={(x) => onChange({ P: pFromDisplay(x, units) })} onNotice={setN("P")} testId="input-ig-P" width={72} />
   );
   const typedV = (
@@ -72,8 +74,8 @@ export default function ControlsPanel({ controls, state, onChange, units = IB_UN
   const pressureRow = pressureMode ? (
     <SliderRow
       key="P" id="ig-pressure" label="Pressure" symbol="P" tone="active" color={C.P.color} badgeBg={C.P.bg} testId="P" rowTestId="block-P"
-      value={P_SCALE.toPos(pValue)} min={0} max={POS_MAX} step={1} onChange={(pos) => { setN("P")(null); onChange({ P: P_SCALE.fromPos(pos) }); }}
-      badgeText={`${fmtP(targetP)} ${uP}`} minText={`${fmtP(LIMITS.P.min)} ${uP}`} maxText={`${fmtP(LIMITS.P.max)} ${uP}`}
+      value={P_SCALE.toPos(pValue)} min={0} max={Math.max(1, P_SCALE.toPos(pTop))} step={1} onChange={(pos) => { setN("P")(null); onChange({ P: Math.min(pTop, P_SCALE.fromPos(pos)) }); }}
+      badgeText={`${fmtP(targetP)} ${uP}`} minText={`${fmtP(LIMITS.P.min)} ${uP}`} maxText={`${fmtP(pTop)} ${uP}`}
       valueText={`${fmtP(targetP)} ${PRESSURE_UNITS[units.pressure]?.spoken ?? "kilopascals"}, target`} labelExtra={typedP} note={notice.P}
     />
   ) : (
@@ -89,6 +91,12 @@ export default function ControlsPanel({ controls, state, onChange, units = IB_UN
         <MiniSwitch
           large fill options={CONTROL_OPTIONS} value={controls.control} ariaLabel="Which variable do you change?"
           onChange={(control) => onChange({ control })} testId="control-switch"
+        />
+      </div>
+      <div className="sd-selector" data-testid="gas-picker">
+        <MiniSwitch
+          large fill role="radio" value={controls.gasId} ariaLabel="Which gas?" onChange={(gasId) => onChange({ gasId })} testId="gas-id-switch"
+          options={GAS_IDS.map((id) => ({ id, label: GASES[id].tag, title: `${GASES[id].name}: real-gas behaviour from van der Waals a = ${GASES[id].a}, b = ${GASES[id].b}` }))}
         />
       </div>
       <SliderRow

@@ -14,6 +14,7 @@ const ORIENTATION_TEXT = {
   "4s": "none (spherically symmetric)",
   "2px": "x-axis", "2py": "y-axis", "2pz": "z-axis",
   "3px": "x-axis", "3py": "y-axis", "3pz": "z-axis",
+  "4px": "x-axis", "4py": "y-axis", "4pz": "z-axis",
   "3dxy": "xy-plane", "3dxz": "xz-plane", "3dyz": "yz-plane",
   "3dx2y2": "x/y axes", "3dz2": "z-axis",
 };

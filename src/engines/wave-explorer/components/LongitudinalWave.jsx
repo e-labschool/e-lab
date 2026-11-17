@@ -16,9 +16,9 @@ const PARTICLE_COUNT = 34;
 const PARTICLE_RADIUS = 4.5;
 const OBSERVATION_X = 320;
 
-export default function LongitudinalWave({ wavelengthNm, wavelengthPx, amplitudePx, paused, emphasize }) {
+export default function LongitudinalWave({ wavelengthNm, wavelengthPx, amplitudePx, paused, emphasize, cyclesPerSecond, wavelengthLabel }) {
   const reducedMotion = useReducedMotion();
-  const { phase, cycleCount } = useWavePhase({ wavelengthNm, paused: paused || reducedMotion });
+  const { phase, cycleCount } = useWavePhase({ wavelengthNm, paused: paused || reducedMotion, cyclesPerSecond });
 
   // Displacement must stay below spacing/pi, or neighbouring particles would overtake each other (non-physical). Amplitude 0..max maps to 0..that limit.
   const maxDisplacementPx = (WIDTH / PARTICLE_COUNT / Math.PI) * 0.9;
@@ -76,7 +76,7 @@ export default function LongitudinalWave({ wavelengthNm, wavelengthPx, amplitude
         {/* wavelength, compression-centre to compression-centre */}
         <g className={emphasize === "wavelength" ? "wave-emphasis" : undefined}>
           <line x1={compressionAnchorX} y1={HEIGHT - 20} x2={compressionAnchorX + wavelengthPx} y2={HEIGHT - 20} stroke="var(--color-violet)" strokeWidth="1" markerStart="url(#lw-tick)" markerEnd="url(#lw-tick)" />
-          <text x={clampLabelX(compressionAnchorX + wavelengthPx / 2)} y={HEIGHT - 24} textAnchor="middle" fontSize="10" fontWeight="700" fill="var(--color-violet)">{"\u03BB"}</text>
+          <text x={clampLabelX(compressionAnchorX + wavelengthPx / 2)} y={HEIGHT - 24} textAnchor="middle" fontSize="10" fontWeight="700" fill="var(--color-violet)">{wavelengthLabel ? `\u03BB = ${wavelengthLabel}` : "\u03BB"}</text>
         </g>
 
         {/* observation point -- displacement of the particle nearest it */}

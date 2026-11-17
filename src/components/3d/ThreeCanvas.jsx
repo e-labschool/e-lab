@@ -2,6 +2,8 @@ import { useState, useRef, useMemo } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import { RotateCcw, Box } from "lucide-react";
+import CameraKeyApi from "../../engines/shared-3d/CameraKeyApi.jsx";
+import { useStageKeys, StageKeyHint } from "../../engines/shared-3d/StageShell.jsx";
 
 // Shared scene shell for every 3D interactive in e-Lab — one place that
 // decides camera, lighting, controls, mobile degradation, and the WebGL
@@ -22,11 +24,15 @@ function isMobileViewport() {
   return typeof window !== "undefined" && window.innerWidth < 640;
 }
 
-export default function ThreeCanvas({ children, height = 360, cameraDistance = 6, fallbackDescription, fallbackLabel = "3D view" }) {
+/** keyboard (opt-in): the stage becomes focusable; arrows orbit, + / - zoom, 0 resets (WCAG 2.1.1), with `ariaLabel` as its accessible name. */
+export default function ThreeCanvas({ children, height = 360, cameraDistance = 6, fallbackDescription, fallbackLabel = "3D view", keyboard = false, ariaLabel }) {
   const [resetKey, setResetKey] = useState(0);
   const webglAvailable = useMemo(() => detectWebGL(), []);
   const mobile = useMemo(() => isMobileViewport(), []);
   const controlsRef = useRef(null);
+  const camRef = useRef(null);
+  const onKeyDown = useStageKeys(camRef, () => setResetKey((k) => k + 1));
+  const hintId = "tc-keyhint";
 
   // A 3D scene is never the ONLY way essential information is conveyed —
   // every viewer using this wrapper must be given a fallbackDescription,
@@ -45,7 +51,7 @@ export default function ThreeCanvas({ children, height = 360, cameraDistance = 6
   }
 
   return (
-    <div className="relative overflow-hidden rounded-lg border border-[var(--color-line)] bg-[var(--color-paper-raised)]" style={{ height }}>
+    <div className="relative overflow-hidden rounded-lg border border-[var(--color-line)] bg-[var(--color-paper-raised)]" style={{ height }} {...(keyboard ? { tabIndex: 0, role: "group", "aria-label": ariaLabel ?? "3D view", "aria-describedby": hintId, onKeyDown, "data-s3d-stage": "" } : {})}>
       <Canvas
         key={resetKey}
         dpr={mobile ? [1, 1.25] : [1, 2]}
@@ -63,7 +69,9 @@ export default function ThreeCanvas({ children, height = 360, cameraDistance = 6
           maxDistance={cameraDistance * 2}
           enableDamping
           dampingFactor={0.1}
+          makeDefault={keyboard}
         />
+        {keyboard && <CameraKeyApi apiRef={camRef} />}
       </Canvas>
 
       <button
@@ -75,6 +83,7 @@ export default function ThreeCanvas({ children, height = 360, cameraDistance = 6
       >
         <RotateCcw size={14} />
       </button>
+      {keyboard && <StageKeyHint id={hintId} />}
       <p className="pointer-events-none absolute left-2.5 top-2.5 rounded-md bg-[var(--color-paper)]/80 px-2 py-1 text-[10px] text-[var(--color-ink-faint)] backdrop-blur">
         Drag to rotate &middot; scroll to zoom
       </p>

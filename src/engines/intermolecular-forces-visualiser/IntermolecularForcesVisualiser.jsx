@@ -304,13 +304,13 @@ function Workspace() {
       </div>
     );
     controls = (
-      <DashPanel title="Boiling-point sets" grow className="imf-panel" testId="rankset-panel">
+      <DashPanel title="Ranking sets" grow className="imf-panel" testId="rankset-panel">
         <RankSetList setId={rankSetId} onPick={pick} results={rankResults} />
-        <p className="imf-sub-note">Boiling points are at 1 atm. The point of each set is to apply the idea, not to memorise numbers.</p>
+        <p className="imf-sub-note">Boiling points are at 1 atm. The point of each set is to apply the idea, not to memorise numbers. Volatility is the boiling-point order read the other way; the solubility values are approximate.</p>
       </DashPanel>
     );
     live = <LiveStrip items={[{ id: "set", label: "Set", value: set.title, bg: "#e6efff", testId: "live-rankset" }, { id: "score", label: "Result", value: sc ? `${sc.correct} / ${sc.total}` : "predict first", bg: "#e8f6ec", testId: "live-rankscore" }]} />;
-    explain = <ExplainLine text={rankRevealed ? set.idea : "Think about which intermolecular forces act and how strong they are, then put the substances in order and press Check my order."} testId="what-is-happening" />;
+    explain = <ExplainLine text={rankRevealed ? set.idea : `Think about which intermolecular forces act and how strong they are, then put the substances in order of ${set.quantity ?? "boiling point"} and press Check my order.`} testId="what-is-happening" />;
   } else if (mode === "learn") {
     const f = lessonFx; void f;
     chamber = (

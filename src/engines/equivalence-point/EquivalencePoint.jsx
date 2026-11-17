@@ -165,12 +165,13 @@ function EquivalencePointBody() {
           <div className="eq2-btns">
             <button type="button" className="sim-btn sim-btn--primary ab-btn" disabled={atMax} onClick={() => dispatch({ type: "acid", amount: 2.5 })}>Add 2.5 cm{"³"} {acid.label}</button>
             <button type="button" className="sim-btn ab-btn" disabled={atMax} onClick={() => dispatch({ type: "acid", amount: 0.5 })}>Add 0.5 cm{"³"}</button>
+            <button type="button" className="sim-btn ab-btn" disabled={atMax} onClick={() => dispatch({ type: "acid", amount: 0.1 })} title="About 2 drops: use this near the equivalence point to resolve the jump" data-testid="add-drop">Add 0.1 cm{"³"} (drop)</button>
             <button type="button" className="sim-btn ab-btn" onClick={() => dispatch({ type: "base", amount: 2.5 })}>Add 2.5 cm{"³"} {base.label}</button>
             <button type="button" className="sim-btn ab-btn" onClick={() => dispatch({ type: "reset" })}>Reset</button>
           </div>
           {atMax && <p className="ab-note ab-warn">Limit: {axis} cm{"³"} of acid (about twice the equivalence volume) is added. Reset to start again.</p>}
           <MiniTrace points={st.points} veq={veq} axis={axis} />
-          <p className="ab-note">Each ion sphere stands for about one tenth of the starting OH{"⁻"}, an analogy, not a count. The trace shows how little the pH moves until the equivalence point, then how fast it jumps.</p>
+          <p className="ab-note">Each ion sphere stands for about one tenth of the starting OH{"⁻"}, an analogy, not a count. The trace shows how little the pH moves until the equivalence point, then how fast it jumps: close to {veq.toFixed(1)} cm{"³"} use the 0.1 cm{"³"} button to see the jump drop by drop.</p>
           <label className="eq2-toggle"><input type="checkbox" checked={explore} onChange={(e) => { setExplore(e.target.checked); if (!e.target.checked) dispatch({ type: "reset" }); }} /> Explore stoichiometry (other acids, bases, concentrations)</label>
           {explore && (
             <div className="eq2-explore">

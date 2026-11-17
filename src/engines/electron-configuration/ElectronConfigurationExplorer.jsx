@@ -23,6 +23,7 @@ export default function ElectronConfigurationExplorer({ compact = false, standal
   const [charge, setCharge] = useState(0);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [notice, setNotice] = useState(null);
+  const [history, setHistory] = useState([]); // EC-10: species the student has checked this session (survives element changes)
 
   const config = useMemo(() => buildConfiguration(z, charge), [z, charge]);
   const ionsAllowed = z <= ION_MAX_Z;
@@ -88,7 +89,15 @@ export default function ElectronConfigurationExplorer({ compact = false, standal
         </div>
       )}
 
-      {mode === "student" ? <StudentFlow key={`${z}:${charge}`} config={config} /> : <TeacherFlow key={`${z}:${charge}`} config={config} />}
+      {mode === "student" && history.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 text-xs text-[var(--color-ink-soft)]" data-testid="ec-progress" aria-label="Species you have checked this session">
+          <span className="font-semibold text-[var(--color-ink)]">This session: {history.filter((h) => h.correct).length} of {history.length} correct</span>
+          {history.map((h) => <span key={h.key} className="rounded-full border px-2 py-0.5 font-semibold" style={{ borderColor: h.correct ? "var(--color-teal)" : "var(--color-coral)", color: h.correct ? "var(--color-teal)" : "var(--color-coral)" }}>{h.correct ? "✓" : "✗"} {h.label}</span>)}
+          <button type="button" onClick={() => setHistory([])} className="underline">Clear history</button>
+        </div>
+      )}
+
+      {mode === "student" ? <StudentFlow key={`${z}:${charge}`} config={config} onChecked={(correct) => setHistory((h) => [...h.filter((x) => x.key !== `${z}:${charge}`), { key: `${z}:${charge}`, label: species, correct }])} /> : <TeacherFlow key={`${z}:${charge}`} config={config} />}
     </div>
   );
 

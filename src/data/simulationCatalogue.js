@@ -77,6 +77,8 @@ const LIVE = [
     description: "Compare particle arrangement, movement and attraction in solids, liquids and gases." },
   { id: "phase-change-heating-curve", label: "Phase Change & Heating Curve", topic: "States of matter & gases", syllabus: ["S1.1"], resourceId: "phase-change-heating-curve", featured: true, featuredOrder: 3,
     description: "Watch particles heat from solid to gas alongside the matching heating curve." },
+  { id: "mixture-separation-explorer", label: "Mixture Separation Explorer", topic: "States of matter & gases", syllabus: ["S1.1", "S2.2"], resourceId: "mixture-separation-explorer",
+    description: "Pick a mixture and a method, assemble the apparatus and watch filtration, distillation, chromatography and more separate it; then work out a multi-step separation yourself." },
   { id: "ph-calculator-visualizer", label: "pH Calculator & Visualizer", topic: "Acids & bases", syllabus: ["R3.1"], resourceId: "ph-calculator-visualizer",
     description: "Slide the concentration and read pH = -log[H3O+] on a labelled pH scale." },
   { id: "h-oh-balance", label: "H+ - OH- Balance in Water", topic: "Acids & bases", syllabus: ["R3.1"], resourceId: "h-oh-balance",
@@ -113,6 +115,8 @@ const LIVE = [
     description: "See sp, sp2 and sp3 hybrid orbitals form in 3D." },
   { id: "intermolecular-forces-visualiser", label: "Intermolecular Forces Visualiser", topic: "Bonding", syllabus: ["S2.2"], resourceId: "intermolecular-forces-visualiser",
     description: "Explore London, dipole–dipole and hydrogen-bond forces between molecules." },
+  { id: "mole-lab", label: "Mole Lab", topic: "Stoichiometry", syllabus: [],
+    description: "Handle one-mole packets: count atoms from formulae, convert mass to moles, then concentration, gas volume and limiting reagents." },
   { id: "spectroscopy-studio", label: "Spectroscopy Simulation Lab", topic: "Spectroscopy", syllabus: ["S3.2"], featured: false,
     description: "Proton NMR, infrared and mass spectrometry step by step, plus a structure-investigation workspace." },
 ];

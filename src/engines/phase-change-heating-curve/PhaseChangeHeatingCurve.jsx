@@ -9,6 +9,7 @@ import CurveGraph from "./components/CurveGraph.jsx";
 import { segColor } from "./lib/colors.js";
 import { buildCurve, curveState, SEGMENT_CAPTION, TOTAL_SECONDS_AT_1X, MASS_RANGE, POWER_RANGE, elapsedSeconds, totalSeconds, segmentWorking } from "./data/curveModel.js";
 import { useSize } from "./lib/useSize.js";
+import { useSimulationSessionState } from "../../components/interactive-shell/simulationSession.js";
 
 // Container width (px) at which the split screen (particles | graph) replaces the stacked layout.
 export const WIDE_MIN_WIDTH = 760;
@@ -34,11 +35,11 @@ function useReducedMotion() {
 // (0..1 of the active mode). See data/curveModel.js (pure model), lib/particles.js (pure particle model) and
 // docs/HEATING_COOLING_CURVE.md.
 export default function PhaseChangeHeatingCurve({ compact = false, standalone = false }) {
-  const [mode, setMode] = useState("heating");
+  const [mode, setMode] = useSimulationSessionState("mode", "heating", (v) => v === "heating" || v === "cooling");
   const [progress, setProgress] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
-  const [toScale, setToScale] = useState(false);
+  const [toScale, setToScale] = useSimulationSessionState("toScale", false, (v) => typeof v === "boolean");
 
   const curve = useMemo(() => buildCurve(toScale ? "true" : "schematic"), [toScale]);
   const state = useMemo(() => curveState(curve, mode, progress), [curve, mode, progress]);
@@ -97,6 +98,15 @@ function Workspace({ curve, mode, state, stateRef, progress, playing, speed, toS
   const [massG, setMassG] = useState(100);
   const [powerW, setPowerW] = useState(500);
   const [limitMsg, setLimitMsg] = useState("");
+  const [hideCurve, setHideCurve] = useState(false); // GS-40: predict the shape, then draw it as you go
+  const [zoomKE, setZoomKE] = useState(false); // GS-41: bar from the lowest temperature shown instead of from 0 K
+  const keZoom = (state.temp - curve.substance.tStart) / (curve.substance.tEnd - curve.substance.tStart);
+  // GS-42: one calm sentence for screen readers (the SVG itself has only a label)
+  const [announce, setAnnounce] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setAnnounce(`${mode === "heating" ? "Heating" : "Cooling"} ${curve.substance.name.toLowerCase()}: ${fmtT(state.temp)}, ${state.segmentLabel.toLowerCase()}, temperature ${state.isPlateau ? "constant" : mode === "heating" ? "rising" : "falling"}. ${state.phaseFractions.gas > 0.999 ? "All gas." : state.phaseFractions.solid > 0.999 ? "All solid." : ""}`), 500);
+    return () => clearTimeout(t);
+  }, [mode, state.temp, state.segmentLabel, state.isPlateau, state.phaseFractions, curve.substance.name]);
   const setBounded = (raw, range, set, name) => {
     const v = Number(raw);
     if (!Number.isFinite(v) || raw === "") { setLimitMsg(`${name} must be a number from ${range.min} to ${range.max} ${range.unit}.`); return; }
@@ -135,7 +145,7 @@ function Workspace({ curve, mode, state, stateRef, progress, playing, speed, toS
       </p>
       <ParticleCanvas stateRef={stateRef} reducedMotion={reduced} />
       <div className="grid grid-cols-2 gap-x-3 gap-y-1">
-        <Meter label="Kinetic energy (∝ T in K)" value={state.keRelative} color={STATE_ACCENT.gas} testid="hc-ke" />
+        <Meter label={zoomKE ? "Kinetic energy (bar zoomed)" : "Kinetic energy (∝ T in K)"} value={zoomKE ? keZoom : state.keRelative} color={STATE_ACCENT.gas} testid="hc-ke" />
         <Meter label="Potential energy (arrangement)" value={state.peRelative} color={STATE_ACCENT.solid} testid="hc-pe" />
       </div>
       <p className="text-[11px] tabular-nums" style={{ color: PALETTE.textSecondary }} data-testid="hc-fractions">{newPhaseText}</p>
@@ -151,7 +161,8 @@ function Workspace({ curve, mode, state, stateRef, progress, playing, speed, toS
           Energy {state.energyFlow}
         </p>
       </div>
-      <CurveGraph curve={curve} mode={mode} state={state} realTime={realTime} />
+      <CurveGraph curve={curve} mode={mode} state={state} realTime={realTime} hideCurve={hideCurve} />
+      <p className="sr-only" role="status" data-testid="hc-sr-summary">{announce}</p>
       <p className="text-[11px] leading-snug" style={{ color: PALETTE.textSecondary }} data-testid="hc-caption">{SEGMENT_CAPTION[state.segmentKey]}</p>
       <p className="text-[11px] leading-snug" style={{ color: PALETTE.textFaint }} data-testid="hc-assumption">
         Assumes constant {heating ? "heating" : "cooling"} power, so time is proportional to energy (graph of temperature against time for the sample, not against energy). {heating ? "" : "The cooling curve is the heating curve reversed: energy is released on condensation and freezing. "}
@@ -202,6 +213,14 @@ function Workspace({ curve, mode, state, stateRef, progress, playing, speed, toS
       <label className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: PALETTE.textSecondary }}>
         <input type="checkbox" checked={toScale} onChange={(e) => onToScale(e.target.checked)} className="h-4 w-4" data-testid="hc-to-scale" />
         Time axis to scale
+      </label>
+      <label className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: PALETTE.textSecondary }} title="Hide the curve and the stage bands: predict the shape, then play to draw it">
+        <input type="checkbox" checked={hideCurve} onChange={(e) => setHideCurve(e.target.checked)} className="h-4 w-4" data-testid="hc-hide-curve" />
+        Hide the curve (predict it)
+      </label>
+      <label className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: PALETTE.textSecondary }} title="The kinetic-energy bar normally runs from 0 K, so it barely moves. Zoomed, it runs from the lowest temperature shown to the highest.">
+        <input type="checkbox" checked={zoomKE} onChange={(e) => setZoomKE(e.target.checked)} className="h-4 w-4" data-testid="hc-zoom-ke" />
+        Zoom the energy bar
       </label>
     </div>
   );

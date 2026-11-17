@@ -1,4 +1,4 @@
-import { PRESSURE_UNITS, VOLUME_UNITS } from "../../lib/gas/gasUnits.js";
+import { PRESSURE_UNITS, VOLUME_UNITS, R_IB, KPA_PER_ATM } from "../../lib/gas/gasUnits.js";
 
 // Ideal vs Real Gas -- pure model (no React, no DOM) so it can be tested in
 // Node (scripts/test-ideal-gas-model.mjs). Rendering lives elsewhere.
@@ -14,8 +14,8 @@ import { PRESSURE_UNITS, VOLUME_UNITS } from "../../lib/gas/gasUnits.js";
 //   Real gas    (P + a n^2 / V^2) (V - n b) = n R T  Z = P V / (n R T)
 //
 // All quantities use ONE unit system: P in atm, V in L, n in mol, T in K,
-// R = 0.082057 L atm mol^-1 K^-1 (= 8.3145 J K^-1 mol^-1, shown as 8.31 like the IB data booklet; the 0.05 % difference
-// is invisible at 3 significant figures), a in L^2 atm mol^-2, b in L mol^-1. The model is ALWAYS atm / L internally;
+// R = R_IB / 101.325 = 0.082013 L atm mol^-1 K^-1, i.e. EXACTLY the IB data-booklet 8.31 J K^-1 mol^-1 (kPa dm^3 K^-1 mol^-1)
+// used by the Gas Laws Explorer, so the two simulations share ONE gas constant (round 1 used 0.082057 = 8.3145 here), a in L^2 atm mol^-2, b in L mol^-1. The model is ALWAYS atm / L internally;
 // kPa / dm^3 (IB default in the UI) are DISPLAY conversions: pass `units` to resolveState / predictContent for the texts.
 // 1 L = 1 dm^3 exactly and 1 atm = 101.325 kPa exactly.
 //
@@ -72,16 +72,36 @@ import { PRESSURE_UNITS, VOLUME_UNITS } from "../../lib/gas/gasUnits.js";
 //          exists (dense supercritical gas).
 // ---------------------------------------------------------------------------
 
-export const R_GAS = 0.082057; // L atm mol^-1 K^-1
-export const GAS = Object.freeze({
-  id: "co2",
-  name: "Carbon dioxide (CO₂)",
-  formula: "CO2",
-  a: 3.64, // L^2 atm mol^-2
-  b: 0.04267, // L mol^-1
+export const R_GAS = R_IB / KPA_PER_ATM; // L atm mol^-1 K^-1 (8.31 J K^-1 mol^-1 exactly, one constant for all gas simulations)
+
+// GASES (van der Waals constants a in L^2 atm mol^-2, b in L mol^-1; standard tabulated values, see CRC / Atkins tables).
+// Only CO2 was available in round 1. The set follows IB S1.5.2 guidance: gases with stronger intermolecular forces (NH3, CO2)
+// deviate more from ideal behaviour than He or N2. H2O is deliberately left out: at these temperatures it would be a liquid.
+// `tag` is the text used in sentences (subscripts), `lit` marks whether a literature vapour-pressure table is available.
+export const GASES = Object.freeze({
+  he: Object.freeze({ id: "he", name: "Helium (He)", formula: "He", tag: "He", a: 0.0346, b: 0.0238, lit: false, imf: "only very weak London dispersion forces" }),
+  n2: Object.freeze({ id: "n2", name: "Nitrogen (N\u2082)", formula: "N2", tag: "N\u2082", a: 1.37, b: 0.0387, lit: false, imf: "weak London dispersion forces" }),
+  co2: Object.freeze({ id: "co2", name: "Carbon dioxide (CO\u2082)", formula: "CO2", tag: "CO\u2082", a: 3.64, b: 0.04267, lit: true, imf: "London dispersion forces between a large electron cloud" }),
+  nh3: Object.freeze({ id: "nh3", name: "Ammonia (NH\u2083)", formula: "NH3", tag: "NH\u2083", a: 4.225, b: 0.03707, lit: false, imf: "hydrogen bonding" }),
 });
-export const VDW_A = GAS.a;
-export const VDW_B = GAS.b;
+export const GAS_IDS = Object.freeze(["he", "n2", "co2", "nh3"]);
+export const DEFAULT_GAS_ID = "co2";
+
+// ACTIVE GAS. The solver functions below read the van der Waals constants through these live bindings. resolveState() (and
+// generateZCurve / zMarker, which take the gas id) call setActiveGas() first, so a state never mixes two gases. The per-T caches
+// are cleared when the gas changes.
+export let GAS = GASES[DEFAULT_GAS_ID];
+export let VDW_A = GAS.a;
+export let VDW_B = GAS.b;
+export function setActiveGas(id) {
+  const g = GASES[id] ?? GASES[DEFAULT_GAS_ID];
+  if (g === GAS) return g;
+  GAS = g; VDW_A = g.a; VDW_B = g.b;
+  spinodalCache.clear(); liquidSpinodalCache.clear(); saturationCache.clear();
+  return g;
+}
+/** Replace the CO2 wording in a stored sentence by the active gas. */
+const gasText = (s) => (GAS.id === "co2" || typeof s !== "string" ? s : s.replaceAll("CO\u2082", GAS.tag));
 
 // Ranges. P and V are the two controlled/dependent variables; both span
 // decades, so their sliders are logarithmic (see sliderScale in the UI).
@@ -121,7 +141,7 @@ export const vFromDisplay = (x, u = NATIVE_UNITS) => x / (VOLUME_UNITS[u.volume]
 export const DEFAULT_CONTROLS = Object.freeze({
   // OPENING STATE: 0.50 mol at 300 K and 100 kPa (0.98692 atm) -> V = 12.47 dm3. An everyday, near-ideal gas (Z about 0.995);
   // the strongly non-ideal region is reached by the student, not shown under the "Ideal" label (GS-02).
-  mode: "ideal", N: 50, T: 300, V: 12.471, control: "pressure", P: 100 / 101.325, Phold: null, Vpin: null,
+  mode: "ideal", gasId: DEFAULT_GAS_ID, N: 50, T: 300, V: 12.465, control: "pressure", P: 100 / 101.325, Phold: null, Vpin: null,
 });
 // pistonScale: 25 | 100 = LINEAR drawn range 0-25 / 0-100 dm3 (labelled ticks on the cylinder); "log" = the old logarithmic scale.
 // wallGauge: show the "pressure from collisions" readout.
@@ -151,6 +171,7 @@ export function clampControls(c) {
   const Vp = c.Vpin == null ? NaN : Number(c.Vpin);
   return {
     mode: c.mode === "real" ? "real" : "ideal",
+    gasId: GASES[c.gasId] ? c.gasId : DEFAULT_GAS_ID,
     N: Math.round(clamp(fin(c.N, DEFAULT_CONTROLS.N), LIMITS.N.min, LIMITS.N.max)),
     T: clamp(fin(c.T, DEFAULT_CONTROLS.T), LIMITS.T.min, LIMITS.T.max),
     V,
@@ -389,8 +410,35 @@ export function compareWithIdeal(n, T, V) {
   };
 }
 
-/** Appended to every condensation message: the vdW saturation curve is qualitative (see the header comment). */
-export const CONDENSATION_ACCURACY = " (van der Waals is qualitative here: for CO\u2082 it puts the condensation pressure about 70 % too high at 250 K and within about 1 % at 300 K.)";
+/** Generic tail of every condensation message (the specific, numeric version is condensationAccuracy(T)). */
+export const CONDENSATION_ACCURACY = " (van der Waals is qualitative here, not a vapour-pressure model.)";
+
+// LITERATURE vapour pressure of CO2 (liquid-vapour equilibrium), K and kPa, from the Wikipedia "Carbon dioxide (data page)"
+// table (secondary source; the pressure column carries no unit label there, kPa is consistent with the critical pressure 7391 kPa
+// = 72.9 atm). Used ONLY to show how far the van der Waals condensation pressure is from the real value; it does not drive the physics.
+export const CO2_VAPOUR_PRESSURE_KPA = Object.freeze([
+  [223.15, 683.4], [233.15, 1005.7], [243.15, 1428.6], [253.15, 1993], [263.15, 2654],
+  [273.71, 3526], [283.71, 4544], [293.71, 5776], [303.15, 7164],
+]);
+/** Real saturation pressure of the ACTIVE gas in atm (interpolating ln P against 1/T), or null when no table / T outside it. */
+export function literatureSaturationPressure(T, gasId = GAS.id) {
+  if (gasId !== "co2") return null;
+  const t = CO2_VAPOUR_PRESSURE_KPA;
+  if (!(T >= t[0][0] && T <= t[t.length - 1][0])) return null;
+  let i = 1;
+  while (i < t.length - 1 && t[i][0] < T) i++;
+  const [T0, P0] = t[i - 1], [T1, P1] = t[i];
+  const f = (1 / T - 1 / T0) / (1 / T1 - 1 / T0);
+  return Math.exp(Math.log(P0) + f * (Math.log(P1) - Math.log(P0))) / KPA_PER_ATM;
+}
+/** Numeric accuracy sentence for the active gas at temperature T (K). */
+export function condensationAccuracy(T, units = NATIVE_UNITS) {
+  const lit = literatureSaturationPressure(T);
+  const sat = vdwSaturation(T);
+  if (lit == null || !sat) return CONDENSATION_ACCURACY;
+  const uP = unitLabelP(units);
+  return ` (van der Waals is qualitative here: at ${Math.round(T)} K real ${GAS.tag} condenses at about ${fmtPressure(lit, units)} ${uP} (literature), the model gives ${fmtPressure(sat.P, units)} ${uP}.)`;
+}
 export const UNRELIABLE_TEXT = Object.freeze({
   "invalid-state": "The simplified model is unreliable for this state.",
   "ideal-pressure-near-zero": "The pressure is too close to zero for a meaningful comparison.",
@@ -400,6 +448,14 @@ export const UNRELIABLE_TEXT = Object.freeze({
   condensation: "Model limit: above the saturation pressure at this temperature CO₂ condenses, so the van der Waals gas model does not apply." + CONDENSATION_ACCURACY,
   "non-positive-pressure": "The model gives a non-physical pressure here, so the comparison is unreliable.",
 });
+
+/** Gas-specific wording of a limit reason. T (K) adds the numeric condensation accuracy. */
+export function unreliableText(reason, T = null, units = NATIVE_UNITS) {
+  const base = UNRELIABLE_TEXT[reason] || UNRELIABLE_TEXT["invalid-state"];
+  let t = base;
+  if (T != null && (reason === "two-phase" || reason === "condensation")) t = base.replace(CONDENSATION_ACCURACY, condensationAccuracy(T, units));
+  return gasText(t);
+}
 
 const fmtAtm = (x) => (x >= 100 ? x.toFixed(0) : x >= 10 ? x.toFixed(1) : x.toFixed(2));
 const fmtL = (x) => (x >= 100 ? x.toFixed(0) : x >= 10 ? x.toFixed(1) : x >= 1 ? x.toFixed(2) : x.toFixed(3));
@@ -452,6 +508,7 @@ export function resolveState(controls, units = NATIVE_UNITS) {
   const uP = unitLabelP(units); const uV = unitLabelV(units);
   const lim = (x, f) => f(x);
   const c = clampControls(controls);
+  setActiveGas(c.gasId);
   const n = amountOfSubstance(c.N);
   const real = c.mode === "real";
   let V = c.V;
@@ -473,7 +530,7 @@ export function resolveState(controls, units = NATIVE_UNITS) {
       const pNow = real ? vdwPressure(n, c.T, V) : idealPressure(n, c.T, V);
       if (status === "below-range") note = `Target ${fmtAtm(target)} ${uP} needs ${fmtL(vRequired)} ${uV}, below the ${lim(LIMITS.V.min, fmtL)} ${uV} minimum. Volume limited to ${lim(LIMITS.V.min, fmtL)} ${uV}, so P = ${fmtAtm(pNow)} ${uP} (target unreachable).`;
       else if (status === "above-range") note = `Target ${fmtAtm(target)} ${uP} needs ${vRequired >= 1000 ? ">1000" : fmtL(vRequired)} ${uV}, above the ${lim(LIMITS.V.max, fmtL)} ${uV} maximum. Volume limited to ${lim(LIMITS.V.max, fmtL)} ${uV}, so P = ${fmtAtm(pNow)} ${uP} (target unreachable).`;
-      else if (status === "no-gas-solution") { limitReason = sol.reason; note = `${UNRELIABLE_TEXT[sol.reason === "condensation" ? "condensation" : "excluded-volume"]} Volume held at ${fmtL(V)} ${uV}.`; }
+      else if (status === "no-gas-solution") { limitReason = sol.reason; note = `${unreliableText(sol.reason === "condensation" ? "condensation" : "excluded-volume", c.T, units)} Volume held at ${fmtL(V)} ${uV}.`; }
       else if (status === "invalid") note = "The target pressure is not valid for this state.";
       if (c.Phold != null && status === "ok") note = `Pressure ${fmtAtm(c.Phold)} ${uP} is outside the slider range (${fmtAtm(LIMITS.P.min)}-${fmtAtm(LIMITS.P.max)} ${uP}); the state is held at that pressure.`;
     }
@@ -487,14 +544,21 @@ export function resolveState(controls, units = NATIVE_UNITS) {
     limitReason = comparison.reason;
     const sat = vdwSaturation(c.T);
     if (comparison.reason === "two-phase" && sat) pReal = sat.P;
-    note = UNRELIABLE_TEXT[comparison.reason] || UNRELIABLE_TEXT["invalid-state"];
+    note = unreliableText(comparison.reason, c.T, units);
   }
   const pressure = real ? pReal : pIdeal;
   const Z = real ? (pressure * V) / (n * R_GAS * c.T) : 1;
   const ref = realGasReference(c, n, V, target ?? pressure);
   const limited = real && limitReason != null;
+  // GS-05: highest target pressure the real gas can actually reach at this n and T (the slider ends there; it is never a number the live strip contradicts).
+  const pReachMax = real ? Math.min(LIMITS.P.max, Math.max(LIMITS.P.min * 1.5, realGasMaxPressure(n, c.T).P * 0.995)) : LIMITS.P.max;
+  // GS-07: the ideal-gas formula was pushed to a pressure at which no real gas is a gas (above the control limit, or the real gas has no gas state here).
+  const outsideIdeal = pIdeal > LIMITS.P.max * (1 + 1e-9) || (!real && ref.status === "limit" && ref.reason !== "out-of-range");
   return {
     ...c,
+    pReachMax,
+    outsideIdeal,
+    gas: GAS,
     n,
     V,
     pressure,
@@ -505,7 +569,7 @@ export function resolveState(controls, units = NATIVE_UNITS) {
     deviationPct: Math.abs(Z - 1) * 100,
     comparison,
     ref,
-    limit: limited ? { reason: limitReason, text: UNRELIABLE_TEXT[limitReason] || UNRELIABLE_TEXT["invalid-state"] } : null,
+    limit: limited ? { reason: limitReason, text: unreliableText(limitReason, c.T, units) } : null,
     status,
     reachable: status === "ok" || status === "held",
     vRequired,
@@ -553,6 +617,7 @@ export function applyControlChange(controls, patch) {
   if ("N" in patch) { unpin(); next.N = patch.N; }
   if ("T" in patch) { unpin(); next.T = patch.T; }
   if ("mode" in patch) { unpin(); next.mode = patch.mode; }
+  if ("gasId" in patch) { unpin(); next.gasId = patch.gasId; }
   if ("V" in patch && cur.control === "volume") next.V = patch.V;
   return clampControls(next);
 }
@@ -591,20 +656,22 @@ export const EXPLANATIONS = Object.freeze({
   noGasSolutionExcluded: "Model limit: the molecules' own volume fills the container, so the gas model stops here.",
   unreliable: "Model limit: the van der Waals gas model is unreliable in these conditions, so no real-gas value is shown.",
   approachIdeal: "Molecules are far apart, so attractions and molecular size matter less: the real gas is closer to ideal.",
+  gasChanged: "New gas: the ideal-gas line does not change, but the real curve does. The stronger the attractions between its molecules, the further a real gas falls below Z = 1.",
   deviationUp: "Molecules are closer together: attractions (Z < 1) or molecular size (Z > 1) matter more, so the real gas departs further from ideal.",
 });
 
 const DEVIATION_TREND_EPS = 0.2; // percentage points of |Z - 1| x 100
 
 export function selectExplanation(prevControls, nextControls) {
-  const next = resolveState(nextControls);
-  const out = (id) => ({ id, text: EXPLANATIONS[id] });
-  if (prevControls == null) return out(next.mode === "real" ? "initialReal" : "initial");
-  const prev = resolveState(prevControls);
+  const prev = prevControls == null ? null : resolveState(prevControls);
+  const next = resolveState(nextControls); // last, so the ACTIVE gas is the new one when the text is built
+  const out = (id) => ({ id, text: gasText(EXPLANATIONS[id]) });
+  if (prev == null) return out(next.mode === "real" ? "initialReal" : "initial");
   const sameV = Math.abs(prev.V - next.V) < 1e-9;
   const changed = {
     control: prev.control !== next.control,
     mode: prev.mode !== next.mode,
+    gas: prev.gasId !== next.gasId,
     P: next.control === "pressure" && prev.control === "pressure" && Math.abs((prev.pTarget ?? 0) - (next.pTarget ?? 0)) > 1e-12,
     T: prev.T !== next.T,
     V: next.control === "volume" && prev.control === "volume" && prev.V !== next.V,
@@ -612,6 +679,7 @@ export function selectExplanation(prevControls, nextControls) {
   };
   if (!Object.values(changed).some(Boolean) && sameV) return null;
   if (changed.control) return out(next.control === "pressure" ? "controlPressure" : "controlVolume");
+  if (changed.gas) return out("gasChanged");
   if (changed.mode) return out(next.mode === "real" ? "realSelected" : "idealSelected");
 
   const physical = changed.P || changed.T || changed.V || changed.N;
@@ -686,7 +754,8 @@ export function compressibilityFactor(n, T, V, gas = "real") {
  *   ghost, end: null | {P, reason, text}, zMin, zMax, tc, ... }
  * `points` is ALWAYS the real-gas model (for gas = "ideal" the UI draws it as a
  * lighter comparison curve). */
-export function generateZCurve(n, T, gas = "real", samples = Z_SAMPLES) {
+export function generateZCurve(n, T, gas = "real", samples = Z_SAMPLES, gasId = null) {
+  if (gasId) setActiveGas(gasId);
   const pMin = Z_P_MIN, pMax = Z_P_MAX;
   const lim = realGasMaxPressure(n, T);
   const points = [];
@@ -703,7 +772,7 @@ export function generateZCurve(n, T, gas = "real", samples = Z_SAMPLES) {
   let end = null;
   if (lim.P < pMax) {
     if (lim.P > pMin) add(lim.P); // end exactly on the validity limit
-    end = { P: lim.P, reason: lim.reason, text: Z_END_TEXT[lim.reason] };
+    end = { P: lim.P, reason: lim.reason, text: gasText(Z_END_TEXT[lim.reason]) };
   }
   let zMin = null, zMax = null;
   for (const p of points) {
@@ -738,6 +807,7 @@ export function zExplanation(Z) {
  * P in Pressure control, the same V in Volume control): in Ideal mode it is the
  * comparison point that would become the live state if the student switches. */
 export function zMarker(state) {
+  if (state.gasId) setActiveGas(state.gasId);
   const { n, T } = state;
   const clampP = (P) => Math.min(Z_P_MAX, Math.max(Z_P_MIN, P));
   const ref = state.ref;
@@ -1171,7 +1241,7 @@ export function createSimulation({ seed = 12345 } = {}) {
     sim.instant = !!v;
   };
 
-  /** Restore defaults: Ideal mode, N=50, T=300 K, V=25 L, default display
+  /** Restore defaults: Ideal mode, CO2, N=50 (0.50 mol), T=300 K, P=100 kPa (V = 12.47 dm3), default display
    * options, playing. Rebuilds the particle sample. */
   sim.reset = function reset() {
     sim.controls = { ...DEFAULT_CONTROLS };

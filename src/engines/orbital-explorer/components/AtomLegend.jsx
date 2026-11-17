@@ -1,7 +1,6 @@
 import { colorForOrbitalId } from "../lib/orbitalColors.js";
 import { splitOrbitalId } from "../lib/orbitalInfo.js";
 
-const OCCUPANCY_SUPER = { "": "⁰", up: "¹", paired: "²" };
 
 /** "2p" + suffix "x" -> 2p<sub>x</sub>; "1s" -> 1s (no suffix). Occupancy
  * count is THIS individual orbital's own electron count (0/1/2), not
@@ -13,8 +12,8 @@ function OrbitalLabel({ id, occupancy }) {
   return (
     <span>
       {n}{letter}
-      {suffix && <sub>{suffix}</sub>}
-      <sup>{OCCUPANCY_SUPER[occupancy] ?? ""}</sup>
+      {suffix && <sub>{suffix}</sub>}{" "}
+      <span className="text-[0.85em] opacity-80" title={`${occupancy === "paired" ? 2 : occupancy === "up" ? 1 : 0} electron${occupancy === "paired" ? "s" : ""} in this orbital`}>({occupancy === "paired" ? 2 : occupancy === "up" ? 1 : 0} e⁻)</span>
     </span>
   );
 }
@@ -24,7 +23,10 @@ function OrbitalLabel({ id, occupancy }) {
  * 2p_z rows, per the brief) with a color swatch matching the 3D view,
  * a visibility checkbox, and a click target that selects the orbital
  * for the info panel. */
-export default function AtomLegend({ orbitals, visibleIds, highlightedId, onToggleVisible, onSelect, onShowAll, onHideAll }) {
+export default function AtomLegend({ orbitals, visibleIds, highlightedId, onToggleVisible, onSelect, onShowAll, onHideAll, onOnlyShell }) {
+  // OE-02: shell-by-shell view. "Only n = k" isolates one shell; pressed when exactly that shell is visible.
+  const shells = [...new Set(orbitals.map((o) => Number(o.id[0])))].sort((x, y) => x - y);
+  const onlyShell = (n) => { const ids = orbitals.filter((o) => Number(o.id[0]) === n).map((o) => o.id); return ids.length === visibleIds.size && ids.every((id) => visibleIds.has(id)); };
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between">
@@ -38,6 +40,15 @@ export default function AtomLegend({ orbitals, visibleIds, highlightedId, onTogg
           </button>
         </div>
       </div>
+
+      {onOnlyShell && shells.length > 1 && (
+        <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Show one shell at a time">
+          <span className="text-[11px] text-[var(--color-ink-soft)]">Only shell:</span>
+          {shells.map((n) => (
+            <button key={n} type="button" aria-pressed={onlyShell(n)} onClick={() => onOnlyShell(n)} data-testid={`only-shell-${n}`} className={`rounded border px-2 py-0.5 text-[11px] font-semibold ${onlyShell(n) ? "border-[var(--color-indigo)] bg-[var(--color-indigo-soft)] text-[var(--color-indigo)]" : "border-[var(--color-line)] text-[var(--color-ink-soft)]"}`}>n = {n}</button>
+          ))}
+        </div>
+      )}
 
       <ul className="flex flex-col gap-1">
         {orbitals.map((o) => {
@@ -59,9 +70,7 @@ export default function AtomLegend({ orbitals, visibleIds, highlightedId, onTogg
                 <span className="font-semibold text-[var(--color-ink)]">
                   <OrbitalLabel id={o.id} occupancy={o.occupancy} />
                 </span>
-                <span className="text-[10px] text-[var(--color-ink-faint)]">
-                  {o.occupancy === "paired" ? "2 e−" : o.occupancy === "up" ? "1 e−" : "empty"}
-                </span>
+                {o.occupancy !== "paired" && o.occupancy !== "up" && <span className="text-[11px] text-[var(--color-ink-soft)]">empty</span>}
               </button>
             </li>
           );

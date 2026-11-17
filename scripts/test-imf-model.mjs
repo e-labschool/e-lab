@@ -533,10 +533,10 @@ test("continuity across melting and boiling: no particle jumps between frames, s
 void DEBYE_IN_E_ANGSTROM; void TRAY_POLAR;
 console.log("Boiling-point ranking, alkane series, first view (BS-27 / BS-29)");
 test("every ranking set: unique ids, boiling points strictly distinct, a force tag on each item, the shuffle is never already correct", () => {
-  assert.equal(RK.RANK_SETS.length, 7);
+  assert.equal(RK.RANK_SETS.length, 9);
   for (const s of RK.RANK_SETS) {
     assert.ok(s.items.length >= 3 && s.items.length <= 6, s.id); assert.equal(new Set(s.items.map((i) => i.id)).size, s.items.length, s.id);
-    assert.equal(new Set(s.items.map((i) => i.bp)).size, s.items.length, `${s.id} distinct bp`);
+    assert.equal(new Set(s.items.map((i) => RK.rankValue(i))).size, s.items.length, `${s.id} distinct ${s.quantity ?? "bp"}`);
     for (const i of s.items) { assert.ok(i.forces.length && i.why.length > 20, `${s.id}/${i.id}`); for (const f of i.forces) assert.ok(RK.FORCE_TAGS[f]); }
     for (const seed of [1, 2, 3, 99]) assert.notEqual(RK.shuffledOrder(s.id, seed).join(), RK.correctOrder(s.id).join(), `${s.id} seed ${seed}`);
     assert.deepEqual([...RK.shuffledOrder(s.id, 4)].sort(), s.items.map((i) => i.id).sort());
@@ -567,6 +567,21 @@ test("first view of Explore shows an interaction (BS-29): START_GAP is small and
     const list = layoutRow(ids.map((id, i) => ({ uid: i + 1, id, pos: [0, 0, 0], quat: [...QID] }))); const [a, b] = ids.map((id) => M[id]);
     assert.ok(I.fluctuationGate(separationOf(list), a.radius, b.radius) > 0.5, `${ids.join("+")} gate ${I.fluctuationGate(separationOf(list), a.radius, b.radius).toFixed(2)}`);
   }
+});
+
+console.log("Round 2: volatility and solubility tasks (BS-27), heat-sim reduced motion hook");
+test("volatility set: most volatile = lowest boiling point first; forces explain it (London < dipole-dipole < hydrogen bonds)", () => {
+  assert.deepEqual(RK.correctOrder("volatility"), ["pentane", "propanone", "ethanol", "water"]);
+  const set = RK.RANK_SET_BY_ID.volatility; assert.deepEqual(RK.rankEnds(set), ["most volatile", "least volatile"]);
+  assert.equal(RK.scoreRanking("volatility", RK.correctOrder("volatility")).perfect, true);
+});
+test("solubility set: the longer the alcohol chain the LESS soluble (Britannica values 0.1 / 0.6 / 2.7 / 9 g per 100 g); ranked least soluble first", () => {
+  const set = RK.RANK_SET_BY_ID.solubility;
+  assert.deepEqual(RK.correctOrder("solubility"), ["heptanol", "hexanol", "pentanol", "butanol"]);
+  assert.deepEqual(set.items.map((i) => RK.rankValue(i)), [0.1, 0.6, 2.7, 9]);
+  assert.match(RK.rankUnit(set), /g per 100 g water/); assert.deepEqual(RK.rankEnds(set), ["least soluble", "most soluble"]);
+  // the boiling-point order is the OPPOSITE of the solubility order here, so a student cannot pass by ranking boiling points
+  const bp = [...set.items].sort((a, b) => a.bp - b.bp).map((i) => i.id); assert.deepEqual(bp, [...RK.correctOrder("solubility")].reverse());
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

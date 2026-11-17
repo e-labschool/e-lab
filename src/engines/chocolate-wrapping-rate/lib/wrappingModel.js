@@ -68,3 +68,20 @@ export function rateAverage(state) { return state.time > 0 ? state.packs / state
 
 /** A history row for the graphs. */
 export function historyRow(state) { return { time: state.time, packs: state.packs, chocolates: state.chocolates, wrappers: state.wrappers, rate: state.lastEvents }; }
+
+/** Run a whole game to the end. Returns the per-second rows (row 0 = start). Pure; used by the predict-then-reveal task. */
+export function runToEnd(rule, chocolates, wrappers) {
+  let s = createInitialState(chocolates, wrappers, rule.chocolatesPerEvent); const rows = [historyRow(s)];
+  for (let i = 0; i < 1000 && !s.finished; i += 1) { s = advanceTick(s, rule.chocolatesPerEvent); rows.push(historyRow(s)); }
+  return rows;
+}
+
+/** AK-58: predict-then-reveal tasks. Each answer is computed from the model, never typed in. */
+export const PREDICT_TASKS = [
+  { id: "double", question: "Start again with 40 chocolates and 40 wrappers instead of 20 and 20 (rule 1). Compared with 20 + 20, the rate in the first second will be...",
+    run(rule1 = WRAPPING_RULES.rule1) { const a = runToEnd(rule1, 20, 20); const b = runToEnd(rule1, 40, 40); const ra = a[1].rate; const rb = b[1].rate;
+      return { answer: rb > ra ? "higher" : rb < ra ? "lower" : "the same", text: `With 20 + 20 the first second wraps ${ra} packs (${ra} packs s⁻¹); with 40 + 40 it wraps ${rb} (${rb} packs s⁻¹). More reactant means a higher concentration, so a higher rate. The whole run takes ${a.length - 1} s and ${b.length - 1} s.` }; } },
+  { id: "fall", question: "Start with 20 chocolates and 20 wrappers (rule 1). Compared with the first second, the rate in the fourth second will be...",
+    run(rule1 = WRAPPING_RULES.rule1) { const a = runToEnd(rule1, 20, 20); const r1 = a[1].rate; const r4 = (a[4] ?? { rate: 0 }).rate;
+      return { answer: r4 > r1 ? "higher" : r4 < r1 ? "lower" : "the same", text: `The first second wraps ${r1} packs and the fourth wraps ${r4}. The chocolates and wrappers are being used up, so their concentration falls and so does the rate, just as the rate of a reaction falls as the reactants are used up.` }; } },
+];

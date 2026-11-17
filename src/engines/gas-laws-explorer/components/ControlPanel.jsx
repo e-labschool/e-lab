@@ -36,6 +36,10 @@ function VarSlider({ k, state, unit, units, onChange, accent, tone = "active", i
   const maxTol = Math.abs(fromDisplayValue(k, displayValue(k, range.min, units) + stepOf(k, units), units) - range.min);
   const limit = limitReason(state, k, units, k === "n" ? 0 : maxTol);
   const ul = unitLabel(k, units);
+  // GS-16: say which part of the full range can be reached, and why, before the student hits the end.
+  const reach = range.limited && !limit && !notice
+    ? `Reachable: ${Number(displayValue(k, range.min, units).toFixed(k === "n" ? 2 : decOf(k, units)))} to ${Number(displayValue(k, range.max, units).toFixed(k === "n" ? 2 : decOf(k, units)))} ${ul} (full range ${Number(displayValue(k, range.hard.min, units).toFixed(k === "n" ? 2 : decOf(k, units)))} to ${Number(displayValue(k, range.hard.max, units).toFixed(k === "n" ? 2 : decOf(k, units)))}; the ${VARS[range.dep].name.toLowerCase()} must stay in its range)`
+    : null;
   const snap = (x) => Number(x.toPrecision(10)); // float dust must not make a whole-number end unreachable by the slider
   const dMin = snap(displayValue(k, range.min, units)); const dMax = snap(displayValue(k, range.max, units));
   const tx = (x) => (isAmount ? x.toFixed(2) : Number(x.toFixed(k === "T" ? 0 : decOf(k, units))).toString());
@@ -56,7 +60,7 @@ function VarSlider({ k, state, unit, units, onChange, accent, tone = "active", i
       ) : null}
       slideStart={isAmount ? <StepButton dir={-1} onClick={() => step(-1)} label="Remove 0.05 mol of gas" testId={`${idPrefix}-n-minus`} /> : null}
       slideEnd={isAmount ? <StepButton dir={1} onClick={() => step(1)} label="Add 0.05 mol of gas" testId={`${idPrefix}-n-plus`} /> : null}
-      note={notice ?? limit}
+      note={notice ?? limit ?? reach} noteTone={!notice && !limit && reach ? "info" : undefined}
     />
   );
 }
@@ -101,7 +105,7 @@ export default function ControlPanel({ state, unit, units = IB_UNITS, onChange, 
 }
 
 /** Settings popover: units, standard-condition presets, initial conditions (starting values), display options, amount unit. */
-export function GasLawsSettings({ state, phase, unit, onUnit, display, onDisplay, onSetInitial, onBackToStart, accent, units, unitSystem, onUnitSystem, onPreset }) {
+export function GasLawsSettings({ state, phase, unit, onUnit, display, onDisplay, onSetInitial, onBackToStart, onStandardStart, accent, units, unitSystem, onUnitSystem, onPreset }) {
   const dep = depOf(state);
   return (
     <>
@@ -124,6 +128,11 @@ export function GasLawsSettings({ state, phase, unit, onUnit, display, onDisplay
         <button type="button" className="sd-btn sd-btn--sm" onClick={onBackToStart} disabled={phase !== "running"} data-testid="back-to-start" title="Return to the starting values of this investigation">
           <Undo2 size={13} aria-hidden="true" /> Back to starting values
         </button>
+        {onStandardStart && (
+          <button type="button" className="sd-btn sd-btn--sm" onClick={onStandardStart} data-testid="standard-start" title="Set this investigation to 1.00 mol, 300 K and 25 dm\u00b3 (the standard start)">
+            Standard start (1.00 mol, 300 K, 25 dm\u00b3)
+          </button>
+        )}
       </PopoverSection>
       <PopoverSection title="Particle picture" testId="settings-display">
         <SettingToggle id="gl-set-trails" label="Particle trails" hint="Show the recent path of each particle." checked={display.trails} onChange={(trails) => onDisplay({ trails })} testId="toggle-trails" />

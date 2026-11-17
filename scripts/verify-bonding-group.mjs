@@ -14,7 +14,7 @@ import { chromium } from "/opt/node-tools/node_modules/playwright/index.mjs";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const exe = process.env.CHROMIUM || "/opt/pw-browsers/chromium-1243/chrome-linux64/chrome";
 const shots = process.env.SHOTS || "/tmp/bonding-group-shots"; fs.mkdirSync(shots, { recursive: true });
-const SIMS = (process.env.SIMS || "vsepr,bonding,hyb,imf,landing").split(",");
+const SIMS = (process.env.SIMS || "vsepr,bonding,bonding2,hyb,imf,landing").split(",");
 const ALL_SIZES = [[1366, 768], [910, 512], [390, 844]];
 const SIZES = process.env.SIZES ? process.env.SIZES.split(",").map((s) => s.split("x").map(Number)) : ALL_SIZES;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -63,7 +63,7 @@ const shot = (S, name) => S.page.screenshot({ path: path.join(shots, `${name}.pn
 const stageBox = async (page, sel) => page.locator(sel).first().boundingBox();
 
 // ---------------------------------------------------------------------------------------------------------------
-const MODULES = { vsepr: "./verify-bonding-group/vsepr.mjs", bonding: "./verify-bonding-group/bonding.mjs", hyb: "./verify-bonding-group/hyb.mjs", imf: "./verify-bonding-group/imf.mjs", landing: "./verify-bonding-group/landing.mjs" };
+const MODULES = { vsepr: "./verify-bonding-group/vsepr.mjs", bonding: "./verify-bonding-group/bonding.mjs", bonding2: "./verify-bonding-group/bonding2.mjs", hyb: "./verify-bonding-group/hyb.mjs", imf: "./verify-bonding-group/imf.mjs", landing: "./verify-bonding-group/landing.mjs" };
 const ctx = { browser, base, open, health, check, sleep, T, shot, stageBox, SIZES, errorsCheck: (S, label) => check(S.errors.length === 0, `${label}: console errors ${S.errors.slice(0, 2).join(" | ")}`) };
 for (const id of SIMS) {
   const file = path.join(path.dirname(fileURLToPath(import.meta.url)), "verify-bonding-group", `${id}.mjs`);

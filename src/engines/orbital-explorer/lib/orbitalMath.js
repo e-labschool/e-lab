@@ -106,4 +106,7 @@ export const ORBITAL_DEFS = {
   "3dx2y2": { n: 3, l: 2, type: "dx2y2", family: "d" },
   "3dz2": { n: 3, l: 2, type: "dz2", family: "d" },
   "4s": { n: 4, l: 0, type: "s", family: "s" },
+  "4px": { n: 4, l: 1, type: "px", family: "p" },
+  "4py": { n: 4, l: 1, type: "py", family: "p" },
+  "4pz": { n: 4, l: 1, type: "pz", family: "p" },
 };

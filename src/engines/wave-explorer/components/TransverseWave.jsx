@@ -16,15 +16,16 @@ const OBSERVATION_X = 320;
  * Trough label uses the trough BETWEEN them -- so no two annotations
  * ever compete for the same region, regardless of the current
  * wavelength. */
-export default function TransverseWave({ wavelengthNm, wavelengthPx, amplitudePx, paused, emphasize }) {
+export default function TransverseWave({ wavelengthNm, wavelengthPx, amplitudePx, paused, emphasize, cyclesPerSecond }) {
   const reducedMotion = useReducedMotion();
-  const { phase, cycleCount } = useWavePhase({ wavelengthNm, paused: paused || reducedMotion });
+  const { phase, cycleCount } = useWavePhase({ wavelengthNm, paused: paused || reducedMotion, cyclesPerSecond });
 
   const points = useMemo(() => transverseWavePoints(WIDTH, amplitudePx, wavelengthPx, phase), [amplitudePx, wavelengthPx, phase]);
   const path = useMemo(() => pointsToSvgPath(points), [points]);
 
   const crests = useMemo(() => crestPositions(wavelengthPx, phase, WIDTH), [wavelengthPx, phase]);
-  const crestA = crests.find((x, i) => crests[i + 1] !== undefined) ?? crests[0] ?? WIDTH * 0.18;
+  // First crest far enough from the left edge for the right-aligned amplitude label (about 52 px wide) to fit.
+  const crestA = crests.find((x, i) => x >= 64 && crests[i + 1] !== undefined) ?? crests.find((x) => x >= 64) ?? WIDTH * 0.18;
   const crestB = crestA + wavelengthPx; // exactly one wavelength from crestA
   const troughX = crestA + wavelengthPx / 2; // the trough BETWEEN the two measured crests
 
@@ -45,7 +46,7 @@ export default function TransverseWave({ wavelengthNm, wavelengthPx, amplitudePx
           <line x1={crestA} y1={WAVELENGTH_ARROW_Y + 6} x2={crestA} y2={WAVELENGTH_ARROW_Y - 3} stroke="var(--color-violet)" strokeWidth="0.75" opacity="0.6" />
           <line x1={crestB} y1={WAVELENGTH_ARROW_Y + 6} x2={crestB} y2={WAVELENGTH_ARROW_Y - 3} stroke="var(--color-violet)" strokeWidth="0.75" opacity="0.6" />
           <line x1={crestA} y1={WAVELENGTH_ARROW_Y} x2={crestB} y2={WAVELENGTH_ARROW_Y} stroke="var(--color-violet)" strokeWidth="1" markerStart="url(#wave-tick-violet)" markerEnd="url(#wave-tick-violet)" />
-          <text x={(crestA + crestB) / 2} y={WAVELENGTH_LABEL_Y} textAnchor="middle" fontSize="9.5" fontWeight="700" fill="var(--color-violet)">{"Wavelength (\u03BB)"}</text>
+          <text x={(crestA + crestB) / 2} y={WAVELENGTH_LABEL_Y} textAnchor="middle" fontSize="11" fontWeight="700" fill="var(--color-violet)">{"Wavelength (\u03BB)"}</text>
         </g>
 
         {/* Crest: only the SECOND measured crest, well below the
@@ -53,15 +54,15 @@ export default function TransverseWave({ wavelengthNm, wavelengthPx, amplitudePx
         {amplitudePx >= 0.5 && <g>
           <circle cx={crestB} cy={MID_Y - amplitudePx} r="2" fill="var(--color-ink)" />
           <line x1={crestB} y1={MID_Y - amplitudePx} x2={crestB + 14} y2={CREST_LABEL_Y + 2} stroke="var(--color-ink-faint)" strokeWidth="0.75" />
-          <text x={crestB + 17} y={CREST_LABEL_Y + 4} fontSize="9" fontWeight="600" fill="var(--color-ink-soft)">Crest</text>
+          <text paintOrder="stroke" stroke="var(--color-paper-raised)" strokeWidth="3" strokeLinejoin="round" x={crestB + 17} y={CREST_LABEL_Y + 4} fontSize="10.5" fontWeight="600" fill="var(--color-ink-soft)">Crest</text>
         </g>}
 
         {/* Amplitude: equilibrium to the FIRST measured crest, label to the SIDE */}
-        {amplitudePx < 0.5 && <text x={WIDTH / 2 - 40} y={MID_Y - 10} textAnchor="middle" fontSize="9.5" fontWeight="700" fill="var(--color-teal)">Amplitude = 0: no oscillation</text>}
+        {amplitudePx < 0.5 && <text x={WIDTH / 2 - 40} y={MID_Y - 10} textAnchor="middle" fontSize="11" fontWeight="700" fill="var(--color-teal)">Amplitude = 0: no oscillation</text>}
         {amplitudePx >= 0.5 && <g className={emphasize === "amplitude" ? "wave-emphasis" : undefined}>
           <line x1={crestA} y1={MID_Y} x2={crestA} y2={MID_Y - amplitudePx} stroke="var(--color-teal)" strokeWidth="1" markerStart="url(#wave-tick-teal)" markerEnd="url(#wave-tick-teal)" />
-          <text x={crestA - 8} y={MID_Y - amplitudePx / 2 - 4} textAnchor="end" fontSize="9" fontWeight="700" fill="var(--color-teal)">Amplitude</text>
-          <text x={crestA - 8} y={MID_Y - amplitudePx / 2 + 6} textAnchor="end" fontSize="9" fontWeight="700" fill="var(--color-teal)">(A)</text>
+          <text paintOrder="stroke" stroke="var(--color-paper-raised)" strokeWidth="3" strokeLinejoin="round" x={crestA - 8} y={MID_Y - amplitudePx / 2 - 4} textAnchor="end" fontSize="10.5" fontWeight="700" fill="var(--color-teal)">Amplitude</text>
+          <text paintOrder="stroke" stroke="var(--color-paper-raised)" strokeWidth="3" strokeLinejoin="round" x={crestA - 8} y={MID_Y - amplitudePx / 2 + 6} textAnchor="end" fontSize="10.5" fontWeight="700" fill="var(--color-teal)">(A)</text>
         </g>}
 
         {/* Trough: the trough BETWEEN the two measured crests -- always
@@ -70,7 +71,7 @@ export default function TransverseWave({ wavelengthNm, wavelengthPx, amplitudePx
         {amplitudePx >= 0.5 && <g>
           <circle cx={troughX} cy={MID_Y + amplitudePx} r="2" fill="var(--color-ink)" />
           <line x1={troughX} y1={MID_Y + amplitudePx} x2={troughX} y2={MID_Y + amplitudePx + 16} stroke="var(--color-ink-faint)" strokeWidth="0.75" />
-          <text x={troughX} y={MID_Y + amplitudePx + 26} textAnchor="middle" fontSize="9" fontWeight="600" fill="var(--color-ink-soft)">Trough</text>
+          <text paintOrder="stroke" stroke="var(--color-paper-raised)" strokeWidth="3" strokeLinejoin="round" x={troughX} y={MID_Y + amplitudePx + 26} textAnchor="middle" fontSize="10.5" fontWeight="600" fill="var(--color-ink-soft)">Trough</text>
         </g>}
 
         {/* Observation point: isolated on the right, far from the
@@ -78,8 +79,8 @@ export default function TransverseWave({ wavelengthNm, wavelengthPx, amplitudePx
         <g className={emphasize === "frequency" ? "wave-emphasis" : undefined}>
           <line x1={OBSERVATION_X} y1="6" x2={OBSERVATION_X} y2={HEIGHT - 6} stroke="var(--color-amber)" strokeWidth="1" strokeDasharray="2 3" opacity="0.55" />
           <circle cx={OBSERVATION_X} cy={observationY} r="5" fill="var(--color-amber)" key={cycleCount} className={reducedMotion || paused ? undefined : "wave-observation-pulse"} />
-          <text x={OBSERVATION_X + 8} y={HEIGHT - 16} fontSize="8.5" fontWeight="600" fill="var(--color-amber)">Observation</text>
-          <text x={OBSERVATION_X + 8} y={HEIGHT - 6} fontSize="8.5" fontWeight="600" fill="var(--color-amber)">point</text>
+          <text x={OBSERVATION_X + 8} y={HEIGHT - 16} fontSize="10" fontWeight="600" fill="var(--color-amber)">Observation</text>
+          <text x={OBSERVATION_X + 8} y={HEIGHT - 6} fontSize="10" fontWeight="600" fill="var(--color-amber)">point</text>
         </g>
 
         <defs>

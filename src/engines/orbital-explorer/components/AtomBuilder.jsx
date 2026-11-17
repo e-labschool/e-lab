@@ -1,16 +1,22 @@
 import { useState, useMemo } from "react";
 import { Info } from "lucide-react";
 import ThreeCanvas from "../../../components/3d/ThreeCanvas.jsx";
-import { first20Elements, elementByAtomicNumber } from "../lib/elementLookup.js";
-import { fillSublevels, formatConfiguration, occupiedOrbitals } from "../lib/electronConfigurations.js";
+import { first36Elements, elementByAtomicNumber } from "../lib/elementLookup.js";
+import { fillSublevels, formatConfiguration, occupiedOrbitals, MAX_ATOM_VIEW_Z } from "../lib/electronConfigurations.js";
+import { useOrbitalClouds } from "../lib/useOrbitalClouds.js";
 import { boundingRadiusFor } from "../lib/orbitalSampling.js";
-import { detectQualityTier, pointsPerOrbitalFor } from "../lib/qualityTier.js";
+import { detectQualityTier, pointsPerOrbitalFor, pointsForCount } from "../lib/qualityTier.js";
+import { NucleusNote } from "./NucleusDot.jsx";
+import EnergyOrder from "./EnergyOrder.jsx";
 import ElementSelector from "./ElementSelector.jsx";
 import AtomViewer from "./AtomViewer.jsx";
 import OrbitalDiagram from "./OrbitalDiagram.jsx";
 import AtomLegend from "./AtomLegend.jsx";
 import OrbitalInfoPanel from "./OrbitalInfoPanel.jsx";
 
+// OE-02: on short or narrow screens the 36-cell picker would push the 3D view below the fold, so it starts collapsed
+// there (and closes after a choice); on a roomy screen it stays open as before.
+const SMALL_SCREEN = () => typeof window !== "undefined" && (window.innerHeight < 700 || window.innerWidth < 1024);
 const DEFAULT_Z = 6; // Carbon -- a familiar mid-complexity default
 
 export default function AtomBuilder({ compact }) {
@@ -18,6 +24,8 @@ export default function AtomBuilder({ compact }) {
   const [visibleIds, setVisibleIds] = useState(() => new Set(occupiedOrbitals(DEFAULT_Z).map((o) => o.id)));
   const [highlightedId, setHighlightedId] = useState(null);
   const [showInfo, setShowInfo] = useState(false);
+  const [small] = useState(SMALL_SCREEN);
+  const [pickerOpen, setPickerOpen] = useState(() => !SMALL_SCREEN());
   // Tracks which element visibleIds/highlightedId currently belong to.
   const [lastAtomicNumber, setLastAtomicNumber] = useState(DEFAULT_Z);
 
@@ -25,11 +33,13 @@ export default function AtomBuilder({ compact }) {
   // student on one device) -- same pattern ThreeCanvas already uses for
   // its own mobile detection. Desktop resolves to "high" (~10,000
   // points/orbital); narrower/touch viewports step down automatically.
-  const pointsPerOrbital = useMemo(() => pointsPerOrbitalFor(detectQualityTier()), []);
+  const basePoints = useMemo(() => pointsPerOrbitalFor(detectQualityTier()), []);
 
   const element = elementByAtomicNumber(atomicNumber);
   const orbitals = useMemo(() => occupiedOrbitals(atomicNumber), [atomicNumber]);
   const occupiedIds = useMemo(() => orbitals.map((o) => o.id), [orbitals]);
+  const pointsPerOrbital = pointsForCount(basePoints, occupiedIds.length); // heavier atoms: fewer points per orbital (OE-10)
+  const { clouds, done, total, pending } = useOrbitalClouds(occupiedIds, pointsPerOrbital);
   const configString = useMemo(() => formatConfiguration(fillSublevels(atomicNumber)), [atomicNumber]);
   const highlightedOrbital = useMemo(() => orbitals.find((o) => o.id === highlightedId) ?? null, [orbitals, highlightedId]);
 
@@ -60,7 +70,7 @@ export default function AtomBuilder({ compact }) {
   }
 
   function goToElement(z) {
-    if (z < 1 || z > 20) return;
+    if (z < 1 || z > MAX_ATOM_VIEW_Z) return;
     setAtomicNumber(z);
   }
 
@@ -70,7 +80,12 @@ export default function AtomBuilder({ compact }) {
 
   return (
     <div className="flex flex-col gap-3">
-      <ElementSelector elements={first20Elements} selectedZ={atomicNumber} onSelect={goToElement} />
+      {small && (
+        <button type="button" onClick={() => setPickerOpen((v) => !v)} aria-expanded={pickerOpen} aria-controls="oe-element-picker" data-testid="oe-choose-element" className="mx-auto rounded-md border border-[var(--color-line)] px-3 py-1 text-xs font-semibold text-[var(--color-ink-soft)]">
+          {pickerOpen ? "Hide periodic table" : "Choose element"}
+        </button>
+      )}
+      {pickerOpen && <div id="oe-element-picker"><ElementSelector elements={first36Elements} selectedZ={atomicNumber} onSelect={(z) => { goToElement(z); if (small) setPickerOpen(false); }} /></div>}
 
       <div className="flex items-center justify-center gap-3">
         <button type="button" onClick={() => goToElement(atomicNumber - 1)} disabled={atomicNumber <= 1} className="rounded-md border border-[var(--color-line)] px-2.5 py-1 text-xs font-medium text-[var(--color-ink-soft)] disabled:opacity-30">
@@ -83,7 +98,7 @@ export default function AtomBuilder({ compact }) {
           </p>
           <p className="mt-0.5 text-sm font-semibold text-[var(--color-indigo)]">{configString}</p>
         </div>
-        <button type="button" onClick={() => goToElement(atomicNumber + 1)} disabled={atomicNumber >= 20} className="rounded-md border border-[var(--color-line)] px-2.5 py-1 text-xs font-medium text-[var(--color-ink-soft)] disabled:opacity-30">
+        <button type="button" onClick={() => goToElement(atomicNumber + 1)} disabled={atomicNumber >= MAX_ATOM_VIEW_Z} className="rounded-md border border-[var(--color-line)] px-2.5 py-1 text-xs font-medium text-[var(--color-ink-soft)] disabled:opacity-30">
           {"Next →"}
         </button>
         <button
@@ -112,10 +127,14 @@ export default function AtomBuilder({ compact }) {
           uselessness. */}
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_260px]">
         <div role="group" aria-label={`3D atom view for atomic number ${atomicNumber}, configuration ${configString}. Drag to rotate, scroll to zoom; use the Reset view button to recentre. The orbital legend lists every orbital shown.`}>
-        <ThreeCanvas height={compact ? 420 : 560} cameraDistance={boundingRadiusFor(maxN) * 2.6} fallbackDescription="This device can't render the 3D atom view." fallbackLabel="Atom viewer">
+        <ThreeCanvas keyboard ariaLabel={`3D atom view, atomic number ${atomicNumber}, configuration ${configString}`} height={compact ? 420 : "clamp(340px, calc(100vh - 300px), 560px)"} cameraDistance={boundingRadiusFor(maxN) * 2.6} fallbackDescription="This device can't render the 3D atom view." fallbackLabel="Atom viewer">
           <color attach="background" args={["#070A12"]} />
-          <AtomViewer occupiedIds={occupiedIds} visibleIds={visibleIds} highlightedId={highlightedId} pointsPerOrbital={pointsPerOrbital} />
+          <AtomViewer clouds={clouds} maxN={maxN} visibleIds={visibleIds} highlightedId={highlightedId} />
         </ThreeCanvas>
+        <p className="mt-1 text-[11px] text-[var(--color-ink-soft)]" role="status" aria-live="polite" data-testid="cloud-status">
+          {pending ? `Sampling electron clouds: ${done} of ${total} orbitals done\u2026` : `${total} orbital${total === 1 ? "" : "s"} shown, about ${pointsPerOrbital.toLocaleString()} simulated detections each.`}
+        </p>
+        <NucleusNote />
         </div>
 
         <div className="flex flex-col gap-3">
@@ -128,11 +147,14 @@ export default function AtomBuilder({ compact }) {
               onSelect={handleSelectOrbital}
               onShowAll={() => setVisibleIds(new Set(occupiedIds))}
               onHideAll={() => setVisibleIds(new Set())}
+              onOnlyShell={(n) => setVisibleIds(new Set(occupiedIds.filter((id) => Number(id[0]) === n)))}
             />
           </div>
           <OrbitalInfoPanel orbital={highlightedOrbital} />
         </div>
       </div>
+
+      <EnergyOrder z={atomicNumber} />
 
       <div className="rounded-lg border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-3">
         <p className="mb-2 text-center text-[10px] font-bold uppercase tracking-wide text-[var(--color-ink-faint)]">Orbital Diagram</p>

@@ -10,7 +10,7 @@ const SEG_FILL = { sensible: "rgba(108,134,238,0.06)", latent: "rgba(224,166,76,
 /** Temperature-time graph (SVG, sized by a ResizeObserver, text always at its real pixel size).
  * Shows the whole curve of the active mode, the part already travelled, and a marker at (progress, temperature),
  * all computed from `state` (one progress value). */
-export default function CurveGraph({ curve, mode, state, realTime = null }) {
+export default function CurveGraph({ curve, mode, state, realTime = null, hideCurve = false }) {
   const [ref, { width, height }] = useSize();
   const sub = curve.substance;
   const W = Math.max(width, 10);
@@ -31,15 +31,17 @@ export default function CurveGraph({ curve, mode, state, realTime = null }) {
   const mx = X(state.progress);
   const my = Y(state.temp);
   const mc = segColor(state.segmentKey);
-  const ticks = [sub.tStart, sub.tMelt, 50, sub.tBoil, sub.tEnd];
+  // GS-40: evenly spaced ticks (the window ends are not labelled, so the spacing is not uneven); the melting and boiling points are labelled on their lines.
+  const ticks = [];
+  for (let t = Math.ceil(yMin / 25) * 25; t <= yMax; t += 25) ticks.push(t);
   const charW = 6.0;
 
   return (
     <div ref={ref} className="relative min-h-[240px] min-w-0 flex-1" data-testid="hc-graph-wrap">
       {width > 0 && height > 0 && (
         <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="absolute inset-0 block" role="img" data-testid="hc-graph" aria-label={`${mode === "heating" ? "Heating" : "Cooling"} curve of ${sub.name}: temperature in degrees Celsius against time. Current temperature ${Math.round(state.temp)} degrees Celsius, ${state.segmentLabel}.`}>
-          {/* segment bands */}
-          {segs.map((s) => {
+          {/* segment bands (hidden in "predict" mode: they would give the shape away) */}
+          {(hideCurve ? [] : segs).map((s) => {
             const x0 = X(s.t0);
             const x1 = X(s.t1);
             const label = s.short;
@@ -77,7 +79,7 @@ export default function CurveGraph({ curve, mode, state, realTime = null }) {
           <text x={PAD.left + pw - 4} y={Y(sub.tBoil) - 6} textAnchor="end" fontSize="11" fill={PALETTE.textSecondary}>Boiling point {sub.tBoil} °C</text>
           <text x={PAD.left + pw - 4} y={Y(sub.tMelt) - 6} textAnchor="end" fontSize="11" fill={PALETTE.textSecondary}>Melting point {sub.tMelt} °C</text>
           {/* the whole curve (faint), then the part already travelled */}
-          <polyline points={full} fill="none" stroke={PALETTE.textFaint} strokeWidth="2" opacity="0.55" strokeLinejoin="round" data-testid="hc-curve-full" />
+          {!hideCurve && <polyline points={full} fill="none" stroke={PALETTE.textFaint} strokeWidth="2" opacity="0.55" strokeLinejoin="round" data-testid="hc-curve-full" />}
           <polyline points={travelled} fill="none" stroke={STATE_ACCENT.solid} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" data-testid="hc-curve-done" />
           {/* guide lines + marker */}
           <line x1={mx} x2={mx} y1={my} y2={PAD.top + ph} stroke={mc} strokeDasharray="2 3" opacity="0.7" />

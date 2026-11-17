@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, Shuffle, ListFilter, GitCompare, Pause, Play, RotateCcw, Sparkles } from "lucide-react";
 import InteractiveFrame from "../../components/interactive-shell/InteractiveFrame.jsx";
 import ModelLimitationsPanel from "./components/ModelLimitationsPanel.jsx";
+import { PredictTallyContext } from "./components/predictTally.js";
 import { getRandomMatterExample } from "./data/examples.js";
 
 import IntroScene from "./scenes/IntroScene.jsx";
@@ -54,7 +55,7 @@ function ToolbarButton({ onClick, children, disabled, active }) {
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-35 ${
+      className={`inline-flex min-h-9 items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-35 ${
         active ? "border-[var(--color-ink)] bg-[var(--color-ink)] text-[var(--color-paper)]" : "border-[var(--color-line)] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)]"
       }`}
     >
@@ -69,6 +70,9 @@ export default function ExploreMatterAndStates({ compact = false, standalone = f
   const [paused, setPaused] = useState(false);
   const [revealToken, setRevealToken] = useState(0);
   const [resetKey, setResetKey] = useState(0);
+  const [tally, setTally] = useState({ right: 0, total: 0 });
+  const record = useCallback((ok) => setTally((t) => ({ right: t.right + (ok ? 1 : 0), total: t.total + 1 })), []);
+  const tallyValue = useMemo(() => ({ ...tally, record }), [tally, record]);
 
   const scene = SCENES[sceneIndex];
 
@@ -96,6 +100,7 @@ export default function ExploreMatterAndStates({ compact = false, standalone = f
     setPaused(false);
     setRevealToken(0);
     setResetKey((k) => k + 1);
+    setTally({ right: 0, total: 0 });
   }
 
   const body = (
@@ -143,8 +148,15 @@ export default function ExploreMatterAndStates({ compact = false, standalone = f
             <span>Sample: {selectedExample.label}</span>
           </>
         )}
+        {tally.total > 0 && (
+          <>
+            <span className="text-[var(--color-line)]">&middot;</span>
+            <span data-testid="predict-tally" aria-live="polite">Predictions: {tally.right} of {tally.total} matched</span>
+          </>
+        )}
       </div>
 
+      <PredictTallyContext.Provider value={tallyValue}>
       <div key={`${resetKey}-${sceneIndex}`}>
         <scene.Component
           example={selectedExample}
@@ -156,6 +168,7 @@ export default function ExploreMatterAndStates({ compact = false, standalone = f
           onRandomSample={handleRandomExample}
         />
       </div>
+      </PredictTallyContext.Provider>
     </div>
   );
 

@@ -14,6 +14,7 @@ export default function ModeToggle({ compact = false }) {
         type="button"
         role="radio"
         aria-checked={mode === "student"}
+        {...(compact ? { "aria-label": "Student view", title: "Student view" } : {})}
         onClick={() => setMode("student")}
         className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 transition-colors ${
           mode === "student"
@@ -28,6 +29,7 @@ export default function ModeToggle({ compact = false }) {
         type="button"
         role="radio"
         aria-checked={mode === "teacher"}
+        {...(compact ? { "aria-label": "Teacher view", title: "Teacher view" } : {})}
         onClick={() => setMode("teacher")}
         className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 transition-colors ${
           mode === "teacher"

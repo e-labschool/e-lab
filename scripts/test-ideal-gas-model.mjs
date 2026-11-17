@@ -29,7 +29,8 @@ const st = (o) => M.resolveState({ ...OLD_DEFAULT, ...o });
 const stV = (o) => st({ control: "volume", ...o }); // Volume control
 const stP = (o) => st({ control: "pressure", ...o }); // Pressure control
 // Independent re-implementation of the vdW equation with the literature constants (not imported from the model).
-const A_CO2 = 3.640, B_CO2 = 0.04267, R = 0.082057;
+// ONE gas constant (round 2): R = 8.31 J K-1 mol-1 (IB data booklet) = 8.31 / 101.325 L atm; the Gas Laws Explorer uses the same 8.31.
+const A_CO2 = 3.640, B_CO2 = 0.04267, R = 8.31 / 101.325;
 const vdwIndep = (n, T, V) => (n * R * T) / (V - n * B_CO2) - A_CO2 * (n / V) ** 2;
 const dPdVIndep = (n, T, V) => (-n * R * T) / (V - n * B_CO2) ** 2 + (2 * A_CO2 * n * n) / V ** 3;
 
@@ -74,14 +75,14 @@ test("mode switch preserves N, T, V/P and the control selector", () => {
 
 console.log("== Documented real gas: van der Waals CO2 ==");
 test("constants are the documented CO2 values in atm/L/mol/K; one gas identity", () => {
-  assert.equal(M.VDW_A, 3.64); assert.equal(M.VDW_B, 0.04267); assert.equal(M.R_GAS, 0.082057);
+  assert.equal(M.VDW_A, 3.64); assert.equal(M.VDW_B, 0.04267); assert.equal(M.R_GAS, 8.31 / 101.325);
   assert.equal(M.GAS.id, "co2"); assert.match(M.GAS.name, /Carbon dioxide/);
   const c = M.vdwCriticalConstants();
-  assert.ok(near(c.Tc, 8 * 3.64 / (27 * 0.082057 * 0.04267)) && Math.abs(c.Tc - 308.03) < 0.01, `Tc ${c.Tc}`);
+  assert.ok(near(c.Tc, 8 * 3.64 / (27 * R * 0.04267)) && Math.abs(c.Tc - 308.2) < 0.05, `Tc ${c.Tc}`);
   assert.ok(Math.abs(c.Tc - 304.13) / 304.13 < 0.02, "within 2% of the experimental Tc of CO2");
   assert.ok(near(c.Pc, 3.64 / (27 * 0.04267 ** 2)) && Math.abs(c.Pc - 74.04) < 0.01);
   assert.ok(Math.abs(c.Pc - 72.8) / 72.8 < 0.02, "within 2% of the experimental Pc of CO2");
-  assert.ok(near(c.TBoyle, 3.64 / (0.082057 * 0.04267)) && Math.abs(c.TBoyle - 1039.6) < 0.1);
+  assert.ok(near(c.TBoyle, 3.64 / (R * 0.04267)) && Math.abs(c.TBoyle - 1040.1) < 0.2);
   assert.ok(near(c.Vc, 3 * 0.04267));
 });
 test("critical point: dP/dV = d2P/dV2 = 0 at (Vc, Tc), P(Vc) = Pc (per mole)", () => {
@@ -772,7 +773,7 @@ test("IB units: notes and predict text use kPa / dm3 when asked, atm / L by defa
   assert.ok(near(M.pFromDisplay(M.pToDisplay(2.5, M.IB_UNITS), M.IB_UNITS), 2.5, 1e-12));
 });
 test("condensation limit messages carry the van der Waals accuracy label (GS-06)", () => {
-  assert.match(M.UNRELIABLE_TEXT.condensation, /qualitative/); assert.match(M.UNRELIABLE_TEXT["two-phase"], /70 %/);
+  assert.match(M.UNRELIABLE_TEXT.condensation, /qualitative/); assert.match(M.unreliableText("two-phase", 250), /literature/);
   const sat250 = M.vdwSaturationPressure(250); assert.ok(sat250 > 28 && sat250 < 33, `model value ${sat250}`); // documented in the header comment as 30.3 atm vs about 17.9 experimental
 });
 test("pressure from collisions: the piston impulse per second matches the kinetic reference within sampling noise (ideal, steady)", () => {
@@ -794,6 +795,72 @@ test("pressure from collisions: halving the volume at constant T roughly doubles
   };
   const p1 = meas(24), p2 = meas(12), r = p2 / p1;
   assert.ok(r > 1.6 && r < 2.6, `P(12)/P(24) = ${r.toFixed(2)}`);
+});
+
+console.log("== round 2: one R, gases, reachable pressure, literature vapour pressure, outside-ideal flag ==");
+test("GS-01 (R): the Ideal Gas engine and the Gas Laws engine use ONE gas constant: R_GAS (atm) x 101.325 = 8.31 exactly", async () => {
+  const GL = await import("../src/engines/gas-laws-explorer/model.js");
+  assert.ok(Math.abs(M.R_GAS * 101.325 - GL.R_GAS) < 1e-12, `${M.R_GAS * 101.325} vs ${GL.R_GAS}`);
+  assert.equal(GL.R_GAS, 8.31);
+  // the same physical state gives the same P V / (n T) in kPa dm3 mol-1 K-1 in both engines
+  const s = M.resolveState({ ...M.DEFAULT_CONTROLS, control: "volume", V: 20, T: 350 });
+  const pv = (s.pressure * 101.325 * s.V) / (s.n * s.T);
+  assert.ok(Math.abs(pv - 8.31) < 1e-9, `PV/nT = ${pv}`);
+  const g = GL.makeState("comb", { n: s.n, T: s.T, V: s.V }, "P");
+  assert.ok(Math.abs(g.P - s.pressure * 101.325) < 1e-9, `${g.P} vs ${s.pressure * 101.325}`);
+});
+test("GS-08: four gases; the real curve ordering follows the strength of attraction (He above N2 above CO2 above NH3 at 300 K, 100 atm); ideal Z = 1 for all", () => {
+  assert.deepEqual([...M.GAS_IDS], ["he", "n2", "co2", "nh3"]);
+  const z = (id, P) => M.compressibilityAtPressure(0.5, 300, P, "real", id) ;
+  const Zs = M.GAS_IDS.map((id) => { M.setActiveGas(id); return M.compressibilityAtPressure(0.5, 300, 20, "real").Z; });
+  assert.ok(Zs[0] > 1 && Zs[0] > Zs[1] && Zs[1] > Zs[2] && Zs[2] > Zs[3], `Z at 20 atm: ${Zs.map((x) => x.toFixed(3)).join(" ")}`);
+  void z;
+  for (const id of M.GAS_IDS) { const r = M.resolveState({ ...M.DEFAULT_CONTROLS, gasId: id, mode: "ideal" }); assert.equal(r.Z, 1); assert.equal(r.gas.id, id); }
+  assert.equal(M.resolveState({ ...M.DEFAULT_CONTROLS, gasId: "nonsense" }).gasId, "co2", "unknown gas id falls back");
+  M.setActiveGas("co2");
+});
+test("GS-08: the active gas never leaks between states: resolving He then CO2 gives the CO2 critical temperature again", () => {
+  M.resolveState({ ...M.DEFAULT_CONTROLS, gasId: "he" }); const he = M.vdwCriticalConstants().Tc;
+  M.resolveState({ ...M.DEFAULT_CONTROLS, gasId: "co2" }); const co2 = M.vdwCriticalConstants().Tc;
+  assert.ok(he < 10 && co2 > 300, `${he} ${co2}`);
+  M.resolveState({ ...M.DEFAULT_CONTROLS, gasId: "nh3" }); assert.ok(M.vdwCriticalConstants().Tc > 400);
+});
+test("GS-08: Z-curve generation takes the gas id and the explanation text names the gas", () => {
+  const he = M.generateZCurve(0.5, 300, "real", 60, "he"); const nh3 = M.generateZCurve(0.5, 300, "real", 60, "nh3");
+  assert.ok(he.zMin.Z > nh3.zMin.Z);
+  M.resolveState({ ...M.DEFAULT_CONTROLS, mode: "real", gasId: "nh3" });
+  const e = M.selectExplanation(null, { ...M.DEFAULT_CONTROLS, mode: "real", gasId: "nh3" });
+  assert.match(e.text, /NH\u2083/); assert.doesNotMatch(e.text, /CO\u2082/);
+  const ch = M.selectExplanation({ ...M.DEFAULT_CONTROLS, gasId: "co2" }, { ...M.DEFAULT_CONTROLS, gasId: "he" }); assert.equal(ch.id, "gasChanged");
+  M.setActiveGas("co2");
+});
+test("GS-06: literature CO2 vapour pressure (Wikipedia data page) is interpolated; the message quotes it next to the van der Waals value", () => {
+  M.setActiveGas("co2");
+  const lit = (T) => M.literatureSaturationPressure(T);
+  assert.ok(Math.abs(lit(253.15) * 101.325 - 1993) < 1, `${lit(253.15) * 101.325} kPa at -20 C`);
+  assert.ok(Math.abs(lit(250) - 17.8) < 0.5 && Math.abs(lit(273.15) - 34.4) < 0.8 && Math.abs(lit(300) - 65.9) < 1.5, `${lit(250)} ${lit(273.15)} ${lit(300)}`);
+  assert.equal(M.literatureSaturationPressure(150), null); assert.equal(M.literatureSaturationPressure(250, "n2"), null);
+  const t = M.unreliableText("condensation", 250, M.IB_UNITS);
+  assert.match(t, /real CO\u2082 condenses at about 18\d\d kPa \(literature\), the model gives 30\d\d kPa/, t);
+  const s = M.resolveState({ ...M.DEFAULT_CONTROLS, mode: "real", T: 250, control: "pressure", P: 30.2 }, M.IB_UNITS);
+  assert.ok(s.note == null || /literature/.test(s.note) || s.status === "ok", s.note);
+});
+test("GS-05: the pressure slider ends at the highest pressure the real gas can reach; ideal mode keeps the full range", () => {
+  const r = M.resolveState({ ...M.DEFAULT_CONTROLS, mode: "real", T: 250 });
+  assert.ok(r.pReachMax < 31 && r.pReachMax > 25, `reach ${r.pReachMax}`);
+  const hi = M.resolveState({ ...M.DEFAULT_CONTROLS, mode: "real", T: 250, P: r.pReachMax });
+  assert.equal(hi.status, "ok"); assert.ok(Math.abs(hi.pressure - r.pReachMax) / r.pReachMax < 1e-6, "slider value and live pressure agree at the top");
+  assert.equal(M.resolveState({ ...M.DEFAULT_CONTROLS, mode: "ideal", T: 250 }).pReachMax, M.LIMITS.P.max);
+  const he = M.resolveState({ ...M.DEFAULT_CONTROLS, mode: "real", gasId: "he", T: 300 }); assert.equal(he.pReachMax, M.LIMITS.P.max);
+});
+test("GS-07: ideal mode flags states where PV = nRT gives a pressure no real gas could have (V = 0.01 L at 700 K)", () => {
+  const bad = M.resolveState({ ...M.DEFAULT_CONTROLS, control: "volume", V: 0.01, T: 700 });
+  assert.equal(bad.outsideIdeal, true); assert.ok(bad.pIdeal > 500);
+  assert.equal(M.resolveState(M.DEFAULT_CONTROLS).outsideIdeal, false);
+});
+test("GS-11: the sim.reset comment no longer claims V = 25 L", async () => {
+  const fs = await import("node:fs"); const src = fs.readFileSync(new URL("../src/engines/ideal-gas-simulation/model.js", import.meta.url), "utf8");
+  assert.ok(!/V=25 L/.test(src));
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

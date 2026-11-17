@@ -3,6 +3,14 @@
 // never a generic templated message, matching the same discipline used
 // for Build an Atom's "What Changed" feedback.
 export function describeWaveChange(changedControl, prevValue, nextValue, waveType) {
+  if (changedControl === "soundFrequency") {
+    return nextValue > prevValue
+      ? "You raised the frequency. The speed of sound in air is fixed, so the wavelength got shorter (v = f\u03BB)."
+      : "You lowered the frequency. The speed of sound in air is fixed, so the wavelength got longer (v = f\u03BB).";
+  }
+  if (waveType === "longitudinal" && changedControl === "amplitude") {
+    return "You changed the amplitude (how far the particles move). Frequency and wavelength are unchanged.";
+  }
   if (waveType === "longitudinal" && changedControl !== "waveType") {
     return "Particles oscillate parallel to the direction in which the wave travels.";
   }

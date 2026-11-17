@@ -121,7 +121,8 @@
 
 /* ---- Covalent: final sphere-and-bond structure ------------------------------ */
 .bv-structure { position: absolute; inset: 0; opacity: 0; pointer-events: none; transition: none; background: #fff; }
-.bv-structure[data-on="1"] { pointer-events: auto; }
+.bv-structure[data-on="1"] { opacity: 1; pointer-events: auto; }
+.bv-structure-fill { position: absolute; inset: 0; }
 .bv-structure canvas, .bv-structure svg { display: block; touch-action: none; }
 .bv-mol-label { position: absolute; left: 0; right: 0; bottom: 40px; text-align: center; pointer-events: none; color: #14226b; line-height: 1.15; }
 .bv-mol-label > b { display: block; font-size: 26px; font-weight: 800; }
@@ -134,6 +135,8 @@
 .bv-polarity { position: absolute; left: 8px; bottom: 6px; z-index: 4; max-width: min(46%, 300px); display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
 .bv-pol-toggle { min-height: 28px; padding: 0 10px; border: 1.5px solid #5b6784; border-radius: 999px; background: #ffffff; color: #1e2a44; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
 .bv-pol-toggle[aria-pressed="true"] { background: #1f4aa8; border-color: #1f4aa8; color: #fff; }
+.bv-pol-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.bv-pol-toggle--soft[aria-expanded] { background: #fff; color: #1e2a44; }
 .bv-pol-toggle:focus-visible { outline: 3px solid #ffd166; outline-offset: 2px; }
 .bv-pol-body { padding: 6px 8px; border: 1px solid #c9d3ea; border-radius: 10px; background: rgba(255, 255, 255, 0.95); color: #1e2a44; font-size: 12px; line-height: 1.3; max-height: 44%; overflow: auto; }
 .bv-pol-body ul { margin: 0 0 4px; padding: 0; list-style: none; }
@@ -151,3 +154,100 @@
 [data-testid="bonding-workspace"] .bv-options .sd-switch > button { flex: 1 1 auto; white-space: normal; }
 /* phone: the key-idea box is full width at the top, so the legend moves to the bottom of the stage instead of sitting under it */
 [data-testid="bonding-workspace"][data-layout="stacked"] .bv-canvas .bv-3d .bv-legend { top: auto; bottom: 46px; left: 8px; right: auto; max-width: calc(100% - 64px); }
+
+/* ---- Covalent round 2: molecule picker, charge, checkboxes, legend, recognition card ---------------------------- */
+.bv-covwrap { flex: 1 1 0; min-height: 0; min-width: 0; display: flex; gap: 8px; }
+.bv-covwrap > .bv-canvas { flex: 1 1 0; min-width: 0; }
+.bv-card { flex: 0 0 clamp(230px, 31%, 320px); min-height: 0; overflow-y: auto; border: 1px solid var(--sd-line); border-radius: 12px; background: #fbfcff; padding: 8px 10px; font-size: var(--sd-fs); color: var(--sd-ink); }
+.bv-card h3, .bv-card h4 { margin: 0; }
+.bv-card-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.bv-card-formula { font-size: calc(22px * var(--sd-s)); font-weight: 800; color: var(--sd-navy); }
+.bv-card-name { font-weight: 700; color: #33415f; }
+.bv-card-structural { margin: 2px 0 6px; font-size: calc(15px * var(--sd-s)); letter-spacing: 0.04em; color: #33415f; }
+.bv-card-title { display: flex; align-items: center; gap: 6px; font-size: var(--sd-fs); color: #8a4f0c; }
+.bv-card--no { background: #fff8ee; border-color: #f4d3ab; }
+.bv-card-msg { margin: 6px 0; line-height: 1.35; }
+.bv-card-actions { display: flex; flex-direction: column; gap: 5px; }
+.bv-action { min-height: 32px; padding: 4px 10px; border: 1.5px solid var(--sim-btn-border); border-radius: 9px; background: #fff; color: var(--sd-navy); font: inherit; font-weight: 700; text-align: left; cursor: pointer; }
+.bv-action:hover { background: var(--sim-btn-fill-hover); }
+.bv-action:focus-visible, .bv-alt:focus-visible, .bv-picker-btn:focus-visible, .bv-step:focus-visible, .bv-pick-item:focus-visible, .bv-picker-cat:focus-visible, .bv-keypanel-toggle:focus-visible { outline: 2px solid var(--sd-blue); outline-offset: 2px; }
+.bv-badges { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+.bv-tag { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; border: 1px solid #c7d8fb; background: #eaf1ff; color: #1d3f9e; font-size: var(--sd-fs-sm); font-weight: 700; }
+.bv-tag--ok { background: #e6f6ee; border-color: #bfe5d0; color: #1d6b45; }
+.bv-tag--calc { background: #f1ebfb; border-color: #d9c9f2; color: #5a2d9c; }
+.bv-tag--hl, .bv-tag--warn, .bv-tag--dative { background: #fdf0e1; border-color: #f4d3ab; color: #8a4f0c; }
+.bv-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); gap: 4px; margin: 0 0 6px; }
+.bv-facts > div { padding: 3px 6px; border-radius: 8px; background: #f1f4fb; }
+.bv-facts dt { font-size: 10.5px; color: var(--sd-muted); font-weight: 700; }
+.bv-facts dd { margin: 0; font-weight: 800; color: var(--sd-navy); font-variant-numeric: tabular-nums; }
+.bv-card-sec { margin-top: 6px; }
+.bv-card-sec h4 { font-size: var(--sd-fs-sm); text-transform: uppercase; letter-spacing: 0.05em; color: var(--sd-muted); }
+.bv-bond-list { margin: 2px 0 0; padding-left: 16px; }
+.bv-small { margin: 2px 0 0; line-height: 1.35; }
+.bv-muted { color: var(--sd-muted); }
+.bv-hint-link, .bv-note-inline, .bv-picker-note { margin: 3px 0 0; font-size: var(--sd-fs-sm); color: var(--sd-muted); }
+.bv-alts { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+.bv-alt { min-height: 28px; padding: 0 10px; border: 1.5px solid var(--sim-btn-border); border-radius: 999px; background: #fff; color: var(--sd-navy); font: inherit; font-weight: 700; cursor: pointer; }
+.bv-alt[aria-pressed="true"] { background: #d6f0e3; border-color: #1f7a55; color: #0f4a31; }
+
+.bv-picker { position: relative; flex: 0 0 auto; }
+.bv-picker-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 10px; border: 1.5px solid #1f7a55; border-radius: 9px; background: #fff; color: #0f4a31; font: inherit; font-weight: 800; cursor: pointer; }
+.bv-picker-btn:hover { background: #e6f6ee; }
+.bv-picker-count { padding: 0 6px; border-radius: 999px; background: #d6f0e3; font-size: var(--sd-fs-sm); }
+.bv-picker-pop { position: absolute; z-index: 30; left: 0; top: calc(100% + 4px); width: min(420px, 86vw); max-height: min(420px, 60vh); display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid var(--sd-line); border-radius: 12px; background: #fff; box-shadow: 0 8px 24px rgba(20, 34, 107, 0.2); }
+.bv-picker-search { width: 100%; box-sizing: border-box; }
+.bv-picker-cats { display: flex; flex-wrap: wrap; gap: 4px; }
+.bv-picker-cat { min-height: 26px; padding: 0 9px; border: 1.5px solid var(--sim-btn-border); border-radius: 999px; background: #fff; color: var(--sd-navy); font: inherit; font-size: var(--sd-fs-sm); font-weight: 700; cursor: pointer; }
+.bv-picker-cat[aria-pressed="true"] { background: #1f7a55; border-color: #1f7a55; color: #fff; }
+.bv-picker-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; min-height: 0; flex: 1 1 auto; }
+.bv-picker-list li[aria-selected="true"] .bv-pick-item { background: #e8f1ff; }
+.bv-pick-item { width: 100%; display: flex; align-items: baseline; gap: 8px; padding: 5px 8px; border: 0; border-radius: 8px; background: transparent; font: inherit; text-align: left; cursor: pointer; color: var(--sd-ink); }
+.bv-pick-item:hover { background: #eef3ff; }
+.bv-pick-formula { min-width: 62px; color: var(--sd-navy); }
+.bv-pick-name { flex: 1 1 auto; }
+.bv-ahl { padding: 1px 6px; border-radius: 999px; background: #fdf0e1; border: 1px solid #f4d3ab; color: #8a4f0c; font-size: 10.5px; font-weight: 800; }
+.bv-ahl--soft { background: #eef3ff; border-color: #c7d8fb; color: #1d3f9e; }
+.bv-empty { padding: 8px; color: var(--sd-muted); }
+
+.bv-charge { display: inline-flex; align-items: center; gap: 4px; padding: 0 6px; min-height: 32px; border: 1.5px solid var(--sim-btn-border); border-radius: 9px; background: #fff; }
+.bv-charge-label { font-size: var(--sd-fs-sm); font-weight: 700; color: var(--sd-muted); }
+.bv-charge-value { min-width: 26px; text-align: center; font-weight: 800; color: var(--sd-navy); font-variant-numeric: tabular-nums; }
+.bv-step { width: 26px; height: 26px; display: grid; place-items: center; border: 1.5px solid var(--sim-btn-border); border-radius: 50%; background: #fff; color: var(--sd-navy); cursor: pointer; padding: 0; }
+.bv-step:hover:not(:disabled) { background: var(--sim-btn-fill-hover); }
+.bv-step:disabled { opacity: 0.4; cursor: not-allowed; }
+.bv-check { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 10px; border: 1.5px solid var(--sim-btn-border); border-radius: 9px; background: #fff; color: var(--sd-navy); font-size: var(--sd-fs); font-weight: 700; cursor: pointer; }
+.bv-check input { width: 16px; height: 16px; margin: 0; accent-color: #1f7a55; cursor: pointer; }
+.bv-check:has(input:checked) { background: #e6f6ee; border-color: #1f7a55; color: #0f4a31; }
+.bv-check:has(input:focus-visible) { outline: 2px solid var(--sd-blue); outline-offset: 2px; }
+.bv-check--hl:has(input:checked) { background: #fdf0e1; border-color: #b96f27; color: #783f09; }
+
+.bv-bring { flex: 2 1 220px; display: inline-flex; align-items: center; gap: 8px; min-height: 34px; padding: 0 10px; border: 1.5px solid var(--sim-btn-border); border-radius: 9px; background: #fff; font-size: var(--sd-fs-sm); font-weight: 700; color: var(--sd-muted); }
+.bv-bring input[type="range"] { flex: 1 1 auto; min-width: 70px; accent-color: #1f7a55; cursor: pointer; }
+.bv-bring input[type="range"]:disabled { cursor: not-allowed; }
+.bv-bring input[type="range"]:focus-visible { outline: 2px solid var(--sd-blue); outline-offset: 3px; }
+
+.bv-badge { z-index: 2; }
+.bv-mol-label { position: absolute; left: 0; right: 0; bottom: 30px; display: flex; flex-direction: column; align-items: center; gap: 0; pointer-events: none; }
+.bv-mol-label b { font-size: calc(22px * var(--sd-s)); color: var(--sd-navy); text-shadow: 0 0 4px #fff, 0 0 4px #fff; }
+.bv-mol-label span { font-size: calc(15px * var(--sd-s)); color: #33415f; letter-spacing: 0.04em; text-shadow: 0 0 4px #fff, 0 0 4px #fff; }
+.bv-keypanel { position: absolute; right: 8px; top: 8px; z-index: 2; max-width: min(250px, 46%); padding: 4px 8px; border: 1px solid var(--sd-line); border-radius: 10px; background: rgba(255, 255, 255, 0.94); font-size: 11.5px; line-height: 1.3; color: var(--sd-ink); }
+.bv-keypanel ul { list-style: none; margin: 3px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.bv-keypanel li { display: flex; align-items: center; gap: 6px; }
+.bv-keypanel-toggle { border: 0; background: transparent; padding: 0; font: inherit; font-weight: 800; color: var(--sd-navy); cursor: pointer; }
+.bv-key { display: inline-block; flex: 0 0 auto; width: 12px; height: 12px; border-radius: 50%; box-sizing: border-box; }
+.bv-key--own { background: #f97316; border: 1px solid #fff; box-shadow: 0 0 0 1px #94a3b8; }
+.bv-key--shared { background: #0ea5e9; border: 1px solid #fff; box-shadow: 0 0 0 2px #d4a017; }
+.bv-key--lens { background: rgba(212, 160, 23, 0.35); border: 2px solid #d4a017; border-radius: 50%; }
+.bv-key--core { background: #94a3b8; border: 1px solid #475569; }
+
+/* phone / narrow: canvas, then the controls (Form molecule, slider), THEN the recognition card, so the controls stay next to the picture */
+[data-testid="bonding-workspace"][data-layout="stacked"] .bv-covwrap { display: contents; }
+[data-testid="bonding-workspace"][data-layout="stacked"] .bv-chamber[data-mode="covalent"] > .bv-canvas, [data-testid="bonding-workspace"][data-layout="stacked"] .bv-covwrap > .bv-canvas { order: 1; }
+[data-testid="bonding-workspace"][data-layout="stacked"] .bv-chamber[data-mode="covalent"] > .bv-toolbar { order: 2; }
+[data-testid="bonding-workspace"][data-layout="stacked"] .bv-card { order: 3; flex: 0 0 auto; max-height: 300px; overflow-y: auto; }
+@media (max-width: 520px) { .bv-keypanel[data-open="1"] { max-width: 62%; } }
+@media (prefers-reduced-motion: reduce) { .bv-picker-btn, .bv-action, .bv-alt { transition: none; } }
+.bv-canvas[data-small="1"] .bv-note, .bv-canvas[data-small="1"] .bv-mol-label { display: none; }
+
+/* short landscape windows (e.g. 910 x 512): the toolbar Reset duplicates the header Reset, so it gives its row back to the picture */
+@media (max-height: 560px) { [data-testid="bonding-workspace"]:not([data-layout="stacked"]) .bv-toolbar [data-testid="tool-reset"] { display: none; } }

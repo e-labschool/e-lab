@@ -1,5 +1,5 @@
-import { useMemo } from "react";
-import Particle from "./Particle.jsx";
+import { useId, useMemo } from "react";
+import { PARTICLE_STYLES } from "./Particle.jsx";
 import { buildNucleusLayout } from "../lib/nucleusLayout.js";
 import { shellDistribution } from "../lib/electronShells.js";
 import { shellRadii } from "../lib/shellRadii.js";
@@ -18,22 +18,10 @@ import { nucleusScaling } from "../lib/nucleusScaling.js";
 // largest nucleus this simulation reasonably needs to render (see above).
 const SHELL_ROTATION_MS = [16000, 24000, 32000, 40000, 48000];
 const ELECTRON_SPHERE_SIZE = 19; // ~13% smaller than the previous 22
-const SPIN_RING_MS = 2600; // fast relative to any orbit period, so it visually reads as "spin" not "orbit"
 
 function evenAngles(count) {
   if (count <= 0) return [];
   return Array.from({ length: count }, (_, i) => (i / count) * 360);
-}
-
-/** Assigns each electron a visual spin direction such that its
- * geometric opposite on the same shell (angle + 180 deg, which for an
- * even count via evenAngles() is EXACTLY index + count/2) always gets
- * the opposite spin -- verified numerically before use. Odd counts
- * (only possible on a partially-filled overflow shell) split as evenly
- * as the count allows. This is a purely visual convention, not a claim
- * about real quantum spin pairing. */
-function spinFor(index, count) {
-  return index < count / 2 ? "cw" : "ccw";
 }
 
 // SIZING: the visualiser fills whatever box its parent gives it (the parent
@@ -41,8 +29,21 @@ function spinFor(index, count) {
 // viewBox (preserveAspectRatio "meet") scales the whole atom uniformly to the
 // smaller of that box's width and height -- so it always fits and can never
 // grow past its area onto the controls. No transform/zoom scaling involved.
+/** BA-10: plain SVG circles that share ONE set of gradients (the old build nested a whole <svg> inside a <foreignObject> per particle). */
+function Dot({ type, r, uid, symbol, showSymbol }) {
+  const st = PARTICLE_STYLES[type];
+  return (
+    <g>
+      <circle r={r} fill={`url(#${uid}-${type})`} />
+      <ellipse cx={-r * 0.28} cy={-r * 0.45} rx={r * 0.3} ry={r * 0.19} fill="rgba(255,255,255,0.4)" />
+      {showSymbol && <text y={r * 0.32} textAnchor="middle" fontSize={r * 0.95} fontWeight="700" fill="rgba(255,255,255,0.95)">{symbol ?? st.symbol}</text>}
+    </g>
+  );
+}
+
 export default function AtomVisualizer({ protons, neutrons, electrons, highlightZ, highlightA, highlightCharge, nucleusWarning }) {
   const reducedMotion = useReducedMotion();
+  const uid = `av${useId().replace(/:/g, "")}`;
 
   const { scale: nucleusScale, sphere: nucleonSize } = useMemo(() => nucleusScaling(protons, neutrons), [protons, neutrons]);
   const nucleusItems = useMemo(
@@ -62,6 +63,11 @@ export default function AtomVisualizer({ protons, neutrons, electrons, highlight
     >
       <svg viewBox="-230 -230 460 460" preserveAspectRatio="xMidYMid meet" className="block h-full w-full" data-testid="atom-svg">
         <title>A model: electrons do not literally orbit the nucleus like planets, and the nucleus is not drawn to scale.</title>
+        <defs>
+          {Object.entries(PARTICLE_STYLES).map(([type, st]) => (
+            <radialGradient key={type} id={`${uid}-${type}`} cx="35%" cy="30%" r="75%"><stop offset="0%" stopColor={st.light} /><stop offset="55%" stopColor={st.base} /><stop offset="100%" stopColor={st.dark} /></radialGradient>
+          ))}
+        </defs>
         {shells.map((_, shellIndex) => (
           <circle key={`guide-${shellIndex}`} cx="0" cy="0" r={radii[shellIndex]} fill="none" stroke="var(--color-indigo)" strokeWidth="0.6" strokeDasharray="2 4" opacity="0.35" />
         ))}
@@ -94,9 +100,7 @@ export default function AtomVisualizer({ protons, neutrons, electrons, highlight
                         POSITION (set by the translate above, outside
                         this counter-rotation) still genuinely orbits. */}
                     <g style={{ transformOrigin: "0px 0px", animation: reducedMotion ? "none" : `atom-shell-spin ${duration}ms linear infinite reverse` }}>
-                      <foreignObject x={-ELECTRON_SPHERE_SIZE / 2} y={-ELECTRON_SPHERE_SIZE / 2} width={ELECTRON_SPHERE_SIZE} height={ELECTRON_SPHERE_SIZE}>
-                        <Particle type="electron" size={ELECTRON_SPHERE_SIZE} showSymbol symbolOverride="−" />
-                      </foreignObject>
+                      <Dot type="electron" r={ELECTRON_SPHERE_SIZE * 0.43} uid={uid} symbol="−" showSymbol />
                     </g>
                   </g>
                 );
@@ -108,9 +112,7 @@ export default function AtomVisualizer({ protons, neutrons, electrons, highlight
         {/* nucleus */}
         <g className={[highlightZ || highlightA ? "atom-highlight-pulse" : "", nucleusWarning ? (reducedMotion ? "atom-boundary-highlight" : "atom-nucleus-wobble") : ""].filter(Boolean).join(" ") || undefined}>
           {nucleusItems.map((item) => (
-            <foreignObject key={item.key} x={item.x - nucleonSize / 2} y={item.y - nucleonSize / 2} width={nucleonSize} height={nucleonSize}>
-              <Particle type={item.type} size={nucleonSize} showSymbol={nucleonSize >= 16} />
-            </foreignObject>
+            <g key={item.key} transform={`translate(${item.x} ${item.y})`}><Dot type={item.type} r={nucleonSize * 0.43} uid={uid} showSymbol={nucleonSize >= 16} /></g>
           ))}
         </g>
 

@@ -71,3 +71,24 @@
 .ig-wall-row { white-space: nowrap; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; }
 .ig-wall b { font-weight: 800; }
 @media (max-width: 520px) { .ig-wall { max-width: 62%; } }
+
+/* "Outside the ideal-gas regime" warning (GS-07): under the deviation badge */
+.ig-outside {
+  position: absolute;
+  left: 8px;
+  top: 60px;
+  z-index: 2;
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  max-width: min(330px, calc(100% - 64px));
+  padding: 4px 8px;
+  border: 1px solid #f1cf7a;
+  border-radius: 9px;
+  background: #fff4d6;
+  color: #7a4d00;
+  font-size: var(--sd-fs-sm);
+  line-height: 1.25;
+  box-shadow: 0 1px 4px rgba(20, 34, 107, 0.15);
+}
+.ig-outside svg { flex: none; margin-top: 1px; }

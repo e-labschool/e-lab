@@ -4,6 +4,8 @@ import ConclusionBadge from "../components/ConclusionBadge.jsx";
 import SceneQuestion from "../components/SceneQuestion.jsx";
 import { STATE_COLOR, STATE_MACRO } from "../data/stateContent.js";
 
+const YES_NO = [{ id: "yes", label: "Yes" }, { id: "no", label: "No" }];
+
 export default function StateMacroScene({ state, forceToken }) {
   const content = STATE_MACRO[state];
   const color = STATE_COLOR[state];
@@ -19,13 +21,13 @@ export default function StateMacroScene({ state, forceToken }) {
       <div className="flex flex-col gap-4 sm:flex-row sm:gap-8">
         <div className="flex-1">
           <p className="mb-2 text-sm text-[var(--color-ink-soft)]">{content.q1}</p>
-          <RevealChip label="Reveal" forceToken={forceToken}>
+          <RevealChip label="Reveal" forceToken={forceToken} predict={{ question: content.q1, choices: YES_NO, correct: content.a1 ? "yes" : "no", testId: "predict-q1" }}>
             <ConclusionBadge tone="yes">{content.r1}</ConclusionBadge>
           </RevealChip>
         </div>
         <div className="flex-1">
           <p className="mb-2 text-sm text-[var(--color-ink-soft)]">{content.q2}</p>
-          <RevealChip label="Reveal" forceToken={forceToken}>
+          <RevealChip label="Reveal" forceToken={forceToken} predict={{ question: content.q2, choices: YES_NO, correct: content.a2 ? "yes" : "no", testId: "predict-q2" }}>
             <ConclusionBadge tone="yes">{content.r2}</ConclusionBadge>
           </RevealChip>
         </div>

@@ -94,3 +94,8 @@
 /* narrow containers: popovers become a bottom sheet so they can never run off the left edge */
 #ct-workspace[data-layout="stacked"] .sd-pop-panel { position: fixed; inset: auto 8px 8px 8px; width: auto !important; max-width: none; max-height: 72dvh; }
 #ct-workspace[data-layout="stacked"] .ct-predict { max-height: none; overflow: visible; }
+.ct-profile { margin-top: 8px; padding-top: 6px; border-top: 1px solid #d5deef; max-width: 340px; }
+.ct-profile-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 12.5px; margin-bottom: 4px; }
+.ct-profile-note { margin: 4px 0 0; font-size: 11.5px; line-height: 1.35; color: #4a5a82; }
+.ct-profile svg { max-height: 118px; display: block; }
+.ct-profile-vals { margin: 2px 0 0; font-size: 12px; font-weight: 600; color: #1e2a44; }

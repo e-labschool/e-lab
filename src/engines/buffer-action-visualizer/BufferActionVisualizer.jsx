@@ -52,6 +52,13 @@ function Body() {
   const sys = SYSTEMS[st.sysId];
   const stRef = useRef(st); stRef.current = st;
   const bufP = useRef(null); const unP = useRef(null);
+  // AK-51: the quick-control bar is only needed once the real controls have scrolled out of view (no duplicate buttons on screen).
+  const ctlRef = useRef(null); const [ctlVisible, setCtlVisible] = useState(true);
+  useEffect(() => {
+    const el = ctlRef.current; if (!el || typeof IntersectionObserver === "undefined") return undefined;
+    const io = new IntersectionObserver(([e]) => setCtlVisible(e.isIntersecting), { threshold: 0.6 });
+    io.observe(el); return () => io.disconnect();
+  }, []);
   const [, tick] = useState(0);
 
   const b = useMemo(() => bufferState(sys, st.h, st.oh), [sys, st.h, st.oh]);
@@ -111,7 +118,7 @@ function Body() {
           </div>
         </div>
         <div className="buf-side">
-          <div className="ab-panel buf-ctl">
+          <div className="ab-panel buf-ctl" ref={ctlRef}>
             <label className="ab-field">Buffer type<select value={st.sysId} onChange={(e) => changeSys(e.target.value)} aria-label="Buffer type"><option value="acid">Acid buffer: CH{"₃"}COOH / CH{"₃"}COO{"⁻"}</option><option value="basic">Basic buffer: NH{"₃"} / NH{"₄⁺"}</option></select></label>
             <label className="ab-field">Addition (1.00 mol dm{"⁻³"} reagent)<select value={st.size} onChange={(e) => setSt({ ...st, size: e.target.value })} aria-label="Addition size">{Object.values(ADDITIONS).map((a) => <option key={a.id} value={a.id}>{a.label}: {a.cm3.toFixed(1)} cm{"³"} = {a.mmol.toFixed(1)} mmol</option>)}</select></label>
             <div className="ab-btns">
@@ -141,6 +148,12 @@ function Body() {
         <span className="ab-note">Particle view is a sample: 10 dots stand for the buffer (1 dot = 1 mmol) and always match the pH shown. {freeCount(bufP.current, "H") + freeCount(bufP.current, "OH") > 0 ? "Free H⁺ / OH⁻ appear only once the buffer can no longer absorb them." : ""}</span>
       </div>
       <p className="ab-note buf-copy">{COPYRIGHT_TEXT_COMPACT}</p>
+      <div className={"buf-sticky" + (ctlVisible ? " is-off" : "")} role="group" aria-label="Quick controls" data-testid="buf-sticky">
+        <span className="buf-sticky-ph" aria-hidden="true">pH <b>{formatPH(b.pH)}</b> <i>buffer</i> · <b>{formatPH(u.pH)}</b> <i>unbuffered</i></span>
+        <button type="button" className="sim-btn ab-btn" disabled={left <= 0} onClick={() => add("H")}>Add H{"⁺"} (HCl)</button>
+        <button type="button" className="sim-btn ab-btn" disabled={left <= 0} onClick={() => add("OH")}>Add OH{"⁻"} (NaOH)</button>
+        <button type="button" className="sim-btn ab-btn" onClick={reset}>Reset</button>
+      </div>
     </section>
   );
 }

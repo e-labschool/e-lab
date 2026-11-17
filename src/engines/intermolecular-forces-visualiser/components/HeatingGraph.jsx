@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { STATE_ACCENT } from "../../particle-model-visualizer/data/palette.js";
 import { curveSegments, stateAtEnergy, totalEnergy } from "../model/phase.js";
 
@@ -24,6 +24,12 @@ export default function HeatingGraph({ sub, E, label }) {
   })();
   const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => f * total);
   const tTicks = [Tmin, sub.Tm, sub.Tb, Tmax];
+  // BS-32: announce each change of PHASE once (not every temperature tick), so a screen reader follows the curve without being flooded
+  const [phaseNote, setPhaseNote] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setPhaseNote(`${label}: ${st.phase === "melting" ? `melting, temperature constant at ${sub.Tm} kelvin` : st.phase === "boiling" ? `boiling, temperature constant at ${sub.Tb} kelvin` : `${st.phase} phase, temperature changing`}.`), 400);
+    return () => clearTimeout(t);
+  }, [st.phase, label, sub.Tm, sub.Tb]);
   const fmt = (v) => (v >= 100 ? Math.round(v) : v.toFixed(1));
   return (
     <figure className="imf-graph" data-testid="heating-graph" data-energy={E.toFixed(3)} data-temp={st.T.toFixed(2)} data-phase={st.phase}>
@@ -42,6 +48,7 @@ export default function HeatingGraph({ sub, E, label }) {
         <text x={PAD.l + PW / 2} y={H - 6} textAnchor="middle" className="imf-axlabel">Energy added (kJ per mol, simplified)</text>
         <text transform={`translate(11 ${PAD.t + PH / 2}) rotate(-90)`} textAnchor="middle" className="imf-axlabel">Temperature (K)</text>
       </svg>
+      <p className="imf-sr" role="status" aria-live="polite" data-testid="graph-phase-live">{phaseNote}</p>
       <p className="imf-graph-note">Constant pressure (1 atm), no heat loss. The temperature stays at {sub.Tm} K while the solid melts and at {sub.Tb} K while the liquid boils: the added energy goes into the arrangement of the particles, not into temperature. The x axis is energy, not time.</p>
     </figure>
   );

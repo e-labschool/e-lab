@@ -78,10 +78,10 @@ const resources = [
     title: "Mixture Separation Explorer",
     resourceType: "guided-inquiry",
     categories: ["explore","teach"],
-    status: "planned", // live | in-development | planned
-    description: "An interactive walkthrough of choosing and applying a separation technique to a given mixture.",
+    status: "live", // live | in-development | planned
+    description: "Choose a mixture and a separation method, assemble the apparatus step by step and watch filtration, distillation, chromatography and more separate it; then plan a multi-step separation or predict the outcome first.",
     conceptIds: ["pure-substances-and-mixtures","separation-techniques"],
-    component: null,
+    component: () => import("../engines/mixture-separation-explorer/MixtureSeparationExplorer.jsx"),
   },
   {
     id: "atomic-structure-model",

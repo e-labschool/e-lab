@@ -1,78 +1,49 @@
-// Generates ground-state electron configurations for neutral atoms
-// Z=1-20 PROGRAMMATICALLY (Aufbau + Hund + Pauli), not hardcoded per
-// element -- so correctness rests on getting the filling ORDER and
-// CAPACITY rules right once, verifiable against known configurations,
-// rather than needing to separately verify 20 hand-typed strings.
+// Atom View configurations for Z = 1-36, taken from the shared atomic layer (src/lib/atomic) so that this simulation
+// agrees with Electron Configuration and Build an Atom, including the Cr and Cu exceptions (OE-06, X-01).
+// The old local Aufbau table stopped at Z = 20; this module keeps the same exports for the components that use them.
+import { neutralOccupancy, orbitalBoxes, subshellLabel } from "../../../lib/atomic/index.js";
 
-// Filling order through Ca (no transition-metal exceptions needed at
-// this scope, per instruction): 1s,2s,2p,3s,3p,4s.
-const FILLING_ORDER = [
-  { sublevel: "1s", capacity: 2, orbitalCount: 1 },
-  { sublevel: "2s", capacity: 2, orbitalCount: 1 },
-  { sublevel: "2p", capacity: 6, orbitalCount: 3 },
-  { sublevel: "3s", capacity: 2, orbitalCount: 1 },
-  { sublevel: "3p", capacity: 6, orbitalCount: 3 },
-  { sublevel: "4s", capacity: 2, orbitalCount: 1 },
-];
+export const MAX_ATOM_VIEW_Z = 36;
+const P_AXES = ["x", "y", "z"];
+const D_NAMES = ["xy", "xz", "yz", "x2y2", "z2"];
+const OCC = (box) => (box.up && box.down ? "paired" : box.up || box.down ? "up" : "");
 
-/** Returns [{ sublevel: "1s", count: 2 }, ...] for the given electron
- * total -- Aufbau filling (fill each sublevel to capacity before the
- * next), stopping exactly at `electronCount`. */
-export function fillSublevels(electronCount) {
-  const result = [];
-  let remaining = electronCount;
-  for (const { sublevel, capacity } of FILLING_ORDER) {
-    if (remaining <= 0) break;
-    const count = Math.min(capacity, remaining);
-    result.push({ sublevel, count });
-    remaining -= count;
-  }
-  return result;
+/** [{ sublevel: "1s", count: 2 }, ...] in FILLING (energy) order for the neutral atom with Z electrons (Z = 1-36). */
+export function fillSublevels(z) {
+  if (!Number.isInteger(z) || z < 1 || z > MAX_ATOM_VIEW_Z) return [];
+  return neutralOccupancy(z).map((s) => ({ sublevel: subshellLabel(s.n, s.l), count: s.electrons, n: s.n, l: s.l }));
 }
 
-/** Formats a sublevel list as the conventional string, e.g.
- * "1s\u00B2 2s\u00B2 2p\u00B2" -- using real superscript digit
- * characters so it renders correctly even where <sup> markup isn't
- * used (e.g. inside an SVG label or aria-label). */
-const SUPERSCRIPT = { "0": "\u2070", "1": "\u00B9", "2": "\u00B2", "3": "\u00B3", "4": "\u2074", "5": "\u2075", "6": "\u2076" };
-function superscript(n) {
-  return String(n).split("").map((d) => SUPERSCRIPT[d] ?? d).join("");
-}
+const SUPERSCRIPT = { 0: "⁰", 1: "¹", 2: "²", 3: "³", 4: "⁴", 5: "⁵", 6: "⁶", 7: "⁷", 8: "⁸", 9: "⁹" };
+const superscript = (n) => String(n).split("").map((d) => SUPERSCRIPT[d] ?? d).join("");
+
+/** "1s² 2s² 2p⁶ 3s² 3p⁶ 4s² 3d⁶" (filling order, as the orbital diagram is drawn). */
 export function formatConfiguration(sublevels) {
   return sublevels.map((s) => `${s.sublevel}${superscript(s.count)}`).join(" ");
 }
 
-/** Hund's-rule occupancy for ONE p sublevel (3 degenerate orbitals):
- * returns an array of 3 values, each "" | "up" | "paired" -- singly
- * occupied (parallel spin) before any pairing, matching the required
- * B: up,_,_ ... N: up,up,up ... O: paired,up,up ... Ne: paired,paired,paired
- * sequence. */
+/** Hund's-rule occupancy for ONE p sublevel (3 orbitals): each "" | "up" | "paired". */
 export function pOrbitalOccupancy(pElectronCount) {
-  const slots = [0, 0, 0]; // electrons in px, py, pz
-  for (let i = 0; i < pElectronCount; i++) {
-    // first pass fills each slot singly (i < 3), second pass pairs them (i >= 3)
-    const slot = i % 3;
-    slots[slot] += 1;
-  }
-  return slots.map((n) => (n === 0 ? "" : n === 1 ? "up" : "paired"));
+  return orbitalBoxes(1, pElectronCount).map(OCC);
 }
 
-/** All occupied orbitals for an atom, expanded to individual orbital
- * ids (e.g. "2p" -> "2px","2py","2pz") with their occupancy, for
- * driving both the box diagram and which 3D orbitals to render. */
-export function occupiedOrbitals(electronCount) {
-  const sublevels = fillSublevels(electronCount);
-  const orbitals = [];
-  for (const { sublevel, count } of sublevels) {
-    if (sublevel.endsWith("s")) {
-      orbitals.push({ id: sublevel, sublevel, occupancy: count === 1 ? "up" : "paired" });
-    } else if (sublevel.endsWith("p")) {
-      const n = sublevel[0];
-      const occ = pOrbitalOccupancy(count);
-      ["x", "y", "z"].forEach((axis, i) => {
-        orbitals.push({ id: `${n}p${axis}`, sublevel, occupancy: occ[i] });
-      });
+/** Every occupied (or part-occupied) orbital as an individual id with its occupancy (Hund's rule), for the legend, the
+ *  orbital boxes and the 3D clouds: "2p" -> 2px, 2py, 2pz; "3d" -> 3dxy, 3dxz, 3dyz, 3dx2y2, 3dz2. */
+export function occupiedOrbitals(z) {
+  const out = [];
+  for (const { sublevel, count, n, l } of fillSublevels(z)) {
+    if (l === 0) out.push({ id: sublevel, sublevel, occupancy: count === 1 ? "up" : "paired", n, l });
+    else {
+      const names = l === 1 ? P_AXES : D_NAMES;
+      orbitalBoxes(l, count).forEach((box, i) => out.push({ id: `${n}${"spd"[l]}${names[i]}`, sublevel, occupancy: OCC(box), n, l }));
     }
   }
-  return orbitals;
+  return out;
+}
+
+/** Energy order of the subshells that matter up to Z = 36, with the electrons each holds (0 = empty). */
+export const ENERGY_ORDER = ["1s", "2s", "2p", "3s", "3p", "4s", "3d", "4p"];
+export function energyOrderRows(z) {
+  const held = new Map(fillSublevels(z).map((s) => [s.sublevel, s.count]));
+  return ENERGY_ORDER.map((sublevel) => ({ sublevel, electrons: held.get(sublevel) ?? 0 }));
 }

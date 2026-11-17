@@ -58,6 +58,14 @@ export function ExperimentGraph({ m, showExpected, xTitle, description }) {
           <text x={m.bufferLabel.x} y={m.bufferLabel.y} textAnchor="middle" fontSize="12" fontWeight="700" fill="#fcd9a0">Buffer region</text>
         </g>
       )}
+      {m.buffers && m.buffers.map((b) => (
+        <g key={`pb${b.index}`} data-testid="buffer-region">
+          <rect x={b.x1} y={plot.y} width={b.x2 - b.x1} height={plot.h} fill={C.buffer} fillOpacity="0.2" />
+          <line x1={b.x1} x2={b.x1} y1={plot.y} y2={plot.y + plot.h} stroke={C.buffer} strokeDasharray="4 3" />
+          <line x1={b.x2} x2={b.x2} y1={plot.y} y2={plot.y + plot.h} stroke={C.buffer} strokeDasharray="4 3" />
+          <text x={(b.x1 + b.x2) / 2} y={plot.y + 15} textAnchor="middle" fontSize="12" fontWeight="700" fill="#fcd9a0">Buffer {b.index}</text>
+        </g>
+      ))}
       {m.steep && <rect x={m.steep.x1} y={plot.y} width={m.steep.x2 - m.steep.x1} height={plot.h} fill={C.steep} fillOpacity="0.25" />}
       {m.eq && (
         <g stroke={C.eq} strokeDasharray="4 3" strokeWidth="1">
@@ -74,6 +82,12 @@ export function ExperimentGraph({ m, showExpected, xTitle, description }) {
       {showExpected && <path d={m.curvePath} fill="none" stroke={C.curve} strokeOpacity="0.6" strokeWidth="3" strokeLinejoin="round" data-testid="expected-curve" />}
       {m.studentPts.length > 1 && <path d={m.studentPath} fill="none" stroke={C.student} strokeWidth="1.5" strokeOpacity="0.8" />}
       {m.studentPts.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={i === m.studentPts.length - 1 ? 5.5 : 3} fill={C.student} stroke="#0e1520" strokeWidth="1" />)}
+      {m.markers && m.markers.filter((k) => !(k.kind === "eq" && k.index === 1)).map((k) => (
+        <g key={`${k.kind}${k.index}`} data-testid="poly-marker">
+          <line x1={k.x} x2={k.x} y1={k.y} y2={plot.y + plot.h} stroke={k.kind === "eq" ? C.eq : C.half} strokeDasharray="3 3" strokeOpacity="0.7" />
+          {k.kind === "eq" ? <path d={`M${k.x} ${k.y - 7} l7 7 l-7 7 l-7 -7 z`} fill={C.eq} stroke="#0e1520" /> : <circle cx={k.x} cy={k.y} r="5" fill={C.half} stroke="#0e1520" />}
+        </g>
+      ))}
       {m.eq && <path d={`M${m.eq.x} ${m.eq.y - 7} l7 7 l-7 7 l-7 -7 z`} fill={C.eq} stroke="#0e1520" />}
       {m.halfEq && <circle cx={m.halfEq.x} cy={m.halfEq.y} r="5" fill={C.half} stroke="#0e1520" />}
       {m.endpoint && <rect x={m.endpoint.x - 4} y={m.endpoint.y - 4} width="8" height="8" fill="#e2e8f0" stroke="#0e1520" />}

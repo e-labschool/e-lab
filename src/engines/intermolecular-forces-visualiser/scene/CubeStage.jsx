@@ -2,6 +2,7 @@ import { useRef } from "react";
 import { Canvas } from "@react-three/fiber";
 import { Box } from "lucide-react";
 import CubeScene from "./CubeScene.jsx";
+import FlatCube from "./FlatCube.jsx";
 import { useStageGuard } from "../../shared-3d/useStageGuard.js";
 import CameraKeyApi from "../../shared-3d/CameraKeyApi.jsx";
 import { ContextLostNotice, StageKeyHint, useStageKeys } from "../../shared-3d/StageShell.jsx";
@@ -20,7 +21,7 @@ export default function CubeStage({ simRef, revision, compare, ariaLabel, childr
           <CubeScene simRef={simRef} apiRef={apiRef} revision={revision} compare={compare} />
         </Canvas>
       ) : (
-        <div className="imf-nogl" data-testid="webgl-fallback" role="status"><Box size={22} aria-hidden="true" /><p><b>3D view unavailable on this device.</b></p><p>The temperature, phase readout and heating curve still update as you heat and cool.</p></div>
+        <div className="imf-nogl imf-nogl--with-view" data-testid="webgl-fallback" role="status"><FlatCube simRef={simRef} compare={compare} ariaLabel={ariaLabel} /><p><Box size={16} aria-hidden="true" /> <b>3D view unavailable on this device.</b> This flat side view shows the particles heating and cooling; the temperature, phase readout and heating curve update as well.</p></div>
       )}
       {webgl && <StageKeyHint id="imf-cube-keys" />}
       {lost && <ContextLostNotice />}

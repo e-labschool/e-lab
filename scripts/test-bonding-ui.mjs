@@ -141,62 +141,117 @@ await test("[check 13] switching tabs changes the whole canvas and controls and 
   await click('[data-testid="tab-covalent"]'); await tick(80);
   assert.equal($('[data-testid="tab-covalent"]').getAttribute("aria-selected"), "true");
   assert.equal($('[data-testid="tool-ionize"]'), null); assert.equal($('[data-testid="tool-attraction"]'), null); assert.ok($('[data-testid="tool-form-bond"]'));
-  assert.equal($('[data-testid="canvas"]').getAttribute("data-atoms"), "2"); assert.equal($('[data-testid="canvas"]').getAttribute("data-formula"), "H2");
+  assert.equal($('[data-testid="canvas"]').getAttribute("data-atoms"), "2"); assert.equal($('[data-testid="canvas"]').getAttribute("data-formula"), "H₂");
   assert.deepEqual($$('[data-testid^="atom-"]').map((a) => a.getAttribute("data-symbol")), ["H", "H"]);
   assert.equal($('[data-testid="el-Na"]'), null); assert.ok($('[data-testid="el-H"]') && $('[data-testid="el-Be"]'));
   await click('[data-testid="tab-ionic"]'); await tick(80);
   assert.equal($('[data-testid="canvas"]').getAttribute("data-atoms"), "0"); assert.ok($('[data-testid="tool-ionize"]')); assert.deepEqual(shells(), []);
 });
-await test("[check 9] covalent starts with two H with different electron colours; Form Bond needs the atoms close", async () => {
+// ---- covalent round 2: the molecule is recognised from the atoms, then formed automatically ----
+const setRange = async (sel, v) => { const el = $(sel); Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value").set.call(el, String(v)); el.dispatchEvent(new window.Event("input", { bubbles: true })); await tick(40); };
+const setText = async (sel, v) => { const el = $(sel); Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value").set.call(el, v); el.dispatchEvent(new window.Event("input", { bubbles: true })); await tick(40); };
+const cv = (a) => $('[data-testid="canvas"]').getAttribute(a);
+const formed = async (label) => { await click('[data-testid="tool-form-bond"]'); await until(() => stage() === "bonded", 8000, `${label} bonded`); };
+const settled = async (label = "recognised") => until(() => cv("data-status") !== "pending", 4000, `${label}: recognition finished`); // sets of more than 4 atoms are worked out after a short pause
+const addAtoms = async (list) => { await click('[data-testid="tool-clear"]'); for (const s of list) await click(`[data-testid="el-${s}"]`); await tick(60); await settled(list.join("")); };
+await test("[check 9] covalent starts with two H (different electron colours), already recognised as H2", async () => {
   await click('[data-testid="tab-covalent"]'); await tick(80);
   const cols = $$('[data-testid="electrons"] circle').map((c) => c.getAttribute("fill"));
   assert.equal(cols.length, 2); assert.notEqual(cols[0], cols[1]);
-  assert.ok(disabled('[data-testid="tool-form-bond"]')); assert.equal($('[data-testid="canvas"]').getAttribute("data-close"), "0");
-  assert.match(txt('[data-testid="bv-explain"]'), /drag the atoms closer/);
-  await click('[data-testid="tool-bring"]'); await until(() => $('[data-testid="canvas"]').getAttribute("data-close") === "1", 3000, "atoms close");
-  assert.ok(!disabled('[data-testid="tool-form-bond"]'));
+  assert.equal(cv("data-status"), "ok"); assert.equal(cv("data-formula"), "H₂"); assert.match(txt('[data-testid="card-name"]'), /Hydrogen/);
+  assert.ok(!disabled('[data-testid="tool-form-bond"]'), "Form molecule is available even though the atoms are far apart");
+  assert.equal(stage(), "setup");
 });
-await test("[check 9] H2 bond: shared pair keeps both colours, overlap shown, H–H and 1 shared pair / 0 lone pairs", async () => {
-  await click('[data-testid="tool-form-bond"]'); assert.equal(stage(), "bonding");
-  await until(() => stage() === "bonded", 6000, "bonded");
+await test("[check 9] H2: Form molecule brings the far-apart atoms together; shared pair keeps both colours, overlap shown, 1 shared pair / 0 lone pairs", async () => {
+  await formed("H2");
   const shared = $$('[data-testid="electrons"] circle[data-state="shared"]'); assert.equal(shared.length, 2);
   assert.notEqual(shared[0].getAttribute("fill"), shared[1].getAttribute("fill"));
   assert.ok($('[data-testid="overlap"]')); assert.match(txt('[data-testid="molecule-label"]'), /H2\s*H–H/);
   assert.equal(txt('[data-testid="live-shared"] dd'), "1"); assert.equal(txt('[data-testid="live-lone"] dd'), "0"); assert.equal(txt('[data-testid="live-charge"] dd'), "0");
-  assert.match(txt('[data-testid="bv-explain"]'), /one from each H/);
-  await click('[data-testid="tool-replay"]'); assert.equal(stage(), "bonding"); await until(() => stage() === "bonded", 6000, "bonded again");
-  await click('[data-testid="tool-reset"]'); await tick(80); assert.equal(stage(), "setup"); assert.equal($('[data-testid="canvas"]').getAttribute("data-formula"), "H2");
+  assert.equal($$('[data-testid="bond-line"]').length, 1);
+  await click('[data-testid="tool-replay"]'); assert.notEqual(stage(), "setup"); await until(() => stage() === "bonded", 6000, "bonded again");
+  await click('[data-testid="tool-reset"]'); await tick(80); assert.equal(stage(), "setup"); assert.equal(cv("data-formula"), "H₂");
 });
-await test("[check 10] bond selector loads only scientifically valid examples: Double = O₂, Triple = N₂; Single set has no O₂/N₂", async () => {
-  const ex = () => $$('[data-testid="examples"] button').map((b) => b.textContent.trim());
-  assert.deepEqual(ex(), ["H₂", "Cl₂", "HCl", "HF", "H₂O", "H₂S", "NH₃", "PH₃", "CH₄", "CCl₄"]);
-  await click($$('[role="radio"]').find((r) => r.textContent.includes("Double Bond"))); assert.deepEqual(ex(), ["O₂", "CO₂"]); assert.equal($('[data-testid="canvas"]').getAttribute("data-formula"), "O2");
-  await click('[data-testid="tool-bring"]'); await tick(700); await click('[data-testid="tool-form-bond"]'); await until(() => stage() === "bonded", 6000, "O2 bonded");
-  assert.equal(txt('[data-testid="live-shared"] dd'), "2"); assert.equal(txt('[data-testid="live-lone"] dd'), "4"); assert.match(txt('[data-testid="molecule-label"]'), /O=O/);
-  await click($$('[role="radio"]').find((r) => r.textContent.includes("Triple Bond"))); assert.deepEqual(ex(), ["N₂"]);
-  await click('[data-testid="tool-bring"]'); await tick(700); await click('[data-testid="tool-form-bond"]'); await until(() => stage() === "bonded", 6000, "N2 bonded");
-  assert.equal(txt('[data-testid="live-shared"] dd'), "3"); assert.equal(txt('[data-testid="live-lone"] dd'), "2"); assert.match(txt('[data-testid="molecule-label"]'), /N≡N/);
-  assert.equal($$('[data-testid="electrons"] circle[data-state="shared"]').length, 6);
+await test("slider scrubs far apart to bonded (and back); the picture is a pure function of the slider", async () => {
+  await setRange('[data-testid="tool-bring"]', 500); assert.equal(stage(), "forming"); assert.ok(Math.abs(Number(cv("data-p")) - 0.5) < 0.01);
+  await setRange('[data-testid="tool-bring"]', 1000); assert.equal(stage(), "bonded");
+  await setRange('[data-testid="tool-bring"]', 0); assert.equal(stage(), "setup");
+  assert.equal($$('[data-testid="bond-line"]').length, 0, "no bond lines while the atoms are apart");
 });
-await test("[check 11] octet subtabs: CH4 (8), BF3 (6), BeCl2 (4), PCl5 (10), SF6 (12) electrons around the central atom", async () => {
-  const pick = async (label, id) => {
-    if (label) await click($$('[role="radio"]').find((r) => r.textContent.includes(label)));
-    await click(`[data-testid="example-${id}"]`); await click('[data-testid="tool-bring"]'); await tick(700);
-    await click('[data-testid="tool-form-bond"]'); await until(() => stage() === "bonded", 6000, `${id} bonded`);
-    return Number(txt('[data-testid="live-central"] dd'));
-  };
-  assert.equal(await pick("Normal Octet", "CH4"), 8); assert.match(txt('[data-testid="central-count"]'), /C has 8 electrons/);
-  assert.equal(await pick("Incomplete Octet", "BF3"), 6); assert.match(txt('[data-testid="central-count"]'), /B has 6 electrons around it \(incomplete octet\)/);
-  assert.equal(await pick(null, "BeCl2"), 4);
-  assert.equal(await pick("Expanded Octet", "PCl5"), 10); assert.match(txt('[data-testid="central-count"]'), /expanded octet/);
-  assert.equal(await pick(null, "SF6"), 12); assert.ok($('.bv-ahl'), "AHL tag shown");
-  assert.equal($('[data-testid="order-tabs"]'), null, "bond-order selector only belongs to the normal octet group");
+await test("[owner case] C + O + O is recognised as CO2 and Form molecule forms two double bonds (no 'bring closer' dead end)", async () => {
+  await addAtoms(["C", "O", "O"]);
+  assert.equal(cv("data-status"), "ok"); assert.equal(cv("data-formula"), "CO₂"); assert.match(txt('[data-testid="card-name"]'), /Carbon dioxide/);
+  assert.ok(!disabled('[data-testid="tool-form-bond"]'));
+  await formed("CO2");
+  assert.deepEqual($$('[data-testid="bond-line"]').map((b) => b.dataset.order), ["2", "2"]);
+  assert.equal(txt('[data-testid="live-shared"] dd'), "4"); assert.equal(txt('[data-testid="live-lone"] dd'), "4"); assert.equal(txt('[data-testid="live-central"] dd'), "C");
+  assert.equal($$('[data-testid="electrons"] circle[data-state="shared"]').length, 8); assert.equal($$('[data-testid="electrons"] circle[data-state="lone"]').length, 8);
+  assert.match(txt('[data-testid="card-shape"]'), /Linear/); assert.match(txt('[data-testid="card-polarity"]'), /non-polar/);
 });
-await test("building a molecule by hand: an unsupported set explains itself, a supported set is recognised", async () => {
-  await click('[data-testid="tool-reset"]'); await tick(60);
-  await click('[data-testid="el-O"]'); await click('[data-testid="el-Cl"]');
-  assert.equal($('[data-testid="canvas"]').getAttribute("data-formula"), ""); assert.ok(disabled('[data-testid="tool-form-bond"]'));
-  assert.match(txt('[data-testid="bv-explain"]'), /No validated molecule|Not a complete molecule/);
+await test("[owner case] 'Only outer-shell electrons' is a labelled checkbox, ON by default: no inner shells, labelled cores; off shows them; the choice is remembered for the session", async () => {
+  const box = $('[data-testid="outer-only"]'); assert.equal(box.type, "checkbox"); assert.equal(box.checked, true); assert.match(txt('[data-testid="outer-only-label"]'), /Only outer-shell electrons/);
+  assert.equal($$('[data-ring]').length, 0, "no inner shell rings"); assert.equal($$('[data-core="1"]').length, 0, "no inner electrons");
+  assert.equal($$('[data-valence-ring="1"]').length, 3); assert.ok($$('[data-testid="core"]').length === 3);
+  assert.ok($('[data-testid="legend"]'), "legend present");
+  await click(box); assert.equal($('[data-testid="outer-only"]').checked, false);
+  assert.ok($$('[data-ring]').length >= 3, "inner shells appear"); assert.ok($$('[data-core="1"]').length > 0, "inner electrons appear");
+  assert.equal(cv("data-outer"), "0"); assert.equal(window.sessionStorage.getItem("bv.outerOnly"), "false");
+  await click('[data-testid="tool-reset"]'); await tick(80);
+  assert.equal($('[data-testid="outer-only"]').checked, false, "remembered after reset (session)");
+  await click('[data-testid="outer-only"]'); assert.equal($('[data-testid="outer-only"]').checked, true);
+});
+await test("C + 3 O needs a charge: the card says carbonate and one click applies CO3 2-", async () => {
+  await addAtoms(["C", "O", "O", "O"]);
+  assert.equal(cv("data-status"), "needs-charge"); assert.match(txt('[data-testid="card-message"]'), /carbonate/i);
+  await click('[data-testid="tool-form-bond"]'); assert.equal(stage(), "setup"); assert.match(txt('[data-testid="bv-explain"]'), /carbonate/i);
+  await click('[data-testid="apply-charge--2"]');
+  assert.equal(cv("data-status"), "ok"); assert.match(cv("data-formula"), /^CO₃/); assert.match(txt('[data-testid="charge-value"]'), /2/);
+  await formed("CO3");
+  assert.equal(txt('[data-testid="live-shared"] dd'), "4"); assert.match(txt('[data-testid="resonance-note"]'), /resonance/);
+  assert.ok($$('[data-testid="formal-charge"]').length >= 2, "formal charges shown");
+});
+await test("beyond-the-course species are refused with a reason until the HL switch is on (SF6), then drawn with an expanded octet", async () => {
+  await addAtoms(["S", "F", "F", "F", "F", "F", "F"]);
+  assert.equal($('[data-testid="beyond-toggle"]').checked, false);
+  assert.equal(cv("data-status"), "needs-beyond"); assert.match(txt('[data-testid="card-message"]'), /expanded octet|Beyond the course/i);
+  await click('[data-testid="apply-beyond"]'); await settled("SF6 with the switch");
+  assert.equal(cv("data-status"), "ok"); assert.equal(cv("data-formula"), "SF₆"); assert.match(txt('[data-testid="card-octet"]'), /12/);
+  await formed("SF6"); assert.equal($$('[data-testid="bond-line"]').length, 6); assert.equal(txt('[data-testid="live-lone"] dd'), "18");
+  await click('[data-testid="beyond-toggle"]'); await settled("SF6 switch off again"); assert.equal(cv("data-status"), "needs-beyond");
+});
+await test("picker: searchable list of 80+ molecules; picking NH4+ sets the charge, places 5 atoms and forms the coordinate bond by itself", async () => {
+  await click('[data-testid="picker-button"]'); assert.ok($('[data-testid="picker-panel"]'));
+  assert.ok(Number(txt('[data-testid="picker-button"] .bv-picker-count')) >= 80);
+  assert.ok($$('[data-testid="picker-list"] [role="option"]').length >= 80);
+  await setText('[data-testid="picker-search"]', "ammon"); assert.ok($('[data-testid="pick-NH4+"]')); assert.ok($$('[data-testid="picker-list"] [role="option"]').length <= 3);
+  await setText('[data-testid="picker-search"]', "zzzz"); assert.ok($('[data-testid="picker-empty"]'));
+  await setText('[data-testid="picker-search"]', "ammon");
+  await click('[data-testid="pick-NH4+"]'); assert.equal($('[data-testid="picker-panel"]'), null);
+  assert.equal(cv("data-atoms"), "5"); assert.match(txt('[data-testid="charge-value"]'), /1/);
+  await until(() => stage() === "bonded", 8000, "NH4+ auto-forms"); assert.equal(cv("data-formula"), "NH₄⁺");
+  assert.equal($$('[data-testid="dative-arrow"]').length, 1); assert.match(txt('[data-testid="card-structural"]'), /N/);
+});
+await test("3D view of the recognised structure: right atoms and bond orders (CO2: 3 atoms, two double bonds)", async () => {
+  await addAtoms(["C", "O", "O"]); await formed("CO2 for 3D");
+  await click($$('[data-testid="view-tabs"] [role="radio"]').find((r) => r.textContent.includes("3D")));
+  await until(() => $('[data-testid="structure"]'), 6000, "structure mounted");
+  assert.equal($('[data-testid="structure"]').getAttribute("data-atoms"), "3"); assert.deepEqual($$('[data-testid="struct-bond"]').map((b) => b.dataset.order).sort(), ["2", "2", "2", "2"]);
+  assert.equal($('[data-testid="structure"]').getAttribute("data-bonds"), "2");
+});
+await test("impossible sets explain themselves; Form molecule re-announces the reason; the 14-atom limit is explained", async () => {
+  await click($$('[data-testid="view-tabs"] [role="radio"]').find((r) => r.textContent.includes("Electrons")));
+  await addAtoms(["O", "Cl"]); assert.equal(cv("data-status"), "needs-beyond", "ClO has 13 valence electrons: an odd-electron radical, only behind the HL switch"); assert.ok(txt('[data-testid="card-message"]').length > 20);
+  await click('[data-testid="tool-form-bond"]'); assert.equal(stage(), "setup"); assert.ok(txt('[data-testid="bv-explain"]').length > 20);
+  await addAtoms(["He"].filter(() => false)); // (no He in the model)
+  await addAtoms(Array(14).fill("H")); await click('[data-testid="el-H"]');
+  assert.equal(cv("data-atoms"), "14"); assert.match(txt('[data-testid="bv-explain"]'), /Up to 14 atoms/);
+  await addAtoms(["H"]); assert.equal(cv("data-status"), "few"); assert.match(txt('[data-testid="card-message"]'), /Add at least one more atom/);
+});
+await test("two noble-gas atoms explain that full shells do not share (contact message)", async () => {
+  const { contactMessage } = await import("../src/engines/bonding-visualizer/components/CovalentMode.jsx");
+  assert.match(contactMessage("Xe", "Xe", null), /full outer shells/);
+  assert.match(contactMessage("O", "O", { status: "ok", structure: { atoms: ["C", "O", "O"], bonds: [[0, 1, 2], [0, 2, 2]] }, info: { formula: "CO₂" } }), /not bonded to each other/);
+  assert.equal(contactMessage("C", "O", { status: "ok", structure: { atoms: ["C", "O", "O"], bonds: [[0, 1, 2], [0, 2, 2]] }, info: { formula: "CO₂" } }), null);
 });
 await test("metallic mode without WebGL: controls are disabled with a visible reason, no dead 3D stage", async () => {
   globalThis.__ELAB_ASSUME_GL = false;
@@ -252,45 +307,6 @@ await test("[spec 1] the selected metal is used by the add buttons; one metal at
   assert.equal(txt('[data-testid="live-metal"] dd'), "Mg 2,8,2");
   await click('[data-testid="tool-reset"]'); await tick(100);
 });
-await test("[spec 3] covalent: after bonding the Lewis picture hands over to a clean sphere-and-bond structure (SF6: 1 S + 6 F, 6 single bonds)", async () => {
-  await click('[data-testid="tab-covalent"]'); await tick(80);
-  await click($$('[role="radio"]').find((r) => r.textContent.includes("Expanded Octet")));
-  await click('[data-testid="example-SF6"]'); await click('[data-testid="tool-bring"]'); await tick(700);
-  await click('[data-testid="tool-form-bond"]'); assert.equal($('[data-testid="canvas"]').getAttribute("data-crowded"), "1");
-  await until(() => $$('[data-testid^="atom-"]').length === 7, 1000, "7 atoms");
-  assert.ok($$('[data-testid^="atom-"]').every((a) => a.getAttribute("data-rings") === "0" || stage() === "bonding"));
-  await until(() => stage() === "bonded", 6000, "bonded");
-  assert.equal($$('[data-testid="electrons"] circle[data-state="shared"]').length, 12); assert.equal($$('[data-testid="electrons"] circle[data-state="lone"]').length, 36);
-  assert.ok($$('[data-testid^="atom-"]').every((a) => a.getAttribute("data-rings") === "0"), "no shell rings in the dot view");
-  await until(() => $('[data-testid="canvas"]').getAttribute("data-view") === "structure", 6000, "structure view");
-  await until(() => $('[data-testid="structure"]'), 6000, "structure mounted");
-  const st = $('[data-testid="structure"]');
-  assert.equal(st.getAttribute("data-atoms"), "7"); assert.equal(st.getAttribute("data-bonds"), "6");
-  assert.equal($$('[data-testid="struct-atom"]').filter((a) => a.dataset.symbol === "S").length, 1); assert.equal($$('[data-testid="struct-atom"]').filter((a) => a.dataset.symbol === "F").length, 6);
-  assert.equal($$('[data-testid="struct-bond"]').length, 6); assert.ok($$('[data-testid="struct-bond"]').every((b) => b.dataset.order === "1"));
-  assert.equal($$('[data-testid^="atom-"]').length, 0, "overlapping shell diagrams are gone"); assert.equal($$('[data-testid="electrons"] circle').length, 0);
-  assert.match(txt('[data-testid="molecule-label"]'), /^SF6S\(–F\)6$/);
-  assert.equal(txt('[data-testid="live-shared"] dd'), "6"); assert.equal(txt('[data-testid="live-lone"] dd'), "18"); assert.equal(txt('[data-testid="live-central"] dd'), "12"); assert.match(txt('[data-testid="central-count"]'), /S has 12 electrons/);
-  await click('[data-testid="tool-replay"]'); assert.equal(stage(), "bonding"); assert.equal($('[data-testid="structure"]'), null, "replay returns to the electron-sharing picture");
-  await until(() => stage() === "bonded", 6000, "bonded again");
-  await click('[data-testid="tool-reset"]'); await tick(80); assert.equal(stage(), "setup"); assert.equal($('[data-testid="canvas"]').getAttribute("data-formula"), "H2");
-});
-await test("[spec 3] every supported molecule ends in a sphere-and-bond structure with the right atoms and bond orders", async () => {
-  const want = { H2: [2, [1]], Cl2: [2, [1]], HCl: [2, [1]], O2: [2, [2]], N2: [2, [3]], H2O: [3, [1, 1]], NH3: [4, [1, 1, 1]], CH4: [5, [1, 1, 1, 1]], BF3: [4, [1, 1, 1]], BeCl2: [3, [1, 1]], PCl5: [6, [1, 1, 1, 1, 1]], SF6: [7, [1, 1, 1, 1, 1, 1]] };
-  const groups = { H2: "Normal", Cl2: "Normal", HCl: "Normal", O2: "Double", N2: "Triple", H2O: "Normal", NH3: "Normal", CH4: "Normal", BF3: "Incomplete", BeCl2: "Incomplete", PCl5: "Expanded", SF6: "Expanded" };
-  for (const [id, [nAtoms, orders]] of Object.entries(want)) {
-    await click('[data-testid="tool-reset"]'); await tick(60); await click('[data-testid="tab-covalent"]').catch(() => {}); await tick(30);
-    await click($$('[role="radio"]').find((r) => r.textContent.includes(groups[id])));
-    await click(`[data-testid="example-${id}"]`); await click('[data-testid="tool-bring"]'); await tick(700);
-    await click('[data-testid="tool-form-bond"]'); await until(() => stage() === "bonded", 8000, `${id} bonded`);
-    await until(() => $('[data-testid="canvas"]').getAttribute("data-view") === "structure" && $('[data-testid="structure"]'), 8000, `${id} structure`);
-    const st = $('[data-testid="structure"]');
-    assert.equal(Number(st.getAttribute("data-atoms")), nAtoms, id); assert.deepEqual($$('[data-testid="struct-bond"]').map((b) => Number(b.dataset.order)).sort(), orders.flatMap((o) => Array(o).fill(o)).sort(), `${id}: one line per shared pair`);
-    assert.equal(st.getAttribute("data-bonds"), String(orders.length), id);
-    assert.equal($$('[data-testid^="atom-"]').length, 0, `${id}: no leftover shell diagrams`);
-  }
-});
-
 console.log("Lesson configuration");
 await test("[S2.1/S2.2/S2.3] config opens the chosen mode and restricts the tabs", async () => {
   await mount({ config: { initialMode: "covalent", allowedModes: ["covalent"] } });

@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { CHALLENGES, checkChallenge, pickNextChallenge } from "../lib/challenges.js";
+import { CHALLENGES, checkChallenge } from "../lib/challenges.js";
+import { generateChallenge } from "../lib/generator.js";
 import { deriveAtom } from "../lib/atomState.js";
 import NuclearNotation from "./NuclearNotation.jsx";
 
@@ -20,9 +21,12 @@ function FeedbackRow({ label, correct, hint }) {
  * simulation itself, and this offers an optional task alongside it
  * using the SAME +/- controls, never its own separate input. */
 export default function ChallengeMode({ atom, derived }) {
-  const [index, setIndex] = useState(0);
+  const [counter, setCounter] = useState(0); // 0 = the opening Carbon-12 task, then rule-based generated tasks (BA-07)
   const [result, setResult] = useState(null); // null until Check is pressed for the CURRENT attempt
-  const challenge = CHALLENGES[index];
+  const [score, setScore] = useState({ solved: 0, tried: 0, streak: 0 });
+  const [counted, setCounted] = useState(false);
+  const [showWork, setShowWork] = useState(false);
+  const challenge = counter === 0 ? { ...CHALLENGES[0], worked: "Z = 6 gives 6 protons. Neutrons = A − Z = 12 − 6 = 6. Neutral, so electrons = protons = 6." } : generateChallenge(counter);
   // The TARGET's own derived state, purely for prominently displaying
   // its nuclear notation on notation-style challenges -- reuses the
   // same unchanged deriveAtom() every other part of the simulation
@@ -30,19 +34,21 @@ export default function ChallengeMode({ atom, derived }) {
   const targetDerived = deriveAtom({ protons: challenge.protons, neutrons: challenge.neutrons, electrons: challenge.electrons });
 
   function handleCheck() {
-    setResult(checkChallenge(challenge, atom));
+    const r = checkChallenge(challenge, atom);
+    setResult(r);
+    if (!counted) { setCounted(true); setScore((s) => ({ solved: s.solved + (r.correct ? 1 : 0), tried: s.tried + 1, streak: r.correct ? s.streak + 1 : 0 })); }
   }
 
   function handleNext() {
-    setIndex((i) => pickNextChallenge(i));
-    setResult(null);
+    setCounter((i) => i + 1);
+    setResult(null); setCounted(false); setShowWork(false);
   }
 
   return (
     <div className="rounded-xl border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-2.5">
       <div className="flex flex-wrap items-center gap-3">
         <div className="min-w-0 flex-1">
-          <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--color-ink-faint)]">{"\uD83C\uDFAF Build This Atom / Ion"}</p>
+          <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--color-ink-faint)]">{"\uD83C\uDFAF Build This Atom / Ion"}{score.tried > 0 && <span className="ml-2 normal-case tracking-normal" data-testid="challenge-score">{score.solved} of {score.tried} first tries{score.streak > 1 ? `, streak ${score.streak}` : ""}</span>}</p>
           <p className="mt-0.5 text-sm font-semibold text-[var(--color-ink)]">{challenge.prompt}</p>
         </div>
         {challenge.info === "notation" && (
@@ -70,6 +76,12 @@ export default function ChallengeMode({ atom, derived }) {
             <FeedbackRow label={`Neutrons: ${atom.neutrons}`} correct={result.neutronsCorrect} hint="Check the mass number." />
             <FeedbackRow label={`Electrons: ${atom.electrons}`} correct={result.electronsCorrect} hint="Check the charge." />
           </div>
+          {!result.correct && (
+            <div className="mt-1">
+              <button type="button" onClick={() => setShowWork((w) => !w)} aria-expanded={showWork} className="text-xs font-semibold text-[var(--color-indigo)] underline" data-testid="show-worked">{showWork ? "Hide worked answer" : "Show worked answer"}</button>
+              {showWork && <p className="mt-1 text-xs text-[var(--color-ink)]" data-testid="worked-answer">{challenge.worked}</p>}
+            </div>
+          )}
           {result.correct && derived.nuclideName && (
             <p className="mt-1 text-xs font-semibold text-[var(--color-ink)]">
               You built: {derived.nuclideName}

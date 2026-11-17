@@ -90,7 +90,7 @@ await scenario("titration", "buffer region, S-shape, labels (owner request)", as
   const nPts = await p.locator('[data-testid="expected-curve"]').getAttribute("d"); check((nPts.match(/L/g) || []).length > 150, "dense expected curve drawn before any titrant is added");
   const boxes = await p.locator('[data-testid="titration-graph"] rect[rx="3"]').evaluateAll((rs) => rs.map((r) => r.getBoundingClientRect()).map((b) => ({ x: b.x, y: b.y, r: b.right, b: b.bottom })));
   let overlap = 0; for (let i = 0; i < boxes.length; i += 1) for (let j = i + 1; j < boxes.length; j += 1) { const a = boxes[i], b = boxes[j]; if (a.x < b.r && a.r > b.x && a.y < b.b && a.b > b.y) overlap += 1; } check(overlap === 0, `annotation labels overlap (${overlap})`);
-  const txt = await p.locator('[data-testid="titration-graph"] text').evaluateAll((ts) => ts.map((t) => t.textContent)); check(txt.some((t) => t === "25.0") && txt.some((t) => t.includes("8.73")) && txt.some((t) => t === "4.76"), "equivalence volume/pH and pKa shown on the axes");
+  const txt = await p.locator('[data-testid="titration-graph"] text').evaluateAll((ts) => ts.map((t) => t.textContent)); check(txt.some((t) => t === "25.0") && txt.some((t) => t.includes("8.73")) && txt.some((t) => t.includes("4.76")), "equivalence volume on the axis; equivalence pH and pKa in the labelled markers (an axis tag is dropped on purpose when it would touch a tick label)");
   for (const [sel, v] of [["Flask concentration", "0.2"], ["Burette concentration", "0.05"], ["Flask solution", "HCl"]]) await p.getByLabel(sel).selectOption(v);
   await sleep(300); const t2 = await p.locator('[data-testid="titration-graph"] text').evaluateAll((ts) => ts.map((t) => t.textContent)); check(t2.includes("200") && t2.includes("100.0"), "off-scale pair auto-scales to 200 cm³ with V_eq 100.0 on the plot");
   await p.screenshot({ path: path.join(out, "titration-offscale.png") });
@@ -134,6 +134,51 @@ await scenario("neut", "particles inside the liquid; reduced motion ends instant
   const inside = await p.locator("svg.neu-svg circle").evaluateAll((cs) => cs.map((c) => [+c.getAttribute("cx"), +c.getAttribute("cy")])); check(inside.length === 16 && inside.every(([x, y]) => y >= 170 && y <= 340 && ((x >= 40 && x <= 260) || (x >= 340 && x <= 560))), "all 16 ions start inside the two liquids");
   await btn(p, "Mix").click(); await sleep(400); check(/pairs reacted|neutral/.test(await p.locator('[data-testid="status"]').innerText()), "with reduced motion the reaction completes immediately");
 }, 1366, 768, { reducedMotion: "reduce" });
+
+// ---------------- round 2: features that had no browser check ----------------
+await scenario("titration", "round 2: polyprotic buffer bands, unknown-concentration practical, visible Record button", async (p) => {
+  await p.getByLabel("Flask solution").selectOption("H3PO4"); await sleep(400);
+  check((await p.locator('[data-testid="buffer-region"]').count()) === 2, "H3PO4 shows two buffer bands");
+  check(!/no buffer region/.test(await p.locator('[data-testid="explain"]').innerText()), "polyprotic text does not claim 'no buffer region'");
+  const lab = await p.locator('[data-testid="titration-graph"] g[data-testid="buffer-region"] text').evaluateAll((ts) => ts.map((t) => t.getBoundingClientRect()).map((b) => ({ x: b.x, y: b.y, r: b.right, b: b.bottom })));
+  const gl = await p.locator('[data-testid="titration-graph"] rect[rx="3"]').evaluateAll((rs) => rs.map((r) => r.getBoundingClientRect()).map((b) => ({ x: b.x, y: b.y, r: b.right, b: b.bottom })));
+  let hit = 0; for (const a of lab) for (const b of gl) if (a.x < b.r && a.r > b.x && a.y < b.b && a.b > b.y) hit += 1; check(hit === 0, `buffer band names do not sit under a marker label (${hit})`);
+  await p.screenshot({ path: path.join(out, "titration-poly.png") });
+  await btn(p, "Unknown").click(); await sleep(400);
+  const rec = await p.locator('[data-testid="record-reading"]').evaluate((e) => { const c = getComputedStyle(e); return { fg: c.color, bg: c.backgroundColor }; });
+  check(rec.bg !== "rgba(0, 0, 0, 0)" && rec.bg !== rec.fg, `Record reading has a visible fill (${rec.bg} on ${rec.fg})`);
+  for (let i = 0; i < 3; i += 1) await btn(p, "+1.0 cm³").click(); await p.locator('[data-testid="record-reading"]').click(); await sleep(200);
+  check((await p.locator('[data-testid="readings-panel"]').getAttribute("data-count")) === "1", "a reading was recorded");
+  check(!(await p.locator('[data-testid="export-csv"]').isDisabled()), "CSV export enabled after a reading");
+  await p.screenshot({ path: path.join(out, "titration-unknown.png") });
+});
+await scenario("titration", "round 2: unknown practical fits 390x844 without page overflow", async (p) => {
+  await btn(p, "Unknown").click(); await sleep(400); await layout(p, 390, 844, "titration unknown 390x844", false);
+  await p.screenshot({ path: path.join(out, "titration-unknown-390.png") });
+}, 390, 844);
+await scenario("phcalc", "round 2: practice question, answer check, show on scale (no NaN)", async (p) => {
+  await p.getByLabel("Your answer").fill("zzz"); await btn(p, "Check").click(); check((await p.locator('[data-testid="phc-result"]').innerText()).includes("Type a number"), "non-number explained");
+  await btn(p, "Show on scale").click(); await sleep(200); const v = await p.locator('[role="slider"]').getAttribute("aria-valuenow"); check(Number.isFinite(Number(v)), `Show on scale gives a real pH (${v})`);
+  await btn(p, "Show working").click(); check((await p.locator('[data-testid="phc-working"]').innerText()).includes("="), "working shown");
+});
+await scenario("phcalc", "round 2: at 390x844 the practice strip and scale fit; the sci-notation column is hidden (AK-05)", async (p) => {
+  await layout(p, 390, 844, "phcalc 390x844", false);
+  const sci = await p.locator(".phc-c small").first().isVisible(); check(!sci, "scientific-notation column hidden below 800 px (stated limitation AK-05)");
+}, 390, 844);
+await scenario("hoh", "round 2: temperature slider changes pKw and the neutral pH (AK-15)", async (p) => {
+  const sl = p.locator('input[aria-label="Temperature in degrees Celsius"]'); await sl.fill("100"); await sleep(250);
+  check((await p.locator('[data-testid="pkw"]').innerText()) === "12.29" && (await p.locator('[data-testid="ph"]').innerText()) === "6.14", "100 degC: pKw 12.29, neutral pH 6.14");
+  await btn(p, "+1 drop HCl").click(); await sleep(300); check(Number(await p.locator('[data-testid="ph"]').innerText()) < 6.14, "an acid drop lowers the pH from the new neutral point");
+});
+await scenario("equivalence", "round 2: 0.1 cm3 drop adds 0.1 cm3 and the primary buttons stay in view", async (p) => {
+  await p.locator('[data-testid="add-drop"]').click(); await p.locator('[data-testid="add-drop"]').click(); await sleep(200);
+  check((await p.locator('[data-testid="setup"]').innerText()).includes("0.2 cm³ added"), "two drops = 0.2 cm³");
+  const bb = await p.locator('[data-testid="add-drop"]').boundingBox(); check(bb && bb.y + bb.height <= 768, "drop button inside the viewport");
+});
+await scenario("buffer", "round 2: sticky quick controls appear when the main controls scroll out of view (AK-51); trace has points", async (p) => {
+  await btn(p, "Add H⁺ (HCl)").click(); await sleep(200); check((await p.locator("svg.buf-trace circle").count()) === 2, "pH trace has a point per addition");
+  const st = await p.locator('[data-testid="buf-sticky"]').count(); check(st === 1, "sticky control group exists");
+}, 390, 844);
 
 await browser.close(); if (preview) preview.kill(); if (dist) fs.rmSync(dist, { recursive: true, force: true });
 console.log(`\n${checks} checks, ${problems.length} problem(s). Screenshots in ${out}`); if (problems.length) { console.log(problems.map((x) => " - " + x).join("\n")); process.exit(1); }

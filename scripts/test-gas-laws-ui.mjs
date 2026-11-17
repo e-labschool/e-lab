@@ -177,6 +177,65 @@ test("Reset returns the gauges to the defaults", async () => {
   assert.equal(gauge("T"), expectText("T", s));
 });
 
+console.log("== round 2: GS-16 / 17 / 18 / 19 / 20 ==");
+const { SimulationSessionProvider } = await import("../src/components/interactive-shell/simulationSession.js");
+const { compareTwoGases, gasById } = await import("../src/engines/gas-laws-explorer/avogadroGases.js");
+test("GS-20: every range input has an accessible name (label) and a value text with its unit", async () => {
+  await fresh("pv");
+  const el = $('[data-testid="slider-V"]');
+  const lab = document.querySelector(`label[for="${el.id}"]`);
+  assert.ok(lab && /Volume/.test(lab.textContent), "label element names the slider");
+  assert.match(el.getAttribute("aria-valuetext"), /dm/);
+});
+test("GS-16: a slider whose reachable range is shorter than the full range says so before the end is hit", async () => {
+  await fresh("vt");
+  const note = text('[data-testid="limit-T"]');
+  assert.match(note, /Reachable: \d+ to \d+ K \(full range 100 to 800/, note);
+});
+test("GS-17: switching tab with non-standard values says they were carried over and offers the standard start", async () => {
+  await fresh("pv"); await setSlider("V", 40);
+  await openMode("vt"); await wait(350);
+  assert.match(text('[data-testid="law-statement"]') + " " + text("body"), /carried over/);
+  $('[data-testid="settings"]').dispatchEvent(new MouseEvent("click", { bubbles: true })); await wait();
+  const btn = $('[data-testid="standard-start"]'); assert.ok(btn, "standard start button in Settings");
+  btn.dispatchEvent(new MouseEvent("click", { bubbles: true })); await wait();
+  const s = M.defaultState("vt");
+  assert.equal(gauge("T"), expectText("T", s));
+});
+test("GS-19: Avogadro, two gases: same volume, P and T give the SAME number of molecules and different masses", async () => {
+  await fresh("vn");
+  $('[data-testid="graph-toggle"]').dispatchEvent(new MouseEvent("click", { bubbles: true })); await wait(100);
+  $('[data-testid="view-switch"] [role=radio]:nth-child(3)').dispatchEvent(new MouseEvent("click", { bubbles: true })); await wait();
+  assert.ok($('[data-testid="avogadro-compare"]'), "comparison view");
+  assert.equal(text('[data-testid="avo-molecules-A"]'), text('[data-testid="avo-molecules-B"]'));
+  const mA = Number(text('[data-testid="avo-mass-A"]')), mB = Number(text('[data-testid="avo-mass-B"]'));
+  assert.ok(mB > 10 * mA - 1 && mB < 11.1 * mA + 1, `CO2 / He mass ratio ${mB / mA}`);
+  assert.equal(document.querySelectorAll('[data-testid^="avo-cyl-"]').length, 2);
+  // predict then check
+  $('[data-testid="avo-guess"] [role=radio]:nth-child(3)').dispatchEvent(new MouseEvent("click", { bubbles: true })); await wait();
+  $('[data-testid="avo-reveal"]').dispatchEvent(new MouseEvent("click", { bubbles: true })); await wait();
+  assert.match(text('[data-testid="avo-answer"]'), /^Correct/);
+});
+test("GS-19 (pure): n = PV/RT is shared; mass = n M; density = mass / V", () => {
+  const s = M.defaultState("vn"); const r = compareTwoGases(s, "He", "CO2");
+  assert.ok(Math.abs(r.n - s.n) < 1e-9); assert.equal(r.A.molecules, r.B.molecules);
+  assert.ok(Math.abs(r.B.mass - s.n * gasById("CO2").M) < 1e-9); assert.ok(Math.abs(r.A.density - r.A.mass / s.V) < 1e-12);
+});
+test("GS-18: with a Learn session scope the state survives an unmount and remount; without one it does not", async () => {
+  const mount = async (scoped) => { const h = document.createElement("div"); document.body.appendChild(h); const r = createRoot(h);
+    r.render(scoped ? React.createElement(SimulationSessionProvider, { value: "lesson-9:block-9" }, React.createElement(GasLawsExplorer, { standalone: true })) : React.createElement(GasLawsExplorer, { standalone: true })); await wait(120); return { h, r }; };
+  const pick = (h, t) => h.querySelector(`[data-testid="${t}"]`);
+  dom.window.sessionStorage.clear();
+  let m = await mount(true);
+  pick(m.h, "tab-vt").dispatchEvent(new MouseEvent("click", { bubbles: true })); await wait();
+  const sl = pick(m.h, "slider-T"); Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value").set.call(sl, "420"); sl.dispatchEvent(new Event("input", { bubbles: true })); await wait();
+  m.r.unmount(); m.h.remove();
+  m = await mount(true);
+  assert.equal(pick(m.h, "gauge-T-value")?.textContent.replace(/\s+/g, " ").trim(), "420 K", "restored 420 K");
+  m.r.unmount(); m.h.remove();
+  dom.window.sessionStorage.clear();
+});
+
 console.log("== deck geometry (pure) ==");
 test("deck sits under the drawn base, inside the chamber, clear of the caption, for desktop and phone boxes", () => {
   for (const [w, h] of [[1002, 540], [464, 540], [1549, 840], [790, 840], [342, 386], [320, 300], [1071, 664]]) {

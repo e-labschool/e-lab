@@ -565,29 +565,23 @@
 
 .pan-unit {
   position: absolute;
-
   top: 14px;
-
-  width: 160px;
-  height: 145px;
+  width: 180px;
+  height: 190px;
 }
 
-.pan-unit-left {
-  left: -25px;
-}
+.pan-unit-left { left: -32px; }
 
-.pan-unit-right {
-  right: -25px;
-}
+.pan-unit-right { right: -32px; }
 
 .pan-support {
   position: absolute;
 
   left: 50%;
-  top: 34px;
+  top: 26px;
 
   width: 18px;
-  height: 44px;
+  height: 90px;
 
   transform: translateX(-50%);
 
@@ -606,9 +600,9 @@
   position: absolute;
 
   left: 50%;
-  top: 66px;
+  top: 110px;
 
-  width: 150px;
+  width: 172px;
   height: 45px;
 
   transform: translateX(-50%);
@@ -639,7 +633,7 @@
   position: absolute;
 
   left: 50%;
-  top: 118px;
+  top: 160px;
 
   transform: translateX(-50%);
 
@@ -661,12 +655,10 @@
 
 .sphere-group {
   position: absolute;
-
   left: 50%;
-  bottom: 20px;
-
-  width: 130px;
-  height: 70px;
+  bottom: 30px;
+  width: 168px;
+  z-index: 2;
 
   transform: translateX(-50%);
 
@@ -675,14 +667,13 @@
   justify-content: center;
   align-content: flex-start;
 
-  gap: 2px;
-
+  gap: 3px;
   pointer-events: none;
 }
 
 .ion-sphere {
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
 
   display: flex;
   align-items: center;

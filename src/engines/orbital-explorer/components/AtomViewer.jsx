@@ -1,52 +1,25 @@
-import { useMemo } from "react";
-import { ORBITAL_DEFS } from "../lib/orbitalMath.js";
-import { sampleOrbitalPoints, createSampler, boundingRadiusFor } from "../lib/orbitalSampling.js";
-import { colorForOrbitalId } from "../lib/orbitalColors.js";
+import { boundingRadiusFor } from "../lib/orbitalSampling.js";
 import ProbabilityCloud from "./ProbabilityCloud.jsx";
 import OrbitalBoundary from "./OrbitalBoundary.jsx";
 import OrbitalAxes from "./OrbitalAxes.jsx";
-
-function Nucleus() {
-  return (
-    <mesh>
-      <sphereGeometry args={[0.35, 16, 16]} />
-      <meshStandardMaterial color="#F5C542" emissive="#8a6400" emissiveIntensity={0.6} />
-    </mesh>
-  );
-}
+import NucleusDot from "./NucleusDot.jsx";
 
 /** Renders every orbital in `visibleIds` as its own probability-density
  * point cloud PLUS a translucent boundary region, all sharing the same
  * nucleus/origin -- never offset apart, per the explicit requirement
  * that Atom View shows real spatial overlap, not separate little atoms.
+ * `clouds` come from useOrbitalClouds (sampled one orbital per task and
+ * cached, OE-10); toggling visibility/highlight never re-samples.
  * `highlightedId`, if set, renders that one orbital at full opacity/size
  * while others dim -- the link back to the legend/info panel and the
- * orbital box diagram. `pointsPerOrbital` drives the adaptive quality
- * tier (desktop defaults to the full ~10,000/orbital density). */
-export default function AtomViewer({ occupiedIds, visibleIds, highlightedId, pointsPerOrbital = 10000 }) {
-  const maxN = useMemo(() => Math.max(1, ...occupiedIds.map((id) => parseInt(id[0], 10))), [occupiedIds]);
-
-  // Sampling is deterministic per (orbital id, point count) -- the seed
-  // never changes across renders -- so this memo only re-runs when the
-  // actual set of occupied orbitals or the density tier changes, never
-  // on unrelated UI state (toggling visibility/highlight does NOT
-  // regenerate any point cloud, it only changes which already-computed
-  // clouds are shown and at what opacity).
-  const clouds = useMemo(() => {
-    return occupiedIds.map((id) => {
-      const def = ORBITAL_DEFS[id];
-      const rng = createSampler(id.charCodeAt(0) * 97 + id.length + pointsPerOrbital);
-      const points = sampleOrbitalPoints(def.n, def.l, def.type, pointsPerOrbital, rng);
-      return { id, def, points, color: colorForOrbitalId(id) };
-    });
-  }, [occupiedIds, pointsPerOrbital]);
-
+ * orbital box diagram. */
+export default function AtomViewer({ clouds, maxN, visibleIds, highlightedId }) {
   const anyHighlighted = Boolean(highlightedId);
   const axisLength = boundingRadiusFor(maxN) * 0.58;
 
   return (
     <>
-      <Nucleus />
+      <NucleusDot />
       <OrbitalAxes length={axisLength} />
       {clouds
         .filter((c) => visibleIds.has(c.id))

@@ -14,7 +14,7 @@
 .eq2-ph { display: grid; justify-items: center; padding: 6px 14px; border: 1px solid var(--ab-line); border-radius: 10px; background: #08101a; }
 .eq2-ph span { font-size: 11px; font-weight: 700; color: var(--ab-muted); } .eq2-ph strong { font: 700 26px/1.1 ui-monospace, monospace; color: var(--ab-teal); }
 .eq2-setup { font-size: 12.5px; line-height: 1.45; } .eq2-eq { font-size: 12.5px; color: var(--ab-muted); }
-.eq2-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.eq2-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; } .eq2-btns .ab-btn { min-width: 0; padding: 0 8px; }
 .eq2-trace { width: 100%; height: auto; max-height: 130px; border: 1px solid var(--ab-line-soft); border-radius: 8px; background: var(--ab-panel); }
 .eq2-toggle { display: flex; gap: 8px; align-items: center; font-size: 12.5px; }
 .eq2-explore { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 8px; } .eq2-explore .ab-note { grid-column: 1 / -1; }

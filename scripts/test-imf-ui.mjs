@@ -174,5 +174,35 @@ await test("alkane series (homologous): slider changes chain length, electrons, 
 });
 await test("no WebGL is needed for the Boiling points tab (no stage, no fallback message)", () => { assert.equal($(T("imf-stage")), null); });
 
+console.log("Round 2 (BS-27 / 30 / 31 / 32)");
+await test("[BS-27] the Boiling points tab also offers a volatility set and a solubility set, each with its own end labels, units and reasons", async () => {
+  await click(T("tab-rank")); await until(() => $(T("rankset-volatility")), 2000, "volatility set");
+  assert.equal($$('[data-testid^="rankset-"]').filter((e) => e.getAttribute("role") === "radio").length, 9);
+  await click(T("rankset-volatility")); assert.match(txt(T("rank-task")), /most volatile/); assert.match(txt(T("rank-task")), /least volatile/);
+  const order = ["pentane", "propanone", "ethanol", "water"];
+  for (const want of order) { let guard = 0; while ($$('[data-testid^="rank-item-"]').map((e) => e.getAttribute("data-testid").slice(10)).indexOf(want) > order.indexOf(want) && guard++ < 10) await click(T(`rank-up-${want}`)); }
+  await click(T("rank-check")); assert.match(txt(T("rank-score")), /All 4 in the right place/); assert.match(txt(T("rank-bp-water")), /100 °C boiling point/);
+  await click(T("rankset-solubility")); assert.match(txt(T("rank-task")), /least soluble/); assert.doesNotMatch(txt(T("rank-task")), /g per 100 g/, "no values before the reveal");
+  await click(T("rank-check")); assert.match(txt(T("rank-bp-butanol")), /9 g per 100 g water \(about\)/); assert.match(txt(T("rank-task")), /non-polar part outweighs/);
+});
+await test("[BS-31] the tray says so when the workspace is full and the items are marked unavailable", async () => {
+  await click(T("tab-explore")); await click(T("clear-workspace"));
+  for (let i = 0; i < 6; i += 1) await click(T("tray-Ar"));
+  assert.equal($(T("tray-count")).dataset.full, "1"); assert.match(txt(T("tray-count")), /full: remove one to add another/);
+  assert.equal($(T("tray-H2O")).dataset.full, "1"); assert.match($(T("tray-H2O")).getAttribute("aria-label"), /workspace is full/);
+  await click(T("clear-workspace")); assert.equal($(T("tray-count")).dataset.full, "0");
+});
+await test("[BS-30] without WebGL the Heat view shows a flat side view of the particles and it changes as the sample is heated", async () => {
+  await click(T("tab-explore")); await click(T("btn-heat-view")); await until(() => $(T("heat-chamber")), 2000, "heat");
+  const v = $(T("imf-flat-cube")); assert.ok(v, "flat cube"); assert.ok($$(`${T("imf-flat-cube")} circle`).length >= 96, `every particle drawn (${$$(`${T("imf-flat-cube")} circle`).length})`);
+  const snap = () => $$(`${T("imf-flat-cube")} circle`).map((c) => c.getAttribute("cx") + "," + c.getAttribute("cy")).join(";");
+  const a = snap(); await click(T("btn-heat")); await tick(900); assert.notEqual(snap(), a, "positions move while heating"); await click(T("btn-pause"));
+  assert.match(txt(T("webgl-fallback")), /flat side view/);
+});
+await test("[BS-32] the heating graph announces phase changes in a polite live region (not every temperature tick)", async () => {
+  await tick(700); const live = $(T("graph-phase-live")); assert.ok(live); assert.equal(live.getAttribute("aria-live"), "polite"); assert.match(live.textContent, /(solid|melting|liquid|boiling|gas)/);
+  await click(T("heat-back"));
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

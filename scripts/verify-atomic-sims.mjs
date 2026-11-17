@@ -52,10 +52,10 @@ for (const [W, H] of h.SIZES) for (const theme of h.THEMES) {
     await p.getByRole("button", { name: "Absorption", exact: true }).first().click(); await sleep(200);
     let body = await txt(p, "body");
     check(/Lyman/.test(body) && /no Balmer dark lines/.test(body), `${tag} AS: cold H explains Lyman, no Balmer`);
-    const visLines = await p.locator('svg[aria-label*="absorption spectrum, wavelength axis 380"] line[role="button"]').count();
+    const visLines = await p.locator('svg[aria-label*="absorption spectrum, wavelength axis 380"] [data-testid="spectrum-line"]').count();
     check(visLines === 0, `${tag} AS: no dark lines in the visible strip for cold H (${visLines})`);
     await p.getByRole("button", { name: /Hot excited gas/ }).click(); await sleep(200);
-    const hot = await p.locator('svg[aria-label*="absorption spectrum, wavelength axis 380"] line[role="button"]').count();
+    const hot = await p.locator('svg[aria-label*="absorption spectrum, wavelength axis 380"] [data-testid="spectrum-line"]').count();
     check(hot === 4, `${tag} AS: hot H shows 4 Balmer dark lines (${hot})`);
     // Energy levels: reset after ionisation
     await p.getByRole("button", { name: "Energy Levels" }).click(); await sleep(200);

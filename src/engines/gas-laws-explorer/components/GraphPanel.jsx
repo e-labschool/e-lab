@@ -145,7 +145,7 @@ const iconBtn = "sd-btn sd-btn--sm";
 
 export default function GraphPanel({
   state, accent, graphId, onGraphId, allView, onToggleAll, onResetGraph, onOpenMode, trail,
-  units = IB_UNITS, view = "theory", onView, readingsCount = 0, readingsNode = null,
+  units = IB_UNITS, view = "theory", onView, readingsCount = 0, readingsNode = null, compareNode = null,
 }) {
   const [hoverIdx, setHoverIdx] = useState(null);
   const [enlarged, setEnlarged] = useState(null); // mode id of the enlarged All-Graphs panel
@@ -246,8 +246,18 @@ export default function GraphPanel({
   }
 
   const viewSwitch = onView ? (
-    <MiniSwitch fill options={[{ id: "theory", label: "Theory graph" }, { id: "readings", label: `My readings (${readingsCount})` }]} value={view} onChange={onView} ariaLabel="Graph source" testId="view-switch" />
+    <MiniSwitch fill options={[{ id: "theory", label: "Theory graph" }, { id: "readings", label: `My readings (${readingsCount})` }, ...(compareNode ? [{ id: "compare", label: "Two gases" }] : [])]} value={view} onChange={onView} ariaLabel="Graph source" testId="view-switch" />
   ) : null;
+
+  if (view === "compare" && compareNode) {
+    return (
+      <DashPanel grow noBody ariaLabel="Two gases comparison" id="gl-graph" testId="compare-view">
+        <div className="sd-panel-head">{heading("Avogadro: two gases")}</div>
+        {viewSwitch}
+        {compareNode}
+      </DashPanel>
+    );
+  }
 
   if (view === "readings" && readingsNode) {
     return (

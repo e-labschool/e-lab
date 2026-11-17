@@ -22,13 +22,16 @@ export default function useHeatSim({ active, substanceId, compare, speed = 1, on
   const visual = useRef(onVisualFrame); visual.current = onVisualFrame;
   useEffect(() => {
     if (!active) return undefined;
-    const clock = createFrameClock(); let raf = 0; let lastUi = 0;
+    const clock = createFrameClock(); let raf = 0; let lastUi = 0; let acc = 0;
+    // BS-32: with prefers-reduced-motion the particles move in discrete snapshots (a short burst of dynamics every 0.6 s) instead of continuously
+    const mq = typeof window !== "undefined" ? window.matchMedia?.("(prefers-reduced-motion: reduce)") : null;
     const loop = (now) => {
       raf = requestAnimationFrame(loop); const dt = clock.tick(now); const S = simRef.current;
       for (const it of S.items) {
         if (S.dir !== 0 && dt > 0) { it.E = advanceEnergy(it.sub, it.E, dt, S.dir, S.speed); it.st = stateAtEnergy(it.sub, it.E); }
-        if (dt > 0) stepSystem(it.sys, dt * 1, it.st);
+        if (dt > 0 && !(mq?.matches)) stepSystem(it.sys, dt * 1, it.st);
       }
+      if (mq?.matches && dt > 0) { acc += dt; if (acc >= 0.6) { acc = 0; for (const it of S.items) for (let k = 0; k < 4; k += 1) stepSystem(it.sys, 0.06, it.st); } }
       const first = S.items[0];
       if (first && ((S.dir > 0 && first.E >= totalEnergy(first.sub) - 1e-9) || (S.dir < 0 && first.E <= 1e-9)) && S.items.every((it) => (S.dir > 0 ? it.E >= totalEnergy(it.sub) - 1e-9 : it.E <= 1e-9))) { S.dir = 0; setDirState(0); }
       visual.current?.();

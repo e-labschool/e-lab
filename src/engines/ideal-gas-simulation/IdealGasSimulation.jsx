@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSimulationSessionState } from "../../components/interactive-shell/simulationSession.js";
 import InteractiveFrame from "../../components/interactive-shell/InteractiveFrame.jsx";
 import SimulationDashboard, { DashPanel, DashboardTabs, ExplainLine, MiniSwitch, PopoverSection, SettingToggle } from "../../components/simulation/SimulationDashboard.jsx";
-import { DEFAULT_CONTROLS, DEFAULT_DISPLAY, GAS, applyControlChange, createSimulation, resolveState, selectExplanation, unitLabelV } from "./model.js";
+import { DEFAULT_CONTROLS, DEFAULT_DISPLAY, GASES, applyControlChange, createSimulation, resolveState, selectExplanation, unitLabelV } from "./model.js";
 import { UNIT_SYSTEMS } from "../../lib/gas/gasUnits.js";
 import ReadingsPanel from "../../components/interactive-shell/readings/ReadingsPanel.jsx";
 import { addReading, clearReadings, createReadings, removeReading } from "../../components/interactive-shell/readings/readingsModel.js";
@@ -15,11 +15,11 @@ import ChamberPanel from "./components/ChamberPanel.jsx";
 import RealIdealGraph from "./components/RealIdealGraph.jsx";
 import { LiveValues, PredictPanel } from "./components/LiveAndPredict.jsx";
 
-// Ideal vs Real Gas (IB DP Chemistry S1.5.1-S1.5.3). ONE experiment: a single CO2 sample in a piston.
+// Ideal vs Real Gas (IB DP Chemistry S1.5.1-S1.5.3). ONE experiment: a single gas sample in a piston (CO2 by default; He, N2, NH3 selectable).
 // The header switch "Ideal Gas | Real Gas" changes only the gas MODEL; T, n and the controlled
 // variable (and the selected Change Pressure | Change Volume control) are preserved.
 // React owns the controls; the pure model (model.js) owns the physics (ideal PV = nRT, real van der
-// Waals CO2); render.js draws an ILLUSTRATIVE particle picture (not molecular dynamics). The pressure
+// Waals, constants of the chosen gas); render.js draws an ILLUSTRATIVE particle picture (not molecular dynamics). The pressure
 // readout comes from the model's formulas, not from counting animated collisions.
 //
 // LAYOUT: rendered with the shared Simulation Dashboard Layout (components/simulation/SimulationDashboard.jsx):
@@ -82,7 +82,12 @@ function IdealGasWorkspace() {
     return () => clearTimeout(t);
   }, [controls]);
 
-  const handleControls = useCallback((patch) => setControls((c) => applyControlChange(c, patch)), [setControls]);
+  // GS-10: the first time the student picks Real Gas the Z-vs-P graph opens by itself (it is the IB S1.5.2 evidence); they can still hide it.
+  const autoGraphRef = useRef(false);
+  const handleControls = useCallback((patch) => {
+    if (patch.mode === "real" && !autoGraphRef.current) { autoGraphRef.current = true; setShowGraph(true); }
+    setControls((c) => applyControlChange(c, patch));
+  }, [setControls, setShowGraph]);
   const handleDisplay = useCallback((patch) => setDisplay((d) => ({ ...d, ...patch })), [setDisplay]);
   const handleReset = useCallback(() => {
     sim.reset();
@@ -95,9 +100,11 @@ function IdealGasWorkspace() {
     setReadingsState(createReadings());
     setPlaying(true);
     setRevealed(false);
+    autoGraphRef.current = false;
   }, [sim, setControls, setDisplay]);
 
   const real = readings.mode === "real";
+  const GAS = GASES[readings.gasId] ?? GASES.co2;
 
   // STP / SATP (IB data booklet): 1.00 mol (N = 100 particles) at 100 kPa and 273.15 / 298.15 K, pressure is the controlled variable.
   const handlePreset = useCallback((T) => {
@@ -120,7 +127,7 @@ function IdealGasWorkspace() {
       axes={plotDefaultsFor(readings)}
       theory={(x, y) => theoryFor(readings, x, y, columns)}
       includeOrigin={(x, y) => originFor(x, y)}
-      meta={[`Gas model when recorded: ${GAS.name} (ideal PV = nRT or van der Waals)`, `Units: ${columns[0].unit} and ${columns[1].unit}; R = 8.31 J K-1 mol-1`, "Values are the simulation's own readings (no measurement error)."]}
+      meta={[`Gas when recorded: ${GAS.name}; model: ${real ? "van der Waals" : "ideal PV = nRT"}`, `Units: ${columns[0].unit} and ${columns[1].unit}; R = 8.31 J K-1 mol-1`, "Values are the simulation's own readings (no measurement error)."]}
       recordHint="Add the current P, V, T, n and Z"
     />
   );
@@ -154,8 +161,8 @@ function IdealGasWorkspace() {
       </PopoverSection>
       <PopoverSection title="About this model">
         <p className="sd-pop-note" data-testid="model-note">
-          Real gas: {GAS.name}, van der Waals (P + an&sup2;/V&sup2;)(V &minus; nb) = nRT with a = {GAS.a.toFixed(3)} L&sup2;&middot;atm/mol&sup2; and b = {GAS.b} L/mol.
-          The vapour-pressure (condensation) limit is qualitative. The particle picture is illustrative: 2D, about 50 particles, and the pressure on the slider comes from the model, not from counting collisions; the &ldquo;pressure from collisions&rdquo; gauge compares the two.
+          Real gas: {GAS.name}, van der Waals (P + an&sup2;/V&sup2;)(V &minus; nb) = nRT with a = {GAS.a.toFixed(3)} L&sup2;&middot;atm/mol&sup2; and b = {GAS.b} L/mol. R is the same 8.31 J K&#8315;&sup1; mol&#8315;&sup1; in every calculation here.
+          The vapour-pressure (condensation) limit is qualitative; for CO&#8322; the message quotes the literature value beside the model value. The particle picture is illustrative: 2D, about 50 particles, and the pressure on the slider comes from the model, not from counting collisions; the &ldquo;pressure from collisions&rdquo; gauge compares the two.
         </p>
       </PopoverSection>
     </>
@@ -164,7 +171,7 @@ function IdealGasWorkspace() {
   const details = (
     <p className="sd-pop-note" style={{ marginBottom: 0 }}>
       <strong>Ideal gas:</strong> {GAS_DESCRIPTIONS.ideal} PV = nRT, so Z = PV/nRT = 1.<br />
-      <strong>Real gas ({GAS.name}):</strong> {GAS_DESCRIPTIONS.real} Z &lt; 1 where attractions dominate and Z &gt; 1 where molecular size dominates. Z &rarr; 1 as P &rarr; 0.
+      <strong>Real gas ({GAS.name}, {GAS.imf}):</strong> {GAS_DESCRIPTIONS.real} Z &lt; 1 where attractions dominate and Z &gt; 1 where molecular size dominates. Z &rarr; 1 as P &rarr; 0.
     </p>
   );
 

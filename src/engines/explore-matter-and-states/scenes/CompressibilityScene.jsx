@@ -3,6 +3,7 @@ import ParticleField from "../components/ParticleField.jsx";
 import RevealChip from "../components/RevealChip.jsx";
 import ConclusionBadge from "../components/ConclusionBadge.jsx";
 import SceneQuestion from "../components/SceneQuestion.jsx";
+import PredictChoice from "../components/PredictChoice.jsx";
 import { STATE_COLOR } from "../data/stateContent.js";
 
 const STATES = ["solid", "liquid", "gas"];
@@ -10,6 +11,7 @@ const OBSERVATION = { solid: "Negligible compression", liquid: "Very small compr
 
 export default function CompressibilityScene({ forceToken }) {
   const [pressed, setPressed] = useState(false);
+  const [guessed, setGuessed] = useState(false);
 
   useEffect(() => {
     if (forceToken) setPressed(true);
@@ -32,6 +34,12 @@ export default function CompressibilityScene({ forceToken }) {
         ))}
       </div>
 
+      {!guessed && (
+        <PredictChoice
+          question="which state will be compressed the most?" correct="gas" onSkip={pressed ? undefined : () => setGuessed(true)} testId="predict-compress"
+          choices={[{ id: "solid", label: "Solid" }, { id: "liquid", label: "Liquid" }, { id: "gas", label: "Gas" }]}
+        />
+      )}
       {!pressed ? (
         <button type="button" onClick={() => setPressed(true)} className="self-start rounded-md bg-[var(--color-ink)] px-4 py-2 text-sm text-[var(--color-paper)]">
           Apply pressure

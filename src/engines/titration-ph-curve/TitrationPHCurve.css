@@ -46,3 +46,27 @@
   .tit-app { max-height: 240px; }
 }
 @media (max-width: 760px) { .ab-root.tit { grid-template-rows: auto auto auto auto; } }
+
+.tit-slider { display: grid; gap: 1px; flex: 1 1 210px; min-width: 150px; font-size: 11px; font-weight: 600; color: var(--ab-muted); }
+.tit-slider input[type=range] { width: 100%; min-height: 26px; accent-color: var(--sim-btn-accent, #4d60e0); }
+.tit-slider input[type=range]:focus-visible { outline: 2px solid var(--sim-btn-focus); outline-offset: 2px; }
+.tit-main.is-unknown { grid-template-columns: minmax(150px, 190px) minmax(0, 1fr); }
+.tit-unk { display: grid; grid-template-rows: auto auto auto minmax(0, 1fr); gap: 6px; min-height: 0; overflow: auto; }
+.tit-unk-head { align-items: center; justify-content: space-between; }
+.tit-unk-text { flex: 1 1 320px; font-size: 12.5px; line-height: 1.4; color: var(--ab-ink); }
+.tit-unk-answer { align-items: end; }
+.tit-unk-answer input { width: 150px; }
+.tit-unk-msg { min-height: 1.3em; font-weight: 600; }
+.tit-unk-msg.is-ok { color: var(--ab-teal); } .tit-unk-msg.is-bad { color: #fde68a; }
+.tit-unk-hint { padding: 6px 8px; border-left: 3px solid var(--ab-violet); background: rgba(216, 180, 254, .08); }
+/* The shared Readings panel is designed for a light surface: give it one inside the dark panel */
+.tit-readings { min-height: 0; overflow: auto; padding: 8px; border-radius: 8px; background: #f4f7fd; color-scheme: light; --sd-blue: #2b66d9; --sd-ink: #1e2a44; --sd-muted: #4a5a82; --sd-line: #d5deef; --sd-fs: 12.5px; --sd-fs-sm: 11.5px;
+  --sim-btn-fill: #ffffff; --sim-btn-fill-hover: #e4eafc; --sim-btn-fill-active: #ccd7f7; --sim-btn-ink: #12161c; --sim-btn-border: #5b6784; --sim-btn-border-hover: #12161c; --sim-btn-accent: #4457d6; --sim-btn-accent-ink: #fff; --sim-btn-focus: #1b3fd1; --sim-btn-focus-halo: #fff; }
+.tit-readings .rd-root { height: auto; min-height: 0; }
+@container (max-width: 760px) { .tit-main.is-unknown { grid-template-columns: minmax(0, 1fr); } .tit-unk { overflow: visible; } }
+
+/* Narrow containers (phones): the first two selects hold long names ("CH3COOH - weak acid"), so they get a full row each
+   instead of being truncated in half-width columns. */
+@container (max-width: 520px) {
+  .tit-setup .ab-field:nth-child(-n+2) { flex: 1 1 100%; }
+}

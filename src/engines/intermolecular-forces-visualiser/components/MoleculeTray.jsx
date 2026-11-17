@@ -5,7 +5,7 @@ import { DND_TYPE } from "../scene/ImfStage.jsx";
 
 // Compact molecule tray: two categories, one small icon button per molecule. Mouse: HTML5 drag onto the workspace. Touch / pen: a
 // pointer-driven ghost (HTML5 drag does not start from touch). Keyboard / click: Enter, Space or click adds the molecule.
-function Item({ id, onAdd, stageRef, full }) {
+function Item({ id, onAdd, stageRef, full, atCap }) {
   const mol = MOLECULES[id]; const ghost = useRef(null); const press = useRef(null); const [dragging, setDragging] = useState(false);
   const moveGhost = (x, y) => { if (ghost.current) { ghost.current.style.transform = `translate(${x - 22}px, ${y - 22}px)`; } };
   const onPointerDown = (e) => { if (e.pointerType === "mouse") return; press.current = { x: e.clientX, y: e.clientY, pid: e.pointerId, moved: false }; };
@@ -22,7 +22,7 @@ function Item({ id, onAdd, stageRef, full }) {
   return (
     <>
       <button
-        type="button" className="imf-tray-item" draggable data-testid={`tray-${id}`} data-molecule={id} aria-label={`${mol.name}, ${mol.label}. Click to add to the workspace, or drag it there.`} title={`${mol.name} (${mol.label}) – click or drag into the workspace`}
+        type="button" className="imf-tray-item" draggable data-testid={`tray-${id}`} data-molecule={id} aria-label={`${mol.name}, ${mol.label}. ${atCap ? "The workspace is full: remove a molecule first." : "Click to add to the workspace, or drag it there."}`} data-full={atCap ? "1" : "0"} title={`${mol.name} (${mol.label}) – click or drag into the workspace`}
         onClick={() => { if (suppressClick.current) { suppressClick.current = false; return; } onAdd(id); }}
         onDragStart={(e) => { e.dataTransfer.setData(DND_TYPE, id); e.dataTransfer.setData("text/plain", id); e.dataTransfer.effectAllowed = "copy"; }}
         onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={() => { press.current = null; setDragging(false); }}
@@ -40,13 +40,13 @@ export default function MoleculeTray({ onAdd, onClear, stageRef, count, max }) {
     <div className="imf-tray" data-testid="molecule-tray">
       <section aria-labelledby="imf-tray-nonpolar" data-testid="tray-nonpolar">
         <h3 id="imf-tray-nonpolar" className="imf-tray-h">Nonpolar <small>molecules &amp; particles</small></h3>
-        <div className="imf-tray-grid">{TRAY_NONPOLAR.map((id) => <Item key={id} id={id} onAdd={onAdd} stageRef={stageRef} />)}</div>
+        <div className="imf-tray-grid">{TRAY_NONPOLAR.map((id) => <Item key={id} id={id} onAdd={onAdd} stageRef={stageRef} atCap={count >= max} />)}</div>
       </section>
       <section aria-labelledby="imf-tray-polar" data-testid="tray-polar">
         <h3 id="imf-tray-polar" className="imf-tray-h">Polar <small>molecules</small></h3>
-        <div className="imf-tray-grid">{TRAY_POLAR.map((id) => <Item key={id} id={id} onAdd={onAdd} stageRef={stageRef} />)}</div>
+        <div className="imf-tray-grid">{TRAY_POLAR.map((id) => <Item key={id} id={id} onAdd={onAdd} stageRef={stageRef} atCap={count >= max} />)}</div>
       </section>
-      <p className="imf-tray-foot">{count}/{max} in workspace · drag or click to add<button type="button" className="sim-btn imf-mini" onClick={onClear} disabled={!count} data-testid="clear-workspace">Clear</button></p>
+      <p className="imf-tray-foot" data-testid="tray-count" data-full={count >= max ? "1" : "0"}>{count}/{max} in workspace · {count >= max ? <b role="status">full: remove one to add another</b> : "drag or click to add"}<button type="button" className="sim-btn imf-mini" onClick={onClear} disabled={!count} data-testid="clear-workspace">Clear</button></p>
     </div>
   );
 }

@@ -244,6 +244,30 @@ test("pause/resume keeps time; pausing shows the last values (not a dash); no co
   assert.equal(consoleErrors.filter((e) => !/not wrapped in act/.test(e)).length, 0, consoleErrors.join("\n"));
 });
 
+test("reaction profile (kinetics limit): drawn in the detail popover from the Ea slider; catalyst adds the lower green path with the same dH; dH is labelled illustrative", async () => {
+  await mount(React.createElement(Collision, { standalone: true })); await setRange("ea", 40);
+  await click($('[data-testid="explain-info"]')); const rp = () => $('[data-testid="reaction-profile"]'); assert.ok(rp(), "profile is in the popover");
+  assert.match(rp().textContent, /Ea = 40 kJ/); assert.equal($('[data-testid="profile-cat"]'), null); assert.match(rp().textContent, /ΔH = −20 kJ/); assert.match(rp().textContent, /illustrative/);
+  const { profileGeometry } = await import("../src/engines/collision-theory-visualizer/components/ReactionProfile.jsx"); const g = profileGeometry({ ea: 30, eaCat: 18, dh: -20 });
+  assert.ok(g.y(30) < g.y(18) && g.y(18) < g.y(0) && g.y(0) < g.y(-20), "peak above the catalysed peak, above reactants, above exothermic products (SVG y grows downward)");
+  await click($('[data-testid="explain-info"]')); await click($$('[data-testid="catalyst-switch"] [role="radio"]')[1]); await click($('[data-testid="explain-info"]'));
+  assert.ok($('[data-testid="profile-cat"]'), "catalyst path drawn"); assert.match(rp().textContent, /with the catalyst Ea = 24/); assert.match(rp().textContent, /lowers Ea, not ΔH/);
+  await click($$('button').find((b) => b.textContent.trim() === "Endothermic")); assert.match(rp().textContent, /ΔH = \+20 kJ/);
+  await click($$('[data-testid="catalyst-switch"] [role="radio"]')[0]);
+});
+test("Chocolate Wrapping predict-first (AK-58): reveal needs a prediction; the answer is computed from the model; next question works", async () => {
+  hookIntervals(); await mount(React.createElement(ModeProvider, null, React.createElement(Choc, { standalone: true })));
+  const { PREDICT_TASKS } = await import("../src/engines/chocolate-wrapping-rate/lib/wrappingModel.js");
+  assert.ok($('[data-testid="cw-reveal"]').disabled, "Reveal is disabled until a prediction is chosen");
+  for (let k = 0; k < PREDICT_TASKS.length; k += 1) {
+    const want = PREDICT_TASKS[k].run().answer; const wrong = ["higher", "the same", "lower"].find((o) => o !== want);
+    await click($(`[data-testid="cw-pick-${wrong.replace(" ", "-")}"]`)); await click($('[data-testid="cw-reveal"]')); assert.match(text('[data-testid="cw-predict-result"]'), new RegExp(`Not quite \\(the answer is ${want}\\)`));
+    await click($(`[data-testid="cw-pick-${want.replace(" ", "-")}"]`)); assert.equal(text('[data-testid="cw-predict-result"]'), "", "changing the pick hides the old verdict"); await click($('[data-testid="cw-reveal"]')); assert.match(text('[data-testid="cw-predict-result"]'), /^Correct: /);
+    await click($('[data-testid="cw-next-task"]'));
+  }
+  unhookIntervals();
+});
+
 for (const { name, fn } of pending) {
   try { await fn(); console.log(`  ok   ${name}`); passed++; } catch (e) { console.log(`  FAIL ${name}\n       ${(e.stack || e.message).split("\n").slice(0, 5).join("\n       ")}`); failed++; }
 }

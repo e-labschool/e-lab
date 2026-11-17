@@ -5,9 +5,9 @@ import CameraKeyApi from "../../shared-3d/CameraKeyApi.jsx";
 import { useStageGuard } from "../../shared-3d/useStageGuard.js";
 import { ContextLostNotice, StageKeyHint, useStageKeys } from "../../shared-3d/StageShell.jsx";
 import { Html, OrbitControls } from "@react-three/drei";
-import { bondOffsets, moleculeStructure } from "../scene/moleculeStructure.js";
+import { bondOffsets } from "../scene/moleculeStructure.js";
+import { structure3D } from "../scene/structure3d.js";
 import { atomPartials, bondTable, netDipole, polarityStatement } from "../model/polarity.js";
-import { dativeBonds } from "../model/covalent.js";
 
 // Final sphere-and-bond picture of a bonded molecule: rotatable 3D (react-three-fiber) with a flat SVG fallback when WebGL
 // is unavailable. Atoms are labelled with their symbol; bond order is drawn as 1, 2 or 3 parallel bonds.
@@ -19,7 +19,7 @@ const DIR = new THREE.Vector3(0.62, 0.42, 1).normalize();
 const unit = (a, b) => { const d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]]; const l = Math.hypot(...d); return { d: d.map((c) => c / l), len: l }; };
 
 /** All cylinders of the structure: { mid:[x,y,z], quat:[x,y,z,w], len, key }. */
-function bondMeshes(st, dativeKeys) {
+function bondMeshes(st) {
   const up = new THREE.Vector3(0, 1, 0);
   const out = [];
   st.bonds.forEach((b, bi) => {
@@ -28,7 +28,7 @@ function bondMeshes(st, dativeKeys) {
     const q = new THREE.Quaternion().setFromUnitVectors(up, new THREE.Vector3(...d));
     const sep = b.order === 1 ? 0 : b.order === 2 ? 0.13 : 0.2;
     bondOffsets(d, b.order).forEach((o, k) => {
-      out.push({ key: `${bi}-${k}`, mid: [0, 1, 2].map((a) => (A[a] + B[a]) / 2 + o[a] * sep), quat: [q.x, q.y, q.z, q.w], len, dative: dativeKeys?.has(`${Math.min(b.i, b.j)}-${Math.max(b.i, b.j)}`) && k === 0 });
+      out.push({ key: `${bi}-${k}`, mid: [0, 1, 2].map((a) => (A[a] + B[a]) / 2 + o[a] * sep), quat: [q.x, q.y, q.z, q.w], len, dative: b.dative && k === 0 });
     });
   });
   return out;
@@ -52,7 +52,7 @@ function Fit({ radius }) {
   useEffect(() => {
     const vHalf = (FOV * Math.PI) / 360;
     const hHalf = Math.atan(Math.tan(vHalf) * (size.width / Math.max(1, size.height)));
-    const dist = (radius * 1.35) / Math.sin(Math.min(vHalf, hHalf));
+    const dist = (radius * 1.05) / Math.sin(Math.min(vHalf, hHalf));
     camera.position.copy(DIR).multiplyScalar(dist);
     camera.near = 0.1; camera.far = dist * 6; camera.updateProjectionMatrix(); camera.lookAt(0, 0, 0);
     if (controls) { controls.minDistance = dist * 0.45; controls.maxDistance = dist * 2.5; controls.update(); }
@@ -61,8 +61,7 @@ function Fit({ radius }) {
 }
 
 function Structure3D({ st, playing, reduced, molecule, polarity }) {
-  const dativeKeys = useMemo(() => new Set(dativeBonds(molecule).map((d) => `${Math.min(d.i, d.j)}-${Math.max(d.i, d.j)}`)), [molecule]);
-  const bonds = useMemo(() => bondMeshes(st, dativeKeys), [st, dativeKeys]);
+  const bonds = useMemo(() => bondMeshes(st), [st]);
   const partials = useMemo(() => atomPartials(molecule), [molecule]);
   const dip = useMemo(() => netDipole(molecule, st), [molecule, st]);
   return (
@@ -82,7 +81,8 @@ function Structure3D({ st, playing, reduced, molecule, polarity }) {
             <sphereGeometry args={[a.radius, 36, 24]} />
             <meshStandardMaterial color={a.color} roughness={0.35} metalness={0.05} />
           </mesh>
-          <Html center zIndexRange={[5, 0]} style={{ pointerEvents: "none" }}><span className="bv-html-label" style={{ fontSize: 16 }} data-testid="struct-label">{a.symbol}</span></Html>
+          {/* (drei Html at EXACTLY the origin never gets positioned: the central atom lost its symbol; a tiny offset avoids it) */}
+          <Html center position={[0.001, 0.001, 0.001]} zIndexRange={[5, 0]} style={{ pointerEvents: "none" }}><span className="bv-html-label" style={{ fontSize: 19, color: a.text, textShadow: "none" }} data-testid="struct-label">{a.symbol}</span></Html>
           {polarity && partials[a.index]?.sign !== 0 && <Html position={[0, a.radius + 0.28, 0]} center zIndexRange={[5, 0]} style={{ pointerEvents: "none" }}><span className="bv-delta" data-sign={partials[a.index].sign} data-testid="delta-label">{partials[a.index].sign < 0 ? "δ−" : "δ+"}</span></Html>}
         </group>
       ))}
@@ -139,16 +139,26 @@ function StructureSvg({ st, molecule, polarity }) {
   );
 }
 
-export default function MoleculeView({ molecule, playing, reduced }) {
-  const st = useMemo(() => moleculeStructure(molecule), [molecule]);
+/** `molecule` is a structure of lib/lewis (atoms, bonds [i,j,order,dative?], charge). */
+export default function MoleculeView({ molecule, playing, reduced, formulaId }) {
+  const st = useMemo(() => structure3D(molecule), [molecule]);
   const [polarity, setPolarity] = useState(true);
+  const [details, setDetails] = useState(null); // null = automatic: open on a roomy stage, folded on a small one (it would hide the molecule)
+  const [small, setSmall] = useState(false);
   const table = useMemo(() => bondTable(molecule).filter((b, i, a) => a.findIndex((x) => `${x.a}${x.b}${x.delta}` === `${b.a}${b.b}${b.delta}`) === i), [molecule]);
   const statement = useMemo(() => polarityStatement(molecule, st), [molecule, st]);
   const boxRef = useRef(null); const camRef = useRef(null);
   const { webgl: gl, aa, lost, canvasKey } = useStageGuard(boxRef);
+  useEffect(() => {
+    const el = boxRef.current?.parentElement; if (!el) return undefined; // the canvas the structure sits in
+    const m = () => { const r = el.getBoundingClientRect(); setSmall(r.width > 0 && (r.height < 400 || r.width < 520)); };
+    m(); const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(m) : null; ro?.observe(el);
+    return () => ro?.disconnect();
+  }, []);
+  const detailsOpen = details === null ? false : details; // folded by default: the panel would cover the lower part of the molecule
   const onKeyDown = useStageKeys(camRef, undefined);
   return (
-    <div ref={boxRef} className="bv-structure-fill" data-s3d-stage={gl ? "" : undefined} tabIndex={gl ? 0 : undefined} role={gl ? "application" : undefined} aria-label={gl ? "3D molecule. Arrow keys rotate, plus and minus zoom." : undefined} aria-describedby={gl ? "bv-molkeys" : undefined} onKeyDown={gl ? onKeyDown : undefined} data-testid="structure" data-formula={molecule.id} data-atoms={st.atoms.length} data-bonds={st.bonds.length} data-renderer={gl ? "webgl" : "svg"} style={{ position: "absolute", inset: "34px 0 88px 0" }}>
+    <div ref={boxRef} className="bv-structure-fill" data-s3d-stage={gl ? "" : undefined} tabIndex={gl ? 0 : undefined} role={gl ? "application" : undefined} aria-label={gl ? "3D molecule. Arrow keys rotate, plus and minus zoom." : undefined} aria-describedby={gl ? "bv-molkeys" : undefined} onKeyDown={gl ? onKeyDown : undefined} data-testid="structure" data-formula={formulaId ?? ""} data-atoms={st.atoms.length} data-bonds={st.bonds.length} data-renderer={gl ? "webgl" : "svg"} style={{ position: "absolute", inset: small ? 0 : "34px 0 88px 0" }}>
       {gl ? (
         <Canvas key={canvasKey} camera={{ fov: FOV, position: [0, 0, 8] }} dpr={[1, 1.75]} gl={{ antialias: aa, powerPreference: "low-power" }}>
           <CameraKeyApi apiRef={camRef} />
@@ -156,8 +166,11 @@ export default function MoleculeView({ molecule, playing, reduced }) {
         </Canvas>
       ) : <StructureSvg st={st} molecule={molecule} polarity={polarity} />}
       <div className="bv-polarity" data-testid="polarity-panel" data-on={polarity ? "1" : "0"}>
-        <button type="button" className="bv-pol-toggle" aria-pressed={polarity} onClick={() => setPolarity((v) => !v)} data-testid="polarity-toggle">Polarity {polarity ? "on" : "off"}</button>
-        {polarity && (
+        <div className="bv-pol-row">
+          <button type="button" className="bv-pol-toggle" aria-pressed={polarity} onClick={() => setPolarity((v) => !v)} data-testid="polarity-toggle">Polarity {polarity ? "on" : "off"}</button>
+          {polarity && <button type="button" className="bv-pol-toggle bv-pol-toggle--soft" aria-expanded={detailsOpen} onClick={() => setDetails(!detailsOpen)} data-testid="polarity-details-toggle">{detailsOpen ? "Hide bond details" : "Bond details"}</button>}
+        </div>
+        {polarity && detailsOpen && (
           <div className="bv-pol-body">
             <ul data-testid="bond-table">{table.map((b) => <li key={`${b.a}${b.b}${b.delta}`}><b>{b.a}–{b.b}</b> ΔEN {b.delta.toFixed(1)}: {b.kind}{b.negative ? ` (δ− on ${b.negative})` : ""}</li>)}</ul>
             <p data-testid="polarity-statement">{statement}</p>
