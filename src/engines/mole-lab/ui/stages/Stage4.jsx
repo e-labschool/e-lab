@@ -15,7 +15,7 @@ import { getSubstance } from "../../engine/substances.js";
 const speedOf = (id) => 0.55 + 0.45 * Math.sqrt(2.016 / molarMass(id)); // lighter molecules move faster (qualitative; v ~ 1/sqrt(M))
 
 export default function Stage4({ shell }) {
-  const [gas, setGas] = useState("O2"); const [n, setN] = useState(1); const [view, setView] = useState("three");
+  const [gas, setGas] = useState("O2"); const [n, setN] = useState(1); const [view, setView] = useState("three"); const [released, setReleased] = useState(false);
   const [tC, setTC] = useState("25"); const [pK, setPK] = useState("101.325");
   const rtp = useMemo(() => stage4Info(gas, n), [gas, n]);
   const adv = useMemo(() => {
@@ -39,21 +39,22 @@ export default function Stage4({ shell }) {
         <Pick label="Gas" value={gas} options={STAGE4_IDS.map((v) => ({ value: v, label: optionLabel(v) }))} onChange={setGas} testId="ml-substance" />
         <Choice label="Amount" value={n} options={STAGE4_AMOUNTS} onChange={setN} format={(v) => `${v.toFixed(2)} mol`} testId="ml-amount" />
         <Choice label="View" value={view} options={["three", "one"]} onChange={setView} format={(v) => (v === "three" ? "Compare 3 gases" : "One gas")} testId="ml-view" />
+        <button type="button" className={"ml-btn" + (released ? "" : " is-primary")} onClick={() => setReleased((v) => !v)} data-testid="ml-release" aria-pressed={released}>{released ? "Pack again" : "Release gas"}</button>
         <span className="ml-chipinfo" data-testid="ml-conditions">RTP: 25 °C (298 K) | 1 atm (101.3 kPa)</span>
       </>}
       caption={<Caption line={line} testId="ml-line" more={<>
         <p>At the same temperature and pressure, equal amounts of an ideal gas occupy equal volumes. The approximate value 24 dm³ mol⁻¹ applies at the RTP convention used here (about 25 °C and 1 atm); it is not universal.</p>
-        <p>The molecules drawn are representative ({MOLECULES_PER_MOL} per mole for every gas, so the picture's density is the same for all gases); lighter molecules are drawn moving faster.</p>
+        <p>The molecules drawn are representative (one full packet of 300 to 600 per mole, the same for every gas, so the density is identical); Release gas lets the same molecules spread through the whole chamber, and lighter molecules are drawn moving faster. A real gas is mostly empty space.</p>
         <details data-testid="ml-advanced"><summary>Advanced: PV = nRT</summary>
           <div className="ml-adv"><label htmlFor="ml-t">Temperature (°C)</label><input id="ml-t" className="ml-input" inputMode="decimal" value={tC} onChange={(e) => setTC(e.target.value)} data-testid="ml-temp" />
             <label htmlFor="ml-p">Pressure (kPa)</label><input id="ml-p" className="ml-input" inputMode="decimal" value={pK} onChange={(e) => setPK(e.target.value)} data-testid="ml-press" /></div>
           <p data-testid="ml-adv-out" role="status">{adv.error ?? `V = nRT / P = ${fmtFixed(adv.state.volumeDm3, 2)} dm³ for ${fmtMol(n)} mol (Vm = ${fmtFixed(adv.state.vm, 2)} dm³ mol⁻¹ at ${fmtFixed(adv.state.tK, 1)} K, ${fmtFixed(adv.state.pKPa, 1)} kPa). The 24 dm³ mol⁻¹ convention gives ${dec(rtp.volumeDm3)} dm³.`}</p>
         </details></>} />}
-      aside={<div className="ml-bigpill" data-testid="ml-bigpill">{view === "three" ? `${fmtMol(n)} mol = ${dec(rtp.volumeDm3)} dm³ at RTP` : "1 mol = 24 dm³ at RTP"}</div>}>
+      aside={<><div className="ml-bigpill" data-testid="ml-bigpill">{view === "three" ? `${fmtMol(n)} mol = ${dec(rtp.volumeDm3)} dm³ at RTP` : "1 mol = 24 dm³ at RTP"}</div><div className="ml-note" data-testid="ml-gasnote">Molecules are representative; a real gas is mostly empty space.</div></>}>
       <LabCanvas reflect={shell.detail !== "low"} dark={shell.dark} reduced={shell.reduced} bounds={bounds} onSlow={shell.onSlow} testId="ml-bench" ariaLabel={`${line} Glass gas jars.`}
         fallback="WebGL is not available, so a 2D picture is shown." noGL={<Fallback2D items={fb} title={line} note={`Each jar holds ${fmtMol(n)} mol = ${dec(rtp.volumeDm3)} dm³.`} />}>
         {gases.map((g, i) => (
-          <BellJar key={g} gasId={g} volumeDm3={rtp.volumeDm3} molecules={Math.round(MOLECULES_PER_MOL * n)} label={`${formulaOf(g)}(g)`} display={`${dec(rtp.volumeDm3)} dm³`} highlight={view === "three" && g === gas}
+          <BellJar key={g + n} gasId={g} volumeDm3={rtp.volumeDm3} mol={n} detail={shell.detail} released={released} label={`${formulaOf(g)}(g)`} display={`${dec(rtp.volumeDm3)} dm³`} highlight={view === "three" && g === gas}
             dark={shell.dark} reduced={shell.reduced} position={[(i - (per - 1) / 2) * spacing, 0, 0]} speedFactor={speedOf(g)} />
         ))}
         <Html position={[0, -0.1, 1.2]} center style={{ pointerEvents: "none" }}><span /></Html>

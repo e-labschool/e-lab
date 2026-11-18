@@ -75,6 +75,19 @@ test("stage 5 offers Run Reaction, Step and Reset; stage 6 offers Run Reaction a
   await click('[data-testid="ml-tab-6"]');
   assert.ok($('[data-testid="ml-run"]')); assert.ok($('[data-testid="ml-reset-run"]'));
 });
+test("stage 4 (NEW): packed molecules by default, Release gas / Pack again toggle, RTP caption and the representative-molecules note", async () => {
+  await click('[data-testid="ml-tab-4"]');
+  const b = $('[data-testid="ml-release"]'); assert.ok(b); assert.match(b.textContent, /Release gas/);
+  await click('[data-testid="ml-release"]'); assert.match($('[data-testid="ml-release"]').textContent, /Pack again/);
+  await click('[data-testid="ml-release"]'); assert.match($('[data-testid="ml-release"]').textContent, /Release gas/);
+  assert.match(text('[data-testid="ml-conditions"]'), /RTP/); assert.match(text('[data-testid="ml-gasnote"]'), /mostly empty space/);
+});
+test("stage 6 (NEW): every reaction has a starting example that yields a valid limiting-reagent result", async () => {
+  const { STAGE6_EXAMPLES } = await import("../src/engines/mole-lab/engine/reactionBench.js");
+  const { REACTION_LIST } = await import("../src/engines/mole-lab/engine/reactions.js");
+  const { stage6Defaults, stage6Result } = await import("../src/engines/mole-lab/engine/labConfig.js");
+  for (const r of REACTION_LIST) { assert.ok(STAGE6_EXAMPLES[r.id], r.id); const res = stage6Result(r.id, stage6Defaults(r.id)); assert.ok(res.limiting.length >= 1, r.id); }
+});
 test("reset returns to a valid state and the tabs survive switching back", async () => {
   await click('[data-testid="ml-tab-1"]'); await click('[data-testid="ml-reset"]');
   assert.ok($('[data-testid="ml-controls-1"]'));

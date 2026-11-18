@@ -27,16 +27,17 @@ export default function Stage6({ shell }) {
   const res = useMemo(() => stage6Result(rid, amounts), [rid, amounts]);
   const setAmt = useCallback((id, v) => { setAmounts((a) => ({ ...a, [id]: v })); setRan(false); progress.current = 0; }, []);
   const groups = useMemo(() => {
-    const r = rs.flatMap((s) => expand(s.id, amounts[s.id] ?? 0, "r", { dimmed: ran }));
-    const g = [{ key: "r", kind: "reactants", label: "Reactants (initial amounts)", items: r }];
-    if (ran) {
-      g.push({ key: "p", kind: "products", label: "Products formed", items: res.products.flatMap((p) => (p.n > 0 ? expand(p.id, p.n, "p") : [])) });
-      g.push({ key: "x", kind: "remaining", label: "Remaining unreacted", items: res.remaining.flatMap((p) => expand(p.id, p.n, "x")) });
-    }
-    return g;
+    const EPS = 1e-6; // sub-micromole residue is rounding noise: never draw a packet for it
+    if (!ran) return [{ key: "r", kind: "reactants", label: "Reactants (initial amounts)", items: rs.flatMap((s) => expand(s.id, amounts[s.id] ?? 0, "r")) }];
+    // after the reaction: consumed material is gone; each reactant packet that is partly used shrinks (same key), fully used packets disappear
+    const left = res.remaining.filter((p) => p.n > EPS).flatMap((p) => expand(p.id, p.n, "r"));
+    return [
+      { key: "r", kind: left.length ? "remaining" : "reactants", label: left.length ? "Remaining unreacted" : "", items: left },
+      { key: "p", kind: "products", label: "Products formed", items: res.products.filter((p) => p.n > EPS).flatMap((p) => expand(p.id, p.n, "p")) },
+    ];
   }, [rs, amounts, ran, res]);
   const lay = useMemo(() => boardLayout(groups), [groups]);
-  const bounds = { w: Math.max(lay.width + 1.6, 9), h: 5.9, cx: 0, cy: 1.75, depth: 1 };
+  const bounds = { w: Math.max(lay.width + 1.8, 9), h: 5.9, cx: 0, cy: 1.75, depth: 1 };
   const colours = useMemo(() => rs.map((s) => atomColour(Object.keys(getSubstance(s.id).composition)[0])), [rs]);
   const nm = (id) => formulaOf(id);
   const out = res.noReaction ? "A reactant is missing (0 mol): no reaction can occur." : null;

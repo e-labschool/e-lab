@@ -108,12 +108,12 @@ void sqr;
  */
 export function buildPacketInstances(substanceId, detail = "medium", { sizeBoost = {} } = {}) {
   const N = FULL_ENTITIES[detail]; const kind = drawKind(substanceId); const T = packetTemplates(substanceId);
-  const { slots, spacing } = buildSlots(kind, N, T.mode === "metallic" ? 1.7 : 1); const R = spacing * 0.5 * (kind === "lattice" ? 0.98 : T.mode === "molecular" ? 1.48 : 1.04);
-  const perEl = {}; const bondList = []; const speciesOf = new Uint8Array(N);
+  const { slots, spacing } = buildSlots(kind, N, T.mode === "metallic" ? 2.4 : 1); const R = spacing * 0.5 * (kind === "lattice" ? 0.98 : T.mode === "molecular" ? 1.48 : 1.04);
+  const vr = rng(23); const perEl = {}; const bondList = []; const speciesOf = new Uint8Array(N);
   const ensure = (el) => (perEl[el] ??= { list: [] });
   for (let g = 0; g < N; g += 1) {
     const sl = slots[g]; const sp = T.mode === "ionic" ? (T.checker ? (sl.ci + sl.li + sl.row) % 2 : T.pattern[g % T.pattern.length]) : 0; speciesOf[g] = sp;
-    const tpl = T.species[sp]; const k = R * (tpl.scale ?? 1) * (T.mode === "ionic" ? 1 : 1);
+    const tpl = T.species[sp]; const k = R * (tpl.scale ?? 1) * (kind === "lattice" ? 1 : 0.9 + 0.2 * vr());
     const wp = tpl.atoms.map((a) => { const v = rotate(sl.q, [a.x, a.y, a.z]); return { el: a.el, p: [sl.x + v[0] * k, sl.y + v[1] * k, sl.z + v[2] * k], r: a.r * k * (sizeBoost[a.el] ?? 1) }; });
     for (const a of wp) ensure(a.el).list.push({ g, p: a.p, r: a.r });
     for (const b of tpl.bonds) { const A = wp[b.a], B = wp[b.b]; const dx = B.p[0] - A.p[0], dy = B.p[1] - A.p[1], dz = B.p[2] - A.p[2]; bondList.push({ g, mid: [(A.p[0] + B.p[0]) / 2, (A.p[1] + B.p[1]) / 2, (A.p[2] + B.p[2]) / 2], len: Math.hypot(dx, dy, dz), q: quatFromY(dx, dy, dz), r: Math.min(A.r, B.r) * 0.42 }); }

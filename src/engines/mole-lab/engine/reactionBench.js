@@ -27,6 +27,8 @@ export const STAGE5_DEFAULT_REACTION = "water-synthesis";
 /** Stage 6 starting examples (spec D Stage 6 and the sodium + water case). */
 export const STAGE6_EXAMPLES = Object.freeze({
   "water-synthesis": { H2: 3, O2: 1 }, "ammonia-synthesis": { N2: 2, H2: 3 }, "magnesium-oxide": { Mg: 3, O2: 2 }, "sodium-water": { Na: 3, H2O: 2 },
+  "methane-combustion": { CH4: 1, O2: 1 }, "iron-oxidation": { Fe: 4, O2: 2 }, "carbon-combustion": { C: 2, O2: 1 }, "carbon-monoxide-oxidation": { CO: 3, O2: 1 },
+  "calcium-oxide": { Ca: 3, O2: 1 }, "aluminium-oxide": { Al: 4, O2: 2 },
 });
 const ok = (code, message, extra = {}) => ({ ok: true, code, message, ...extra });
 const no = (code, message) => ({ ok: false, code, message });

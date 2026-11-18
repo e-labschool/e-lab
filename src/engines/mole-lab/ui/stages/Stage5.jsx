@@ -41,7 +41,7 @@ export default function Stage5({ shell }) {
     return [{ key: "r", kind: "reactants", label: "Reactants", items: r }, { key: "p", kind: "products", label: "Products", items: p }];
   }, [board, shown]);
   const lay = useMemo(() => boardLayout(groups), [groups]);
-  const bounds = { w: lay.width + 1.6, h: 5.9, cx: 0, cy: 1.75, depth: 1 };
+  const bounds = { w: lay.width + 1.8, h: 5.9, cx: 0, cy: 1.75, depth: 1 };
   const colours = useMemo(() => board.reactants.map((s) => atomColour(Object.keys(getSubstance(s.id).composition)[0])), [board]);
   const note = ionicNote(board.reaction); const bal = checkBalance(board.reaction).balanced;
   const fb = [...groups[0].items, ...groups[1].items].map((it) => ({ substanceId: it.substanceId, fraction: it.fraction, ghost: it.ghost, formula: labelOf(it.substanceId), text: "1.00 mol" }));

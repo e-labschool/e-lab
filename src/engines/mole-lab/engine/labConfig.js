@@ -9,6 +9,7 @@ import { massFromMoles, molesFromMass } from "./moles.js";
 import { prepareSolution, concentration } from "./solutions.js";
 import { concentrationLimitError, getSolute } from "./concLab.js";
 import { gasLabState, GAS_IDS } from "./gasLab.js";
+import { STAGE6_EXAMPLES } from "./reactionBench.js";
 import { getReaction, reactants, products, REACTION_LIST, equationString } from "./reactions.js";
 import { limitingReagent } from "./limiting.js";
 import { toUnicodeFormula } from "./formula.js";
@@ -88,7 +89,7 @@ export function stage5Board(reactionId) {
     sentence: `${reactants(r).map((s) => `${s.coeff} mol ${f(s.id)}`).join(" + ")} → ${products(r).map((s) => `${s.coeff} mol ${f(s.id)}`).join(" + ")}` };
 }
 /** Stage 6 default amounts: stoichiometric, plus one extra mole of the first reactant (3 mol H2 + 1 mol O2 for water). */
-export function stage6Defaults(reactionId) { const r = getReaction(reactionId); return Object.fromEntries(reactants(r).map((s, i) => [s.id, i === 0 ? s.coeff + 1 : s.coeff])); }
+export function stage6Defaults(reactionId) { if (STAGE6_EXAMPLES[reactionId]) return { ...STAGE6_EXAMPLES[reactionId] }; const r = getReaction(reactionId); return Object.fromEntries(reactants(r).map((s, i) => [s.id, i === 0 ? s.coeff + 1 : s.coeff])); }
 export function stage6Result(reactionId, amounts) {
   const r = getReaction(reactionId); const q = Object.fromEntries(reactants(r).map((s) => [s.id, toQuanta(amounts[s.id] ?? 0)]));
   const res = limitingReagent(r, q);

@@ -19,12 +19,12 @@ const SEG_U = 34; const SEG_V = 44;
 /** Front/back half-thickness at (u in -1..1, v in 0..1) for a pouch filled to height `fillTop` (scene units). */
 export function surfaceZ(u, v, fillTop, fold) {
   const y = v * BAG.height; const au = Math.abs(u);
-  const lateral = Math.pow(Math.max(0, 1 - Math.pow(au, 2.6)), 0.55);
+  const lateral = Math.pow(Math.max(0, 1 - Math.pow(au, 2.1)), 0.62);
   const bottom = smooth(0, 0.1, v) * 0.35 + 0.65 * smooth(0.02, 0.2, v);
   const filled = 1 - smooth(fillTop - 0.05, fillTop + 0.4, y);
   const half = BAG.depth / 2;
   const open = 0.035 + (half * 0.92 - 0.035) * filled;
-  const wr = (Math.sin(u * 7.3 + y * 3.1) * 0.5 + Math.sin(u * 13.1 - y * 5.3 + 1.2) * 0.35 + Math.sin(y * 9.7 + u * 2.1) * 0.25) * (0.012 + 0.03 * (1 - filled) * fold);
+  const wr = (Math.sin(u * 7.3 + y * 3.1) * 0.5 + Math.sin(u * 13.1 - y * 5.3 + 1.2) * 0.35 + Math.sin(y * 9.7 + u * 2.1) * 0.25) * (0.02 + 0.05 * (1 - filled) * fold);
   const top = 1 - 0.8 * smooth(0.86, 1, v); // the header is nearly flat
   return (open * lateral * bottom * top + wr * lateral) ;
 }
@@ -45,7 +45,7 @@ function BagShell({ shown, ghost, dark }) {
       const pos = geo.attributes.position;
       for (let j = 0; j <= SEG_V; j += 1) for (let i = 0; i <= SEG_U; i += 1) {
         const idx = j * (SEG_U + 1) + i; const u = (i / SEG_U) * 2 - 1; const v = 1 - j / SEG_V;
-        pos.setXYZ(idx, u * BAG.width / 2 * (1 - 0.05 * Math.pow(1 - smooth(0, 0.45, v), 1.5)), v * BAG.height, sign * surfaceZ(u, v, fillTop, fold) * (sign > 0 ? 1 : 1));
+        pos.setXYZ(idx, u * BAG.width / 2 * (1 - 0.07 * Math.pow(1 - smooth(0, 0.5, v), 1.4) + 0.025 * smooth(0.12, 0.45, v) * (1 - smooth(0.6, 0.9, v))), v * BAG.height, sign * surfaceZ(u, v, fillTop, fold) * (sign > 0 ? 1 : 1));
       }
       pos.needsUpdate = true; geo.computeVertexNormals();
     }
@@ -63,8 +63,8 @@ function BagShell({ shown, ghost, dark }) {
       {/* sealed edges and header ribs */}
       <mesh position={[0, BAG.height - 0.01, 0]} renderOrder={2}><boxGeometry args={[BAG.width, 0.04, 0.02]} /><meshPhysicalMaterial {...seam} /></mesh>
       {[0.14, 0.26, 0.38].map((d) => <mesh key={d} position={[0, BAG.height - d, 0.012]} renderOrder={2}><boxGeometry args={[BAG.width * 0.98, 0.012, 0.01]} /><meshPhysicalMaterial {...seam} opacity={seam.opacity * 0.55} /></mesh>)}
-      <mesh position={[0, BAG.zipY + 0.055, 0.03]} renderOrder={4}><boxGeometry args={[BAG.width * 0.97, 0.052, 0.04]} /><meshStandardMaterial color="#e5313d" emissive="#e5313d" emissiveIntensity={0.55} roughness={0.3} transparent opacity={ghost ? 0.45 : 0.97} /></mesh>
-      <mesh position={[0, BAG.zipY - 0.045, 0.03]} renderOrder={4}><boxGeometry args={[BAG.width * 0.97, 0.052, 0.04]} /><meshStandardMaterial color="#2f6ee0" emissive="#2f6ee0" emissiveIntensity={0.55} roughness={0.3} transparent opacity={ghost ? 0.45 : 0.97} /></mesh>
+      <mesh position={[0, BAG.zipY + 0.055, 0.03]} renderOrder={4}><boxGeometry args={[BAG.width * 0.97, 0.052, 0.04]} /><meshStandardMaterial color="#d4202e" emissive="#d4202e" emissiveIntensity={0.3} roughness={0.3} transparent opacity={ghost ? 0.45 : 0.97} /></mesh>
+      <mesh position={[0, BAG.zipY - 0.045, 0.03]} renderOrder={4}><boxGeometry args={[BAG.width * 0.97, 0.052, 0.04]} /><meshStandardMaterial color="#1f58d6" emissive="#1f58d6" emissiveIntensity={0.3} roughness={0.3} transparent opacity={ghost ? 0.45 : 0.97} /></mesh>
       {/* folded / rolled spare plastic (only visible when the pouch is not full) */}
       <mesh ref={roll} rotation={[0, 0, Math.PI / 2]} renderOrder={4}><cylinderGeometry args={[0.05, 0.05, BAG.width * 0.9, 16]} /><meshPhysicalMaterial color="#ffffff" transparent opacity={0.3} roughness={0.08} clearcoat={1} envMapIntensity={2} depthWrite={false} /></mesh>
     </group>
@@ -79,7 +79,7 @@ function Particles({ substanceId, detail, target, ghost, reduced, shown }) {
   useEffect(() => () => { sphere.dispose(); cyl.dispose(); }, [sphere, cyl]);
   const mats = useMemo(() => {
     const o = {};
-    for (const el of Object.keys(inst.atoms)) { const l = lookOf(el); o[el] = new THREE.MeshPhysicalMaterial({ color: l.color, metalness: l.metal, roughness: l.rough, clearcoat: l.metal > 0.5 ? 0.3 : 1, clearcoatRoughness: 0.08, envMapIntensity: l.metal > 0.5 ? 1.5 : 1.15, transparent: ghost, opacity: ghost ? 0.4 : 1 }); }
+    for (const el of Object.keys(inst.atoms)) { const l = lookOf(el); o[el] = new THREE.MeshPhysicalMaterial({ color: l.color, metalness: l.metal, roughness: l.rough, clearcoat: l.metal > 0.5 ? 0.3 : 1, clearcoatRoughness: 0.06, envMapIntensity: l.metal > 0.5 ? 1.5 : l.pearl ? 0.85 : 1.15, iridescence: l.pearl ? 0.4 : 0, sheen: l.pearl ? 0.6 : 0, sheenColor: new THREE.Color("#ffffff"), transparent: ghost, opacity: ghost ? 0.4 : 1 }); }
     o.__bond = new THREE.MeshPhysicalMaterial({ color: BOND_COLOUR, metalness: 0.1, roughness: 0.35, transparent: ghost, opacity: ghost ? 0.4 : 1 });
     return o;
   }, [inst, ghost]);
@@ -92,6 +92,9 @@ function Particles({ substanceId, detail, target, ghost, reduced, shown }) {
   useLayoutEffect(() => {
     for (const [el, a] of Object.entries(inst.atoms)) { const m = meshes.current[el]; if (m) { m.instanceMatrix.array.set(a.matrices); m.instanceMatrix.needsUpdate = true; } }
     if (bondRef.current && inst.bonds.count) { bondRef.current.instanceMatrix.array.set(inst.bonds.matrices); bondRef.current.instanceMatrix.needsUpdate = true; }
+    // per-marble tint variation (multiplies the material colour): a more varied, glossier handful
+    const c = new THREE.Color(); let sd = 99;
+    for (const [el, a] of Object.entries(inst.atoms)) { const m = meshes.current[el]; if (!m) continue; for (let i = 0; i < a.count; i += 1) { sd = (sd * 1664525 + 1013904223) >>> 0; const t = sd / 4294967296; c.setScalar(0.8 + 0.2 * t); m.setColorAt(i, c); } if (m.instanceColor) m.instanceColor.needsUpdate = true; }
     setCounts(shown.current);
   }, [inst, mats, sphere, cyl]); // eslint-disable-line
   useFrame((_, dt) => {

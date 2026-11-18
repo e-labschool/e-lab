@@ -112,3 +112,7 @@
 .ml-root[data-layout="narrow"] .ml-hide-narrow { display: none; }
 @media (max-height: 560px) { .ml-root[data-layout="medium"] .ml-header { padding: 4px 10px; } .ml-root[data-layout="medium"] .ml-controls { padding: 4px 8px; } .ml-root[data-layout="medium"] .ml-caption { padding: 4px 10px; } .ml-root[data-layout="medium"] .ml-reference-note { display: none; } .ml-root[data-layout="medium"] .ml-subtitle { display: none; } }
 @media (prefers-reduced-motion: reduce) { .ml-root * { transition: none !important; animation: none !important; } }
+.ml-root .ml-note { position: absolute; left: 10px; bottom: 8px; z-index: 6; max-width: min(70%, 420px); padding: 3px 10px; border-radius: 10px; background: var(--ml-panel); border: 1px solid var(--ml-panel-line); color: var(--ml-ink-soft); font-size: 12px; pointer-events: none; }
+.ml-root[data-layout="narrow"] .ml-qty { padding: 2px 6px; font-size: 10px; }
+.ml-root[data-layout="narrow"] .ml-qty small { font-size: 9px; }
+.ml-root[data-layout="narrow"] .ml-note { font-size: 11px; max-width: 86%; }

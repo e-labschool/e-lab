@@ -4,6 +4,7 @@ import { RoundedBox } from "@react-three/drei";
 import * as THREE from "three";
 import { makeTexture, gaugeTexture, labelTexture, shadowTexture } from "./textures.js";
 import { packetTemplates } from "../engine/packetModel.js";
+import { FULL_ENTITIES } from "../engine/particles.js";
 import { lookOf, BOND_COLOUR } from "./palette.js";
 
 const steel = { color: "#c5cad3", metalness: 1, roughness: 0.28, envMapIntensity: 1.5 };
@@ -52,45 +53,100 @@ export function Balance({ packets = 1, text = "0.00", unit = "g", dark = false }
 
 const glass = (dark) => ({ color: dark ? "#bcd4ff" : "#eef6ff", transparent: true, opacity: dark ? 0.14 : 0.12, roughness: 0.04, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.03, envMapIntensity: 2.3, side: THREE.DoubleSide, depthWrite: false });
 
-/** Moving molecules inside a region (cylinder of radius R, from y0 to the live height).  n molecules, speed scaled by `speed`. */
-function MovingMolecules({ substanceId, count, R, y0, heightRef, speed = 1, size = 0.27, maxCount = 60 }) {
+/** Deterministic RNG (mulberry32) so the picture is reproducible. */
+const rng = (seed) => () => { seed |= 0; seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+export const HEAP_H = 1.3; // height of ONE mole's packed heap (jar units)
+
+/** Densely packed, slightly jittered heap of n points at the bottom of a cylinder (radius Ra), layer by layer. */
+function heapPoints(n, s, Ra, y0, rnd) {
+  const pts = []; const dy = s * 0.82;
+  for (let layer = 0; pts.length < n; layer += 1) {
+    const off = (layer % 2) * s * 0.5; const row = [];
+    for (let z = -Ra; z <= Ra; z += s * 0.87) for (let x = -Ra; x <= Ra; x += s) { const px = x + off + (Math.round(z / (s * 0.87)) % 2) * s * 0.25; if (Math.hypot(px, z) <= Ra) row.push([px + (rnd() - 0.5) * s * 0.18, y0 + layer * dy, z + (rnd() - 0.5) * s * 0.18]); }
+    for (let i = row.length - 1; i > 0; i -= 1) { const j = Math.floor(rnd() * (i + 1)); [row[i], row[j]] = [row[j], row[i]]; }
+    for (const r of row) { if (pts.length < n) pts.push(r); }
+  }
+  return pts;
+}
+
+/**
+ * The SAME molecules as the packed packet: n mol = n x (300/450/600) molecules (instanced).  `released` false: packed densely at the
+ * bottom of the jar; true: they fly through the whole chamber.  Positions are updated directly in the instance matrices (no per-frame allocation).
+ */
+function GasMolecules({ substanceId, mol, detail = "medium", R, y0, heightRef, speed = 1, released, reduced }) {
   const T = useMemo(() => packetTemplates(substanceId).species[0], [substanceId]);
   const els = useMemo(() => [...new Set(T.atoms.map((a) => a.el))], [T]);
-  const state = useMemo(() => Array.from({ length: maxCount }, (_, i) => { const r = (k) => { const x = Math.sin((i + 1) * 12.9898 + k * 78.233) * 43758.5453; return x - Math.floor(x); };
-    return { u: r(2), init: false, p: [(r(1) - 0.5) * 1.6 * R, y0 + 0.3, (r(3) - 0.5) * 1.6 * R], v: [r(4) - 0.5, r(5) - 0.5, r(6) - 0.5].map((x) => x * 2), q: new THREE.Quaternion().setFromEuler(new THREE.Euler(r(7) * 6, r(8) * 6, r(9) * 6)), w: [r(10) - 0.5, r(11) - 0.5, r(12) - 0.5] }; }), [maxCount, y0, R]);
-  const sphere = useMemo(() => new THREE.SphereGeometry(1, 16, 12), []); const cyl = useMemo(() => new THREE.CylinderGeometry(1, 1, 1, 8, 1, false), []);
-  const mats = useMemo(() => Object.fromEntries(els.map((el) => { const l = lookOf(el); return [el, new THREE.MeshPhysicalMaterial({ color: l.color, metalness: l.metal, roughness: l.rough, clearcoat: 1, clearcoatRoughness: 0.08, envMapIntensity: 1.3 })]; })), [els]);
-  const bondMat = useMemo(() => new THREE.MeshPhysicalMaterial({ color: BOND_COLOUR, metalness: 0.6, roughness: 0.3 }), []);
+  const per = FULL_ENTITIES[detail] ?? 450; const count = Math.max(1, Math.round(per * mol));
+  const Ra = R * 0.86; const d = Math.cbrt((Math.PI * Ra * Ra * HEAP_H) / per); const k = d * 0.5 * (T.atoms.length > 1 ? 1.48 : 1.04);
+  const sim = useMemo(() => {
+    const r = rng(7919 + count); const home = heapPoints(count, d * 0.98, Ra, y0 + k * 1.1, r);
+    const pos = new Float32Array(count * 3); const vel = new Float32Array(count * 3); const hm = new Float32Array(count * 3);
+    const q = new Float32Array(count * 4); const w = new Float32Array(count * 3); const delay = new Float32Array(count); const st = new Uint8Array(count);
+    const topY = home.reduce((m, h) => Math.max(m, h[1]), 0);
+    for (let i = 0; i < count; i += 1) {
+      for (let c = 0; c < 3; c += 1) { hm[i * 3 + c] = home[i][c]; pos[i * 3 + c] = home[i][c]; }
+      const u = new THREE.Quaternion().setFromEuler(new THREE.Euler(r() * 6.28, r() * 6.28, r() * 6.28)); q.set([u.x, u.y, u.z, u.w], i * 4);
+      for (let c = 0; c < 3; c += 1) w[i * 3 + c] = (r() - 0.5) * 3;
+      delay[i] = (1 - home[i][1] / Math.max(0.1, topY)) * 0.9 + r() * 0.5; // top of the heap leaves first
+    }
+    return { pos, vel, hm, q, w, delay, st, r, t: 0, wasReleased: null, init: false };
+  }, [count, d, Ra, y0, k]);
+  const sphere = useMemo(() => new THREE.SphereGeometry(1, detail === "low" ? 12 : 16, detail === "low" ? 8 : 12), [detail]);
+  const cyl = useMemo(() => new THREE.CylinderGeometry(1, 1, 1, 8, 1, false), []);
+  const mats = useMemo(() => Object.fromEntries(els.map((el) => { const l = lookOf(el); return [el, new THREE.MeshPhysicalMaterial({ color: l.color, metalness: l.metal, roughness: l.rough, clearcoat: 1, clearcoatRoughness: 0.06, envMapIntensity: l.pearl ? 0.9 : 1.3, iridescence: l.pearl ? 0.4 : 0 })]; })), [els]);
+  const bondMat = useMemo(() => new THREE.MeshPhysicalMaterial({ color: BOND_COLOUR, metalness: 0.1, roughness: 0.35 }), []);
   useEffect(() => () => { sphere.dispose(); cyl.dispose(); Object.values(mats).forEach((m) => m.dispose()); bondMat.dispose(); }, [sphere, cyl, mats, bondMat]);
   const refs = useRef({}); const bref = useRef();
-  const tmp = useMemo(() => ({ m: new THREE.Matrix4(), p: new THREE.Vector3(), q: new THREE.Quaternion(), s: new THREE.Vector3(), dq: new THREE.Quaternion(), a: new THREE.Vector3(), b: new THREE.Vector3(), up: new THREE.Vector3(0, 1, 0) }), []);
+  const tpl = useMemo(() => {
+    const ord = {}; const atoms = T.atoms.map((a) => { ord[a.el] = (ord[a.el] ?? 0) + 1; return { ...a, ord: ord[a.el] - 1 }; });
+    const bonds = T.bonds.map((b) => { const A = T.atoms[b.a], B = T.atoms[b.b]; const v = new THREE.Vector3(B.x - A.x, B.y - A.y, B.z - A.z); const len = v.length();
+      return { mid: new THREE.Vector3((A.x + B.x) / 2, (A.y + B.y) / 2, (A.z + B.z) / 2), len, qb: new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), v.normalize()), rad: Math.min(A.r, B.r) * 0.42 }; });
+    return { atoms, bonds, perEl: ord };
+  }, [T]);
+  const tmp = useMemo(() => ({ m: new THREE.Matrix4(), p: new THREE.Vector3(), q: new THREE.Quaternion(), dq: new THREE.Quaternion(), s: new THREE.Vector3(), a: new THREE.Vector3(), id: new THREE.Quaternion(), ax: new THREE.Vector3() }), []);
+  useLayoutEffect(() => { for (const m of Object.values(refs.current)) if (m) m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); if (bref.current) bref.current.instanceMatrix.setUsage(THREE.DynamicDrawUsage); }, [sim, mats]);
+  const scatter = (i, top) => { const S = sim; const rr = Math.sqrt(S.r()) * (R * 0.86 - k * 1.6); const th = S.r() * 6.283; S.pos[i * 3] = Math.cos(th) * rr; S.pos[i * 3 + 2] = Math.sin(th) * rr; S.pos[i * 3 + 1] = y0 + k * 1.6 + S.r() * Math.max(0.3, top - y0 - k * 3.2); };
+  const kick = (i) => { const S = sim; const th = S.r() * 6.283, ph = Math.acos(2 * S.r() - 1); const v = 1.5 * speed * (0.6 + 0.8 * S.r()) * (reduced ? 0.3 : 1); S.vel[i * 3] = Math.sin(ph) * Math.cos(th) * v; S.vel[i * 3 + 1] = Math.cos(ph) * v; S.vel[i * 3 + 2] = Math.sin(ph) * Math.sin(th) * v; };
   useFrame((_, dtRaw) => {
-    const dt = Math.min(dtRaw, 0.05); const top = heightRef.current;
-    const idx = {}; els.forEach((el) => { idx[el] = 0; }); let bi = 0;
-    for (let i = 0; i < Math.min(count, maxCount); i += 1) {
-      const m = state[i]; if (!m.init) { m.init = true; m.p[1] = y0 + 0.3 + m.u * Math.max(0.5, top - y0 - 0.6); }
-      for (let k = 0; k < 3; k += 1) m.p[k] += m.v[k] * dt * speed;
-      const lim = R - size * 1.05; const rr = Math.hypot(m.p[0], m.p[2]);
-      if (rr > lim) { const nx = m.p[0] / rr, nz = m.p[2] / rr; const d = m.v[0] * nx + m.v[2] * nz; if (d > 0) { m.v[0] -= 2 * d * nx; m.v[2] -= 2 * d * nz; } m.p[0] = nx * lim; m.p[2] = nz * lim; }
-      if (m.p[1] < y0 + size * 1.1) { m.p[1] = y0 + size * 1.1; m.v[1] = Math.abs(m.v[1]); } if (m.p[1] > top - size * 1.1) { m.p[1] = top - size * 1.1; m.v[1] = -Math.abs(m.v[1]); }
-      tmp.dq.setFromEuler(new THREE.Euler(m.w[0] * dt * speed * 3, m.w[1] * dt * speed * 3, m.w[2] * dt * speed * 3)); m.q.multiply(tmp.dq);
-      const wp = T.atoms.map((a) => { tmp.a.set(a.x, a.y, a.z).applyQuaternion(m.q).multiplyScalar(size).add(tmp.b.set(m.p[0], m.p[1], m.p[2])); return { el: a.el, p: tmp.a.clone(), r: a.r * size }; });
-      for (const a of wp) { const mesh = refs.current[a.el]; if (!mesh) continue; tmp.s.setScalar(a.r); tmp.m.compose(a.p, tmp.q.identity(), tmp.s); mesh.setMatrixAt(idx[a.el]++, tmp.m); }
-      for (const b of T.bonds) { const A = wp[b.a].p, B = wp[b.b].p; tmp.p.copy(A).add(B).multiplyScalar(0.5); tmp.a.copy(B).sub(A); const len = tmp.a.length(); tmp.q.setFromUnitVectors(tmp.up, tmp.a.normalize()); tmp.s.set(Math.min(wp[b.a].r, wp[b.b].r) * 0.42, len, Math.min(wp[b.a].r, wp[b.b].r) * 0.42); tmp.m.compose(tmp.p, tmp.q, tmp.s); bref.current?.setMatrixAt(bi++, tmp.m); }
+    const S = sim; const dt = Math.min(dtRaw, 0.05); const top = heightRef.current - R * 0.45 - k * 1.2; const bot = y0 + k * 1.2; const lim = R * 0.9 - k * 1.5;
+    if (!S.init) { S.init = true; S.wasReleased = released; if (released) for (let i = 0; i < count; i += 1) { scatter(i, top); kick(i); S.st[i] = 1; } }
+    if (S.wasReleased !== released) { S.wasReleased = released; S.t = 0; if (released && reduced) for (let i = 0; i < count; i += 1) { scatter(i, top); kick(i); S.st[i] = 1; } }
+    S.t += dt; const pull = Math.min(1, dt * 4);
+    for (let i = 0; i < count; i += 1) {
+      const o = i * 3; let st = S.st[i];
+      if (released) { if (st !== 1 && (st === 2 || S.t > S.delay[i])) { st = 1; S.st[i] = 1; kick(i); } } else if (st === 1) { st = 2; S.st[i] = 2; }
+      if (st === 1) {
+        S.pos[o] += S.vel[o] * dt; S.pos[o + 1] += S.vel[o + 1] * dt; S.pos[o + 2] += S.vel[o + 2] * dt;
+        const rr = Math.hypot(S.pos[o], S.pos[o + 2]);
+        if (rr > lim) { const nx = S.pos[o] / rr, nz = S.pos[o + 2] / rr; const dd = S.vel[o] * nx + S.vel[o + 2] * nz; if (dd > 0) { S.vel[o] -= 2 * dd * nx; S.vel[o + 2] -= 2 * dd * nz; } S.pos[o] = nx * lim; S.pos[o + 2] = nz * lim; }
+        if (S.pos[o + 1] < bot) { S.pos[o + 1] = bot; S.vel[o + 1] = Math.abs(S.vel[o + 1]); } else if (S.pos[o + 1] > top) { S.pos[o + 1] = top; S.vel[o + 1] = -Math.abs(S.vel[o + 1]); }
+        tmp.ax.set(S.w[o], S.w[o + 1], S.w[o + 2]); const ang = tmp.ax.length() * dt * speed; if (ang > 0) { tmp.dq.setFromAxisAngle(tmp.ax.normalize(), ang); tmp.q.set(S.q[i * 4], S.q[i * 4 + 1], S.q[i * 4 + 2], S.q[i * 4 + 3]).premultiply(tmp.dq); S.q[i * 4] = tmp.q.x; S.q[i * 4 + 1] = tmp.q.y; S.q[i * 4 + 2] = tmp.q.z; S.q[i * 4 + 3] = tmp.q.w; }
+      } else if (st === 2) {
+        const f = reduced ? 1 : pull; for (let c = 0; c < 3; c += 1) S.pos[o + c] += (S.hm[o + c] - S.pos[o + c]) * f;
+        if (Math.abs(S.pos[o] - S.hm[o]) + Math.abs(S.pos[o + 1] - S.hm[o + 1]) + Math.abs(S.pos[o + 2] - S.hm[o + 2]) < 0.02) { S.st[i] = 0; for (let c = 0; c < 3; c += 1) S.pos[o + c] = S.hm[o + c]; }
+      }
+      tmp.q.set(S.q[i * 4], S.q[i * 4 + 1], S.q[i * 4 + 2], S.q[i * 4 + 3]);
+      for (let j = 0; j < tpl.atoms.length; j += 1) {
+        const a = tpl.atoms[j]; tmp.a.set(a.x, a.y, a.z).multiplyScalar(k).applyQuaternion(tmp.q); tmp.p.set(S.pos[o] + tmp.a.x, S.pos[o + 1] + tmp.a.y, S.pos[o + 2] + tmp.a.z); tmp.s.setScalar(a.r * k);
+        tmp.m.compose(tmp.p, tmp.id, tmp.s); const mesh = refs.current[a.el]; if (mesh) mesh.setMatrixAt(i * tpl.perEl[a.el] + a.ord, tmp.m);
+      }
+      for (let j = 0; j < tpl.bonds.length; j += 1) {
+        const b = tpl.bonds[j]; tmp.a.copy(b.mid).multiplyScalar(k).applyQuaternion(tmp.q); tmp.p.set(S.pos[o] + tmp.a.x, S.pos[o + 1] + tmp.a.y, S.pos[o + 2] + tmp.a.z);
+        tmp.dq.copy(tmp.q).multiply(b.qb); tmp.s.set(b.rad * k, b.len * k, b.rad * k); tmp.m.compose(tmp.p, tmp.dq, tmp.s); if (bref.current) bref.current.setMatrixAt(i * tpl.bonds.length + j, tmp.m);
+      }
     }
-    for (const el of els) { const mesh = refs.current[el]; if (mesh) { mesh.count = idx[el]; mesh.instanceMatrix.needsUpdate = true; } }
-    if (bref.current) { bref.current.count = bi; bref.current.instanceMatrix.needsUpdate = true; }
+    for (const m of Object.values(refs.current)) if (m) m.instanceMatrix.needsUpdate = true; if (bref.current) bref.current.instanceMatrix.needsUpdate = true;
   });
   return (
     <group>
-      {els.map((el) => <instancedMesh key={el} ref={(m) => { refs.current[el] = m; }} args={[sphere, mats[el], maxCount * T.atoms.length]} frustumCulled={false} />)}
-      {T.bonds.length > 0 && <instancedMesh ref={bref} args={[cyl, bondMat, maxCount * T.bonds.length]} frustumCulled={false} />}
+      {els.map((el) => <instancedMesh key={el + substanceId + count + detail} ref={(m) => { refs.current[el] = m; }} args={[sphere, mats[el], count * tpl.perEl[el]]} frustumCulled={false} />)}
+      {tpl.bonds.length > 0 && <instancedMesh key={"b" + substanceId + count + detail} ref={bref} args={[cyl, bondMat, count * tpl.bonds.length]} frustumCulled={false} />}
     </group>
   );
 }
 
 /** Glass bell-jar gas chamber on a steel base with a pressure gauge.  Height is proportional to the gas volume (V / 24 dm3 x 2.6). */
-export function BellJar({ gasId, volumeDm3, molecules, label, display, highlight, dark = false, reduced = false, position = [0, 0, 0], speedFactor = 1 }) {
+export function BellJar({ gasId, volumeDm3, mol = 1, detail = "medium", released = false, label, display, highlight, dark = false, reduced = false, position = [0, 0, 0], speedFactor = 1 }) {
   const R = 1.35; const base = 0.38;
   const hRef = useRef(null); const target = Math.max(0.7, 2.6 * (volumeDm3 / 24));
   if (hRef.current === null) hRef.current = target;
@@ -121,7 +177,7 @@ export function BellJar({ gasId, volumeDm3, molecules, label, display, highlight
       </group>
       <mesh position={[0, 1.55, R * 0.97]} rotation={[0, 0, 0]} renderOrder={5}><planeGeometry args={[1.05, 0.52]} /><meshBasicMaterial map={labelTex} transparent toneMapped={false} depthWrite={false} /></mesh>
       {highlight && <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]}><ringGeometry args={[R + 0.5, R + 0.62, 56]} /><meshBasicMaterial color="#6d7dff" transparent opacity={0.6} depthWrite={false} /></mesh>}
-      <MovingMolecules substanceId={gasId} count={molecules} R={R} y0={base} heightRef={liveTop} speed={speedFactor} />
+      <GasMolecules substanceId={gasId} mol={mol} detail={detail} released={released} reduced={reduced} R={R} y0={base} heightRef={liveTop} speed={speedFactor} />
     </group>
   );
 }

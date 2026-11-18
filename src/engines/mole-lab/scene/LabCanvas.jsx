@@ -28,7 +28,7 @@ function Bench({ dark, reflect }) {
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.002, 0.5]}>
       <planeGeometry args={[60, 24]} />
       {reflect
-        ? <MeshReflectorMaterial color={dark ? "#3a4560" : "#b4bfce"} roughness={0.85} metalness={0.05} envMapIntensity={dark ? 0.5 : 0.9} alphaMap={fade} transparent blur={[260, 80]} resolution={512} mixBlur={1.2} mixStrength={dark ? 0.7 : 0.75} mirror={0.6} depthScale={0.5} minDepthThreshold={0.6} maxDepthThreshold={1.4} />
+        ? <MeshReflectorMaterial color={dark ? "#3a4560" : "#b4bfce"} roughness={0.85} metalness={0.05} envMapIntensity={dark ? 0.5 : 0.9} alphaMap={fade} transparent blur={[520, 160]} resolution={384} mixBlur={1.6} mixStrength={dark ? 0.5 : 0.5} mirror={0.5} depthScale={0.5} minDepthThreshold={0.6} maxDepthThreshold={1.4} />
         : <meshStandardMaterial color={dark ? "#3a4560" : "#b4bfce"} roughness={0.22} metalness={0.05} envMapIntensity={dark ? 0.5 : 0.95} alphaMap={fade} transparent depthWrite={false} />}
     </mesh>
   );
@@ -84,7 +84,7 @@ export default function LabCanvas({ dark, reflect = false, bounds, focus, reduce
             <directionalLight position={[4, 9, 7]} intensity={dark ? 1.0 : 1.5} />
             <directionalLight position={[-7, 4, 4]} intensity={0.45} color="#dfe9ff" />
             <CameraKeyApi apiRef={camRef} />
-            <OrbitControls ref={controlsRef} makeDefault enablePan={false} enableDamping dampingFactor={0.1} rotateSpeed={0.55} zoomSpeed={0.7} minPolarAngle={1.05} maxPolarAngle={1.52} minAzimuthAngle={-0.6} maxAzimuthAngle={0.6} minDistance={3} maxDistance={40} />
+            <OrbitControls ref={controlsRef} makeDefault enablePan={false} enableDamping dampingFactor={0.1} rotateSpeed={0.55} zoomSpeed={0.7} minPolarAngle={1.05} maxPolarAngle={1.52} minAzimuthAngle={-0.6} maxAzimuthAngle={0.6} minDistance={3} maxDistance={90} />
             <CameraRig bounds={bounds} focus={focus} reduced={reduced} controlsRef={controlsRef} />
             <FpsMonitor onSlow={onSlow} enabled={Boolean(onSlow)} />
             <Bench dark={dark} reflect={reflect} />

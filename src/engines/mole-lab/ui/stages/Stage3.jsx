@@ -5,7 +5,7 @@ import StageFrame from "../StageFrame.jsx";
 import { Choice, Pick, Caption, Fallback2D } from "../parts.jsx";
 import LabCanvas from "../../scene/LabCanvas.jsx";
 import Packet from "../../scene/Packet.jsx";
-import { Beaker, Flask, BEAKER, levelY } from "../../scene/Equipment.jsx";
+import { Beaker, BEAKER, levelY } from "../../scene/Equipment.jsx";
 import { IonCloud, PourStream } from "../../scene/Fx.jsx";
 import { BAG } from "../../engine/packetModel.js";
 import { STAGE3_SOLUTES, STAGE3_MASSES, STAGE3_VOLUMES, stage3Info, soluteLabel, labelOf, formulaOf, amountText } from "../../engine/labConfig.js";
@@ -69,7 +69,6 @@ function SingleScene({ solute, info, phase, setPhase, shell, startKey, drain, se
         amountText={`${formulaOf(solute)} — ${amountText(info.n)}`} amountSub={`${fmtFixed(info.massG, 0)} g`} />
       <Solution x={bx} n={info.n} volumeMl={info.volumeMl} revealRef={reveal} levelRef={level} anion={solute === "NaCl" ? "Cl" : "OH"} shell={shell} label={`${info.volumeMl} mL`} />
       <PourStream srcRef={src} dstRef={dst} progressRef={streak} colour="#f4f6fb" />
-      <Flask position={[4.9, 0, -0.2]} dark={shell.dark} />
     </group>
   );
 }
@@ -104,7 +103,7 @@ export default function Stage3({ shell }) {
   const err = compare ? (info.error || infoB.error) : info.error;
   const line = compare ? `A: ${info.line.split(";")[0]} → ${fmtFixed(info.c, 2)} mol dm⁻³   |   B: ${fmtFixed(massG * 2, 0)} g = ${fmtMol(infoB.n)} mol → ${fmtFixed(infoB.c, 2)} mol dm⁻³ (same final volume ${vol} mL)`
     : dissolved ? info.line : `${fmtFixed(massG, 0)} g ${formulaOf(solute)} = ${fmtMol(info.n)} mol. Pour the packet into the water (drag it over the beaker or press Pour).`;
-  const bounds = compare ? { w: 14.2, h: 5.0, cx: 0, cy: 1.6, depth: 1 } : { w: 11.6, h: 5.2, cx: 0.9, cy: 1.8, depth: 1 };
+  const bounds = compare ? { w: 14.2, h: 5.0, cx: 0, cy: 1.6, depth: 1 } : { w: 11.0, h: 5.2, cx: 0.3, cy: 1.8, depth: 1 };
   const fb = [{ substanceId: solute, fraction: info.packets.packets[0] ?? 0, formula: labelOf(solute), text: `${amountText(info.n)}, ${massG} g` }];
   const msg = err ? `${err}` : "";
   return (
