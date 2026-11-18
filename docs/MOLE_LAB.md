@@ -98,3 +98,14 @@ Rules that matter when you change anything here:
 
 ## Commands
 `npm run test:mole-lab` (engine, store, scene, UI, Stage 3, Stages 4-6; `npm run test:mole-lab-stage456` alone), `npm run verify:mole-lab-stage456` (Chromium: screenshots, real mouse drags, conservation), `npm run verify:mole-lab` (builds to a temp dir, vite preview on a free port, headless Chromium with SwiftShader; hostile interactions and screenshots).
+
+## Redesign (premium bright 3D lab): current architecture (supersedes the older Layout, 3D system and per-stage UI notes above)
+
+Binding spec: `docs/MOLE_LAB_REDESIGN_SPEC.md`; references: `docs/mole-lab-reference/ref-01..08.png`.
+
+- Engine kept (integer quanta, store, tests). Additions: `engine/packetModel.js` (BAG, `packetLayout`, `groupsFor`, `buildSlots`, `buildPacketInstances`, tally helpers) and `engine/labConfig.js` (per-stage substance and amount lists, one-line explanations, Avogadro text once). Ten substances in Stage 1, ten solids in Stage 2, ten gases in Stage 4, ten reactions in Stage 5.
+- One packet rule: ONE FULL PACKET = ONE MOLE, same `BAG` dimensions everywhere. Fractions are partly filled (prefix of the slot-ordered groups, bottom first) with the unused plastic rolled; 2.5 mol = [1, 1, 0.5]. Full packet = 300 / 450 / 600 drawn entities (low / medium / high); ionic solids draw a cubic lattice of ions, molecular ones draw bonded molecules.
+- Scene (`scene/`): `Packet.jsx` (shared bag, instanced particles, zip strip, label), `PacketRow.jsx`, `Equipment.jsx` (balance, bell jar, beaker, flask), `Fx.jsx` (ions, pour stream, travelling particles), `Board.jsx` (Stages 5 and 6), `LabCanvas.jsx` (camera, lighting, bench, adaptive quality, GuardedFrame context-lost fallback), `backdrop.js` (painted blurred lab behind a transparent canvas), `textures.js`, `palette.js`.
+- UI (`ui/`): `StageFrame` (controls row, one large experiment, one caption with an optional Details expander), `parts.jsx` (Choice, Pick, Reference, Fallback2D), `stages/Stage1..6.jsx`. All CSS is scoped under `.ml-root` (light default, dark usable).
+- Gotchas: additive blending in a premultiplied transparent canvas darkens the picture (use CustomBlending SrcAlpha/One); transparent MeshPhysicalMaterial liquids vanished (use MeshStandardMaterial with emissive); an instancedMesh whose material changes is recreated, so matrices are re-applied in the layout effect.
+- Tests: `test-mole-lab-engine/store/stage3-engine/stage456-engine` (engine), `test-mole-lab-packets.mjs` (NEW: layout, dimensions, counts, molecular composition H2 O2 H2O CO2 NH3 CH4, ionic lattice), `test-mole-lab-ui.mjs` (CHANGED: jsdom, fallback bench). Removed as obsolete (they targeted deleted modules and the old UI): the scene, stage3-scene, stage3-ui and stage456-ui tests and the stage3/stage456 verify scripts. `npm run verify:mole-lab` (CHANGED) builds to a temp dir and screenshots all six stages at 1366x768, 910x512, 390x844 in light and dark.

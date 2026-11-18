@@ -202,7 +202,7 @@ test("entity count is deterministic, monotone, 0 only when empty, < full only wh
   for (const d of E.DETAIL_LEVELS) { let prev = -1; for (let i = 0; i <= 1000; i += 1) { const c = E.entityCountFor(i / 1000, d); assert.ok(c >= prev); prev = c; assert.equal(c, E.entityCountFor(i / 1000, d)); } assert.equal(E.entityCountFor(0, d), 0); assert.equal(E.entityCountFor(1, d), E.FULL_ENTITIES[d]); assert.ok(E.entityCountFor(0.9999, d) < E.FULL_ENTITIES[d]); assert.equal(E.entityCountFor(0.0001, d), 1); }
   assert.throws(() => E.entityCountFor(0.5, "ultra"));
 });
-test("fill is proportional to the fraction (0.5 mol shows about half the entities)", () => { const N = E.FULL_ENTITIES.medium; assert.equal(E.entityCountFor(0.5, "medium"), N / 2); assert.equal(E.entityCountFor(0.25, "medium"), N / 4); });
+test("fill is proportional to the fraction (0.5 mol shows about half the entities)", () => { const N = E.FULL_ENTITIES.medium; assert.equal(E.entityCountFor(0.5, "medium"), N / 2); assert.equal(E.entityCountFor(0.25, "medium"), Math.round(N / 4)); /* CHANGED (redesign): 300/450/600 groups per full packet, 450/4 is not an integer */ assert.deepEqual([300, 450, 600], [E.FULL_ENTITIES.low, E.FULL_ENTITIES.medium, E.FULL_ENTITIES.high]); });
 test("same representative count for every substance at one detail level (no density information, A2)", () => { assert.equal(E.entityCountFor(0.5, "high"), E.entityCountFor(0.5, "high")); for (const id of E.SELECTABLE_IDS) assert.ok(E.particleModel(id).entities.length >= 1); });
 test("particle models carry the right composition per entity", () => {
   const h2o = E.particleModel("H2O").entities[0]; assert.deepEqual(h2o.atoms.map((a) => a.el), ["O", "H", "H"]); assert.equal(h2o.bonds.length, 2);

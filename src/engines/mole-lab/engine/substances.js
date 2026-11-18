@@ -44,6 +44,21 @@ const LIST = [
     lattice: { type: "bcc", nnPm: 248, name: "Metallic lattice (body-centred cubic)", note: "Atoms in a regular array in a sea of delocalised electrons; there are no Fe molecules." } },
   { id: "Na", name: "Sodium", formula: "Na", state: "s", kind: "metallic", entity: ENT.atom,
     lattice: { type: "bcc", nnPm: 372, name: "Metallic lattice (body-centred cubic)", note: "Atoms in a regular array in a sea of delocalised electrons; there are no Na molecules." } },
+  // ---- additions for the redesign (Stage 2 solids, Stage 4 gases, Stage 5 reaction products)
+  { id: "Ca", name: "Calcium", formula: "Ca", state: "s", kind: "metallic", entity: ENT.atom, lattice: { type: "fcc", nnPm: 395, name: "Metallic lattice (face-centred cubic)", note: "Atoms in a regular array in a sea of delocalised electrons; there are no Ca molecules." } },
+  { id: "Al", name: "Aluminium", formula: "Al", state: "s", kind: "metallic", entity: ENT.atom, lattice: { type: "fcc", nnPm: 286, name: "Metallic lattice (face-centred cubic)", note: "Atoms in a regular array in a sea of delocalised electrons; there are no Al molecules." } },
+  { id: "Cu", name: "Copper", formula: "Cu", state: "s", kind: "metallic", entity: ENT.atom, lattice: { type: "fcc", nnPm: 256, name: "Metallic lattice (face-centred cubic)", note: "Atoms in a regular array in a sea of delocalised electrons; there are no Cu molecules." } },
+  { id: "Zn", name: "Zinc", formula: "Zn", state: "s", kind: "metallic", entity: ENT.atom, lattice: { type: "hcp", nnPm: 266, name: "Metallic lattice (hexagonal close-packed)", note: "Atoms in a regular array in a sea of delocalised electrons; there are no Zn molecules." } },
+  { id: "Ag", name: "Silver", formula: "Ag", state: "s", kind: "metallic", entity: ENT.atom, lattice: { type: "fcc", nnPm: 289, name: "Metallic lattice (face-centred cubic)", note: "Atoms in a regular array in a sea of delocalised electrons; there are no Ag molecules." } },
+  { id: "C", name: "Carbon", formula: "C", state: "s", kind: "atomic-solid", entity: ENT.atom, lattice: { type: "network", nnPm: 142, name: "Giant covalent network (graphite or diamond)", note: "Carbon atoms are bonded in a giant covalent network; there are no C molecules, so 1 mol is 1 mol of C atoms." } },
+  { id: "S", name: "Sulfur", formula: "S", state: "s", kind: "atomic-solid", entity: ENT.atom, lattice: { type: "molecular-crystal", nnPm: 205, name: "Molecular solid (S8 rings), counted as S atoms", note: "Real sulfur is S8 rings; as in the IB data booklet it is counted as S atoms here (simplification), so 1 mol is 1 mol of S atoms." } },
+  { id: "He", name: "Helium", formula: "He", state: "g", kind: "molecular", entity: ENT.atom, geometry: { name: "Monatomic", angleDeg: null, angleLabel: "single atoms", ...single("He") } },
+  { id: "Ne", name: "Neon", formula: "Ne", state: "g", kind: "molecular", entity: ENT.atom, geometry: { name: "Monatomic", angleDeg: null, angleLabel: "single atoms", ...single("Ne") } },
+  { id: "Ar", name: "Argon", formula: "Ar", state: "g", kind: "molecular", entity: ENT.atom, geometry: { name: "Monatomic", angleDeg: null, angleLabel: "single atoms", ...single("Ar") } },
+  { id: "CO", name: "Carbon monoxide", formula: "CO", state: "g", kind: "molecular", entity: ENT.molecule, geometry: { name: "Diatomic", angleDeg: null, angleLabel: "C≡O triple bond", ...diatomic("C", 1.128, 3, "O") } },
+  { id: "CaO", name: "Calcium oxide", formula: "CaO", state: "s", kind: "ionic", entity: ENT.formulaUnit, ions: [ion("Ca", 2), ion("O", -2)], lattice: { type: "rock-salt", nnPm: 240, name: "Rock-salt ionic lattice of Ca²⁺ and O²⁻", note: "Each Ca²⁺ is surrounded by six O²⁻ and vice versa." } },
+  { id: "Fe2O3", name: "Iron(III) oxide", formula: "Fe2O3", state: "s", kind: "ionic", entity: ENT.formulaUnit, ions: [ion("Fe", 3, 2), ion("O", -2, 3)], lattice: { type: "corundum", nnPm: 200, name: "Ionic lattice of Fe³⁺ and O²⁻ (2 : 3)", note: "Drawn as a representative fragment with two Fe³⁺ for every three O²⁻ (simplification)." } },
+  { id: "Al2O3", name: "Aluminium oxide", formula: "Al2O3", state: "s", kind: "ionic", entity: ENT.formulaUnit, ions: [ion("Al", 3, 2), ion("O", -2, 3)], lattice: { type: "corundum", nnPm: 190, name: "Ionic lattice of Al³⁺ and O²⁻ (2 : 3)", note: "Drawn as a representative fragment with two Al³⁺ for every three O²⁻ (simplification)." } },
   // Aqueous NaOH: hydrated ions only -- never intact NaOH molecules (spec D Stage 3 safeguards).  Not selectable in Stages 1-2.
   { id: "NaOH_aq", name: "Sodium hydroxide solution", formula: "NaOH", state: "aq", kind: "aqueous-ionic", entity: ENT.formulaUnit, solutionOnly: true,
     ions: [ion("Na", 1), ion("OH", -1)], lattice: null, parent: "NaOH",
@@ -56,7 +71,7 @@ export const SELECTABLE_IDS = Object.freeze(["H2O", "CO2", "NH3", "CH4", "H2", "
 function finish(raw) {
   const composition = parseFormula(raw.formula);
   const geometry = raw.geometry ? { ...raw.geometry, atoms: raw.geometry.atoms.map((a) => ({ ...a })), bonds: raw.geometry.bonds.map((b) => ({ ...b })) }
-    : raw.kind === "metallic" ? { name: "Single atom", angleDeg: null, ...single(raw.formula) } : null;
+    : raw.kind === "metallic" || raw.kind === "atomic-solid" ? { name: "Single atom", angleDeg: null, ...single(raw.formula) } : null;
   const out = {
     ...raw, composition, display: `${toUnicodeFormula(raw.formula)}(${raw.state})`, formulaDisplay: toUnicodeFormula(raw.formula),
     atomsPerEntity: atomTotal(composition), geometry, counting: false, ions: raw.ions ?? null,

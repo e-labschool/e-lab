@@ -19,6 +19,18 @@ const LIST = [
     notes: ["Burning magnesium is intensely bright and hot: never look directly at it."] },
   { id: "sodium-water", name: "Sodium with water", species: [sp("Na", 2, "reactant", "s"), sp("H2O", 2, "reactant", "l"), sp("NaOH_aq", 2, "product", "aq"), sp("H2", 1, "product", "g")],
     notes: ["Sodium reacts violently with water and is hazardous. NaOH forms as aqueous Na⁺ and OH⁻ ions, not a dry solid; the product packet is a conceptual mole summary."] },
+  { id: "methane-combustion", name: "Burning methane", species: [sp("CH4", 1, "reactant", "g"), sp("O2", 2, "reactant", "g"), sp("CO2", 1, "product", "g"), sp("H2O", 2, "product", "l")],
+    notes: ["Complete combustion of methane (excess oxygen)."] },
+  { id: "iron-oxidation", name: "Rusting of iron (iron(III) oxide)", species: [sp("Fe", 4, "reactant", "s"), sp("O2", 3, "reactant", "g"), sp("Fe2O3", 2, "product", "s")],
+    notes: ["Simplified: real rust is hydrated iron(III) oxide and forms slowly in the presence of water."] },
+  { id: "carbon-combustion", name: "Burning carbon", species: [sp("C", 1, "reactant", "s"), sp("O2", 1, "reactant", "g"), sp("CO2", 1, "product", "g")],
+    notes: ["Complete combustion of carbon in excess oxygen."] },
+  { id: "carbon-monoxide-oxidation", name: "Oxidation of carbon monoxide", species: [sp("CO", 2, "reactant", "g"), sp("O2", 1, "reactant", "g"), sp("CO2", 2, "product", "g")],
+    notes: ["Carbon monoxide is toxic; this is a model of mole ratios."] },
+  { id: "calcium-oxide", name: "Burning calcium", species: [sp("Ca", 2, "reactant", "s"), sp("O2", 1, "reactant", "g"), sp("CaO", 2, "product", "s")],
+    notes: ["Calcium burns with a brick-red flame forming calcium oxide."] },
+  { id: "aluminium-oxide", name: "Aluminium and oxygen", species: [sp("Al", 4, "reactant", "s"), sp("O2", 3, "reactant", "g"), sp("Al2O3", 2, "product", "s")],
+    notes: ["Aluminium reacts with oxygen to form a protective layer of aluminium oxide."] },
 ];
 
 export const REACTION_LIST = Object.freeze(LIST.map((r) => Object.freeze({ ...r, species: Object.freeze(r.species.map((s) => Object.freeze(s))) })));

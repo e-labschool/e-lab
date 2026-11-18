@@ -29,7 +29,7 @@ const RAW = {
   Na: [11, "Sodium", 22.99, 22.990], Mg: [12, "Magnesium", 24.31, 24.305], Al: [13, "Aluminium", 26.98, 26.982], Si: [14, "Silicon", 28.09, 28.085],
   P: [15, "Phosphorus", 30.97, 30.974], S: [16, "Sulfur", 32.07, 32.06], Cl: [17, "Chlorine", 35.45, 35.45], Ar: [18, "Argon", 39.95, 39.95],
   K: [19, "Potassium", 39.10, 39.098], Ca: [20, "Calcium", 40.08, 40.078], Fe: [26, "Iron", 55.85, 55.845], Cu: [29, "Copper", 63.55, 63.546],
-  Zn: [30, "Zinc", 65.38, 65.38],
+  Zn: [30, "Zinc", 65.38, 65.38], Ag: [47, "Silver", 107.87, 107.87], He: [2, "Helium", 4.00, 4.0026],
 };
 /** Elements whose TEACHING value is a deliberate simplification of the 2 d.p. table (labelled wherever shown). */
 export const TEACHING_SIMPLIFIED = Object.freeze({ Mg: 24.0 });

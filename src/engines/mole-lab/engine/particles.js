@@ -11,7 +11,7 @@ import { getSubstance } from "./substances.js";
 
 export const DETAIL_LEVELS = Object.freeze(["low", "medium", "high"]);
 /** Representative entities drawn in ONE full packet, per detail level. */
-export const FULL_ENTITIES = Object.freeze({ low: 40, medium: 84, high: 140 });
+export const FULL_ENTITIES = Object.freeze({ low: 300, medium: 450, high: 600 });
 
 /** Visible entity count for a fill fraction: monotone, deterministic, 0 only when empty, < full only when not full. */
 export function entityCountFor(fraction, detail = "medium") {
@@ -40,7 +40,7 @@ const EXTRA_COLOURS = { Fe: "#8d7b6e", Cu: "#c4733c", Zn: "#8f9bb0", Al: "#b8a9c
 export const atomColour = (el) => EXTRA_COLOURS[el] ?? elementStyle(el).color;
 export const atomTextColour = (el) => elementStyle(el).text;
 /** Drawn radii (arbitrary units, ratio matters). Neutral atoms use the shared ball-and-stick radii; ions use ionic-radius ratios. */
-const ION_R = { "Na+": 0.62, "Cl-": 1.0, "Mg2+": 0.5, "O2-": 0.8 };
+const ION_R = { "Na+": 0.62, "Cl-": 1.0, "Mg2+": 0.5, "O2-": 0.8, "Ca2+": 0.7, "Fe3+": 0.45, "Al3+": 0.4 };
 export const atomRadius = (el, charge = 0) => {
   if (charge) { const key = `${el}${Math.abs(charge) === 1 ? "" : Math.abs(charge)}${charge > 0 ? "+" : "-"}`; if (ION_R[key]) return ION_R[key] * 0.55; }
   return elementStyle(el).r * 0.9;
@@ -67,7 +67,7 @@ export function particleModel(substanceId) {
     const g = s.geometry;
     return { mode: "molecular", entities: [{ id: s.id, label: s.formulaDisplay, ...norm(g.atoms, g.bonds, (a) => (s.kind === "ion-entity" && g.atoms.length === 1 ? s.charge : 0)) }] };
   }
-  if (s.kind === "metallic") return { mode: "metallic", entities: [{ id: s.id, label: `${s.formula} atom`, ...norm([{ el: s.formula, x: 0, y: 0, z: 0 }], []) }] };
+  if (s.kind === "metallic" || s.kind === "atomic-solid") return { mode: "metallic", entities: [{ id: s.id, label: `${s.formula} atom`, ...norm([{ el: s.formula, x: 0, y: 0, z: 0 }], []) }] };
   // ionic and aqueous-ionic: one template per ion species (a polyatomic ion like OH- is a two-atom group)
   const ents = s.ions.map((i) => {
     let atoms; let bonds = [];
@@ -88,7 +88,7 @@ export const ionicSpecies = (i, j, k) => (i + j + k) % 2;
 /** One-line honest description of what the packet's particles are, for the permanent info panel / aria text. */
 export function particleCaption(substanceId, detail = "medium") {
   const s = getSubstance(substanceId); const N = FULL_ENTITIES[detail];
-  const what = s.kind === "molecular" ? `${s.formulaDisplay} molecules` : s.kind === "metallic" ? `${s.formula} atoms in a metallic lattice fragment`
+  const what = s.kind === "molecular" ? `${s.formulaDisplay} molecules` : s.kind === "metallic" || s.kind === "atomic-solid" ? `${s.formula} atoms in a lattice fragment`
     : s.kind === "atom-entity" ? s.name : s.kind === "ion-entity" ? s.name : `${s.ions.map((i) => i.label).join(" and ")} ions in a lattice fragment`;
   return `A full packet draws about ${N} representative ${what}, not 6.022 × 10²³.`;
 }

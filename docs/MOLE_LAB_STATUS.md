@@ -49,3 +49,14 @@ Verification level: node unit tests, jsdom (no WebGL, so the 2D fallback path), 
 3. Grouping more than 6 packets into a stack on the bench.
 4. DECIDED: 24 dm3 mol-1 at RTP; advanced PV = nRT is labelled as slightly different.
 5. Balance pan sizing (fixed for 1 mol bags; wider with more packets).
+
+## Redesign status (latest)
+
+Implemented: shared premium packet component, all six stages redesigned per the redesign spec, simplified UI (title, six tabs, one large experiment, compact controls, one explanation line plus Details), ten substances / solids / gases / reactions.
+
+Verification levels:
+- Automated: `npm run test:mole-lab` passes (engine 91, store 47, packets 12, UI 7, stage3 engine 33, stage456 engine 46); `npm test` and `npm run build` pass.
+- Visual, headless Chromium with SwiftShader (software GL) only: all six stages at 1366x768 compared with ref-02..08; 910x512 and 390x844 spot-checked (Stage 5 at 910, Stage 4 at 390) after fixing a grid min-content overflow at 390 wide.
+- Not verified: real GPU performance and frame rate, touch, Safari, Firefox, screen readers, dark theme at every size.
+
+Known limits: auto quality is "low" under software GL, so bench reflections (medium/high only) were checked with the detail setting forced to medium; the lab background is a painted blurred canvas, not a photo; the volumetric flask in Stage 3 is a decorative prop; bag shape is still somewhat boxy compared with the references; hydrogen atoms look slightly blown out; reflections are noisy under software GL.

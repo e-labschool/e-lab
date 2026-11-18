@@ -47,7 +47,7 @@ export function entityTemplates(substanceId) {
   const centre = (atoms) => { const c = atoms.reduce((a, p) => [a[0] + p.x / atoms.length, a[1] + p.y / atoms.length, a[2] + p.z / atoms.length], [0, 0, 0]); return atoms.map((a) => ({ ...a, x: a.x - c[0], y: a.y - c[1], z: a.z - c[2] })); };
   const mk = (atoms, bonds = [], label = s.formulaDisplay, ion = false) => ({ label, atoms: centre(atoms.map((a) => ({ ...a, r: atomRadius(a.el, a.charge || 0) * RAD_K }))), bonds, ion });
   if (s.kind === "molecular") return [mk(s.geometry.atoms.map((a) => ({ el: a.el, x: a.x * POS_SCALE, y: a.y * POS_SCALE, z: a.z * POS_SCALE, charge: 0 })), s.geometry.bonds.map((b) => ({ ...b })))];
-  if (s.kind === "metallic") return [mk([{ el: s.formula, x: 0, y: 0, z: 0, charge: 0 }], [], `${s.formula} atom`)];
+  if (s.kind === "metallic" || s.kind === "atomic-solid") return [mk([{ el: s.formula, x: 0, y: 0, z: 0, charge: 0 }], [], `${s.formula} atom`)];
   const ionUnit = (i) => {
     if (Object.values(i.composition).reduce((a, b) => a + b, 0) > 1) return mk([{ el: "O", x: 0, y: 0, z: 0, charge: i.charge }, { el: "H", x: 0.97 * POS_SCALE, y: 0, z: 0, charge: 0 }], [{ a: 0, b: 1, order: 1 }], i.label, true);
     return mk([{ el: Object.keys(i.composition)[0], x: 0, y: 0, z: 0, charge: i.charge }], [], i.label, true);
@@ -80,7 +80,7 @@ export function restPosition(kind, idx, count, ctx = {}) {
   const cols = 4; const col = idx % cols; const row = Math.floor(idx / cols);
   return { pos: [1.0 + col * 0.62 - (row % 2) * 0.31, B.yMin + 0.1 + (row % 6) * 0.3, ((Math.floor(row / 6) % 2) - 0.5) * 0.4], rotZ: (col + row) % 2 ? Math.PI : 0 };
 }
-const kindOf = (s, isProductSide, hasLiquid) => (s.state === "g" ? "g" : s.state === "l" ? "l" : s.state === "aq" ? "aq" : getSubstance(s.id).kind === "metallic" ? "s-metal" : "s-ionic");
+const kindOf = (s, isProductSide, hasLiquid) => (s.state === "g" ? "g" : s.state === "l" ? "l" : s.state === "aq" ? "aq" : ["metallic", "atomic-solid"].includes(getSubstance(s.id).kind) ? "s-metal" : "s-ionic");
 
 // ---------------------------------------------------------------------------------------------- the plan
 /**

@@ -42,28 +42,38 @@ test("registered in the catalogue as a free live simulation with NO syllabus cod
   const comp = fs.readFileSync(new URL("../src/data/simulationEngineComponents.js", import.meta.url), "utf8");
   assert.match(comp, /"mole-lab"/);
 });
-test("six stage tabs; stages 3-6 are labelled as not built yet", () => {
+// CHANGED (redesign): the old permanent-panel / quick-button / placeholder-stage tests are replaced by tests of the simplified UI.
+test("six stage tabs, one tabpanel, no permanent prediction panel or step-size buttons", () => {
   for (let i = 1; i <= 6; i += 1) assert.ok($(`[data-testid="ml-tab-${i}"]`), `tab ${i}`);
-});
-test("stage 1 renders the permanent counting-analogy panel and the fallback bench", () => {
+  assert.equal(document.querySelectorAll('[role="tab"]').length, 6);
   const t = text('[data-testid="mole-lab"]');
-  assert.match(t, /counting analogy/i); assert.match(t, /6\.022/);
-  assert.equal($('[data-testid="ml-bench"]')?.getAttribute("data-webgl"), "0");
+  assert.doesNotMatch(t, /Inspect|Open Zipper|Split|Combine|prediction/i);
 });
-test("stage 2 shows the IB data booklet molar mass (Mg = 24.31, no simplification note), amount-based quick buttons with their masses", async () => {
+test("stage 1 states Avogadro once with the counting-analogy note (info toggle) and uses the fallback bench without WebGL", async () => {
+  await click('[data-testid="ml-tab-1"]');
+  assert.ok($('[data-testid="ml-fallback"]') || $('[data-testid="ml-experiment"]'));
+  const t = text('[data-testid="mole-lab"]');
+  assert.match(t, /6\.022/); assert.match(t, /counting analogy/i);
+  assert.equal((t.match(/6\.022/g) || []).length, 1);
+});
+test("stage 2 uses the IB data booklet molar mass (Mg = 24.31) and a single working line", async () => {
   await click('[data-testid="ml-tab-2"]');
-  assert.match(text('[data-testid="ml-molar-mass"]'), /24\.31/);
+  assert.match(text('[data-testid="mole-lab"]'), /24\.31/);
   assert.doesNotMatch(text('[data-testid="mole-lab"]'), /simplified|S1\.[45]/i);
-  assert.match(text('[data-testid="ml-quick-0.25"]'), /0\.25 mol.*6\.08 g/); assert.match(text('[data-testid="ml-quick-1"]'), /24\.31 g/); assert.match(text('[data-testid="ml-quick-1.5"]'), /36\.47 g/);
 });
-test("stage 2: a quick amount button changes the working, free mode is reachable", async () => {
-  const before = text('[data-testid="mole-lab"]');
-  const b = $('[data-testid="ml-quick-1"]') ?? $('[data-testid^="ml-quick-"]'); assert.ok(b); b.dispatchEvent(new MouseEvent("click", { bubbles: true })); await wait();
-  assert.notEqual(text('[data-testid="mole-lab"]'), before);
+test("every stage renders its controls and an explanation line; stage 3-6 tabs are operable", async () => {
+  for (const n of [1, 2, 3, 4, 5, 6]) {
+    await click(`[data-testid="ml-tab-${n}"]`);
+    assert.equal($(`[data-testid="ml-tab-${n}"]`).getAttribute("aria-selected"), "true");
+    assert.ok($(`[data-testid="ml-controls-${n}"]`), `controls ${n}`);
+    assert.ok(document.querySelectorAll("button").length < 40, `stage ${n} keeps the control count small`);
+  }
 });
-test("a placeholder stage says it is coming in the next build", async () => {
-  // Stage 3 is built; check whichever later stage is still a placeholder (none left = nothing to check).
-  for (const n of [6, 5, 4]) { await click(`[data-testid="ml-tab-${n}"]`); if ($('[data-testid="ml-pending"]')) { assert.match(text('[data-testid="ml-pending"]'), /next build/i); break; } }
+test("stage 5 offers Run Reaction, Step and Reset; stage 6 offers Run Reaction and Reset", async () => {
+  await click('[data-testid="ml-tab-5"]');
+  for (const id of ["ml-run", "ml-step", "ml-reset-run"]) assert.ok($(`[data-testid="${id}"]`), id);
+  await click('[data-testid="ml-tab-6"]');
+  assert.ok($('[data-testid="ml-run"]')); assert.ok($('[data-testid="ml-reset-run"]'));
 });
 test("reset returns to a valid state and the tabs survive switching back", async () => {
   await click('[data-testid="ml-tab-1"]'); await click('[data-testid="ml-reset"]');

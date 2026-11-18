@@ -21,7 +21,7 @@ export function orderChoices(choices, seed) {
 /** Stage 1: "How many moles of <element / ion> are in n mol of <substance>?"  Asks about the first element/ion with a subscript > 1 (else the first). */
 export function stage1Prediction(substanceId, amountQ) {
   const s = getSubstance(substanceId); const c = composition(substanceId, amountQ); const n = fromQuanta(amountQ);
-  if (s.kind === "metallic" || amountQ === 0) return null;
+  if (s.kind === "metallic" || s.kind === "atomic-solid" || amountQ === 0) return null;
   const ionic = s.kind === "ionic";
   const lines = ionic ? c.ions : c.atoms;
   const target = lines.find((l) => l.perEntity > 1) ?? lines[lines.length - 1];

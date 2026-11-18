@@ -32,11 +32,11 @@ test("ideal gas: V proportional to n and T, inversely to P; the 24.0 convention 
 });
 test("same molar volume for every gas but DIFFERENT densities (M / Vm): equal volumes are not equal masses", () => {
   const d = {}; for (const g of E.GAS_IDS) { const s = E.gasLabState({ model: "rtp", nQ: Q(1), gasId: g }); assert.equal(s.volumeDm3, 24); d[g] = s.densityGPerDm3; }
-  near(d.H2, E.molarMass("H2") / 24, 1e-6); near(d.CO2, E.molarMass("CO2") / 24, 1e-6); assert.ok(d.CO2 > 20 * d.H2); assert.equal(new Set(Object.values(d)).size, 6);
+  near(d.H2, E.molarMass("H2") / 24, 1e-6); near(d.CO2, E.molarMass("CO2") / 24, 1e-6); assert.ok(d.CO2 > 20 * d.H2); assert.equal(E.GAS_IDS.length, 10); assert.equal(new Set(Object.values(d)).size, 10); /* CHANGED (redesign): ten gases (He Ne Ar CO added), was six */
   const s1 = E.gasLabState({ model: "rtp", nQ: Q(1), gasId: "H2" }), s2 = E.gasLabState({ model: "rtp", nQ: Q(1), gasId: "CO2" }); assert.equal(s1.moleculesPerDm3, s2.moleculesPerDm3);
 });
 test("lighter molecules move faster at the same temperature (v_rms = sqrt(3RT/M))", () => { assert.ok(E.rmsSpeed("H2", 298) > 4 * E.rmsSpeed("CO2", 298)); near(E.rmsSpeed("H2", 298), 1920, 5e-3); assert.ok(E.rmsSpeed("O2", 400) > E.rmsSpeed("O2", 300)); });
-test("the six supported gases have correct molecular models", () => {
+test("the ten supported gases have correct molecular models (CHANGED: was six)", () => {
   const g = (id) => E.getSubstance(id).geometry;
   for (const id of ["H2", "O2", "N2"]) assert.equal(g(id).atoms.length, 2);
   near(E.angleAt(g("CO2").atoms, 1, 0, 2), 180, 1e-9); assert.equal(g("CO2").name, "Linear");

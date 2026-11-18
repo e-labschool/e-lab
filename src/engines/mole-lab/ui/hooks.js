@@ -12,7 +12,6 @@ export function useIsDark() {
   }, []);
   return dark;
 }
-
 /** Measures an element with ResizeObserver: { width, height }. */
 export function useElementSize(ref) {
   const [size, setSize] = useState({ width: 1000, height: 640 });
@@ -25,9 +24,5 @@ export function useElementSize(ref) {
   }, [ref]);
   return size;
 }
-
-/** Latest-value ref: lets rAF / pointer callbacks read current props without re-subscribing. */
-export function useLatest(value) { const r = useRef(value); r.current = value; return r; }
-
-/** Layout class from the SHELL's own measured box (not the window): "wide" >= 980, "medium" >= 640, else "narrow". */
-export function layoutClass(width) { return width >= 980 ? "wide" : width >= 640 ? "medium" : "narrow"; }
+/** "wide" >= 980, "medium" >= 640, else "narrow" (the shell's own box, not the window). */
+export const layoutClass = (width) => (width >= 980 ? "wide" : width >= 640 ? "medium" : "narrow");

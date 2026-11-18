@@ -42,7 +42,7 @@ export function countingPackets(substanceId, q) {
 export function compositionWorking(substanceId, q) {
   const s = getSubstance(substanceId); const c = composition(substanceId, q); const f = s.formulaDisplay;
   const lines = [];
-  if (s.kind === "metallic") {
+  if (s.kind === "metallic" || s.kind === "atomic-solid") {
     lines.push({ key: "self", text: `n(${s.formula}) = ${fmtMol(c.entityMol)} mol of ${s.formula} atoms (a metal is already a count of atoms)` });
     return lines;
   }
@@ -58,6 +58,7 @@ export function compositionWorking(substanceId, q) {
 export function subscriptExplanation(substanceId) {
   const s = getSubstance(substanceId);
   const f = s.formulaDisplay;
+  if (s.kind === "atomic-solid") return `${f} is modelled as atoms: its formula is just the symbol, so 1 mol is 1 mol of ${s.formula} atoms.`;
   if (s.kind === "metallic") return `${f} is a metal: its formula is just the symbol, so 1 mol is 1 mol of ${s.formula} atoms.`;
   const multi = Object.entries(s.composition).find(([, c]) => c > 1);
   const part = multi ? `the subscript ${toUnicodeFormula(String(multi[1]))} in ${f} means each ${s.entity.singular} contains ${multi[1]} ${multi[0]} atoms` : `each ${s.entity.singular} of ${f} contains one atom of each element shown`;

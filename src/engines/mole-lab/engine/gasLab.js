@@ -10,8 +10,8 @@ import { volumeAtRtp, volumeIdeal } from "./gas.js";
 import { clean, fromQuanta, QUANTA_PER_MOL } from "./numeric.js";
 import { molarMass } from "./substances.js";
 
-/** The six supported gases (molecular models and masses come from substances.js). */
-export const GAS_IDS = Object.freeze(["H2", "O2", "N2", "CO2", "NH3", "CH4"]);
+/** The ten supported gases (molecular models and masses come from substances.js). */
+export const GAS_IDS = Object.freeze(["H2", "O2", "N2", "CO2", "NH3", "CH4", "He", "Ne", "Ar", "CO"]);
 /** Phase-change data (1 atm): tbK = boiling (CO2: sublimation) point, dHJ = enthalpy of vaporisation (CO2: sublimation) in J mol-1.  Used ONLY to refuse conditions where the gas would condense. */
 export const GAS_INFO = Object.freeze({
   H2: { tbK: 20.3, dHJ: 900, label: "boils at 20 K" },
@@ -20,6 +20,10 @@ export const GAS_INFO = Object.freeze({
   CO2: { tbK: 194.7, dHJ: 25200, label: "sublimes at 195 K" },
   NH3: { tbK: 239.8, dHJ: 23350, label: "boils at 240 K" },
   CH4: { tbK: 111.7, dHJ: 8190, label: "boils at 112 K" },
+  He: { tbK: 4.2, dHJ: 83, label: "boils at 4 K" },
+  Ne: { tbK: 27.1, dHJ: 1730, label: "boils at 27 K" },
+  Ar: { tbK: 87.3, dHJ: 6430, label: "boils at 87 K" },
+  CO: { tbK: 81.6, dHJ: 6040, label: "boils at 82 K" },
 });
 export const GAS_LIMITS = Object.freeze({ tMinK: 220, tMaxK: 500, pMinKPa: 50, pMaxKPa: 300, nMaxMol: 4 });
 export const GAS_MAX_Q = GAS_LIMITS.nMaxMol * QUANTA_PER_MOL;
