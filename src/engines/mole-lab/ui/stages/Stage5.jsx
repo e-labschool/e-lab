@@ -18,7 +18,7 @@ function Driver({ target, progressRef, reduced, onShown }) {
   const last = useRef(0);
   useFrame((_, dt) => {
     const want = WAY[target]; const p = progressRef.current;
-    const np = reduced ? want : Math.abs(want - p) < 0.002 ? want : p + Math.sign(want - p) * Math.min(Math.abs(want - p), dt * 0.22);
+    const np = reduced ? want : Math.abs(want - p) < 0.002 ? want : p + Math.sign(want - p) * Math.min(Math.abs(want - p), Math.min(dt, globalThis.__ML_DT_MAX ?? 0.1) * 0.22);
     progressRef.current = np;
     const shown = np >= 0.995 ? 3 : np >= 0.6 ? 2 : np >= 0.28 ? 1 : 0;
     if (shown !== last.current) { last.current = shown; onShown(shown); }
@@ -37,14 +37,15 @@ export default function Stage5({ shell }) {
   const expand = (list, role) => list.flatMap((s) => Array.from({ length: s.n }, (_, i) => ({ key: `${role}-${s.id}-${i}`, substanceId: s.id, amount: 1, fraction: 1, id: s.id })));
   const groups = useMemo(() => {
     const r = expand(board.reactants, "r").map((it) => ({ ...it, fraction: shown >= 2 ? 0 : 1, amount: shown >= 2 ? 0 : 1, highlight: shown === 1 }));
-    const p = expand(board.products, "p").map((it) => ({ ...it, ghost: shown < 3, fraction: 1, amount: 1, highlight: false }));
+    // product packets are truly EMPTY bags (0.00 mol) until the reaction has run; they fill as the particles arrive
+    const p = expand(board.products, "p").map((it) => ({ ...it, fraction: shown >= 2 ? 1 : 0, amount: shown >= 3 ? 1 : 0, highlight: false }));
     return [{ key: "r", kind: "reactants", label: "Reactants", items: r }, { key: "p", kind: "products", label: "Products", items: p }];
   }, [board, shown]);
-  const lay = useMemo(() => boardLayout(groups), [groups]);
-  const bounds = { w: lay.width + 1.8, h: 5.9, cx: 0, cy: 1.75, depth: 1 };
+  const stacked = shell.layout === "narrow"; const lay = useMemo(() => boardLayout(groups, stacked), [groups, stacked]);
+  const bounds = stacked ? { w: Math.max(lay.width + 1.8, 8), h: lay.height + 1.2, cx: 0, cy: (lay.height - 0.7) / 2 + 0.5, depth: 1 } : { w: lay.width + 1.8, h: 5.9, cx: 0, cy: 1.75, depth: 1 };
   const colours = useMemo(() => board.reactants.map((s) => atomColour(Object.keys(getSubstance(s.id).composition)[0])), [board]);
   const note = ionicNote(board.reaction); const bal = checkBalance(board.reaction).balanced;
-  const fb = [...groups[0].items, ...groups[1].items].map((it) => ({ substanceId: it.substanceId, fraction: it.fraction, ghost: it.ghost, formula: labelOf(it.substanceId), text: "1.00 mol" }));
+  const fb = [...groups[0].items, ...groups[1].items].map((it) => ({ substanceId: it.substanceId, fraction: it.fraction, formula: labelOf(it.substanceId), text: `${(it.amount ?? 1).toFixed(2)} mol` }));
   return (
     <StageFrame stage={5} title="Chemical Equations"
       controls={<>
@@ -67,7 +68,7 @@ export default function Stage5({ shell }) {
       <LabCanvas reflect={shell.detail !== "low"} dark={shell.dark} reduced={shell.reduced} bounds={bounds} onSlow={shell.onSlow} testId="ml-bench" ariaLabel={`${board.equation}. ${board.sentence}.`}
         fallback="WebGL is not available, so a 2D picture of the packets is shown." noGL={<Fallback2D items={fb} title={board.equation} note={board.sentence} />}>
         <Driver target={target} progressRef={progress} reduced={shell.reduced} onShown={setShown} />
-        <Board groups={groups} detail={shell.detail} dark={shell.dark} reduced={shell.reduced} progressRef={progress} travel={{ colours }} running={shown === 1 || shown === 2} />
+        <Board groups={groups} detail={shell.detail} dark={shell.dark} reduced={shell.reduced} progressRef={progress} stacked={stacked} travel={{ colours }} running={shown === 1 || shown === 2} />
       </LabCanvas>
     </StageFrame>
   );

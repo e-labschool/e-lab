@@ -258,7 +258,7 @@ for (const role of ["student", "teacher"]) {
     await page.goto(`${base}/${role}/simulations`, { waitUntil: "load" });
     await page.waitForSelector("[data-sim-grid] article", { timeout: 20000 }); await sleep(800);
     await health(S, `${role} library ${t}`);
-    check(await page.locator("[data-sim-grid] article").count() === 26, `${role} library ${t}: 26 live simulations listed`);
+    check(await page.locator("[data-sim-grid] article").count() === 27, `${role} library ${t}: 27 live simulations listed`);
     check(!NO_PREMIUM.test(await bodyText(page)), `${role} library ${t}: no Premium chrome`);
     check(await page.locator("[data-chip^='tier'], [data-tier-badge], [data-lock-chip]").count() === 0, `${role} library ${t}: no tier chips / badges / locks`);
     const navLabels = await page.locator("nav a").allInnerTexts();
@@ -274,7 +274,7 @@ for (const role of ["student", "teacher"]) {
       const actionWord = role === "teacher" ? "Present" : "Open";
       check((await page.locator("[data-sim-grid] article").first().innerText()).includes(actionWord), `${role} library: card action says "${actionWord}"`);
       await page.locator("main input[placeholder^='Search simulations']").fill("S2.2"); await sleep(150);
-      check(await page.locator("[data-sim-grid] article").count() === 5, `${role} library: search "S2.2" finds the 5 S2.2 simulations`);
+      check(await page.locator("[data-sim-grid] article").count() === 6, `${role} library: search "S2.2" finds the 6 S2.2 simulations`);
       await page.locator("main input[placeholder^='Search simulations']").fill("");
       await page.locator("main select").selectOption("za"); await sleep(150);
       const first = await page.locator("[data-sim-grid] article h2").first().innerText();
@@ -361,7 +361,7 @@ for (const size of SIZES) for (const theme of THEMES) {
   check(/Everything is currently free for everyone/.test(await bodyText(page)), `admin ${t}: banner "Everything is currently free for everyone"`);
   if (size[0] === 1366 && theme === "light") {
     await shot(S, "admin-simulations-1366-light");
-    check(await page.locator("[data-sim-row]").count() === 26, "admin: 26 live simulations listed");
+    check(await page.locator("[data-sim-row]").count() === 27, "admin: 27 live simulations listed");
     const sw = page.locator("[data-switch=premium-enabled]");
     check(await sw.getAttribute("aria-checked") === "false" && !(await sw.isDisabled()), "admin: Premium switch is OFF and enabled when the DB settings exist");
     const lock = page.locator("#lock-vsepr-explorer-3d");

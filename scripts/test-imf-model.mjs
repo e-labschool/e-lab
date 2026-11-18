@@ -368,13 +368,15 @@ console.log("Round 3: clouds never spin, correlated H2 polarisation, sign logic"
 const rng3 = (seed) => { let a = seed >>> 0; return () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
 const randQ = (R) => { const q = [R() - 0.5, R() - 0.5, R() - 0.5, R() - 0.5]; const l = Math.hypot(...q); return q.map((v) => v / l); };
 const h2pair = (d, qa = QID, qb = QID, off = [0, 0, 0]) => [E(M.H2, P([0, 0, 0], qa)), E(M.H2, P([d + off[0], off[1], off[2]], qb))];
-test("root cause removed: nothing in the interaction result depends on time except a bounded amplitude breathing (the instantaneous-dipole DIRECTION is the A->B axis at every t)", () => {
-  const ents = h2pair(3.6, qFromAxisAngle([0, 0, 1], Math.PI / 2), qFromAxisAngle([0, 0, 1], Math.PI / 2)); let amp0 = null;
-  for (let k = 0; k < 400; k += 1) {
-    const t = k * 0.137; const r = I.computeInteractions(ents, { force: "ldf", t, fluct: { gain: 1, fixedDir: null } });
-    const u = norm(r.mols[0].instant); assert.ok(dot(u, [1, 0, 0]) > 0.999999, `direction fixed at t=${t}`);
-    const a = len(r.mols[0].instant); amp0 = amp0 ?? a; assert.ok(a / amp0 > 0.78 && a / amp0 < 1.27, "bounded breathing"); assert.ok(dot(norm(r.mols[1].induced), [1, 0, 0]) > 0.999999, "induced dipole direction fixed too");
+test("London dispersion fluctuates: the instantaneous dipole stays on the A->B axis, its SIGN flips over time and averages to ~0, the neighbour's induced dipole follows it", () => {
+  const ents = h2pair(3.6, qFromAxisAngle([0, 0, 1], Math.PI / 2), qFromAxisAngle([0, 0, 1], Math.PI / 2)); let flips = 0; let prev = 0; let sum = 0; let n = 0; let maxA = 0;
+  for (let k = 0; k < 2000; k += 1) {
+    const t = k * 0.02; const r = I.computeInteractions(ents, { force: "ldf", t, fluct: { gain: 1, fixedDir: null } });
+    const p0 = r.mols[0].instant; const a = len(p0); maxA = Math.max(maxA, a); const sg = dot(p0, [1, 0, 0]); sum += sg; n += 1;
+    if (a > 1e-9) { assert.ok(Math.abs(dot(norm(p0), [1, 0, 0])) > 0.999999, `on the axis at t=${t}`); assert.ok(dot(norm(r.mols[1].induced), norm(p0)) > 0.999999, "the induced dipole is parallel to the source dipole (facing ends opposite)"); }
+    const s = Math.sign(sg); if (s !== 0 && prev !== 0 && s !== prev) flips += 1; if (s !== 0) prev = s;
   }
+  assert.ok(flips >= 6, `the sign flips repeatedly over 40 s (${flips})`); assert.ok(Math.abs(sum / n) < 0.35 * maxA, `time-average is close to symmetric (${(sum / n / maxA).toFixed(3)} of the peak)`); assert.ok(maxA <= I.P_FLUCT * Math.sqrt(0.787 / 0.787) * 1.0001, "bounded by P_FLUCT");
 });
 test("H2 alone: no instantaneous dipole, no induced dipole, no cloud shift, no charge sites, no indicator lines", () => {
   for (const t of [0, 1.3, 7.7]) {
@@ -397,7 +399,7 @@ test("correlated induced sign: random orientations and separations -> the facing
     const sites = ents.map((e, i) => I.chargeSites(e.mol, e.pose, r.mols[i])); const near = (s, toward) => s.reduce((b, x) => (!b || dot(sub(x.p, ents[0].pose.pos), toward) > dot(sub(b.p, ents[0].pose.pos), toward) ? x : b), null);
     assert.equal(near(sites[0], dirv).sign, -near(sites[1], scale(dirv, -1)).sign * -1 * -1 === 0 ? 0 : near(sites[0], dirv).sign); // (sanity: a site exists)
   }
-  assert.ok(n > 180, `most random close pairs are polarised (${n})`);
+  assert.ok(n > 80, `many random close pairs are polarised at a random instant (${n})`);
 });
 test("the dotted indicator only ever joins OPPOSITE charges for an attraction (and like charges for a repulsion)", () => {
   const R = rng3(11); let drawn = 0;

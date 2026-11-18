@@ -64,3 +64,21 @@ Coulomb energy only; nonpolar: contact distance; NaCl: opposite ions), stable wh
 Approximations: the visible dipole amplitude, colour gain and cloud shift are exaggerated qualitative choices (labelled in the UI); line counts in the
 liquid are a visual summary of a geometric H-bond criterion, not a computed network; the particle dynamics are a visual Langevin model (N = 48), the
 phase fractions come from the energy model. NH3 H-bond lines are sparse (geometry rarely satisfied in the schematic lattice).
+
+## Polarity Playground update: scientific corrections
+
+Mandated by `docs/POLARITY_PLAYGROUND_SPEC.md`; details of the shared component are in `docs/POLARITY_PLAYGROUND.md`.
+
+| # | Problem found | Correction |
+|---|---|---|
+| 1 | The "Electron Cloud" was ONE oval blob for every molecule; H₂ nuclei sat off-centre inside it and nothing showed shared bonding density. | The view now uses the shared `ElectronCloud` (`src/engines/shared-3d/electronCloud`): one translucent region per atom, overlap = shared density (Venn-style). H₂ and every homonuclear molecule are exactly symmetric. HCl (and every polar bond with ΔEN ≥ 0.4) is redistributed asymmetrically and continuously: the less electronegative atom's region is drawn out and thinner, the more electronegative one denser; the overlap moves towards it. C–H stays symmetric (IB convention). |
+| 2 | The cloud was coloured red/blue and labelled "electron-rich / electron-poor": that is electrostatic potential, but it sat on a surface called the "electron-density surface". | The density view is one teal hue (deeper = more concentrated) and its legend says "Simplified electron-density model, not to scale; not charge". The old red/blue surface is kept as a separate, clearly labelled **Potential (ESP)** option in Explore. |
+| 3 | London dispersion: the instantaneous dipole kept the same sign for ever (only a ±10 % breathing), so one H₂ looked permanently δ+ on the side facing its neighbour. | `fluctuationAmplitude(t)` is now a zero-mean, bounded, sign-flipping signal (`shared-3d/electronCloud/fluctuation.js`). The dipole stays on the A→B axis, the neighbour's induced dipole is parallel to it (facing ends always opposite), and both reverse together. Time-averaged the cloud is symmetric; there is never a permanent polarity label. Tested over 40 s of simulated time. |
+| 4 | Dipole arrows ended in a ball, not the chemistry notation. | Dipole arrows (permanent and instantaneous/induced) are `ChemDipoleArrow`s: crossed tail on the δ+ end, head towards δ−. |
+| 5 | Learn "Dipole–induced dipole", last step said the cloud "now shifts towards δ⁻ Cl" after reversing HCl. | Corrected: the δ⁻ Cl end faces H₂ and pushes its electrons away, so the near side of H₂ becomes δ⁺ and the attraction remains. |
+| 6 | Dipole–dipole, hydrogen bonds | Checked, found correct, and left unchanged: attraction joins the nearest OPPOSITE charge sites, repulsion the nearest LIKE sites (δ⁻···δ⁻ is only ever drawn as a repulsion), an H-bond joins a δ⁺ H on N/O/F to a lone-pair acceptor N/O/F with the existing distance / angle / lone-pair-alignment geometry. |
+
+Other changes: the dynamic δ labels of a nonpolar molecule sit nearer the cloud edge (0.8 × molecule radius); `cloudInfo()` now also returns the density-cloud group (visibility, world quaternion, per-region bounding boxes and mean density); `ElectronCloud.dispose()` is safe to call
+more than once (React strict-mode / prop changes), which fixed a bug found while integrating (a cloud re-keyed to a new molecule showed nothing).
+
+Tests changed because the behaviour they pinned was the error: `test-imf-model.mjs` (fixed-sign "breathing" test replaced by the flipping-sign test; "random close pairs polarised" threshold, because the dipole now passes through zero), `test-imf-ui.mjs` (legend wording: density legend on Electron Cloud, ESP legend on Potential).

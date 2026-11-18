@@ -56,7 +56,7 @@ export const LESSONS = [
       { id: "perm", dur: 4, text: "HCl is polar: the shared electrons lie closer to Cl, so H is δ⁺ and Cl is δ⁻.", poses: [bH, bFar], fx: fx({ cloud: 1, perm: true }) },
       { id: "induce", dur: 4.4, text: "As H₂ approaches, the electric field of HCl shifts its electron cloud towards the δ⁺ end.", poses: [bH, bNear], fx: fx({ cloud: 1, perm: true, induced: true, dyn: true }) },
       { id: "attract", dur: 4.4, text: "The induced dipole in H₂ is attracted to the permanent dipole of HCl.", poses: [bH, bNear], fx: fx({ cloud: 1, perm: true, induced: true, attract: true, dyn: true }) },
-      { id: "reverse", dur: 4.6, text: "Turn HCl round and the induced polarisation reverses: the cloud now shifts towards δ⁻ Cl, and the attraction remains.", poses: [bCl, bNear], fx: fx({ cloud: 1, perm: true, induced: true, attract: true, dyn: true }) },
+      { id: "reverse", dur: 4.6, text: "Turn HCl round and the induced polarisation reverses: δ⁻ Cl now faces H₂ and pushes its electrons away, so the near side of H₂ becomes δ⁺ and the attraction remains.", poses: [bCl, bNear], fx: fx({ cloud: 1, perm: true, induced: true, attract: true, dyn: true }) },
     ],
   },
   {

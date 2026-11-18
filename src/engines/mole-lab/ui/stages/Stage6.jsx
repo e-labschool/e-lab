@@ -13,7 +13,7 @@ import { fmtMol } from "../../engine/numeric.js";
 import { Play, RotateCcw } from "lucide-react";
 
 function Driver({ ran, progressRef, reduced }) {
-  useFrame((_, dt) => { const want = ran ? 1 : 0; const p = progressRef.current; progressRef.current = reduced ? want : Math.abs(want - p) < 0.002 ? want : p + Math.sign(want - p) * Math.min(Math.abs(want - p), dt * 0.4); });
+  useFrame((_, dt) => { const want = ran ? 1 : 0; const p = progressRef.current; progressRef.current = reduced ? want : Math.abs(want - p) < 0.002 ? want : p + Math.sign(want - p) * Math.min(Math.abs(want - p), Math.min(dt, globalThis.__ML_DT_MAX ?? 0.1) * 0.4); });
   return null;
 }
 const expand = (id, n, role, extra = {}) => packetLayout(n).packets.map((f, i) => ({ key: `${role}-${id}-${i}`, substanceId: id, fraction: f, amount: f, id, ...extra }));
@@ -26,18 +26,24 @@ export default function Stage6({ shell }) {
   useEffect(() => { setAmounts(stage6Defaults(rid)); setRan(false); progress.current = 0; }, [rid]);
   const res = useMemo(() => stage6Result(rid, amounts), [rid, amounts]);
   const setAmt = useCallback((id, v) => { setAmounts((a) => ({ ...a, [id]: v })); setRan(false); progress.current = 0; }, []);
+  const stacked = shell.layout === "narrow";
   const groups = useMemo(() => {
     const EPS = 1e-6; // sub-micromole residue is rounding noise: never draw a packet for it
-    if (!ran) return [{ key: "r", kind: "reactants", label: "Reactants (initial amounts)", items: rs.flatMap((s) => expand(s.id, amounts[s.id] ?? 0, "r")) }];
-    // after the reaction: consumed material is gone; each reactant packet that is partly used shrinks (same key), fully used packets disappear
-    const left = res.remaining.filter((p) => p.n > EPS).flatMap((p) => expand(p.id, p.n, "r"));
+    // Reactants stay on the board.  After Run, consumed packets EMPTY OUT (same bags, fraction -> 0) and the unreacted amount stays in place, marked "left over".
+    const r = rs.flatMap((s) => {
+      const start = packetLayout(amounts[s.id] ?? 0).packets;
+      const rem = ran ? (res.remaining.find((x) => x.id === s.id)?.n ?? 0) : 0; const left = rem > EPS ? packetLayout(rem).packets : [];
+      return start.map((f0, i) => { const f = ran ? (left[i] ?? 0) : f0; return { key: `r-${s.id}-${i}`, substanceId: s.id, fraction: f, amount: f, id: s.id, highlight: ran && f > 0, tag: ran && f > 0 ? "left over" : undefined }; });
+    });
+    // Products: truly empty bags (0.00 mol) before the run, then they fill up to the calculated amounts.
+    const pr = res.products.filter((p) => p.n > EPS).flatMap((p) => packetLayout(p.n).packets.map((f1, i) => ({ key: `p-${p.id}-${i}`, substanceId: p.id, fraction: ran ? f1 : 0, amount: ran ? f1 : 0, id: p.id })));
     return [
-      { key: "r", kind: left.length ? "remaining" : "reactants", label: left.length ? "Remaining unreacted" : "", items: left },
-      { key: "p", kind: "products", label: "Products formed", items: res.products.filter((p) => p.n > EPS).flatMap((p) => expand(p.id, p.n, "p")) },
+      { key: "r", kind: "reactants", label: ran ? "Reactants (consumed ones empty out)" : "Reactants (initial amounts)", items: r },
+      { key: "p", kind: "products", label: "Products formed", items: pr },
     ];
   }, [rs, amounts, ran, res]);
-  const lay = useMemo(() => boardLayout(groups), [groups]);
-  const bounds = { w: Math.max(lay.width + 1.8, 9), h: 5.9, cx: 0, cy: 1.75, depth: 1 };
+  const lay = useMemo(() => boardLayout(groups, stacked), [groups, stacked]);
+  const bounds = stacked ? { w: Math.max(lay.width + 1.8, 8), h: lay.height + 1.2, cx: 0, cy: (lay.height - 0.7) / 2 + 0.5, depth: 1 } : { w: Math.max(lay.width + 1.8, 9), h: 5.9, cx: 0, cy: 1.75, depth: 1 };
   const colours = useMemo(() => rs.map((s) => atomColour(Object.keys(getSubstance(s.id).composition)[0])), [rs]);
   const nm = (id) => formulaOf(id);
   const out = res.noReaction ? "A reactant is missing (0 mol): no reaction can occur." : null;
@@ -69,7 +75,7 @@ export default function Stage6({ shell }) {
       <LabCanvas reflect={shell.detail !== "low"} dark={shell.dark} reduced={shell.reduced} bounds={bounds} onSlow={shell.onSlow} testId="ml-bench" ariaLabel={`${board.equation}. Limiting reagent example.`}
         fallback="WebGL is not available, so a 2D picture of the packets is shown." noGL={<Fallback2D items={fb} title={board.equation} note={ran ? "After the reaction." : "Before the reaction."} />}>
         <Driver ran={ran} progressRef={progress} reduced={shell.reduced} />
-        <Board groups={groups} detail={shell.detail} dark={shell.dark} reduced={shell.reduced} progressRef={progress} travel={ran ? { colours, toGroup: 1 } : null} running={ran && progress.current < 1} />
+        <Board groups={groups} detail={shell.detail} dark={shell.dark} reduced={shell.reduced} progressRef={progress} stacked={stacked} travel={ran ? { colours, toGroup: 1 } : null} running={ran && progress.current < 1} />
       </LabCanvas>
     </StageFrame>
   );

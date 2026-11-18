@@ -5,6 +5,9 @@ import assert from "node:assert/strict";
 import { BAG, packetLayout, groupsFor, buildPacketInstances, drawnAtomTally, drawnSpeciesTally } from "../src/engines/mole-lab/engine/packetModel.js";
 import { FULL_ENTITIES } from "../src/engines/mole-lab/engine/particles.js";
 
+import { getSubstance, SELECTABLE_IDS } from "../src/engines/mole-lab/engine/substances.js";
+import { GAS_IDS } from "../src/engines/mole-lab/engine/gasLab.js";
+import { packetTemplates as templatesOf } from "../src/engines/mole-lab/engine/packetModel.js";
 let passed = 0, failed = 0;
 const test = (n, f) => { try { f(); passed += 1; console.log(`  ok   ${n}`); } catch (e) { failed += 1; console.log(`  FAIL ${n}\n       ${e.message}`); } };
 const L = (n) => packetLayout(n).packets;
@@ -53,5 +56,30 @@ test("ionic NaCl / NaOH use a 1:1 lattice of ions (not molecules)", () => {
 });
 test("metals draw single atoms, one per group", () => {
   const inst = buildPacketInstances("Mg", "low"); assert.deepEqual(drawnAtomTally(inst), { Mg: FULL_ENTITIES.low });
+});
+
+// NEW (redesign): every drawn entity (molecule / atom / ion) must match its formula and charge.
+const ALL = [...new Set([...SELECTABLE_IDS, ...GAS_IDS, "NaOH_aq", "Ca", "Al", "Cu", "Zn", "Ag", "C", "S", "CaO", "Fe2O3", "Al2O3"])];
+const tally = (atoms) => { const o = {}; for (const a of atoms) o[a.el] = (o[a.el] ?? 0) + 1; return o; };
+for (const id of ALL) {
+  test(`${id}: drawn atoms/ions match the formula and charge balance`, () => {
+    const sub = getSubstance(id); const T = templatesOf(id);
+    if (T.mode === "ionic") {
+      const counts = sub.ions.map((i) => i.count); const tot = {}; let charge = 0;
+      T.species.forEach((sp, i) => { for (const [el, n] of Object.entries(tally(sp.atoms))) tot[el] = (tot[el] ?? 0) + n * counts[i]; charge += sp.charge * counts[i]; });
+      assert.deepEqual(tot, sub.composition, `${id} composition`); assert.equal(charge, 0, `${id} net charge`);
+    } else assert.deepEqual(tally(T.species[0].atoms), sub.composition, `${id} entity composition`);
+  });
+}
+test("OH- is an oxygen sphere with ONE bonded hydrogen (not a lone red sphere); Na+ and Cl- are single separate atoms", () => {
+  const T = templatesOf("NaOH"); const oh = T.species.find((x) => x.label.startsWith("OH")); const na = T.species.find((x) => x.label.startsWith("Na"));
+  assert.deepEqual(tally(oh.atoms), { O: 1, H: 1 }); assert.equal(oh.bonds.length, 1); assert.equal(oh.charge, -1);
+  assert.deepEqual(tally(na.atoms), { Na: 1 }); assert.equal(na.bonds.length, 0); assert.equal(na.charge, 1);
+  const cl = templatesOf("NaCl").species.find((x) => x.label.startsWith("Cl")); assert.deepEqual(tally(cl.atoms), { Cl: 1 }); assert.equal(cl.charge, -1);
+  const aq = templatesOf("NaOH_aq"); assert.ok(aq.species.some((x) => x.label.startsWith("OH") && x.atoms.length === 2));
+});
+test("the Stage 3 ion cloud is built from these templates (no hand-placed ion atoms)", async () => {
+  const fs = await import("node:fs"); const src = fs.readFileSync(new URL("../src/engines/mole-lab/scene/Fx.jsx", import.meta.url), "utf8");
+  assert.match(src, /packetTemplates\(soluteId\)/); assert.doesNotMatch(src, /anion === "OH"/);
 });
 console.log(`\n${passed} passed, ${failed} failed`); process.exit(failed ? 1 : 0);

@@ -71,7 +71,7 @@ function BagShell({ shown, ghost, dark }) {
   );
 }
 
-function Particles({ substanceId, detail, target, ghost, reduced, shown }) {
+function Particles({ substanceId, detail, target, ghost, reduced, shown, rate = 4.5 }) {
   const inst = useMemo(() => instancesFor(substanceId, detail), [substanceId, detail]);
   const meshes = useRef({}); const bondRef = useRef();
   const sphere = useMemo(() => new THREE.SphereGeometry(1, detail === "low" ? 14 : 20, detail === "low" ? 10 : 14), [detail]);
@@ -99,7 +99,7 @@ function Particles({ substanceId, detail, target, ghost, reduced, shown }) {
   }, [inst, mats, sphere, cyl]); // eslint-disable-line
   useFrame((_, dt) => {
     const t = target; const s = shown.current;
-    if (Math.abs(t - s) > 0.0005) { shown.current = reduced ? t : (Math.abs(t - s) < 0.004 ? t : s + (t - s) * Math.min(1, dt * 4.5)); setCounts(shown.current); }
+    if (Math.abs(t - s) > 0.0005) { shown.current = reduced ? t : (Math.abs(t - s) < 0.004 ? t : s + (t - s) * Math.min(1, Math.min(dt, globalThis.__ML_DT_MAX ?? 0.1) * rate)); setCounts(shown.current); }
   });
   return (
     <group>
@@ -116,7 +116,7 @@ let shadowTex = null;
  * <Packet substanceId fraction position ... />  fraction = share of ONE mole (0..1).  `amountText` is shown under the bag.
  */
 export default function Packet({ substanceId, fraction = 1, detail = "medium", position = [0, 0, 0], rotationY = 0, ghost = false, highlight = false, dark = false, reduced = false,
-  stickerMain, stickerSub, amountText, amountSub, onClick, onPointerDown, groupRef, scale = 1, showLabel = true, showAmount = true, dimmed = false, lift = 0 }) {
+  fillRate = 4.5, stickerMain, stickerSub, amountText, amountSub, onClick, onPointerDown, groupRef, scale = 1, showLabel = true, showAmount = true, dimmed = false, lift = 0 }) {
   const shown = useRef(fraction);
   const s = getSubstance(substanceId);
   const main = stickerMain ?? `${toUnicodeFormula(s.formula)}`;
@@ -131,7 +131,7 @@ export default function Packet({ substanceId, fraction = 1, detail = "medium", p
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.004 - lift, 0]} renderOrder={0}><planeGeometry args={[BAG.width * 1.5, 1.7]} /><meshBasicMaterial map={shadowTex} transparent opacity={ghost ? 0.25 : 0.7} depthWrite={false} /></mesh>
       <group position={[0, lift, 0]} onClick={onClick} onPointerDown={onPointerDown}>
         <BagShell shown={shown} ghost={ghost || dimmed} dark={dark} />
-        <Particles shown={shown} substanceId={substanceId} detail={detail} target={fraction} ghost={ghost || dimmed} reduced={reduced} />
+        <Particles shown={shown} rate={fillRate} substanceId={substanceId} detail={detail} target={fraction} ghost={ghost || dimmed} reduced={reduced} />
         {showLabel && !ghost && <mesh position={[0, stickerY, surfaceZ(0, stickerY / BAG.height, BAG.pile.y0 + BAG.pile.h * Math.max(shown.current, fraction) + 0.08, 1) + 0.045]} renderOrder={5}><planeGeometry args={[1.12, 0.56]} /><meshBasicMaterial map={tex} transparent opacity={opa} depthWrite={false} toneMapped={false} /></mesh>}
         {highlight && <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]}><ringGeometry args={[1.45, 1.62, 48]} /><meshBasicMaterial color="#6d7dff" transparent opacity={0.55} depthWrite={false} /></mesh>}
       </group>

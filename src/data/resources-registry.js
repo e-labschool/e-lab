@@ -84,6 +84,16 @@ const resources = [
     component: () => import("../engines/mixture-separation-explorer/MixtureSeparationExplorer.jsx"),
   },
   {
+    id: "polarity-playground",
+    title: "Polarity Playground",
+    resourceType: "simulation",
+    categories: ["simulate","visualize","explore","teach"],
+    status: "live", // live | in-development | planned
+    description: "Four tabs on bond and molecular polarity: an electron tug-of-war, a look inside a covalent bond, 3D molecules whose bond dipoles add or cancel, and a short challenge.",
+    conceptIds: ["electronegativity","bond-polarity","molecular-polarity"],
+    component: () => import("../engines/polarity-playground/PolarityPlayground.jsx"),
+  },
+  {
     id: "atomic-structure-model",
     title: "Atomic Structure Model",
     resourceType: "interactive-model",

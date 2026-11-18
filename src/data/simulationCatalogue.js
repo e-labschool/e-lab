@@ -115,6 +115,8 @@ const LIVE = [
     description: "See sp, sp2 and sp3 hybrid orbitals form in 3D." },
   { id: "intermolecular-forces-visualiser", label: "Intermolecular Forces Visualiser", topic: "Bonding", syllabus: ["S2.2"], resourceId: "intermolecular-forces-visualiser",
     description: "Explore London, dipole–dipole and hydrogen-bond forces between molecules." },
+  { id: "polarity-playground", label: "Polarity Playground", topic: "Bonding", syllabus: ["S2.2"], resourceId: "polarity-playground",
+    description: "Pull electrons in a tug-of-war, look inside a covalent bond, rotate 3D molecules to see dipoles add or cancel, then test yourself." },
   { id: "mole-lab", label: "Mole Lab", topic: "Stoichiometry", syllabus: [],
     description: "Handle one-mole packets: count atoms from formulae, convert mass to moles, then concentration, gas volume and limiting reagents." },
   { id: "spectroscopy-studio", label: "Spectroscopy Simulation Lab", topic: "Spectroscopy", syllabus: ["S3.2"], featured: false,
@@ -125,7 +127,7 @@ const LIVE = [
 // separate "coming soon" cards.
 const COVERED_BY_LIVE = new Set([
   "ideal-gas-simulator", "molecular-geometry-explorer", "collision-theory-lab",
-  "titration-lab", "spectroscopy-studio", "mass-spectrometer-simulator",
+  "titration-lab", "spectroscopy-studio", "mass-spectrometer-simulator", "molecular-polarity-explorer",
 ]);
 
 const UPCOMING_TOPIC = {

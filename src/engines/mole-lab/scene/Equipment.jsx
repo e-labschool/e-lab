@@ -73,24 +73,26 @@ function heapPoints(n, s, Ra, y0, rnd) {
  * The SAME molecules as the packed packet: n mol = n x (300/450/600) molecules (instanced).  `released` false: packed densely at the
  * bottom of the jar; true: they fly through the whole chamber.  Positions are updated directly in the instance matrices (no per-frame allocation).
  */
-function GasMolecules({ substanceId, mol, detail = "medium", R, y0, heightRef, speed = 1, released, reduced }) {
+function GasMolecules({ substanceId, mol, detail = "medium", R, y0, heightRef, speed = 1, released, reduced, domeInset = null, onHeap, finalTop = 0 }) {
   const T = useMemo(() => packetTemplates(substanceId).species[0], [substanceId]);
   const els = useMemo(() => [...new Set(T.atoms.map((a) => a.el))], [T]);
   const per = FULL_ENTITIES[detail] ?? 450; const count = Math.max(1, Math.round(per * mol));
   const Ra = R * 0.86; const d = Math.cbrt((Math.PI * Ra * Ra * HEAP_H) / per); const k = d * 0.5 * (T.atoms.length > 1 ? 1.48 : 1.04);
+  const sim0 = { heapTop: 0 };
   const sim = useMemo(() => {
     const r = rng(7919 + count); const home = heapPoints(count, d * 0.98, Ra, y0 + k * 1.1, r);
     const pos = new Float32Array(count * 3); const vel = new Float32Array(count * 3); const hm = new Float32Array(count * 3);
     const q = new Float32Array(count * 4); const w = new Float32Array(count * 3); const delay = new Float32Array(count); const st = new Uint8Array(count);
-    const topY = home.reduce((m, h) => Math.max(m, h[1]), 0);
+    const topY = home.reduce((m, h) => Math.max(m, h[1]), 0); sim0.heapTop = topY + k * 1.3;
     for (let i = 0; i < count; i += 1) {
       for (let c = 0; c < 3; c += 1) { hm[i * 3 + c] = home[i][c]; pos[i * 3 + c] = home[i][c]; }
       const u = new THREE.Quaternion().setFromEuler(new THREE.Euler(r() * 6.28, r() * 6.28, r() * 6.28)); q.set([u.x, u.y, u.z, u.w], i * 4);
       for (let c = 0; c < 3; c += 1) w[i * 3 + c] = (r() - 0.5) * 3;
       delay[i] = (1 - home[i][1] / Math.max(0.1, topY)) * 0.9 + r() * 0.5; // top of the heap leaves first
     }
-    return { pos, vel, hm, q, w, delay, st, r, t: 0, wasReleased: null, init: false };
+    return { pos, vel, hm, q, w, delay, st, r, t: 0, wasReleased: null, init: false, heapTop: sim0.heapTop };
   }, [count, d, Ra, y0, k]);
+  useEffect(() => { onHeap?.(sim.heapTop); }, [sim]); // eslint-disable-line
   const sphere = useMemo(() => new THREE.SphereGeometry(1, detail === "low" ? 12 : 16, detail === "low" ? 8 : 12), [detail]);
   const cyl = useMemo(() => new THREE.CylinderGeometry(1, 1, 1, 8, 1, false), []);
   const mats = useMemo(() => Object.fromEntries(els.map((el) => { const l = lookOf(el); return [el, new THREE.MeshPhysicalMaterial({ color: l.color, metalness: l.metal, roughness: l.rough, clearcoat: 1, clearcoatRoughness: 0.06, envMapIntensity: l.pearl ? 0.9 : 1.3, iridescence: l.pearl ? 0.4 : 0 })]; })), [els]);
@@ -105,10 +107,10 @@ function GasMolecules({ substanceId, mol, detail = "medium", R, y0, heightRef, s
   }, [T]);
   const tmp = useMemo(() => ({ m: new THREE.Matrix4(), p: new THREE.Vector3(), q: new THREE.Quaternion(), dq: new THREE.Quaternion(), s: new THREE.Vector3(), a: new THREE.Vector3(), id: new THREE.Quaternion(), ax: new THREE.Vector3() }), []);
   useLayoutEffect(() => { for (const m of Object.values(refs.current)) if (m) m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); if (bref.current) bref.current.instanceMatrix.setUsage(THREE.DynamicDrawUsage); }, [sim, mats]);
-  const scatter = (i, top) => { const S = sim; const rr = Math.sqrt(S.r()) * (R * 0.86 - k * 1.6); const th = S.r() * 6.283; S.pos[i * 3] = Math.cos(th) * rr; S.pos[i * 3 + 2] = Math.sin(th) * rr; S.pos[i * 3 + 1] = y0 + k * 1.6 + S.r() * Math.max(0.3, top - y0 - k * 3.2); };
+  const scatter = (i, top0) => { const top = Math.max(top0, finalTop); const S = sim; const rr = Math.sqrt(S.r()) * (R * 0.86 - k * 1.6); const th = S.r() * 6.283; S.pos[i * 3] = Math.cos(th) * rr; S.pos[i * 3 + 2] = Math.sin(th) * rr; S.pos[i * 3 + 1] = y0 + k * 1.6 + S.r() * Math.max(0.3, top - y0 - k * 3.2); };
   const kick = (i) => { const S = sim; const th = S.r() * 6.283, ph = Math.acos(2 * S.r() - 1); const v = 1.5 * speed * (0.6 + 0.8 * S.r()) * (reduced ? 0.3 : 1); S.vel[i * 3] = Math.sin(ph) * Math.cos(th) * v; S.vel[i * 3 + 1] = Math.cos(ph) * v; S.vel[i * 3 + 2] = Math.sin(ph) * Math.sin(th) * v; };
   useFrame((_, dtRaw) => {
-    const S = sim; const dt = Math.min(dtRaw, 0.05); const top = heightRef.current - R * 0.45 - k * 1.2; const bot = y0 + k * 1.2; const lim = R * 0.9 - k * 1.5;
+    const S = sim; const dt = Math.min(dtRaw, maxDt()); const top = (reduced && released ? Math.max(heightRef.current, finalTop) : heightRef.current) - (domeInset ?? R * 0.45) - k * 1.2; const bot = y0 + k * 1.2; const lim = R * 0.9 - k * 1.5; // reduced motion: the piston is already at its final height const bot = y0 + k * 1.2; const lim = R * 0.9 - k * 1.5;
     if (!S.init) { S.init = true; S.wasReleased = released; if (released) for (let i = 0; i < count; i += 1) { scatter(i, top); kick(i); S.st[i] = 1; } }
     if (S.wasReleased !== released) { S.wasReleased = released; S.t = 0; if (released && reduced) for (let i = 0; i < count; i += 1) { scatter(i, top); kick(i); S.st[i] = 1; } }
     S.t += dt; const pull = Math.min(1, dt * 4);
@@ -122,7 +124,7 @@ function GasMolecules({ substanceId, mol, detail = "medium", R, y0, heightRef, s
         if (S.pos[o + 1] < bot) { S.pos[o + 1] = bot; S.vel[o + 1] = Math.abs(S.vel[o + 1]); } else if (S.pos[o + 1] > top) { S.pos[o + 1] = top; S.vel[o + 1] = -Math.abs(S.vel[o + 1]); }
         tmp.ax.set(S.w[o], S.w[o + 1], S.w[o + 2]); const ang = tmp.ax.length() * dt * speed; if (ang > 0) { tmp.dq.setFromAxisAngle(tmp.ax.normalize(), ang); tmp.q.set(S.q[i * 4], S.q[i * 4 + 1], S.q[i * 4 + 2], S.q[i * 4 + 3]).premultiply(tmp.dq); S.q[i * 4] = tmp.q.x; S.q[i * 4 + 1] = tmp.q.y; S.q[i * 4 + 2] = tmp.q.z; S.q[i * 4 + 3] = tmp.q.w; }
       } else if (st === 2) {
-        const f = reduced ? 1 : pull; for (let c = 0; c < 3; c += 1) S.pos[o + c] += (S.hm[o + c] - S.pos[o + c]) * f;
+        const f = reduced ? 1 : pull; for (let c = 0; c < 3; c += 1) S.pos[o + c] += (S.hm[o + c] - S.pos[o + c]) * f; if (S.pos[o + 1] > top) S.pos[o + 1] = top;
         if (Math.abs(S.pos[o] - S.hm[o]) + Math.abs(S.pos[o + 1] - S.hm[o + 1]) + Math.abs(S.pos[o + 2] - S.hm[o + 2]) < 0.02) { S.st[i] = 0; for (let c = 0; c < 3; c += 1) S.pos[o + c] = S.hm[o + c]; }
       }
       tmp.q.set(S.q[i * 4], S.q[i * 4 + 1], S.q[i * 4 + 2], S.q[i * 4 + 3]);
@@ -145,39 +147,60 @@ function GasMolecules({ substanceId, mol, detail = "medium", R, y0, heightRef, s
   );
 }
 
-/** Glass bell-jar gas chamber on a steel base with a pressure gauge.  Height is proportional to the gas volume (V / 24 dm3 x 2.6). */
-export function BellJar({ gasId, volumeDm3, mol = 1, detail = "medium", released = false, label, display, highlight, dark = false, reduced = false, position = [0, 0, 0], speedFactor = 1 }) {
-  const R = 1.35; const base = 0.38;
-  const hRef = useRef(null); const target = Math.max(0.7, 2.6 * (volumeDm3 / 24));
-  if (hRef.current === null) hRef.current = target;
-  const body = useRef(); const dome = useRef(); const topGrp = useRef(); const rim = useRef(); const glassMat = useMemo(() => new THREE.MeshPhysicalMaterial(glass(dark)), [dark]);
-  const liveTop = useRef(base + target); const gaugeTex = useMemo(() => gaugeTexture("atm"), []);
-  const labelTex = useMemo(() => labelTexture({ main: label }), [label]);
-  const dispTex = useMemo(() => makeTexture(512, 160, (g, w, h) => { g.fillStyle = "#0e3a44"; g.fillRect(0, 0, w, h); g.fillStyle = "#e8fbff"; g.font = "700 96px system-ui, sans-serif"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(display, w / 2, h / 2); }), [display]);
+/** Test hook only: the longest simulated step per frame (s).  Software GL runs at ~1 fps; verification raises this to step the clock. */
+const maxDt = () => globalThis.__ML_DT_MAX ?? 0.05;
+export const PISTON_UNITS_PER_24 = 2.6; // piston travel for 24 dm3
+export const gasHeight = (volumeDm3) => PISTON_UNITS_PER_24 * (volumeDm3 / 24);
+const volumeTexture = (maxDm3, h) => makeTexture(160, 512, (g, w, H) => {
+  g.clearRect(0, 0, w, H); g.fillStyle = "rgba(30,50,90,0.85)"; g.strokeStyle = "rgba(30,50,90,0.75)"; g.font = "600 34px system-ui, sans-serif"; g.textAlign = "left"; g.textBaseline = "middle";
+  for (let v = 6; v <= maxDm3 + 0.01; v += 6) { const y = H - (v / maxDm3) * H; const major = v % 12 === 0; g.lineWidth = major ? 5 : 3; g.beginPath(); g.moveTo(w * 0.05, y); g.lineTo(w * (major ? 0.42 : 0.28), y); g.stroke(); if (major) g.fillText(String(v), w * 0.48, y); }
+  void h;
+});
+
+/**
+ * Gas cylinder with a movable PISTON (constant external pressure, constant T): the gas starts packed under the piston at its low position;
+ * "released", the same molecules spread out and the piston rises until the volume is the RTP volume of this amount, then stays there.
+ * The live volume readout on the base counts up with the piston height (V = height / 2.6 x 24 dm3).
+ */
+export function GasCylinder({ gasId, volumeDm3, mol = 1, detail = "medium", released = false, label, highlight, dark = false, reduced = false, position = [0, 0, 0], speedFactor = 1 }) {
+  const R = 1.35; const base = 0.38; const finalH = gasHeight(volumeDm3); const tubeH = finalH + 0.4;
+  const heapTop = useRef(base + 1.3 * mol + 0.25); const pist = useRef(base + 1.3 * mol + 0.25); const topRef = useRef(pist.current);
+  const grp = useRef(); const sealRef = useRef(); const lastTxt = useRef("");
+  const glassMat = useMemo(() => new THREE.MeshPhysicalMaterial(glass(dark)), [dark]);
+  const labelTex = useMemo(() => labelTexture({ main: label }), [label]); const atmTex = useMemo(() => labelTexture({ main: "1 atm" }), []);
+  const scaleTex = useMemo(() => volumeTexture(Math.round(tubeH / PISTON_UNITS_PER_24 * 24), tubeH), [tubeH]);
+  const canvas = useMemo(() => { const c = document.createElement("canvas"); c.width = 512; c.height = 160; return c; }, []);
+  const dispTex = useMemo(() => { const t = new THREE.CanvasTexture(canvas); t.colorSpace = THREE.SRGBColorSpace; return t; }, [canvas]);
   const sh = useMemo(() => shadowTexture(), []);
-  useEffect(() => () => { glassMat.dispose(); gaugeTex.dispose(); labelTex.dispose(); dispTex.dispose(); sh.dispose(); }, [glassMat, gaugeTex, labelTex, dispTex, sh]);
-  useFrame((_, dt) => {
-    const h = hRef.current; const nh = reduced || Math.abs(target - h) < 0.004 ? target : h + (target - h) * Math.min(1, dt * 4); hRef.current = nh;
-    if (body.current) { body.current.scale.y = nh; body.current.position.y = base + nh / 2; }
-    if (dome.current) dome.current.position.y = base + nh; if (topGrp.current) topGrp.current.position.y = base + nh; liveTop.current = base + nh + R * 0.86;
+  useEffect(() => () => { glassMat.dispose(); labelTex.dispose(); atmTex.dispose(); scaleTex.dispose(); dispTex.dispose(); sh.dispose(); }, [glassMat, labelTex, atmTex, scaleTex, dispTex, sh]);
+  const paint = (txt) => { const g = canvas.getContext("2d"); g.fillStyle = "#0e3a44"; g.fillRect(0, 0, 512, 160); g.fillStyle = "#e8fbff"; g.font = "700 92px system-ui, sans-serif"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(txt, 256, 82); dispTex.needsUpdate = true; };
+  useLayoutEffect(() => { lastTxt.current = ""; }, [dispTex]);
+  useFrame((_, dtRaw) => {
+    const dt = Math.min(dtRaw, maxDt()); const target = released ? base + finalH : heapTop.current + 0.05; let h = pist.current;
+    h = reduced || Math.abs(target - h) < 0.004 ? target : h + (target - h) * Math.min(1, dt * (released ? 1.25 : 2.4)); pist.current = h; topRef.current = h;
+    if (grp.current) grp.current.position.y = h;
+    const v = ((h - base) / PISTON_UNITS_PER_24) * 24; const txt = `${v.toFixed(1)} dm³`; if (txt !== lastTxt.current) { lastTxt.current = txt; paint(txt); }
   });
   return (
     <group position={position}>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.004, 0]}><planeGeometry args={[R * 3.6, 3.2]} /><meshBasicMaterial map={sh} transparent opacity={0.7} depthWrite={false} /></mesh>
       <mesh position={[0, 0.14, 0]}><cylinderGeometry args={[R + 0.28, R + 0.36, 0.28, 48]} /><meshStandardMaterial {...steel} roughness={0.3} /></mesh>
       <mesh position={[0, 0.3, 0]}><cylinderGeometry args={[R + 0.12, R + 0.2, 0.06, 48]} /><meshStandardMaterial color="#9aa1ad" metalness={1} roughness={0.25} /></mesh>
-      <mesh position={[0, 0.15, R + 0.36]} rotation={[-0.0, 0, 0]}><planeGeometry args={[1.65, 0.5]} /><meshBasicMaterial map={dispTex} toneMapped={false} /></mesh>
-      <mesh ref={body} renderOrder={3}><cylinderGeometry args={[R, R, 1, 56, 1, true]} /><primitive object={glassMat} attach="material" /></mesh>
-      <mesh ref={rim} position={[0, base + 0.03, 0]} rotation={[Math.PI / 2, 0, 0]}><torusGeometry args={[R + 0.02, 0.05, 12, 56]} /><meshStandardMaterial {...steel} /></mesh>
-      <group ref={dome}><mesh renderOrder={3} scale={[1, 0.86, 1]}><sphereGeometry args={[R, 48, 24, 0, Math.PI * 2, 0, Math.PI / 2]} /><primitive object={glassMat} attach="material" /></mesh></group>
-      <group ref={topGrp}>
-        <mesh position={[0, R * 0.86 + 0.18, 0]}><cylinderGeometry args={[0.13, 0.18, 0.36, 20]} /><meshStandardMaterial {...steel} /></mesh>
-        <mesh position={[0, R * 0.86 + 0.78, 0.04]} rotation={[Math.PI / 2, 0, 0]}><cylinderGeometry args={[0.4, 0.4, 0.12, 40]} /><meshStandardMaterial {...steel} /></mesh>
-        <mesh position={[0, R * 0.86 + 0.78, 0.115]}><circleGeometry args={[0.36, 40]} /><meshBasicMaterial map={gaugeTex} toneMapped={false} /></mesh>
+      <mesh position={[0, 0.15, R + 0.36]}><planeGeometry args={[1.75, 0.54]} /><meshBasicMaterial map={dispTex} toneMapped={false} /></mesh>
+      <mesh position={[0, base + tubeH / 2, 0]} renderOrder={3}><cylinderGeometry args={[R, R, tubeH, 56, 1, true]} /><primitive object={glassMat} attach="material" /></mesh>
+      <mesh position={[0, base + tubeH, 0]} rotation={[Math.PI / 2, 0, 0]}><torusGeometry args={[R + 0.015, 0.045, 12, 56]} /><meshStandardMaterial {...steel} /></mesh>
+      <mesh position={[0, base + 0.03, 0]} rotation={[Math.PI / 2, 0, 0]}><torusGeometry args={[R + 0.02, 0.05, 12, 56]} /><meshStandardMaterial {...steel} /></mesh>
+      <mesh position={[R * 0.7, base + tubeH / 2, Math.sqrt(R * R * 0.51) + 0.02]} rotation={[0, Math.asin(0.7), 0]} renderOrder={4}><planeGeometry args={[0.8, tubeH]} /><meshBasicMaterial map={scaleTex} transparent depthWrite={false} toneMapped={false} /></mesh>
+      <group ref={grp} position={[0, pist.current, 0]}>
+        <mesh position={[0, 0.12, 0]}><cylinderGeometry args={[R - 0.03, R - 0.03, 0.24, 56]} /><meshStandardMaterial {...steel} /></mesh>
+        <mesh ref={sealRef} position={[0, 0.07, 0]} rotation={[Math.PI / 2, 0, 0]}><torusGeometry args={[R - 0.03, 0.055, 10, 56]} /><meshStandardMaterial color="#20242c" roughness={0.6} /></mesh>
+        <mesh position={[0, 0.65, 0]}><cylinderGeometry args={[0.085, 0.085, 0.9, 16]} /><meshStandardMaterial {...steel} /></mesh>
+        <mesh position={[0, 1.15, 0]}><sphereGeometry args={[0.2, 24, 16]} /><meshStandardMaterial color="#2b2f38" roughness={0.45} metalness={0.3} /></mesh>
+        <mesh position={[0, 0.13, R + 0.07]} renderOrder={5}><planeGeometry args={[0.8, 0.4]} /><meshBasicMaterial map={atmTex} transparent toneMapped={false} depthWrite={false} /></mesh>
+        <mesh position={[0, 1.7, R + 0.2]} renderOrder={5}><planeGeometry args={[1.1, 0.55]} /><meshBasicMaterial map={labelTex} transparent toneMapped={false} depthWrite={false} /></mesh>
       </group>
-      <mesh position={[0, 1.55, R * 0.97]} rotation={[0, 0, 0]} renderOrder={5}><planeGeometry args={[1.05, 0.52]} /><meshBasicMaterial map={labelTex} transparent toneMapped={false} depthWrite={false} /></mesh>
       {highlight && <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]}><ringGeometry args={[R + 0.5, R + 0.62, 56]} /><meshBasicMaterial color="#6d7dff" transparent opacity={0.6} depthWrite={false} /></mesh>}
-      <GasMolecules substanceId={gasId} mol={mol} detail={detail} released={released} reduced={reduced} R={R} y0={base} heightRef={liveTop} speed={speedFactor} />
+      <GasMolecules substanceId={gasId} mol={mol} detail={detail} released={released} reduced={reduced} R={R} y0={base} heightRef={topRef} domeInset={0} speed={speedFactor} onHeap={(y) => { heapTop.current = y; }} finalTop={base + finalH} />
     </group>
   );
 }
@@ -206,7 +229,7 @@ export function Beaker({ volumeMl, liquidRef, dark = false, tint = "#4aa8ff", po
   return (
     <group position={position}>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.004, 0]}><planeGeometry args={[4, 3.2]} /><meshBasicMaterial map={sh} transparent opacity={0.65} depthWrite={false} /></mesh>
-      <mesh ref={liq} renderOrder={1}><cylinderGeometry args={[BEAKER.R - 0.04, BEAKER.R - 0.04, 1, 48]} /><meshStandardMaterial color={tint} emissive={tint} emissiveIntensity={0.3} transparent opacity={0.62} roughness={0.25} depthWrite={false} /></mesh>
+      <mesh ref={liq} renderOrder={1}><cylinderGeometry args={[BEAKER.R - 0.04, BEAKER.R - 0.04, 1, 48]} /><meshStandardMaterial color={tint} emissive={tint} emissiveIntensity={0.25} transparent opacity={0.3} roughness={0.25} depthWrite={false} /></mesh>
       <mesh ref={surf} rotation={[-Math.PI / 2, 0, 0]}><circleGeometry args={[BEAKER.R - 0.04, 48]} /><meshStandardMaterial color="#cfe8ff" emissive="#9fd0ff" emissiveIntensity={0.3} transparent opacity={0.55} roughness={0.1} depthWrite={false} side={THREE.DoubleSide} /></mesh>
       <mesh position={[0, BEAKER.H / 2, 0]} renderOrder={3}><cylinderGeometry args={[BEAKER.R, BEAKER.R, BEAKER.H, 56, 1, true]} /><primitive object={mat} attach="material" /></mesh>
       <mesh position={[0, 0.06, 0]} renderOrder={3}><cylinderGeometry args={[BEAKER.R, BEAKER.R, 0.12, 56]} /><primitive object={mat} attach="material" /></mesh>

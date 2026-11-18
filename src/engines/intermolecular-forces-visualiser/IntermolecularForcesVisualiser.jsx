@@ -42,7 +42,7 @@ const oneOf = (list) => (v) => list.includes(v);
 function Workspace() {
   const [mode, setMode] = useSimulationSessionState("mode", "explore", oneOf(["explore", "learn", "rank"]));
   const [force, setForce] = useSimulationSessionState("force", "ldf", oneOf(FORCES));
-  const [view, setView] = useSimulationSessionState("view", "ball", oneOf(["ball", "cloud"]));
+  const [view, setView] = useSimulationSessionState("view", "ball", oneOf(["ball", "cloud", "esp"]));
   const [showDelta, setShowDelta] = useSimulationSessionState("delta", false, (v) => typeof v === "boolean");
   const [showDipole, setShowDipole] = useSimulationSessionState("dipole", false, (v) => typeof v === "boolean");
   const [learnView, setLearnView] = useState(null); // null = the lesson reveals the electron cloud itself; "ball" / "cloud" = the student chose
@@ -186,7 +186,7 @@ function Workspace() {
   const frameKey = mode === "learn" ? `L${lessonId}` : `E${molsRef.current.length}`;
   const opts = useMemo(() => ({ force: effForce, view: effView, showDelta, showDipole: mode === "explore" && showDipole, exaggeration: mode === "learn" ? 2.5 : exaggeration, mode: interactMode, selectedUid: mode === "explore" ? selectedUid : null, interactive: mode === "explore" && !heat, frame, frameKey }), [effForce, effView, showDelta, showDipole, exaggeration, interactMode, selectedUid, mode, heat, frame, frameKey]);
   const stepCloud = (lesson.steps[Math.min(step, lesson.steps.length - 1)]?.fx.cloud ?? 0) > 0.5;
-  const cloudShown = mode === "learn" ? (learnView ? learnView === "cloud" : stepCloud) : view === "cloud";
+  const cloudShown = mode === "learn" ? (learnView ? learnView === "cloud" : stepCloud) : view !== "ball";
   const list = liveRef.current; void liveTick; void rev;
   const inter = summary?.inter ?? simRef.current.inter;
   const lessonFx = simRef.current.fx;
@@ -221,7 +221,7 @@ function Workspace() {
         ))}
       </div>
       <div className="imf-viewbar">
-        <MiniSwitch options={[{ id: "ball", label: "Ball Model" }, { id: "cloud", label: "Electron Cloud" }]} value={mode === "learn" ? (cloudShown ? "cloud" : "ball") : view} onChange={mode === "learn" ? setLearnView : setView} ariaLabel="Molecule display" testId="view-switch" large />
+        <MiniSwitch options={mode === "learn" ? [{ id: "ball", label: "Ball Model" }, { id: "cloud", label: "Electron Cloud" }] : [{ id: "ball", label: "Ball Model" }, { id: "cloud", label: "Electron Cloud" }, { id: "esp", label: "Potential (ESP)" }]} value={mode === "learn" ? (cloudShown ? "cloud" : "ball") : view} onChange={mode === "learn" ? setLearnView : setView} ariaLabel="Molecule display" testId="view-switch" large />
         {mode === "explore" && <button type="button" className="sim-btn imf-mini" aria-pressed={showDelta} onClick={() => setShowDelta((v) => !v)} data-testid="delta-toggle" title="Show partial charges (permanent) and temporary / induced charges">Show δ⁺/δ⁻</button>}
         {mode === "explore" && <button type="button" className="sim-btn imf-mini" aria-pressed={showDipole} onClick={() => setShowDipole((v) => !v)} data-testid="dipole-toggle" title="Show small dipole arrows (vectors, not forces)">Dipoles</button>}
       </div>
@@ -232,13 +232,20 @@ function Workspace() {
       London dispersion acts between <b>all</b> atoms and molecules, polar or not{effForce !== "ldf" ? `; here ${FORCE_LABEL[effForce]} is emphasised.` : "."}
     </p>
   );
-  const cloudLegend = cloudShown && (
+  const espView = mode === "explore" && view === "esp";
+  const cloudLegend = cloudShown && (espView ? (
     <div className="imf-legend" data-testid="cloud-legend" role="note">
-      <b>Electron-density surface</b> (qualitative, not a quantum calculation)
+      <b>Electrostatic potential (ESP) surface</b> (qualitative, not a quantum calculation)
       <span className="imf-legend-bar" aria-hidden="true" />
-      <span><i style={{ background: "#e5483f" }} />electron-rich <i style={{ background: "#3a6fe8" }} />electron-poor<span className="imf-legend-long"> – <em>electrostatic potential colouring</em>, not the electrons themselves</span></span>
+      <span><i style={{ background: "#e5483f" }} />electron-rich <i style={{ background: "#3a6fe8" }} />electron-poor<span className="imf-legend-long"> – <em>electrostatic potential colouring</em>: a different quantity from electron density</span></span>
     </div>
-  );
+  ) : (
+    <div className="imf-legend" data-testid="cloud-legend" role="note">
+      <b>Simplified electron-density model</b> – not to scale (qualitative)
+      <span className="imf-legend-bar imf-legend-bar--density" aria-hidden="true" />
+      <span><i style={{ background: "#0a7f86" }} />teal: deeper = more concentrated electron density <span className="imf-legend-long">– not charge. δ⁺ / δ⁻ labels mark partial charge.</span></span>
+    </div>
+  ));
 
   // chamber
   let chamber; let controls; let live; let explain; let graph = null;

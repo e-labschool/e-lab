@@ -60,3 +60,11 @@ Verification levels:
 - Not verified: real GPU performance and frame rate, touch, Safari, Firefox, screen readers, dark theme at every size.
 
 Known limits: auto quality is "low" under software GL, so bench reflections (medium/high only) were checked with the detail setting forced to medium; the lab background is a painted blurred canvas, not a photo; the volumetric flask in Stage 3 is a decorative prop; bag shape is still somewhat boxy compared with the references; hydrogen atoms look slightly blown out; reflections are noisy under software GL.
+
+## Second polish pass (latest)
+
+Done: Stage 4 piston with live volume readout; Stage 3 water-first pour, diffusion, dilution and side-panel worked calculation; ions drawn from engine templates (OH- = O + bonded H); empty product packets filled by the reaction (Stages 5/6); Stage 6 keeps reactants on the board and empties consumed packets, remaining packet marked; stacked board on narrow screens; camera clamp raised; Stage 3 flask removed; `STAGE6_EXAMPLES` covers all ten reactions.
+
+Verification: `npm run test:mole-lab`, `npm test` and `npm run build` pass; the packet test now checks every substance's drawn atoms/ions against its formula and charge. Screenshots (software GL, SwiftShader only) were taken with the simulation clock stepped (`__ML_DT_MAX`) at several times for the Stage 3 pour/diffusion/dilution, the Stage 4 release and the Stage 6 run; the animations could not be watched at normal speed here (about 1 fps). Phone (390x844), small laptop (910x512) and 1366x768, light and dark, were screenshotted for Stages 3-6 final states. Not verified: real GPU performance, touch, Safari, Firefox, screen readers.
+
+Known limits: Stage 3 diffusion is a visual random walk of representative ions (about 400 per species per mole), not a simulation of real diffusion rates; the Stage 6 packet amount labels switch when the reaction starts rather than counting down with the fill; the lab background is a painted canvas.

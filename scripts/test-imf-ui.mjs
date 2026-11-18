@@ -77,7 +77,8 @@ await test("click adds molecules (max 6), Clear empties, and the narration expla
 });
 await test("Ball/Cloud and delta toggles reflect state", async () => {
   await click(`${T("view-switch")} [role=radio]:nth-child(2)`); assert.equal($(`${T("view-switch")} [role=radio]:nth-child(2)`).getAttribute("aria-checked"), "true"); assert.ok($(T("cloud-legend")));
-  assert.match(txt(T("cloud-legend")), /electrostatic potential colouring/i); assert.match(txt(T("cloud-legend")), /qualitative/i);
+  assert.match(txt(T("cloud-legend")), /electron-density model/i); assert.match(txt(T("cloud-legend")), /not to scale/i); assert.doesNotMatch(txt(T("cloud-legend")), /electron-rich|electron-poor/i, "the density view never uses ESP red/blue wording");
+  await click(`${T("view-switch")} [role=radio]:nth-child(3)`); assert.match(txt(T("cloud-legend")), /electrostatic potential colouring/i); assert.match(txt(T("cloud-legend")), /qualitative/i);
   await click(T("delta-toggle")); assert.equal($(T("delta-toggle")).getAttribute("aria-pressed"), "true");
   await click(`${T("view-switch")} [role=radio]:nth-child(1)`);
 });

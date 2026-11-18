@@ -69,6 +69,21 @@ export function stage3Info(soluteId, massG, volumeMl) {
   return { M, n, c, volumeMl, massG, error: err || "", ok: p.ok && !err, packets: packetLayout(n),
     line: `${fmtSig(massG, 3)} g ${f(soluteId)} = ${fmtMol(n)} mol;  final volume ${volumeMl} mL;  c = n ÷ V = ${fmtMol(n)} mol ÷ ${fmtFixed(volumeMl / 1000, 3)} dm³ = ${fmtFixed(c, 2)} mol dm⁻³` };
 }
+/** Worked calculation for the Stage 3 side panel (pure strings; every number comes from stage3Info / the engine). */
+export function stage3Work(soluteId, massG, volumeMl) {
+  const i = stage3Info(soluteId, massG, volumeMl); const V = volumeMl / 1000;
+  return { ok: i.ok, n: i.n, c: i.c, M: i.M, V,
+    steps: [
+      { title: "Amount of solute", eq: "n = m ÷ M", sub: `= ${fmtFixed(massG, 1)} g ÷ ${fmtFixed(i.M, 2)} g mol⁻¹ = ${fmtFixed(i.n, 3)} mol` },
+      { title: "Final solution volume", eq: "V (dm³) = V (cm³) ÷ 1000", sub: `${volumeMl} cm³ = ${fmtFixed(V, 3)} dm³` },
+      { title: "Concentration", eq: "c = n ÷ V", sub: `= ${fmtFixed(i.n, 3)} mol ÷ ${fmtFixed(V, 3)} dm³` } ],
+    final: `${fmtFixed(i.c, 2)} mol dm⁻³` };
+}
+/** Dilution of the SAME amount n from V1 to V2 (cm3): n is unchanged, c falls in proportion. */
+export function stage3Dilution(soluteId, massG, v1, v2) {
+  const a = stage3Info(soluteId, massG, v1); const b = stage3Info(soluteId, massG, v2);
+  return { n: a.n, c1: a.c, c2: b.c, line1: `n is unchanged = ${fmtFixed(a.n, 3)} mol`, line2: `c₂ = n ÷ V₂ = ${fmtFixed(a.n, 3)} mol ÷ ${fmtFixed(v2 / 1000, 3)} dm³`, check: `c₁V₁ = ${fmtFixed(a.c, 2)} × ${fmtFixed(v1 / 1000, 3)} = ${fmtFixed(b.c, 2)} × ${fmtFixed(v2 / 1000, 3)} = ${fmtFixed(a.c * v1 / 1000, 3)} mol`, final: `${fmtFixed(b.c, 2)} mol dm⁻³` };
+}
 export const soluteLabel = (id) => `${f(id)} – ${getSolute(id).name}`;
 export { concentration };
 

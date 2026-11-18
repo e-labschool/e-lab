@@ -10,6 +10,7 @@
 //   dipole-dipole       point-charge Coulomb sum over the model partial charges (orientation + distance dependent)
 //   hydrogen bond       X-H...A with X, A in {N, O, F}: H...A distance window, X-H...A angle >= ~150 deg, acceptor lone-pair alignment
 import { ELEM, MOLECULES, atomWorld } from "./molecules.js";
+import { fluctuationSignal } from "../../shared-3d/electronCloud/fluctuation.js";
 import { add, angleDeg, dist, dot, len, norm, qFromTo, qRot, scale, smoothstep, sub } from "./vec.js";
 
 export const FORCES = ["ldf", "dip-ind", "dip-dip", "hbond"];
@@ -58,12 +59,12 @@ export function londonEnergyEv(a, b, r) {
   return (-1.5 * ((Ia * Ib) / (Ia + Ib)) * a.alpha * b.alpha) / r ** 6;
 }
 /**
- * Instantaneous (fluctuation) dipole of a nonpolar molecule that has a nonpolar neighbour. It is CORRELATED with the neighbour, not a
- * spinning vector: the electron-rich end is the one facing away from the neighbour (delta+ end faces it) along the A->B axis, so the
- * field it makes at B induces the opposite facing end on B. The only time dependence is a bounded breathing of the amplitude
- * (never a direction sweep), so the cloud can neither spin nor change which end is which.
+ * Instantaneous (fluctuation) dipole of a nonpolar molecule that has a nonpolar neighbour. It is CORRELATED with the neighbour: p is
+ * kept on the A->B axis, so the field it makes at B induces a dipole parallel to it and the facing ends are ALWAYS opposite
+ * (delta+ faces delta-). Its SIGN and size change continuously (fluctuationSignal: smooth, zero-average, flips sign every few
+ * seconds), so there is never a permanent polarity: averaged over time the cloud is symmetric. The cloud does not spin.
  */
-export const fluctuationAmplitude = (t) => 0.9 + 0.1 * Math.sin(1.7 * t);
+export const fluctuationAmplitude = (t) => fluctuationSignal(t);
 /** 1 at contact, smoothly 0 when the molecules are far apart: the correlation (and so the visible fluctuation) needs a close neighbour. */
 export const fluctuationGate = (r, radiusA, radiusB) => { const s = radiusA + radiusB; return 1 - smoothstep(1.15 * s, 2.0 * s, r); };
 export const P_MIN_VISIBLE = 0.0008; // e*A: below this net dipole nothing is labelled or connected (the display is the symmetric average)
@@ -192,7 +193,7 @@ export function computeInteractions(entries, ctx = {}) {
     if (A.mol.polar || B.mol.polar) continue; // a permanent dipole dominates: polar molecules are never "sources"; they just polarise the neighbour
     const dir = fluct.fixedDir ? norm(fluct.fixedDir) : norm(axis);
     const gate = fluctuationGate(len(axis), A.mol.radius, B.mol.radius);
-    const amp = (fluct.fixedDir ? 1 : fluctuationAmplitude(t)) * gate * fluct.gain * P_FLUCT * Math.sqrt(A.mol.alpha / 0.787);
+    const amp = fluctuationAmplitude(t) * gate * fluct.gain * P_FLUCT * Math.sqrt(A.mol.alpha / 0.787);
     const p = scale(dir, amp); out.mols[i].instant = p; out.mols[i].source = true; sources.push({ idx: i, p, at: A.pose.pos });
   }
   // 2) fields at every molecule from the permanent charges of the others and the instantaneous dipoles

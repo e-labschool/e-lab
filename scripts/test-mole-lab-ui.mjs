@@ -75,6 +75,18 @@ test("stage 5 offers Run Reaction, Step and Reset; stage 6 offers Run Reaction a
   await click('[data-testid="ml-tab-6"]');
   assert.ok($('[data-testid="ml-run"]')); assert.ok($('[data-testid="ml-reset-run"]'));
 });
+test("stage 3 (NEW): worked calculation in a SIDE panel: n = m / M, V in dm3, c = n / V, highlighted final concentration (live)", async () => {
+  await click('[data-testid="ml-tab-3"]');
+  const side = $('[data-testid="ml-side"]'); assert.ok(side, "side panel");
+  const t = text('[data-testid="ml-side"]');
+  assert.match(t, /n = m ÷ M/); assert.match(t, /10\.0 g ÷ 40\.00 g mol⁻¹ = 0\.250 mol/); assert.match(t, /100 cm³ = 0\.100 dm³/); assert.match(t, /c = n ÷ V/);
+  assert.match(text('[data-testid="ml-final"]'), /2\.50 mol dm⁻³/);
+  await click('[data-testid="ml-volume-250"]'); assert.match(text('[data-testid="ml-final"]'), /1\.00 mol dm⁻³/);
+  await click('[data-testid="ml-volume-100"]');
+  await click('[data-testid="ml-compare"]');
+  assert.match(text('[data-testid="ml-final-A"]'), /2\.50/); assert.match(text('[data-testid="ml-final-B"]'), /5\.00/);
+  await click('[data-testid="ml-compare"]');
+});
 test("stage 4 (NEW): packed molecules by default, Release gas / Pack again toggle, RTP caption and the representative-molecules note", async () => {
   await click('[data-testid="ml-tab-4"]');
   const b = $('[data-testid="ml-release"]'); assert.ok(b); assert.match(b.textContent, /Release gas/);

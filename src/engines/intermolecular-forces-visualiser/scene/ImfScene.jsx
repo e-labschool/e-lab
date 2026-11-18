@@ -7,6 +7,12 @@ import { buildMoleculeObject, makeMoleculeGeometry, worldGeometry, BOND_COLOR } 
 import { ELEM, MOLECULES } from "../model/molecules.js";
 import { computeInteractions, interactionLines, P_MIN_VISIBLE } from "../model/imf.js";
 import { add, dist, len, norm, scale, sub } from "../model/vec.js";
+import { ElectronCloud, ChemDipoleArrow, buildRegions, POLAR_BOND_MIN } from "../../shared-3d/electronCloud/index.js";
+
+// Electron Cloud view = the SHARED electron-density component (one translucent region per atom, Venn-style overlap; a polar bond redistributes the
+// density, equal electronegativity keeps it symmetric). The old single-surface ESP colouring is kept as the separate "Potential" view.
+const DENSITY_R = 0.8; // region radius = DENSITY_R x van der Waals radius (teaching picture, not to scale)
+const P0_SAT_VIEW = 0.03;
 
 // The r3f content of the Explore / Learn workspace. Poses live in `storeRef.current` (mutated while the user drags -- no React
 // state per pointer move) and are read here once per frame. The interaction model (./model/imf.js) is evaluated per frame for the
@@ -21,29 +27,41 @@ const MAX_BEADS = 140;
 // ---- one molecule ---------------------------------------------------------------------------------------------------------
 function MoleculeView({ entry, register, shared }) {
   const mol = MOLECULES[entry.id];
-  const outer = useRef(null); const cloudMesh = useRef(null); const permArrow = useRef(null); const indArrow = useRef(null);
+  const outer = useRef(null); const cloudMesh = useRef(null); const permArrow = useRef(null); const indArrow = useRef(null); const { camera } = useThree();
   const sprites = useRef([]); const lobes = useRef([]);
   const cloud = useMemo(() => getCloud(entry.id), [entry.id]);
   const geo = useMemo(() => createCloudGeometry(cloud), [cloud]);
   const mat = useMemo(() => createCloudMaterial(0.64), []);
+  const dens = useMemo(() => new ElectronCloud({ opacity: 0.62 }), []);
+  const densSpec = useMemo(() => ({ atoms: mol.atoms.map((a) => ({ el: a.el, p: a.p, R: DENSITY_R * ELEM[a.el].vdw })), bonds: mol.bonds }), [mol]);
   const atomMats = useMemo(() => { const o = {}; Object.keys(ELEM).forEach((k) => { o[k] = new THREE.MeshStandardMaterial({ color: ELEM[k].color, roughness: 0.38, metalness: 0.04, emissive: new THREE.Color("#ffffff"), emissiveIntensity: 0 }); }); return o; }, []);
   const obj = useMemo(() => buildMoleculeObject({ ...mol, id: entry.id }, shared.geo, atomMats, shared.bondMat), [mol, entry.id, shared, atomMats]);
   const buf = useMemo(() => ({ pos: new Float32Array(cloud.count * 3), col: new Float32Array(cloud.count * 3), shift: [9, 9, 9], p: [9, 9, 9], on: false, amt: -1 }), [cloud]);
-  useEffect(() => () => { geo.dispose(); mat.dispose(); Object.values(atomMats).forEach((m) => m.dispose()); }, [geo, mat, atomMats]);
+  useEffect(() => () => { dens.dispose(); geo.dispose(); mat.dispose(); Object.values(atomMats).forEach((m) => m.dispose()); }, [dens, geo, mat, atomMats]);
   const permDir = useMemo(() => { // chemistry convention: from delta-plus to delta-minus; drawn between the centres of positive and negative charge
     let cp = [0, 0, 0]; let cn = [0, 0, 0]; let sp = 0; let sn = 0;
     mol.atoms.forEach((a) => { if (a.q > 0) { cp = add(cp, scale(a.p, a.q)); sp += a.q; } else if (a.q < 0) { cn = add(cn, scale(a.p, -a.q)); sn -= a.q; } });
     return sp > 0 && sn > 0 && mol.polar ? { from: scale(cp, 1 / sp), to: scale(cn, 1 / sn) } : null;
   }, [mol]);
-  useEffect(() => { register(entry.uid, { update, obj, outer, cloudMesh }); return () => register(entry.uid, null); });
+  useEffect(() => { register(entry.uid, { update, obj, outer, cloudMesh, dens }); return () => register(entry.uid, null); });
   function update(e, st, L, amt) {
     const g = outer.current; if (!g) return;
     g.position.set(e.pos[0], e.pos[1], e.pos[2]); g.quaternion.set(e.quat[0], e.quat[1], e.quat[2], e.quat[3]);
-    if (Math.abs(amt - buf.amt) > 1e-3) { obj.setStyle(amt); mat.uniforms.uOpacity.value = 0.64 * amt; buf.amt = amt; }
+    if (Math.abs(amt - buf.amt) > 1e-3) { obj.setStyle(amt); mat.uniforms.uOpacity.value = 0.64 * amt; dens.setOpacity(0.62 * amt); buf.amt = amt; }
     const sel = L.selectedUid === entry.uid && L.interactive; Object.values(atomMats).forEach((m) => { m.emissiveIntensity = sel ? 0.16 : 0; });
-    const cloudOn = amt > 0.02; const mesh = cloudMesh.current; if (mesh) mesh.visible = cloudOn;
-    // cloud deformation (cheap displacement of the cached vertices) -- only when the dipole / shift changed
-    if (cloudOn) {
+    const cloudOn = amt > 0.02; const espOn = cloudOn && L.view === "esp"; const densOn = cloudOn && !espOn; const mesh = cloudMesh.current; if (mesh) mesh.visible = espOn;
+    dens.group.visible = densOn;
+    if (densOn) { // shared density cloud: redistribution from the bonds' electronegativity + a polarisation bias from the induced / instantaneous dipole
+      const pl = len(st.p); let bias = null; let key = "0";
+      if (pl > 1e-6) {
+        const lq = new THREE.Quaternion(e.quat[0], e.quat[1], e.quat[2], e.quat[3]).invert(); const v = new THREE.Vector3(st.p[0], st.p[1], st.p[2]).applyQuaternion(lq).normalize();
+        const strength = Math.min(1, Math.tanh(Math.sqrt(pl / P0_SAT_VIEW)) * Math.max(0.5, L.exaggeration ?? 1)); bias = { p: [v.x, v.y, v.z], strength };
+        key = `${Math.round(strength * 80)}|${Math.round(v.x * 60)}|${Math.round(v.y * 60)}|${Math.round(v.z * 60)}`;
+      }
+      dens.update(buildRegions(densSpec, { progress: 1, minDelta: POLAR_BOND_MIN, bias }), key);
+    }
+    // legacy ESP surface (the optional "Potential" view): displace / recolour the cached vertices only when the dipole / shift changed
+    if (espOn) {
       const lq = new THREE.Quaternion(e.quat[0], e.quat[1], e.quat[2], e.quat[3]).invert(); const sh = st.shift; const p = st.p;
       if (Math.abs(sh[0] - buf.shift[0]) + Math.abs(sh[1] - buf.shift[1]) + Math.abs(sh[2] - buf.shift[2]) > 2e-4 || !buf.on) {
         const v = new THREE.Vector3(sh[0], sh[1], sh[2]).applyQuaternion(lq); // shift is a WORLD vector; the mesh lives in the molecule frame
@@ -54,7 +72,7 @@ function MoleculeView({ entry, register, shared }) {
         applyEspColors(cloud, [v.x, v.y, v.z], buf.col); geo.attributes.color.array.set(buf.col); geo.attributes.color.needsUpdate = true; buf.p = [p[0], p[1], p[2]];
       }
     }
-    buf.on = cloudOn;
+    buf.on = espOn;
     // permanent partial-charge labels on the atoms (only when relevant: atoms that really carry charge)
     const showD = L.showPerm; const bs = 1 - 0.38 * amt;
     sprites.current.forEach((s, i) => {
@@ -63,12 +81,9 @@ function MoleculeView({ entry, register, shared }) {
       const sp = add(a.p, scale(out, ELEM[a.el].ball * bs + 0.5)); s.position.set(sp[0], sp[1], sp[2]);
     });
     // small dipole arrows, only when the Dipole switch is on (a vector, NOT a force)
-    const placeArrow = (arrow, from, to, color, on, thick) => {
-      if (!arrow) return; arrow.visible = on; if (!on) return; const l = dist(from, to); if (l < 0.05) { arrow.visible = false; return; }
-      const d = norm(sub(to, from)); const shaftL = Math.max(0.01, l - 0.38 * thick);
-      const shaft = arrow.children[0]; const head = arrow.children[1]; const tail = arrow.children[2];
-      placeCylinder(shaft, from, add(from, scale(d, shaftL)), 0.075 * thick); head.position.set(...add(from, scale(d, shaftL + 0.19 * thick))); head.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(...d)); head.scale.setScalar(thick);
-      tail.position.set(...from); tail.scale.setScalar(thick); shaft.material.color.set(color); head.material.color.set(color); tail.material.color.set(color);
+    const placeArrow = (arrow, from, to, color, on, thick) => { // chemistry convention: crossed tail on the delta-plus end (from), head towards delta-minus (to)
+      if (!arrow) return; const l = dist(from, to); if (!on || l < 0.05) { arrow.setVisible(false); return; }
+      arrow.setVisible(true); arrow.setColor(color); arrow.set(from, to, thick); arrow.group.updateMatrixWorld(true); arrow.orientCross(camera);
     };
     const showArrows = !!L.showDipole;
     if (permDir) { const off = [0, mol.radius * 0.62, 0]; placeArrow(permArrow.current, add(permDir.from, off), add(permDir.to, off), THEME.perm, showArrows, 0.55); }
@@ -88,22 +103,17 @@ function MoleculeView({ entry, register, shared }) {
       <primitive object={obj.group} />
       <mesh ref={cloudMesh} geometry={geo} material={mat} renderOrder={4} frustumCulled={false} visible={false} />
       {Array.from({ length: lpCount }, (_, i) => <mesh key={`lp${i}`} ref={(m) => { lobes.current[i] = m; }} geometry={shared.lobe} material={shared.lobeMat} visible={false} renderOrder={5} />)}
-      <Arrow refHandle={permArrow} shared={shared} />
-      <Arrow refHandle={indArrow} shared={shared} />
+      <ChemArrow refHandle={permArrow} />
+      <ChemArrow refHandle={indArrow} />
+      <primitive object={dens.group} />
       {mol.atoms.map((a, i) => <sprite key={`s${i}`} ref={(s) => { sprites.current[i] = s; }} visible={false} renderOrder={9} scale={[0.62, 0.62, 1]} material={a.q > 0 ? shared.plusMat : shared.minusMat} />)}
     </group>
   );
 }
-function Arrow({ refHandle, shared }) {
-  const mats = useMemo(() => [0, 1, 2].map(() => shared.arrowMat.clone()), [shared]);
-  useEffect(() => () => mats.forEach((m) => m.dispose()), [mats]);
-  return (
-    <group ref={refHandle} visible={false} renderOrder={8}>
-      <mesh geometry={shared.cyl} material={mats[0]} renderOrder={8} />
-      <mesh geometry={shared.cone} material={mats[1]} renderOrder={8} />
-      <mesh geometry={shared.tailGeo} material={mats[2]} renderOrder={8} />
-    </group>
-  );
+function ChemArrow({ refHandle }) {
+  const arrow = useMemo(() => new ChemDipoleArrow({ color: THEME.perm, radius: 0.085, headRadius: 0.2, crossHalf: 0.2, onTop: true }), []);
+  useEffect(() => { arrow.setVisible(false); refHandle.current = arrow; return () => { refHandle.current = null; arrow.dispose?.(); }; }, [arrow, refHandle]);
+  return <primitive object={arrow.group} />;
 }
 
 // ---- the whole scene ----------------------------------------------------------------------------------------------------------
@@ -153,9 +163,9 @@ export default function ImfScene({ storeRef, optsRef, simRef, apiRef, onSummary,
        *  the mesh's vertex-colour checksum and the sprite-label count, for the "clouds never spin" checks. */
       cloudInfo() {
         scene.updateMatrixWorld(true);
-        return [...registry.current.entries()].map(([uid, v]) => { const mq = new THREE.Quaternion(); v.obj.group.getWorldQuaternion(mq); const mesh = v.cloudMesh.current; const cq = new THREE.Quaternion(); if (mesh) mesh.getWorldQuaternion(cq);
+        return [...registry.current.entries()].map(([uid, v]) => { const mq = new THREE.Quaternion(); v.obj.group.getWorldQuaternion(mq); const dq = new THREE.Quaternion(); v.dens.group.getWorldQuaternion(dq); const mesh = v.cloudMesh.current; const cq = new THREE.Quaternion(); if (mesh) mesh.getWorldQuaternion(cq);
           const col = mesh ? mesh.geometry.attributes.color.array : []; let sum = 0; for (let i = 0; i < col.length; i += 7) sum += col[i] * (1 + (i % 11)); const pos = mesh ? mesh.geometry.attributes.position.array : []; let ps = 0; for (let i = 0; i < pos.length; i += 13) ps += pos[i] * (1 + (i % 7));
-          return { uid, id: v.id, mol: [mq.x, mq.y, mq.z, mq.w], cloud: [cq.x, cq.y, cq.z, cq.w], visible: !!mesh?.visible, colourSum: sum, posSum: ps }; });
+          return { uid, id: v.id, mol: [mq.x, mq.y, mq.z, mq.w], cloud: [cq.x, cq.y, cq.z, cq.w], visible: !!mesh?.visible, colourSum: sum, posSum: ps, density: { visible: v.dens.group.visible, quat: [dq.x, dq.y, dq.z, dq.w], regions: v.dens.summary(), n: v.dens.meshes.length, key: v.dens.lastKey } }; });
       },
       /** First scene object under a client point: {uid, kind, index} for an atom or bond, else null. */
       hit(cx, cy) {
@@ -191,7 +201,7 @@ export default function ImfScene({ storeRef, optsRef, simRef, apiRef, onSummary,
     S.inter = inter;
     // lesson stage flags: hide the induced response / indicators until their step
     const showInduced = fx.induced !== false; const showAttract = fx.attract !== false; const inLesson = !!S.fx;
-    const amt = L.view === "cloud" ? 1 : L.view === "ball" ? 0 : Math.max(0, Math.min(1, fx.cloud ?? 0));
+    const amt = L.view === "cloud" || L.view === "esp" ? 1 : L.view === "ball" ? 0 : Math.max(0, Math.min(1, fx.cloud ?? 0));
     const Lx = { ...L, showPerm: inLesson ? !!fx.perm : L.showDelta, showLobes: inLesson ? !!fx.lobes : L.force === "hbond" };
     list.forEach((m, i) => {
       const api = registry.current.get(m.uid); if (!api) return; const st = inter.mols[i];
@@ -226,7 +236,7 @@ export default function ImfScene({ storeRef, optsRef, simRef, apiRef, onSummary,
     if (!on) return;
     list.forEach((m, i) => {
       const st = inter.mols[i]; if (!showInduced && !st.source) return; const pm = len(st.p); const mol = MOLECULES[m.id]; if (mol.polar || pm < P_MIN_VISIBLE) return; // polar molecules keep their permanent atom labels; their induced response shows as cloud deformation only
-      const u = norm(st.p); const R = mol.radius * 0.95; const c = add(m.pos, st.shift);
+      const u = norm(st.p); const R = mol.radius * 0.8; const c = add(m.pos, st.shift);
       const plus = dynLabels.current[2 * i]; const minus = dynLabels.current[2 * i + 1]; if (!plus || !minus) return;
       plus.visible = true; minus.visible = true; plus.position.set(...add(c, scale(u, R))); minus.position.set(...add(c, scale(u, -R)));
       const sz = 0.6; plus.scale.set(sz, sz, 1); minus.scale.set(sz, sz, 1);
