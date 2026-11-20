@@ -1,13 +1,15 @@
 import { useState } from "react";
 import Stage from "../scene/Stage.jsx";
 import TugScene, { CHARACTER } from "../scene/TugScene.jsx";
-import { Card, Pills, Row } from "./parts.jsx";
+import { Card, EnScale, Pills, Row } from "./parts.jsx";
+import { WORDS } from "./wording.js";
 import { FREE_RANGE, FREE_DEFAULT, REAL_ATOMS, NAMES, PAULING, clampFree, judgePrediction, resultOf } from "../model/tug.js";
 
-const REAL_PAIRS = [["H", "Cl"], ["H", "F"], ["C", "O"], ["N", "H"], ["H", "H"], ["O", "H"], ["C", "H"], ["Cl", "Cl"]];
+const REAL_PAIRS = [["H", "Cl"], ["H", "F"], ["C", "O"], ["N", "H"], ["H", "H"], ["O", "H"], ["C", "H"], ["Cl", "Cl"], ["Na", "Cl"], ["H", "Br"], ["P", "H"], ["Mg", "O"], ["Li", "F"], ["C", "S"], ["H", "I"]];
 const nm = (e) => `${NAMES[e]} (${e})`;
 
-export default function TugTab({ reduced }) {
+export default function TugTab({ reduced, simple = false }) {
+  const W = WORDS(simple);
   const [mode, setMode] = useState("free");
   const [free, setFree] = useState(FREE_DEFAULT);
   const [real, setReal] = useState({ a: "H", b: "Cl" });
@@ -74,8 +76,9 @@ export default function TugTab({ reduced }) {
           {revealed ? (<>
             <Row label="More electronegative">{res.equal ? "Neither (equal)" : res.more}</Row>
             <Row label="ΔEN" testId="delta-en">{res.dENText}</Row>
-            <Row label="Bond type" testId="bond-type">{res.bondType}</Row>
+            <Row label="Bond type" testId="bond-type">{simple ? (res.equal ? W.bondNon : res.kind === "slightly polar" ? W.bondSlight : res.kind === "polar" ? W.bondPolar : "Very polar bond (almost ionic)") : res.bondType}</Row>
             <Row label="Partial charges" testId="partials">{res.equal ? "none: equal sharing" : `${res.plus.replace(/ \(.*/, "")} δ+ , ${res.minus.replace(/ \(.*/, "")} δ−`}</Row>
+            <EnScale dEN={res.dEN} />
           </>) : <p className="pp-hint" data-testid="result-hidden">Make your prediction to reveal the result.</p>}
         </Card>
       </div>

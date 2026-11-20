@@ -8,18 +8,36 @@ Per-requirement status: `docs/POLARITY_PLAYGROUND_STATUS.md`.
 
 ## Tabs
 
-1. **Game: Electron Tug-of-War.** Two 3D characters pull a rope; the shared density between them shifts towards the more electronegative one.
-   *Free Play*: two sliders (fictional atoms A and B, 0.7 to 4.0, step 0.1). *Real Atoms*: pick two real atoms; their EN values are fixed (Pauling)
-   and hidden until the student predicts which atom pulls harder; feedback gives the reason. Result panel: more electronegative atom, ΔEN, bond type, partial charges.
-2. **Inside a Covalent Bond.** *Bond View* (atoms + bond + two conceptual electron markers), *Electron Cloud* (the density picture), *Bond Polarity*
-   (δ+/δ− and the crossed-tail dipole arrow). Pairs: H–H, Cl–Cl, H–Cl, H–F, H–Br, O–H, N–H, C–O, C–H. "Play Animation" runs equal → redistributed;
-   "Compare with H₂" shows both side by side.
-3. **Molecular Polarity.** H₂, HCl, CO₂, H₂O, BF₃, NH₃, CH₄, CH₃Cl, CCl₄, SO₂. Display: *Molecular Model*, *Bond Dipoles*, *Resultant Dipole*.
-   The resultant mode animates: bond dipoles appear → are moved head to tail (below the molecule) → the resultant is drawn, or "Net dipole moment = 0" is
-   shown when they cancel. The molecule can be dragged to rotate (and rotated with the arrow keys).
-4. **Polarity Challenge.** Five short questions per round from six types (which atom is more electronegative, which is δ+, which dipole arrow is
-   right, polar or non-polar, do the bond dipoles cancel, which description matches). Immediate feedback with one or two sentences of reasoning,
-   progress dots, a score and 0 to 3 stars. No timers.
+1. **Game: Electron Tug-of-War.** Two 3D characters pull a twisted two-strand rope (slack when the pull is even, taut and tightly twisted with the red
+   band slid towards the stronger atom when it is not). One glowing electron cloud stretches towards the stronger atom; two clearly separate pink dots
+   are the conceptual shared pair (no full electron transfer, whatever ΔEN is). *Free Play*: two sliders (fictional atoms A and B, 0.7 to 4.0, step 0.1).
+   *Real Atoms*: pick two real atoms (H, C, N, O, F, Cl, S, Br, I, P, Li, Na, Mg); their EN values are fixed (Pauling) and hidden until the student
+   predicts which atom pulls harder; feedback gives the reason. Result panel: more electronegative atom, ΔEN, bond type, partial charges, and the ΔEN guide.
+2. **Inside a Covalent Bond.** *Bond View* (atoms + bond + two conceptual electron markers), *Electron Cloud* (the density picture, with δ+/δ− labels on
+   the atoms whenever ΔEN is not 0, none for H–H), *Bond Polarity* (δ+/δ− and the crossed-tail dipole arrow). Pairs: H–H, Cl–Cl, H–Cl, H–F, H–Br, O–H, N–H,
+   C–O, C–H. "Play Animation" runs equal → redistributed; "Compare with H₂" shows both side by side; "Show the shared pair (simplified)" adds two dots
+   labelled as a simplification. The ΔEN guide (below) sits in the Bond Polarity card.
+3. **Molecular Polarity.** The original ten (H₂, HCl, CO₂, H₂O, BF₃, NH₃, CH₄, CH₃Cl, CCl₄, SO₂) come first, then a clearly separated **More molecules**
+   group (HF, HBr, CH₂Cl₂, CHCl₃, PCl₃, BeCl₂, SF₆, XeF₄ (marked HL / A level), O₃, cis- and trans-1,2-dichloroethene). Display: *Molecular Model*,
+   *Bond Dipoles*, *Resultant Dipole*. The molecule fills the stage; each polar bond dipole is drawn **alongside its bond** (crossed tail on the δ+ atom,
+   head towards the more electronegative atom, clear of both atoms and of the δ tags). The resultant mode animates: bond dipoles appear → slide into a
+   separate "Vector sum" picture (beside the molecule on a wide stage, below it on a tall one) and are laid tip to tail → a thin separate net arrow, or for
+   CO₂, BF₃, CCl₄, CH₄, H₂, BeCl₂, SF₆, XeF₄, trans-dichloroethene the chain closes on itself ("Net = 0") with the banner "Net dipole moment = 0".
+   **Compare** shows two molecules side by side (default partners: CO₂ with SO₂, BF₃ with NH₃, cis with trans, ...) with a caption that geometry decides.
+   Polar molecules have a button to the (corrected) Intermolecular Forces Visualiser. The molecule can be dragged to rotate (and rotated with the arrow keys).
+4. **Polarity Challenge.** Five questions per round from nine types: which atom is more electronegative, which is δ+, which dipole arrow is right,
+   polar or non-polar, do the bond dipoles cancel, which description matches, **rank three bonds by polarity, which of three molecules is polar /
+   non-polar, which way the net dipole points**. A large picture (with δ labels where they do not give the answer away), big lettered answer buttons (none
+   highlighted before answering), a green / red feedback box with the reasoning, progress dots, a final score with 0 to 3 stars, a review list and
+   **Retry the ones I missed**. The pool is a few hundred distinct questions (bond pairs x molecules x types). No timers.
+
+### Simple wording and the ΔEN guide
+
+* **Simple wording** (header toggle "Simple wording" / "Aa") swaps labels only: "Is the bond polar?", "Is the molecule polar?", "Polar bond", "Polar molecule" and a
+  one-sentence plain explanation. The chemistry is identical. Intended for IGCSE-style learners.
+* **ΔEN guide**: a bar from non-polar through polar to ionic with a marker at |ΔEN| (axis 0 to 3.4), in the Tug result card and the Bond tab. It is labelled
+  "rough guide only: the change is gradual, not a sharp line (IB uses the bonding triangle)". The zone edges at 0.4 and 1.8 are the platform's existing
+  thresholds (`src/lib/lewis/polarity.js`); no further precision is implied.
 
 ## Architecture
 
@@ -82,6 +100,15 @@ Reused (not copied): VSEPR `buildSlots` (geometry), `bondLength3D` (bond lengths
 
 See the section "Polarity Playground update" in `docs/INTERMOLECULAR_FORCES.md`.
 
+## Vector-addition construction (audit of 2026-11-19)
+
+Six steps: geometry and partial charges, bond arrows on the bonds, copies move, parallelogram / sequential sum completes, resultant or cancellation, classification. The
+copies have exactly the length and direction of the arrow on the bond (one display scale per molecule, `arrowScale`). Two non-collinear dipoles are drawn from a common
+origin with the dashed parallelogram; three or more tip to tail. Colour-matched tags d1, d2 ... mark each bond arrow and its copy, and the "Vector sum" title says
+"copies moved to a common origin; directions unchanged". Zero sum: no pink arrow, "Net dipole moment, μ = 0". Non-zero: pink arrow and "Net dipole moment, μ ≠ 0 (towards X)".
+Ozone's arrows are a qualitative formal-charge picture, not ΔEN (its measured dipole is small, about 0.53 D). Bond-dipole addition is a teaching model: real molecular dipoles
+depend on the whole electron density, including lone pairs.
+
 ## Test and verification hooks (software GL runs at about 1 fps)
 
 `globalThis.__PP_DT_MAX` (cap of the per-frame step), `globalThis.__PP_SEEK` (jump the animation clock once), `globalThis.__PP_SET_PROGRESS(v)` (pose a
@@ -89,9 +116,11 @@ See the section "Polarity Playground update" in `docs/INTERMOLECULAR_FORCES.md`.
 
 ## Tests
 
-* `npm run test:polarity`: `scripts/test-polarity-model.mjs` (30 pure checks: data, redistribution, arrow convention, ten molecules' vector sums, timeline,
-  fluctuation signal, Tug and Challenge models) and `scripts/test-polarity-ui.mjs` (14 jsdom checks: registration, four tabs, free play and real-atom flows,
-  bond tab, molecule tab modes and the zero banner, a full Challenge round, keyboard / roving tabindex).
+* `npm run test:polarity`: `scripts/test-polarity-model.mjs` (45 pure checks: data, redistribution, arrow convention, the vector sums of all 21 molecules
+  including geometry (VSEPR angles, planar XeF₄ and dichloroethenes), cancellation and direction, ozone as a qualitative special case, timeline,
+  fluctuation signal, Tug and Challenge models) and `scripts/test-polarity-ui.mjs` (23 jsdom checks: registration, four tabs, free play and real-atom
+  flows with the new atoms and the ΔEN marker, bond tab incl. the shared-pair toggle, molecule tab modes, More molecules, Compare, the IMF link, Simple
+  wording, the zero banner, Challenge rounds incl. no pre-selection, green / red feedback, retry, new question types, keyboard / roving tabindex).
 * `npm run verify:polarity`: builds, serves and drives headless Chromium: every tab at 1366×768, 910×512 and 390×844 in light and dark (overflow, theme,
   canvas, stage size), the scientific pictures (H₂, HCl, CO₂, H₂O, BF₃, NH₃ and the other molecules; the corrected IMF pictures), the no-WebGL fallback,
   context loss, reduced motion and keyboard use. Screenshots are written to the output folder for visual review.
@@ -102,6 +131,30 @@ See the section "Polarity Playground update" in `docs/INTERMOLECULAR_FORCES.md`.
   Safari, Firefox, screen readers. The fallback text for the 3D stages is written to be useful to a screen reader but was not read with one.
 * The simplified density model is a teaching picture: region radii are teaching radii, the size of the redistribution is a qualitative dial, and the
   two electron markers in Bond View are conceptual, not trajectories.
-* Real-atom mode offers eight atoms (H, C, N, O, F, Cl, S, Br) and the molecule set is the ten required ones; extending either is a data change in
-  `model/tug.js` / `model/molecules.js`.
+* Real-atom mode offers thirteen atoms and the molecule set is 21; extending either is a data change in `model/tug.js` / `electronegativity.js` and `model/molecules.js`.
 * Orbit dragging is mouse / pointer based through drei's OrbitControls; the keyboard alternative (arrow keys rotate, +/- zoom, 0 resets) is provided by the shared stage API.
+
+## Extra content for other curricula (IGCSE, A level) and what is tagged
+
+IB DP stays the primary target and the IB-specific parts are marked. The extras are additions, not replacements.
+
+* **More molecules** (all geometry from the shared VSEPR slot generator, every verdict a true 3D vector sum of bond dipoles; no stored dipole moments):
+  HF and HBr (diatomic, one polar bond), CH₂Cl₂ and CHCl₃ (tetrahedral, C–H treated as non-polar by the 0.4 cut-off, net dipole towards the Cl side),
+  PCl₃ (trigonal pyramidal, polar), BeCl₂ (linear, gas phase, cancels), SF₆ (octahedral, cancels), XeF₄ (square planar, cancels; marked "HL / A level"),
+  cis-1,2-dichloroethene (planar, polar) and trans-1,2-dichloroethene (planar, cancels): the same bonds, different geometry, different polarity.
+* **Ozone (O₃)** is an explicit special case. Every bond is O–O so ΔEN is 0 and there are **no** electronegativity bond dipoles; ozone is slightly polar because
+  of the bent shape and unequal formal charges. The arrows drawn for it (from the central O, δ+, to each terminal O) are labelled qualitative and are
+  not derived from ΔEN. The bond angle shown is the measured one, 116.8° (SO₂ 119.3°, PCl₃ 100.3° are set the same way; the other shapes use the VSEPR slot angles).
+* **Pauling values used for Real Atoms** (fixed, two decimals, checked against two independent published tables on the day of the change: the Sydney
+  University first-year chemistry "Pauling Electronegativities" sheet, https://scilearn.sydney.edu.au/fychemistry/Pauling%20Electronegativities.pdf, and the
+  New World Encyclopedia "Pauling scale" table, https://www.newworldencyclopedia.org/entry/Pauling_scale; the same values are the usual CRC Handbook / WebElements
+  ones): Li 0.98, Na 0.93, Mg 1.31, P 2.19, S 2.58, Br 2.96, I 2.66 (and Xe 2.60 for XeF₄). The existing values for H, C, N, O, F, Cl, B, Be, Al, Si
+  are unchanged and still agree with the IB data-booklet table to one decimal (tested). Note the IB data booklet lists one-decimal values; the 2-decimal
+  Pauling values are shown, so e.g. C–Cl ΔEN is 0.61 here, 0.6 from the booklet.
+* **Syllabus tags.** `src/data/curricula/dp-chemistry/syllabus-points-2025.js` does contain S2.2.5 (bond polarity) and S2.2.6 (molecular polarity) and
+  `2025.js` already lists the concepts `electronegativity`, `bond-polarity` and `molecular-polarity` under *structure-2.2*. The simulation catalogue, however, only
+  accepts topic-level codes (`/^[SR]\d\.\d+$/`, enforced by `test:simulation-library`), so the entry stays **`S2.2`**. The simulation's own header names S2.2.5 – S2.2.6.
+  Nothing is tagged for IGCSE or A level: no curriculum map for them exists on the platform.
+* **Which parts fit which curriculum (a note, not a tag):** IGCSE: electronegativity idea (Tug game), polar and non-polar molecules with the Simple wording
+  toggle, HF / HCl / HBr, water, ammonia, CO₂, CH₄. A level: bond polarity, dipole cancellation by geometry (SF₆, BeCl₂, BF₃, cis / trans), PCl₃, CH₂Cl₂,
+  CHCl₃, XeF₄. IB HL: XeF₄ and expanded octets; the bonding triangle is mentioned in the ΔEN guide but not drawn.

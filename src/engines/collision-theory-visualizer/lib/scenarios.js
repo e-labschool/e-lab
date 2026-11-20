@@ -1,6 +1,8 @@
 // Predict-first scenarios. Each one has a baseline set-up, ONE change, a question with choices, and the reasoning.
-// The reveal does not just show text: measureScenario() runs the SAME engine twice (before / after the change, steady
-// supply, fixed seeds) and reports the measured rates, so the answer is evidence from the model, not an assertion.
+// The reveal does not just show text: measureScenario() runs the SAME engine twice (before / after the change, fixed
+// seeds) and reports the measured INITIAL rates, so the answer is evidence from the model, not an assertion. The reaction
+// is irreversible and reactants are used up, so the rate is measured over the first few seconds of a fresh vessel, while
+// little has been consumed.
 import { CollisionEngine, defaultParams, sanitizeParams } from "./collisionEngine.js";
 
 export const CHOICES = [
@@ -44,7 +46,7 @@ export const SCENARIOS = [
 ];
 
 export function scenarioConfigs(sc) {
-  const base = sanitizeParams({ ...defaultParams(), ...sc.base, steady: true });
+  const base = sanitizeParams({ ...defaultParams(), ...sc.base });
   const changed = sanitizeParams({ ...base, ...sc.change });
   return { base, changed };
 }
@@ -56,15 +58,14 @@ export function classifyRatio(ratio) {
   return "down";
 }
 
-/** Mean successful collisions per second over `reps` seeded runs (after `warm` s). Pure and synchronous (~20-60 ms per run). */
-export function measureRate(params, { reps = 4, warm = 4, duration = 60, seed = 101 } = {}) {
+/** Mean INITIAL rate: successful collisions per second over the first `duration` s of a fresh vessel, averaged over `reps`
+ *  seeded runs. Pure and synchronous (a few ms per run). Short on purpose: later the reactants are used up and the rate falls. */
+export function measureRate(params, { reps = 6, duration = 6, seed = 101 } = {}) {
   let total = 0;
   for (let r = 0; r < reps; r++) {
-    const e = new CollisionEngine({ seed: seed + r, params: { ...params, steady: true } });
-    e.run(warm);
-    const s0 = e.succ;
+    const e = new CollisionEngine({ seed: seed + r, params });
     e.run(duration);
-    total += (e.succ - s0) / duration;
+    total += e.succ / duration;
   }
   return total / reps;
 }

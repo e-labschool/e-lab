@@ -119,6 +119,8 @@ const LIVE = [
     description: "Pull electrons in a tug-of-war, look inside a covalent bond, rotate 3D molecules to see dipoles add or cancel, then test yourself." },
   { id: "mole-lab", label: "Mole Lab", topic: "Stoichiometry", syllabus: [],
     description: "Handle one-mole packets: count atoms from formulae, convert mass to moles, then concentration, gas volume and limiting reagents." },
+  { id: "equilibrium-lab", label: "Equilibrium Lab — Dynamic Balance", topic: "Equilibrium", syllabus: ["R2.3"], resourceId: "equilibrium-lab",
+    description: "Start with two cities and two buses, then watch five reversible reactions reach dynamic equilibrium and respond to changes in concentration, temperature, volume and catalyst, with rates, K and Q." },
   { id: "spectroscopy-studio", label: "Spectroscopy Simulation Lab", topic: "Spectroscopy", syllabus: ["S3.2"], featured: false,
     description: "Proton NMR, infrared and mass spectrometry step by step, plus a structure-investigation workspace." },
 ];
@@ -127,7 +129,7 @@ const LIVE = [
 // separate "coming soon" cards.
 const COVERED_BY_LIVE = new Set([
   "ideal-gas-simulator", "molecular-geometry-explorer", "collision-theory-lab",
-  "titration-lab", "spectroscopy-studio", "mass-spectrometer-simulator", "molecular-polarity-explorer",
+  "titration-lab", "spectroscopy-studio", "mass-spectrometer-simulator", "molecular-polarity-explorer", "equilibrium-simulator",
 ]);
 
 const UPCOMING_TOPIC = {

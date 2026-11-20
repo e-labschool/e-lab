@@ -8,8 +8,12 @@
 //  * Collision energy = relative kinetic energy along the line of centres, E = (1/2) mu u^2 (u = approach speed).
 //    A collision of A with B (or of B with a solid A site) REACTS only if E >= Ea AND both reactive sites face each other
 //    (orientation). The collision itself then stays elastic (no heat of reaction is modelled; temperature is fixed).
-//  * Products C + D are inert. "Steady supply" turns products back into reactants after a short delay so the
-//    concentrations (and so the rate) stay constant and conditions can be compared; with it off, reactants are used up.
+//  * The reaction is IRREVERSIBLE: A + B -> C + D. Products C and D are inert and stay products for the rest of the run;
+//    nothing ever turns them back into A or B and there is no replenishment of reactants. Particle units are conserved
+//    (nA + nB + nC + nD is constant; in the solid system a consumed surface site counts as the product C and the B that hit
+//    it becomes D). When the limiting reactant is used up no further reaction is possible and the rate is zero.
+//    The only way to change the amount of material is the user's own Concentration slider (adds or removes reactant
+//    particles; it is marked on the graphs).
 //  * Time is simulated time (model seconds). Energies are in kJ mol^-1 with kT = R T. The Ea range is a DEMO scale
 //    (5-60 kJ/mol) chosen so reactions happen in watchable time.
 import { createRng } from "./rng.js";
@@ -25,7 +29,7 @@ export const CAP = 200; // hard cap on mobile particles
 export const TILE_CAP = 144;
 export const PIECES = [1, 4, 9, 16, 36]; // number of solid pieces for the same mass (144 sites)
 export const PIECE_GAP = [0, 28, 26, 24, 20];
-export const RESTORE_DELAY = 1.5; // s, steady supply: products revert to reactants
+export const SUCC_CAP = 4096; // successful-collision times kept (a run can never exceed the particle supply; extra are not stored)
 export const HIST_EVERY = 0.5; // s between history samples
 export const HIST_CAP = 1200;
 export const EV_F = 17; // floats per event record
@@ -42,12 +46,12 @@ const C2 = SPEED_C * SPEED_C;
 const TWO_PI = Math.PI * 2;
 
 export function defaultParams() {
-  return { system: "mixed", T: 400, n: 40, ea: 10, catalyst: false, site: 240, piece: 1, steady: true };
+  return { system: "mixed", T: 400, n: 40, ea: 10, catalyst: false, site: 240, piece: 1 };
 }
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 export function sanitizeParams(p) {
   const d = defaultParams();
-  const q = { ...d, ...p };
+  const q = { ...d }; for (const k of Object.keys(d)) if (p && p[k] !== undefined) q[k] = p[k]; // only known conditions are kept
   q.system = q.system === "solid" ? "solid" : "mixed";
   q.T = clamp(Math.round(Number(q.T) || d.T), LIMITS.T[0], LIMITS.T[1]);
   q.n = clamp(Math.round(Number(q.n) || d.n), LIMITS.n[0], LIMITS.n[1]);
@@ -55,7 +59,6 @@ export function sanitizeParams(p) {
   q.site = clamp(Math.round(Number(q.site) || d.site), LIMITS.site[0], LIMITS.site[1]);
   q.piece = clamp(Math.round(Number.isFinite(Number(q.piece)) ? Number(q.piece) : d.piece), LIMITS.piece[0], LIMITS.piece[1]);
   q.catalyst = !!q.catalyst;
-  q.steady = !!q.steady;
   return q;
 }
 export const effectiveEa = (p) => (p.catalyst ? p.ea * LIMITS.catalystFactor : p.ea);
@@ -77,12 +80,13 @@ export class CollisionEngine {
     this.x = new Float64Array(CAP); this.y = new Float64Array(CAP);
     this.vx = new Float64Array(CAP); this.vy = new Float64Array(CAP); this.vz = new Float64Array(CAP);
     this.phi = new Float64Array(CAP); this.spin = new Float64Array(CAP);
-    this.sp = new Uint8Array(CAP); this.tmr = new Float64Array(CAP); this.flash = new Float32Array(CAP);
+    this.sp = new Uint8Array(CAP); this.flash = new Float32Array(CAP);
     this.tx = new Float64Array(TILE_CAP); this.ty = new Float64Array(TILE_CAP); this.tphi = new Float64Array(TILE_CAP);
-    this.tstate = new Uint8Array(TILE_CAP); this.trestore = new Float64Array(TILE_CAP); this.tflash = new Float32Array(TILE_CAP);
+    this.tstate = new Uint8Array(TILE_CAP); this.tflash = new Float32Array(TILE_CAP);
     this.head = new Int16Array(GX * GY); this.next = new Int16Array(CAP);
     this.evBuf = new Float64Array(EV_CAP * EV_F); this.lastEv = new Float64Array(4 * EV_F);
-    this.hT = new Float64Array(HIST_CAP); this.hSucc = new Float64Array(HIST_CAP); this.hColl = new Float64Array(HIST_CAP);
+    this.hT = new Float64Array(HIST_CAP); this.hSucc = new Float64Array(HIST_CAP); this.hColl = new Float64Array(HIST_CAP); this.hA = new Float64Array(HIST_CAP); this.hB = new Float64Array(HIST_CAP);
+    this.sT = new Float64Array(SUCC_CAP); // simulated time of every successful collision (the data behind the rate graph)
     this.marks = []; // {t, label}, bounded
     this.reset(this.seed);
   }
@@ -97,8 +101,8 @@ export class CollisionEngine {
     this.histStart = 0; this.histLen = 0; this.nextHist = HIST_EVERY;
     this.marks.length = 0;
     this.lastEv.fill(-1);
-    this._pushHist();
     this._populate();
+    this._pushHist(); // after populating, so the first sample holds the full initial reactants
   }
 
   _populate() {
@@ -129,7 +133,7 @@ export class CollisionEngine {
       for (let iy = 0; iy < side; iy++) for (let ix = 0; ix < side; ix++) {
         this.tx[k] = ox + gx * (pw + gap) + (ix + 0.5) * TILE_PITCH;
         this.ty[k] = oy + gy * (pw + gap) + (iy + 0.5) * TILE_PITCH;
-        this.tphi[k] = this.rng.next() * TWO_PI; this.tstate[k] = 0; this.trestore[k] = 0; this.tflash[k] = 0; k++;
+        this.tphi[k] = this.rng.next() * TWO_PI; this.tstate[k] = 0; this.tflash[k] = 0; k++;
       }
     }
     this.tn = k;
@@ -157,7 +161,7 @@ export class CollisionEngine {
     this.x[i] = this._spot[0]; this.y[i] = this._spot[1];
     this.vx[i] = rng.gauss() * s; this.vy[i] = rng.gauss() * s; this.vz[i] = rng.gauss() * s;
     this.phi[i] = rng.next() * TWO_PI; this.spin[i] = rng.range(-4, 4);
-    this.sp[i] = species; this.tmr[i] = 0; this.flash[i] = 0;
+    this.sp[i] = species; this.flash[i] = 0;
     return true;
   }
 
@@ -165,7 +169,7 @@ export class CollisionEngine {
     const l = --this.n;
     if (i !== l) {
       this.x[i] = this.x[l]; this.y[i] = this.y[l]; this.vx[i] = this.vx[l]; this.vy[i] = this.vy[l]; this.vz[i] = this.vz[l];
-      this.phi[i] = this.phi[l]; this.spin[i] = this.spin[l]; this.sp[i] = this.sp[l]; this.tmr[i] = this.tmr[l]; this.flash[i] = this.flash[l];
+      this.phi[i] = this.phi[l]; this.spin[i] = this.spin[l]; this.sp[i] = this.sp[l]; this.flash[i] = this.flash[l];
     }
   }
 
@@ -174,7 +178,11 @@ export class CollisionEngine {
   /** Replace ALL conditions and restart (keeps the seed unless one is given). */
   configure(params, seed = this.seed) { this.p = sanitizeParams(params); this.reset(seed); }
 
-  /** Change conditions while running. Returns nothing; unknown keys are ignored. Resets the vessel only when the system changes. */
+  /** Change conditions while running. Unknown keys are ignored. The vessel is reset only when the system changes.
+   *  Concentration: the slider is the amount of EACH reactant, so a change adds or removes that many reactant particles
+   *  (the difference); it never tops reactants up to the slider value (that would be replenishment).
+   *  Surface area (solid): the solid is rebuilt in the new number of pieces with the same number of sites already used up
+   *  (taken from the outermost sites first), so consumed A never comes back. */
   setParams(patch) {
     const old = this.p; const q = sanitizeParams({ ...old, ...patch });
     this.p = q;
@@ -184,22 +192,49 @@ export class CollisionEngine {
       for (let i = 0; i < this.n; i++) { this.vx[i] *= f; this.vy[i] *= f; this.vz[i] *= f; }
     }
     if (q.piece !== old.piece && q.system === "solid") {
-      this._buildTiles();
+      const used = this.consumedTiles();
+      this._buildTiles(); this._consumeOutermost(used);
       for (let i = 0; i < this.n; i++) this._relocateIfOverlapTiles(i);
     }
     if (q.n !== old.n) {
       const reactants = q.system === "mixed" ? [SP.A, SP.B] : [SP.B];
       for (const s of reactants) {
-        let have = this.countSpecies(s);
-        while (have < q.n && this._spawn(s)) have++;
-        while (have > q.n) { for (let i = this.n - 1; i >= 0; i--) if (this.sp[i] === s) { this._remove(i); break; } have--; }
+        let delta = q.n - old.n;
+        while (delta > 0 && this._spawn(s)) delta--;
+        while (delta < 0) { let found = false; for (let i = this.n - 1; i >= 0; i--) if (this.sp[i] === s) { this._remove(i); found = true; break; } if (!found) break; delta++; }
       }
     }
-    if (q.steady !== old.steady) {
-      for (let i = 0; i < this.n; i++) if (this.sp[i] >= 2) this.tmr[i] = q.steady ? this.t + RESTORE_DELAY : 0;
-      for (let k = 0; k < this.tn; k++) if (this.tstate[k] === 1) this.trestore[k] = q.steady ? this.t + RESTORE_DELAY : 0;
+  }
+
+  /** Number of solid sites already used up (turned into product C). */
+  consumedTiles() { let c = 0; for (let k = 0; k < this.tn; k++) if (this.tstate[k] === 1) c++; return c; }
+  _consumeOutermost(m) {
+    if (m <= 0) return;
+    const tn = this.tn; const eps = 0.5; const nb = new Int8Array(tn);
+    for (let k = 0; k < tn; k++) for (let j = 0; j < tn; j++) {
+      if (j === k) continue; const dx = Math.abs(this.tx[j] - this.tx[k]); const dy = Math.abs(this.ty[j] - this.ty[k]);
+      if ((dx < eps && Math.abs(dy - TILE_PITCH) < eps) || (dy < eps && Math.abs(dx - TILE_PITCH) < eps)) nb[k]++;
+    }
+    for (let c = 0; c < Math.min(m, tn); c++) {
+      let best = -1; for (let k = 0; k < tn; k++) if (this.tstate[k] === 0 && (best < 0 || nb[k] < nb[best])) best = k;
+      if (best < 0) break; this.tstate[best] = 1; this.tflash[best] = 0;
     }
   }
+  /** [A, B, C, D] in particle units. Solid system: A = unused surface sites, C = used-up sites (each is one C), B and D are particles. */
+  speciesCounts() {
+    const c = [0, 0, 0, 0];
+    for (let i = 0; i < this.n; i++) c[this.sp[i]]++;
+    if (this.p.system === "solid") { const used = this.consumedTiles(); c[0] = this.tn - used; c[2] = used; }
+    return c;
+  }
+  /** Total particle units A + B + C + D: unchanged by any number of reactions. */
+  unitsTotal() { const c = this.speciesCounts(); return c[0] + c[1] + c[2] + c[3]; }
+  /** How many more reactions are possible at most: the amount of the limiting reactant that is left (0 = reaction finished). */
+  limitingLeft() { const c = this.speciesCounts(); return Math.min(c[0], c[1]); }
+  /** Amount of A left: mobile A particles (mixed system) or unused solid sites (solid system). B is countSpecies(SP.B). */
+  countA() { return this.p.system === "solid" ? this.tn - this.consumedTiles() : this.countSpecies(SP.A); }
+  /** Times (simulated s) of all successful collisions so far, oldest first (copy). */
+  successTimes() { return this.sT.slice(0, Math.min(this.succ, SUCC_CAP)); }
 
   _relocateIfOverlapTiles(i) {
     const m = R + TILE_R; const m2 = m * m;
@@ -265,8 +300,8 @@ export class CollisionEngine {
           const bvx = vx[i] - 2 * u * nx; const bvy = vy[i] - 2 * u * ny;
           this._fillEvent(out, 1, E, eaEff, -bvx, -bvy, -nx * 2 * R, -ny * 2 * R, this.tphi[k], this.phi[i], oriA, oriB, this.tx[k], this.ty[k]);
           if (out === OUT.SUCCESS) {
-            this.tstate[k] = 1; this.trestore[k] = p.steady ? t + RESTORE_DELAY : 0; this.tflash[k] = 0.6;
-            this.sp[i] = SP.D; this.tmr[i] = p.steady ? t + RESTORE_DELAY : 0; this.flash[i] = 0.6;
+            this.tstate[k] = 1; this.tflash[k] = 0.6; // the site is used up for good (it became C) and B became D
+            this.sp[i] = SP.D; this.flash[i] = 0.6;
           }
         }
       }
@@ -304,23 +339,8 @@ export class CollisionEngine {
             const rvAx = sgn * rvx; const rvAy = sgn * rvy;
             this._fillEvent(out, 0, E, eaEff, rvAx, rvAy, -sgn * nx * 2 * R, -sgn * ny * 2 * R, this.phi[a], this.phi[b], oriA, oriB, (x[i] + x[j]) / 2, (y[i] + y[j]) / 2);
             if (out === OUT.SUCCESS) {
-              this.sp[a] = SP.C; this.sp[b] = SP.D; this.flash[a] = 0.6; this.flash[b] = 0.6;
-              const tt = p.steady ? t + RESTORE_DELAY : 0; this.tmr[a] = tt; this.tmr[b] = tt;
+              this.sp[a] = SP.C; this.sp[b] = SP.D; this.flash[a] = 0.6; this.flash[b] = 0.6; // irreversible: C and D stay products
             }
-          }
-        }
-      }
-    }
-    // ---- steady supply: products revert to reactants, consumed sites are restored (when free)
-    if (p.steady) {
-      for (let i = 0; i < n; i++) if (this.sp[i] >= 2 && this.tmr[i] > 0 && t >= this.tmr[i]) { this.sp[i] -= 2; this.tmr[i] = 0; }
-      if (p.system === "solid") {
-        const m2 = (R + TILE_R) * (R + TILE_R);
-        for (let k = 0; k < this.tn; k++) {
-          if (this.tstate[k] === 1 && this.trestore[k] > 0 && t >= this.trestore[k]) {
-            let free = true;
-            for (let i = 0; i < n; i++) { const dx = x[i] - this.tx[k]; const dy = y[i] - this.ty[k]; if (dx * dx + dy * dy < m2) { free = false; break; } }
-            if (free) this.tstate[k] = 0;
           }
         }
       }
@@ -333,7 +353,7 @@ export class CollisionEngine {
 
   _fillEvent(out, kind, E, ea, ux, uy, dx, dy, phiA, phiB, oriA, oriB, lx, ly) {
     this.coll++;
-    if (out === OUT.SUCCESS) this.succ++; else if (out === OUT.LOW_ENERGY) this.failE++; else if (out === OUT.ORIENTATION) this.failO++; else this.failB++;
+    if (out === OUT.SUCCESS) { if (this.succ < SUCC_CAP) this.sT[this.succ] = this.t; this.succ++; } else if (out === OUT.LOW_ENERGY) this.failE++; else if (out === OUT.ORIENTATION) this.failO++; else this.failB++;
     if (E >= ea) this.energetic++;
     const seq = ++this.evSeq;
     const slot = this.evHead; this.evHead = (this.evHead + 1) % EV_CAP; if (this.evCount < EV_CAP) this.evCount++;
@@ -361,7 +381,7 @@ export class CollisionEngine {
   _pushHist() {
     const idx = (this.histStart + this.histLen) % HIST_CAP;
     if (this.histLen < HIST_CAP) this.histLen++; else this.histStart = (this.histStart + 1) % HIST_CAP;
-    this.hT[idx] = this.t; this.hSucc[idx] = this.succ; this.hColl[idx] = this.coll;
+    this.hT[idx] = this.t; this.hSucc[idx] = this.succ; this.hColl[idx] = this.coll; this.hA[idx] = this.countA(); this.hB[idx] = this.countSpecies(SP.B);
   }
   _hist(k) { return (this.histStart + k) % HIST_CAP; }
 
@@ -379,11 +399,11 @@ export class CollisionEngine {
     const L = this.histLen; const tNow = this.hT[this._hist(L - 1)]; const t0 = this.hT[this._hist(0)];
     return Math.min(window, tNow - t0);
   }
-  /** Copy of the history (time, cumulative successes, cumulative A-B collisions). */
+  /** Copy of the history every 0.5 s: time, cumulative successes (= products C formed), cumulative A-B collisions, amount of A (solid system: unused sites) and of B. */
   history() {
-    const L = this.histLen; const t = new Float64Array(L); const s = new Float64Array(L); const c = new Float64Array(L);
-    for (let k = 0; k < L; k++) { const i = this._hist(k); t[k] = this.hT[i]; s[k] = this.hSucc[i]; c[k] = this.hColl[i]; }
-    return { t, succ: s, coll: c };
+    const L = this.histLen; const t = new Float64Array(L); const s = new Float64Array(L); const c = new Float64Array(L); const ha = new Float64Array(L); const hb = new Float64Array(L);
+    for (let k = 0; k < L; k++) { const i = this._hist(k); t[k] = this.hT[i]; s[k] = this.hSucc[i]; c[k] = this.hColl[i]; ha[k] = this.hA[i]; hb[k] = this.hB[i]; }
+    return { t, succ: s, coll: c, a: ha, b: hb };
   }
 
   run(seconds) { const steps = Math.round(seconds / DT); for (let i = 0; i < steps; i++) this.step(); }
@@ -401,12 +421,6 @@ export class CollisionEngine {
       if (nb < 4) ex++;
     }
     return { exposed: ex, present, total: tn };
-  }
-  /** Bin kinetic energies of the mobile particles into out (counts). Returns number of particles. */
-  energyHistogram(out, binW) {
-    out.fill(0); const nb = out.length;
-    for (let i = 0; i < this.n; i++) { const b = Math.floor(this.ke(i) / binW); if (b < nb) out[b]++; else out[nb - 1]++; }
-    return this.n;
   }
 }
 

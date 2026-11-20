@@ -3,6 +3,9 @@
 //   node scripts/verify-kinetics.mjs [outDir]            (npm run verify:kinetics)
 //   env: SIZES=1366x768,910x512   THEMES=light   CHROMIUM=/path/to/chrome   BASE_URL=http://host:port (reuse a server)
 // Builds the app to a temp dir and runs `vite preview` on a free port (same pattern as verify-platform-simulations.mjs).
+// [round 3] Also: no vertical bars/histogram in either graph, ONE smooth rate curve from the real events after a full run, the products
+// plateau, reactants used up and rate 0, the MB curve (zero start, one peak, RT/2, area 1) at several T with Ea inside/outside the range
+// and with a catalyst, with screenshots of each (ct-*-g*.png) for visual inspection.
 // Per size x theme it checks: no console/page errors, no page overflow, no clipped or truncated controls, text >= 11 px,
 // WCAG AA text contrast measured from computed colours, visible keyboard focus, the Maxwell-Boltzmann readout against the exact
 // maths, the magnified view never blank / never outside its box, then HOSTILE probes (junk typed into fields, rapid mode
@@ -140,6 +143,7 @@ async function collisionPass(W, H, theme) {
   const sh = await p.evaluate(() => { const a = document.querySelector('[data-testid="mb-ea-line"]'); return a ? a.getBoundingClientRect().left : 0; });
   await typeField(p, "input-ea", "40"); const sh2 = await p.evaluate(() => document.querySelector('[data-testid="mb-ea-line"]').getBoundingClientRect().left); check(sh2 > sh, `${size}: raising Ea moves the Ea line right`);
   await typeField(p, "input-ea", "10"); await typeField(p, "input-T", "400");
+  await graphChecks(p, W, H, theme, size);
 
   // magnified view: never blank, never outside its box, ends on a held final frame
   await p.click(T("reset")); await typeField(p, "input-T", "700"); await typeField(p, "input-ea", "8");
@@ -169,7 +173,7 @@ async function collisionPass(W, H, theme) {
   await p.click(T("settings")); check((await p.locator(T("settings-panel")).count()) === 1, `${size}: settings opens`); REPORT(await p.evaluate(AUDIT), `${size} settings open`); await p.screenshot({ path: `${out}/ct-${W}x${H}-${theme}-3-settings.png` }); await p.keyboard.press("Escape");
   check((await p.locator(T("settings-panel")).count()) === 0, `${size}: Escape closes settings`);
   await p.click(T("predict-toggle")); await p.click(T("predict-choice-up-lot")); await p.click(T("predict-reveal"));
-  await p.waitForSelector(T("predict-result"), { timeout: 60000 }); const pn = await txt(p, "predict-numbers"); check(/Measured: [\d.]+ → [\d.]+ reactions/.test(pn), `${size}: predict reveal shows measured numbers (${pn.slice(0, 60)})`);
+  await p.waitForSelector(T("predict-result"), { timeout: 60000 }); const pn = await txt(p, "predict-numbers"); check(/Measured initial rate: [\d.]+ → [\d.]+ reactions/.test(pn), `${size}: predict reveal shows measured numbers (${pn.slice(0, 60)})`);
   await p.screenshot({ path: `${out}/ct-${W}x${H}-${theme}-4-predict.png` }); await p.keyboard.press("Escape");
 
   // reaction profile in the detail popover (round 2)
@@ -183,6 +187,83 @@ async function collisionPass(W, H, theme) {
   if (wide && H < 620) { await p.click(`${T("graph-tab")} [role=radio]:nth-child(2)`); await sleep(400); REPORT(await p.evaluate(AUDIT), `${size} rate tab`); await p.screenshot({ path: `${out}/ct-${W}x${H}-${theme}-6-ratetab.png` }); }
   check(errors.length === 0, `${size}: console/page errors: ${errors.slice(0, 3).join(" | ")}`);
   await ctx.close();
+}
+
+// ---- round 3: graphs (rate curve after a full run, products plateau, Maxwell-Boltzmann curve) -------------------------------
+const pathPts = (d) => d.split(/(?=[ML])/).map((q) => q.slice(1).split(",").map(Number));
+async function showTab(p, which) { // which: "mb" | "rate"; only the tight-wide layout shows one graph at a time, via the switch in the visible panel
+  for (const id of ["graph-tab", "graph-tab-2"]) {
+    const sw = p.locator(T(id)).first();
+    if (await sw.isVisible().catch(() => false)) { await p.locator(`${T(id)} [role=radio]:nth-child(${which === "mb" ? 1 : 2})`).first().click(); await sleep(250); return; }
+  }
+}
+async function noBars(p, size, where) {
+  const r = await p.evaluate(() => ["rate-svg", "mb-svg"].map((id) => { const svg = document.querySelector(`[data-testid="${id}"]`); return svg ? [...svg.querySelectorAll("rect")].filter((x) => !x.closest("clipPath")).length : -1; }));
+  check(r[0] === 0 && r[1] === 0, `${size}: ${where}: no bars in the graphs (rect elements outside clip paths: rate ${r[0]}, energy ${r[1]})`);
+}
+async function graphChecks(p, W, H, theme, size) {
+  const shot = async (name, id) => { await sleep(350); await p.locator(T(id)).screenshot({ path: `${out}/ct-${W}x${H}-${theme}-g-${name}.png` }); };
+  const reset = async () => { await p.click(T("reset")); await sleep(150); await p.click(T("play-pause")); await sleep(80); }; // reset, then pause so the engine can be driven by hand
+  // 1. default reaction run to the end: smooth falling rate curve
+  await reset(); await eng(p, "e.run(150)"); await sleep(400);
+  const st = await eng(p, "return {succ: e.succ, c: e.countSpecies(2), d: e.countSpecies(3), a: e.countSpecies(0), b: e.countSpecies(1), units: e.unitsTotal(), left: e.limitingLeft()}");
+  check(st.succ > 28 && st.c === st.succ && st.d === st.succ && st.units === 80 && st.a === 40 - st.succ, `${size}: after 150 s ${st.succ} of 40 reacted, A+B+C+D = ${st.units}`);
+  await showTab(p, "rate"); await noBars(p, size, "rate view");
+  const rl = await p.evaluate(() => { const l = document.querySelector('[data-testid="rate-line"]'); return { d: l.getAttribute("d"), total: Number(document.querySelector('[data-testid="rate-svg"]').dataset.total) }; });
+  check(rl.total === st.succ, `${size}: rate graph is built from the engine's ${st.succ} reactions (graph has ${rl.total})`);
+  const P = pathPts(rl.d); const ys = P.map((q) => q[1]); const top = Math.min(...ys); const bottom = Math.max(...ys);
+  check(P.length >= 100, `${size}: the rate curve is one dense continuous line (${P.length} points)`); check(ys.indexOf(top) < P.length / 3, `${size}: the rate is highest early on`);
+  check(ys[ys.length - 1] > top + 0.7 * (bottom - top), `${size}: the rate is far lower at the end than at the start`);
+  let jag = 0; for (let k = 2; k < ys.length; k++) { const a = ys[k - 1] - ys[k - 2]; const b = ys[k] - ys[k - 1]; if (a * b < 0 && Math.abs(a) + Math.abs(b) > 0.12 * (bottom - top)) jag++; } check(jag <= 2, `${size}: the rate curve has no ECG-like spikes (${jag} large reversals)`);
+  check((await p.locator(`${T("rate-panel")} text`, { hasText: /reactions s⁻¹|Rate \/ s⁻¹/ }).count()) >= 1 && (await p.locator(`${T("rate-panel")} text`, { hasText: "Time / s" }).count()) === 1, `${size}: axes labelled Time / s and reaction rate / reactions s⁻¹`);
+  await shot("rate-full-run", "rate-panel");
+  // the other views after the same full run: Reactants, Products, Both, and single species chosen from the equation
+  const view = async (n) => { await p.click(`${T("rate-view")} [role=radio]:nth-child(${n})`); await sleep(350); };
+  await view(2); await noBars(p, size, "reactants view"); check((await p.locator("[data-testid^=curve-]").count()) === 2, `${size}: reactants view draws A and B`);
+  check((await p.locator(`${T("rate-svg")} path[data-testid=curve-A]`).getAttribute("data-final")) === String(st.a), `${size}: the A curve ends at the engine's A count (${st.a})`); await shot("reactants-full-run", "rate-panel");
+  await view(3); await noBars(p, size, "products view (full run)"); check((await p.locator(`${T("rate-svg")} path[data-testid=curve-C]`).getAttribute("data-final")) === String(st.succ), `${size}: the C curve ends at the engine's count (${st.succ})`);
+  { const d = await p.getAttribute("[data-testid=curve-C]", "d"); const Q = pathPts(d); check(Q.length >= 100 && Q.every((q, k) => k === 0 || q[1] <= Q[k - 1][1] + 1e-6), `${size}: the products curve is smooth (${Q.length} points) and never falls`); }
+  await shot("products-full-run", "rate-panel");
+  await view(4); await noBars(p, size, "both view"); check((await p.locator(T("sample-dot")).count()) === 74 && (await p.locator(T("graph-legend")).count()) === 1, `${size}: both view has markers at the sample times and a legend`);
+  { const a = Number(await p.getAttribute("[data-testid=curve-A]", "data-final")); const c = Number(await p.getAttribute("[data-testid=curve-C]", "data-final")); check(a + c === 40 && c > 28, `${size}: both view: A ${a} + C ${c} = 40`); }
+  await shot("both-full-run", "rate-panel");
+  await p.click(T("eq-A")); await sleep(300); check((await p.getAttribute(T("eq-A"), "aria-pressed")) === "true" && (await p.getAttribute(T("eq-B"), "aria-pressed")) === "false" && (await p.locator("[data-testid^=curve-]").count()) === 1 && (await p.locator(`${T("rate-view")} [aria-checked=true]`).textContent()).trim() === "Reactants", `${size}: clicking A in the equation selects the A curve and the Reactants view`);
+  await shot("species-A", "rate-panel"); await p.click(T("eq-C")); await sleep(300); check((await p.getAttribute(T("eq-C"), "aria-pressed")) === "true" && (await p.locator(`${T("rate-view")} [aria-checked=true]`).textContent()).trim() === "Products" && (await p.locator("[data-testid^=curve-]").count()) === 1, `${size}: clicking C selects the C curve and the Products view`);
+  await shot("species-C", "rate-panel"); await p.click(T("eq-arrow")); await sleep(250); check((await p.locator(`${T("rate-view")} [aria-checked=true]`).textContent()).trim() === "Both", `${size}: the arrow shows Both`);
+  await p.focus(T("eq-A")); await p.keyboard.press("Shift+Tab"); await p.keyboard.press("Tab"); { const ring = await p.evaluate(() => { const cs = getComputedStyle(document.activeElement); return parseFloat(cs.outlineWidth) >= 2 && cs.outlineStyle !== "none"; }); check(ring, `${size}: a species button shows a focus ring`); }
+  await view(1);
+  // 2. a small vessel run to exhaustion: rate 0, products plateau
+  await p.click(T("reset")); await p.click(T("play-pause")); await sleep(60); await setRange(p, "n", 8); await setRange(p, "T", 700); await setRange(p, "ea", 6); await setRange(p, "site", 360); // paused first: the Concentration slider only adds/removes the difference, so no reaction may happen before it is set
+  await showTab(p, "rate"); await eng(p, "e.run(400)"); await sleep(400);
+  const ex = await eng(p, "return {succ: e.succ, left: e.limitingLeft(), r: e.rateOver(10)}"); check(ex.succ === 8 && ex.left === 0 && ex.r === 0, `${size}: limiting reactant used up: ${ex.succ} reactions, rate ${ex.r}`);
+  check((await p.getAttribute(T("rate-svg"), "data-finished")) === "1" && (await p.locator(T("rate-finished-note")).count()) === 1, `${size}: the graph says the limiting reactant is used up`);
+  check(Number(await p.getAttribute(T("rate-line"), "data-final")) < 0.05, `${size}: the plotted rate has fallen to about 0`); await shot("rate-exhausted", "rate-panel");
+  await p.click(`${T("rate-view")} [role=radio]:nth-child(3)`); await sleep(300); await noBars(p, size, "products view");
+  const pr = await p.evaluate(() => { const l = document.querySelector('[data-testid="curve-C"]'); return { d: l.getAttribute("d"), fin: Number(l.dataset.final) }; }); const Q = pathPts(pr.d);
+  check(pr.fin === 8 && Math.abs(Q[Q.length - 1][1] - Q[Q.length - 2][1]) < 0.01, `${size}: products graph ends at ${pr.fin} on a flat plateau`);
+  check(Q.every((q, k) => k === 0 || (q[1] <= Q[k - 1][1] + 1e-6 && q[0] >= Q[k - 1][0] - 1e-6)), `${size}: the products curve never falls`); await shot("products-plateau", "rate-panel");
+  await p.click(`${T("rate-view")} [role=radio]:nth-child(1)`);
+  // 3. Maxwell-Boltzmann curve at several T, Ea inside / outside the range, catalyst
+  await p.click(T("reset")); await sleep(150); await showTab(p, "mb"); await noBars(p, size, "energy graph");
+  for (const [Tk, ea, name] of [[300, 10, "300K"], [400, 10, "400K"], [600, 10, "600K"]]) {
+    await typeField(p, "input-T", String(Tk)); await typeField(p, "input-ea", String(ea)); await sleep(150);
+    const g = await p.evaluate(() => { const gr = document.querySelector('[data-testid="mb-graph"]'); const d = document.querySelector('[data-testid="mb-curve"]').getAttribute("d"); return { d, x: Number(gr.dataset.xmax), y: Number(gr.dataset.ymax), mode: document.querySelector('[data-testid="mb-mode"]').textContent, area: document.querySelector('[data-testid="mb-area"]').textContent }; });
+    const M = pathPts(g.d); const my = M.map((q) => q[1]); const base = Math.max(...my); const topI = my.indexOf(Math.min(...my)); let rev = 0; for (let k = 1; k < my.length; k++) if (Math.sign(my[k] - my[k - 1]) * Math.sign(my[Math.min(k + 1, my.length - 1)] - my[k]) < 0 && Math.abs(my[k] - my[k - 1]) > 0.5) rev++;
+    check(Math.abs(my[0] - base) < 0.6, `${size}: ${name}: the curve starts on the zero line`); check(topI > 3 && topI < M.length * 0.4, `${size}: ${name}: one peak in the left part (index ${topI}/${M.length})`);
+    check(g.x < 70 && g.mode === `${(8.314462618e-3 * Tk / 2).toFixed(2)} kJ/mol` && g.area === "1.000", `${size}: ${name}: axis 0-${g.x} kJ/mol (not the fixed 0-70), peak ${g.mode}, area ${g.area}`);
+    check(rev <= 2, `${size}: ${name}: the curve is smooth (${rev} reversals)`); await shot(`mb-${name}`, "mb-panel");
+  }
+  await typeField(p, "input-T", "300"); await typeField(p, "input-ea", "45"); await sleep(150);
+  check((await p.locator(T("mb-full-range")).count()) === 1 && (await p.locator(T("mb-ea-off")).count()) === 1, `${size}: Ea beyond the axis is flagged and a full-range option is offered`); await shot("mb-300K-Ea45-outside", "mb-panel");
+  await p.click(T("mb-full-range")); await sleep(250); check((await p.getAttribute(T("mb-graph"), "data-full")) === "1" && (await p.locator(T("mb-ea-off")).count()) === 0, `${size}: full range shows the Ea line inside the axis`); await shot("mb-300K-Ea45-fullrange", "mb-panel");
+  await p.click(T("mb-full-range")); await typeField(p, "input-T", "400"); await typeField(p, "input-ea", "20"); await sleep(150);
+  const dBefore = await p.getAttribute(T("mb-curve"), "d"); await p.click(`${T("catalyst-switch")} [role=radio]:nth-child(2)`); await sleep(250);
+  { // the plot box can get a little shorter when the "without catalyst" readout adds a row, so compare the SHAPE (normalised heights), not pixels
+    const shape = (d) => { const P = pathPts(d); const ys = P.map((q) => q[1]); const b = Math.max(...ys); const t = Math.min(...ys); const xs = P.map((q) => q[0]); const x0 = xs[0]; const xw = xs[xs.length - 1] - x0; return P.map((q, i) => [(q[0] - x0) / xw, (b - ys[i]) / (b - t)]); };
+    const A = shape(dBefore); const B = shape(await p.getAttribute(T("mb-curve"), "d")); const worst = Math.max(...A.map((q, i) => Math.max(Math.abs(q[0] - B[i][0]), Math.abs(q[1] - B[i][1]))));
+    check(A.length === B.length && worst < 0.01, `${size}: the catalyst leaves the distribution curve unchanged (largest shape difference ${worst.toFixed(4)})`); } check((await txt(p, "mb-fraction")) === MB.formatFraction(MB.fractionAbove(12, 400)), `${size}: catalyst lowers the effective Ea to 12 and the shaded fraction follows`);
+  await shot("mb-400K-catalyst", "mb-panel"); await p.click(`${T("catalyst-switch")} [role=radio]:nth-child(1)`);
+  await p.click(T("reset")); await sleep(200);
 }
 
 async function collisionHostile() {

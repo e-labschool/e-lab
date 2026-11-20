@@ -8,13 +8,14 @@ import SimulationDashboard, {
 import { CollisionEngine, DT, LIMITS, defaultParams, effectiveEa, sanitizeParams } from "./lib/collisionEngine.js";
 import { makeSnapshot } from "./lib/snapshot.js";
 import { scenarioConfigs } from "./lib/scenarios.js";
-import { formatFraction } from "./lib/maxwellBoltzmann.js";
+import { formatFraction, mbAxis } from "./lib/maxwellBoltzmann.js";
 import { formatRate, rateUncertainty, RATE_WINDOW } from "./lib/rateMetrics.js";
 import { draw } from "./render.js";
 import { useBox, useReducedMotion } from "./useBox.js";
 import { SPECIES } from "./theme.js";
-import MbGraph, { HIST_BIN, XMAX } from "./components/MbGraph.jsx";
+import MbGraph from "./components/MbGraph.jsx";
 import RateGraph from "./components/RateGraph.jsx";
+import ReactionEquation from "./components/ReactionEquation.jsx";
 import ReactionProfile from "./components/ReactionProfile.jsx";
 import { CollisionViewer } from "./components/CollisionViewer.jsx";
 import PredictPanel from "./components/PredictPanel.jsx";
@@ -33,16 +34,16 @@ const SYSTEMS = [
   { id: "solid", label: "Solid A + B", title: "A is a solid made of fixed sites; B particles hit its surface" },
 ];
 const PIECE_NAMES = ["1 lump", "4 pieces", "9 pieces", "16 pieces", "36 pieces"];
-const DEFAULT_EXPLAIN = "A collision reacts only if its energy is at least Ea and the reactive sites face each other.";
+const DEFAULT_EXPLAIN = "A collision reacts only if its energy is at least Ea and the reactive sites face each other. A + B → C + D is not reversible.";
 
 function explainFor(key, dir) {
   const up = dir > 0;
   switch (key) {
-    case "T": return up ? "Higher temperature: collisions are more frequent and a larger fraction of them has E ≥ Ea (the shaded area grows), so the rate rises." : "Lower temperature: collisions are less frequent and fewer of them have E ≥ Ea (the shaded area shrinks), so the rate falls.";
-    case "n": return up ? "Higher concentration: more particles in the same volume, so collisions are more frequent. The fraction that is successful is unchanged." : "Lower concentration: fewer particles in the same volume, so collisions are less frequent. The fraction that is successful is unchanged.";
+    case "T": return up ? "Higher temperature: the curve broadens and its peak moves right, so more molecules have E ≥ Ea (the shaded area grows). Collisions are also more frequent, so the rate rises." : "Lower temperature: the curve narrows and its peak moves left, so the shaded area beyond Ea shrinks. Collisions are also less frequent, so the rate falls.";
+    case "n": return up ? "More reactant particles are added to the same vessel, so collisions are more frequent. The fraction that is successful is unchanged." : "Reactant particles are removed from the vessel, so collisions are less frequent. The fraction that is successful is unchanged.";
     case "piece": return up ? "Smaller pieces expose more of the solid: B collides with more A sites each second. Ea and the energy distribution are unchanged." : "Larger pieces expose less of the solid, so B collides with fewer A sites each second.";
     case "ea": return up ? "Higher Ea: the shaded area beyond Ea shrinks, so fewer collisions are successful." : "Lower Ea: the shaded area beyond Ea grows, so more collisions are successful.";
-    case "catalyst": return up ? "A catalyst gives an alternative pathway with a lower Ea: the Ea line moves left and more collisions are successful. The curve itself does not change." : "Without the catalyst Ea is higher, so a smaller fraction of collisions is successful.";
+    case "catalyst": return up ? "A catalyst gives an alternative pathway with a lower Ea: the Ea line moves left and more collisions are successful. The curve itself does not change: the molecules have the same energies." : "Without the catalyst Ea is higher, so a smaller fraction of collisions is successful.";
     case "site": return up ? "A wider reactive site means more collisions meet the orientation condition." : "A narrower reactive site means fewer collisions meet the orientation condition, even when the energy is enough.";
     default: return DEFAULT_EXPLAIN;
   }
@@ -74,11 +75,11 @@ function Workspace({ seedProp }) {
   const [speed, setSpeed] = useState(reduced ? "0.25" : "1");
   const [showSites, setShowSites] = useState(true);
   const [showEnergetic, setShowEnergetic] = useState(true);
-  const [showHist, setShowHist] = useState(true);
   const [repeatable, setRepeatable] = useState(false);
   const [graphShown, setGraphShown] = useState(true);
-  const [zoom, setZoom] = useState(false);
+  const [fullRange, setFullRange] = useState(false);
   const [rateView, setRateView] = useState("rate");
+  const [species, setSpecies] = useState(null); // narrows the Reactants / Products view to one species (set from the equation)
   const [graphTab, setGraphTab] = useState("mb");
   const [pinnedCurve, setPinnedCurve] = useState(null);
   const [pauseOnReaction, setPauseOnReaction] = useState(false);
@@ -92,16 +93,12 @@ function Workspace({ seedProp }) {
   const live = useRef({});
   live.current = { playing, speed: Number(speed), showSites, showEnergetic, pauseOnReaction, reduced };
   const magRef = useRef({ ev: null, pinned: null, at: 0, token: 0 });
-  const histRef = useRef({ ema: new Float64Array(Math.ceil(XMAX / HIST_BIN)), tmp: new Float64Array(Math.ceil(XMAX / HIST_BIN)), key: "", measured: null, mkey: "" });
-  const [histView, setHistView] = useState(() => new Float64Array(Math.ceil(XMAX / HIST_BIN)));
+  const measRef = useRef({ measured: null, mkey: "" });
   const [measured, setMeasured] = useState(null);
 
   const publish = useCallback((force = false) => {
-    const e = engine; const s = makeSnapshot(e); const h = histRef.current; const now = performance.now();
-    // energy histogram of the particles in the vessel (smoothed over a few seconds)
-    const hk = `${s.T}|${e.p.system}`;
-    e.energyHistogram(h.tmp, HIST_BIN);
-    if (h.key !== hk) { h.ema.set(h.tmp); h.key = hk; } else for (let i = 0; i < h.ema.length; i++) h.ema[i] = h.ema[i] * 0.92 + h.tmp[i] * 0.08;
+    const e = engine; const s = makeSnapshot(e); const h = measRef.current; const now = performance.now();
+    // fraction of the particles in the vessel with E >= the effective Ea, smoothed over a few seconds (a number, not a graph)
     const mk = `${s.T}|${s.eaEff}`;
     h.measured = h.mkey !== mk || h.measured == null ? s.aboveNow : h.measured * 0.97 + s.aboveNow * 0.03; h.mkey = mk;
     // which collision is shown in the magnified view
@@ -112,7 +109,7 @@ function Workspace({ seedProp }) {
       m.ev = cand; m.at = now; m.token++;
       setMag({ ev: cand, pinned: m.pinned, token: m.token });
     }
-    setHistView(h.ema.slice()); setMeasured(h.measured);
+    setMeasured(h.measured);
     setSnap(s);
   }, [engine]);
 
@@ -169,13 +166,13 @@ function Workspace({ seedProp }) {
     const seed = repeatable ? fixedSeed.current : (Math.random() * 2 ** 32) >>> 0;
     engine.configure(cfg, seed);
     setParams(engine.p); setPlaying(!reduced); setSpeed(reduced ? "0.25" : "1"); setPauseOnReaction(false);
-    setPinnedCurve(null); setZoom(false); setRateView("rate"); setGraphTab("mb"); setExplain({ key: "default", dir: 1 }); setNotices({});
-    histRef.current.key = ""; histRef.current.mkey = ""; histRef.current.measured = null;
+    setPinnedCurve(null); setFullRange(false); setRateView("rate"); setSpecies(null); setGraphTab("mb"); setExplain({ key: "default", dir: 1 }); setNotices({});
+    measRef.current.mkey = ""; measRef.current.measured = null;
     magRef.current = { ev: null, pinned: null, at: 0, token: 0 }; setMag({ ev: null, pinned: null, token: 0 });
     if (!keepPredict) setResetToken((n) => n + 1);
     publish(true);
   }, [engine, repeatable, reduced, publish]);
-  const handleReset = () => { setShowSites(true); setShowEnergetic(true); setShowHist(true); doReset(); };
+  const handleReset = () => { setShowSites(true); setShowEnergetic(true); doReset(); };
 
   const onPin = (outcome, replay) => {
     if (replay) { setMag((m) => ({ ...m, token: m.token + 1 })); magRef.current.token++; return; }
@@ -194,10 +191,19 @@ function Workspace({ seedProp }) {
     const key = Object.keys(patch)[0];
     change(patch, key, labelFor(key, { ...engine.p, ...patch }));
   };
+  // graph selector and equation share one state: the view, plus an optional single species
+  const chooseView = (v) => { setRateView(v); setSpecies(null); };
+  const pickSpecies = (k) => {
+    if (k === "all") { setRateView("both"); setSpecies(null); return; }
+    const group = k === "A" || k === "B" ? "reactants" : "products";
+    setRateView(group); setSpecies((cur) => (rateView === group && cur === k ? null : k));
+    setGraphTab("rate");
+  };
   const stepOnce = () => { for (let i = 0; i < 24; i++) engine.step(); publish(true); };
 
   // ---- derived values
   const p = params; const eaEff = effectiveEa(p); const solid = p.system === "solid";
+  const mbAx = mbAxis(p.T, { pinnedT: pinnedCurve?.T ?? null, eaList: [p.ea, eaEff], full: false });
   const stericPct = Math.round(snap.steric * 100);
   const rateText = formatRate(snap.rate);
   const sigma = rateUncertainty(snap.rate * snap.span, snap.span);
@@ -208,8 +214,8 @@ function Workspace({ seedProp }) {
     { id: "rate", label: `Rate (last ${Math.round(snap.span) || RATE_WINDOW} s)`, value: `${rateText} s⁻¹`, bg: "#dbeafe", testId: "live-rate", title: `Successful collisions per second of simulated time, averaged over the last ${RATE_WINDOW} s (±${sigma.toFixed(2)})` },
     { id: "coll", label: "A–B collisions", value: `${formatRate(snap.collRate)} s⁻¹`, bg: "#e9e4fb", testId: "live-coll" },
     { id: "share", label: "Successful", value: snap.collRate > 0 ? formatFraction(snap.successShare) : "—", bg: "#dcf5e4", testId: "live-share" },
-    { id: "prod", label: "Reactions so far", value: String(snap.succ), bg: "#fff1c9", testId: "live-total" },
-  ], [p.T, snap.span, rateText, sigma, snap.collRate, snap.successShare, snap.succ]);
+    { id: "prod", label: "Reactions so far", value: String(snap.succ), bg: "#fff1c9", testId: "live-total", title: `Each reaction turns one A and one B into one C and one D, for good (${snap.left} reactions are still possible)` },
+  ], [p.T, snap.span, rateText, sigma, snap.collRate, snap.successShare, snap.succ, snap.left]);
 
   const nSpecies = solid ? `${p.n} B` : `${p.n} A + ${p.n} B`;
 
@@ -256,7 +262,7 @@ function Workspace({ seedProp }) {
       <div className="ct-vessel" ref={stageRef} data-testid="vessel">
         <canvas ref={canvasRef} role="img" aria-label={vesselLabel} className="ct-canvas" data-testid="vessel-canvas" />
         <ul className="ct-key" aria-label="Particle key">
-          {SPECIES.map((s) => <li key={s.id}><i style={{ background: s.color }} aria-hidden="true" />{s.id}</li>)}
+          {SPECIES.map((s, k) => <li key={s.id}><i style={{ background: s.color }} aria-hidden="true" />{s.id} <span data-testid={`count-${s.id}`}>{[snap.nA, snap.nB, snap.nC, snap.nD][k]}</span></li>)}
           <li className="ct-key-ring"><i className="ct-ring" aria-hidden="true" />E {"≥"} Ea</li>
         </ul>
       </div>
@@ -280,16 +286,21 @@ function Workspace({ seedProp }) {
       <DashPanel title="Energy distribution" ariaLabel="Maxwell-Boltzmann energy distribution" grow className="ct-g1" testId="mb-panel" data-hide={graphTab !== "mb" ? "true" : "false"}
         aside={
           <span className="ct-aside">
-            <span className="ct-gtabs"><MiniSwitch ariaLabel="Graph shown" testId="graph-tab" value={graphTab} onChange={setGraphTab} options={[{ id: "mb", label: "Energy" }, { id: "rate", label: "Rate" }]} /></span>
-            <button type="button" className="sd-btn sd-btn--sm" aria-pressed={zoom} onClick={() => setZoom((z) => !z)} data-testid="mb-zoom" title="Zoom the y-axis to see the tail beyond Ea">{zoom ? "Full view" : "Zoom tail"}</button>
+            <span className="ct-gtabs"><MiniSwitch ariaLabel="Graph shown" testId="graph-tab" value={graphTab} onChange={setGraphTab} options={[{ id: "mb", label: "Energy" }, { id: "rate", label: "Over time" }]} /></span>
+            {mbAx.needsFull && <button type="button" className="sd-btn sd-btn--sm" aria-pressed={fullRange} onClick={() => setFullRange((z) => !z)} data-testid="mb-full-range" title="Ea lies beyond the energy axis. Show the full range out to Ea (the curve is not changed)">{fullRange ? "Zoom to peak" : "Show full range"}</button>}
             <button type="button" className="sd-btn sd-btn--sm" onClick={() => setPinnedCurve(pinnedCurve ? null : { T: p.T, ea: p.ea })} aria-pressed={!!pinnedCurve} data-testid="mb-pin" title="Keep this curve (dashed) to compare with the next temperature">{pinnedCurve ? `Unpin ${pinnedCurve.T} K` : "Pin curve"}</button>
           </span>
         }>
-        <MbGraph T={p.T} ea={p.ea} eaEff={eaEff} catalyst={p.catalyst} hist={histView} nParticles={snap.n} measured={showHist ? measured : null} pinned={pinnedCurve} zoom={zoom} showHist={showHist} />
+        <MbGraph T={p.T} ea={p.ea} eaEff={eaEff} catalyst={p.catalyst} measured={measured} pinned={pinnedCurve} full={fullRange} />
       </DashPanel>
-      <DashPanel title="Rate of reaction" ariaLabel="Measured rate against time" grow className="ct-g2" testId="rate-panel" data-hide={graphTab !== "rate" ? "true" : "false"}
-        aside={<span className="ct-aside"><span className="ct-gtabs"><MiniSwitch ariaLabel="Graph shown" testId="graph-tab-2" value={graphTab} onChange={setGraphTab} options={[{ id: "mb", label: "Energy" }, { id: "rate", label: "Rate" }]} /></span><MiniSwitch ariaLabel="Graph type" testId="rate-view" value={rateView} onChange={setRateView} options={[{ id: "rate", label: "Rate", title: "Rate against time" }, { id: "products", label: "Products", title: "Products formed; rate = gradient" }]} /></span>}>
-        <RateGraph hist={snap.hist} marks={snap.marks} view={rateView} />
+      <DashPanel title={<><span className="ct-t-full">Rate of reaction</span><span className="ct-t-short">Graph</span></>} ariaLabel="Measured rate against time" grow className="ct-g2" testId="rate-panel" data-hide={graphTab !== "rate" ? "true" : "false"}
+        aside={<span className="ct-aside"><span className="ct-gtabs"><MiniSwitch ariaLabel="Graph shown" testId="graph-tab-2" value={graphTab} onChange={setGraphTab} options={[{ id: "mb", label: "Energy" }, { id: "rate", label: "Over time" }]} /></span><MiniSwitch ariaLabel="Graph type" testId="rate-view" value={rateView} onChange={chooseView} options={[
+          { id: "rate", label: "Rate", title: "Reaction rate against time" }, { id: "reactants", label: "Reactants", title: "Amount of A and of B left against time" },
+          { id: "products", label: "Products", title: "Products formed (cumulative); the rate is its gradient" }, { id: "both", label: "Both", title: "Reactant and product together" }]} /></span>}>
+        <div className="ct-rate-wrap">
+          <ReactionEquation view={rateView} species={species} onPick={pickSpecies} solid={solid} />
+          <RateGraph events={snap.events} tNow={snap.t} marks={snap.marks} view={rateView} species={species} left={snap.left} finished={snap.finished} hist={snap.hist} live={{ a: snap.nA, b: snap.nB }} solid={solid} />
+        </div>
       </DashPanel>
     </>
   );
@@ -297,10 +308,8 @@ function Workspace({ seedProp }) {
   const settings = (
     <>
       <PopoverSection title="Vessel">
-        <SettingToggle id="ct-steady" label="Steady supply of reactants" hint="Products turn back into reactants after 1.5 s so the concentrations, and the rate, stay constant. Off: reactants are used up." checked={p.steady} onChange={(v) => change({ steady: v }, "steady", v ? "steady supply" : "closed vessel")} testId="set-steady" />
         <SettingToggle id="ct-sites" label="Show reactive sites" hint="Yellow arc on each particle." checked={showSites} onChange={setShowSites} testId="set-sites" />
         <SettingToggle id="ct-energetic" label="Ring particles with E ≥ Ea" hint="Kinetic energy of a particle, not of a collision." checked={showEnergetic} onChange={setShowEnergetic} testId="set-energetic" />
-        <SettingToggle id="ct-hist" label="Show vessel energies on the graph" hint="Bars: kinetic energies of the particles now in the vessel." checked={showHist} onChange={setShowHist} testId="set-hist" />
       </PopoverSection>
       <PopoverSection title="Speed">
         <MiniSwitch ariaLabel="Speed (settings)" testId="speed-settings" options={SPEEDS} value={speed} onChange={setSpeed} fill />
@@ -309,16 +318,16 @@ function Workspace({ seedProp }) {
         <SettingToggle id="ct-seed" label="Repeatable runs" hint={`Reset restarts the same random sequence (seed ${fixedSeed.current}).`} checked={repeatable} onChange={setRepeatable} testId="set-seed" />
       </PopoverSection>
       <PopoverSection title="About the model">
-        <p className="sd-text">A thin slice of a 3-D gas: collisions and wall bounces are elastic; speeds follow the Maxwell–Boltzmann distribution at the chosen T. Time is simulated time. Ea values here (5–60 kJ/mol) are a demonstration scale so reactions are watchable.</p>
+        <p className="sd-text">A thin slice of a 3-D gas: collisions and wall bounces are elastic; speeds follow the Maxwell–Boltzmann distribution at the chosen T. The reaction A + B → C + D is irreversible: products stay products and reactants are not topped up, so the rate falls as A and B are used up. Time is simulated time. Ea values here (5–60 kJ/mol) are a demonstration scale so reactions are watchable.</p>
       </PopoverSection>
     </>
   );
 
   const detail = (
     <div className="ct-detail">
-      <p><b>Rate</b> = successful collisions per second (simulated time), averaged over the last {RATE_WINDOW} s: {snap.succ} reactions so far. It is proportional to the gradient of the products graph, and noisy because collisions are random (±{sigma.toFixed(2)} s{"⁻¹"} now).</p>
-      <p><b>Collision energy</b> is the kinetic energy along the line of centres. A collision reacts only if that is at least Ea <i>and</i> both reactive sites face each other (here {stericPct} % of contacts). Collisions with enough energy: about e<sup>{"−"}Ea/RT</sup> = {formatFraction(snap.arrhenius)} (Arrhenius factor).</p>
-      <p><b>Shaded area</b> = exact fraction of molecules with kinetic energy of at least Ea (see the readout under the graph). It is a different quantity from the fraction of collisions, which favours faster molecules.</p>
+      <p><b>Rate</b> = successful collisions per second (simulated time). The graph shows it smoothed from the reactions that really happened in the vessel; it is the gradient of the products graph, and it is not a fixed curve: it falls here because A and B are being used up ({snap.succ} reactions so far, {snap.left} still possible). The number above is averaged over the last {RATE_WINDOW} s and is noisy because collisions are random (±{sigma.toFixed(2)} s{"⁻¹"} now).</p>
+      <p><b>Three different energies.</b> The curve is the kinetic energy of single molecules. A collision&apos;s <i>relative energy</i> along the line of centres is what is compared with Ea, and it also needs the reactive sites to face each other (here {stericPct} % of contacts). Collisions with enough energy: about e<sup>{"−"}Ea/RT</sup> = {formatFraction(snap.arrhenius)} (Arrhenius factor).</p>
+      <p><b>Shaded area</b> = exact fraction of molecules whose kinetic energy is at least Ea (the readout under the graph): the molecules that could react. It is not the fraction of collisions that react, because collisions also need the right orientation and favour faster molecules. A catalyst leaves the curve alone and moves the Ea line left.</p>
           <ReactionProfile ea={p.ea} eaEff={eaEff} catalyst={p.catalyst} />
     </div>
   );

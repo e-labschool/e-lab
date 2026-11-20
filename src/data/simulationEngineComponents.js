@@ -34,5 +34,6 @@ export const SIMULATION_COMPONENTS = {
   "intermolecular-forces-visualiser": lazy(() => import("../engines/intermolecular-forces-visualiser/IntermolecularForcesVisualiser.jsx")),
   "polarity-playground": lazy(() => import("../engines/polarity-playground/PolarityPlayground.jsx")),
   "mole-lab": lazy(() => import("../engines/mole-lab/MoleLab.jsx")),
+  "equilibrium-lab": lazy(() => import("../engines/equilibrium-lab/EquilibriumLab.jsx")),
   "spectroscopy-studio": lazy(() => import("../engines/spectroscopy-studio/SpectroscopyStudio.jsx")),
 };

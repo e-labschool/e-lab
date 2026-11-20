@@ -54,7 +54,7 @@ for (const [w, h] of [[1366, 768], [910, 512], [390, 844]]) for (const theme of 
     await goTab(p, tab);
     if (tab === "bond") await p.click(T("bond-view-cloud")).then(() => p.waitForTimeout(800));
     if (tab === "molecule") { await p.click(T("mol-h2o")); await pose(p, 1); }
-    if (tab === "challenge") { await p.click(`${T("question")} [role=radio] >> nth=0`); await p.waitForTimeout(400); }
+    if (tab === "challenge") { await p.click(`${T("question")} .pp-option >> nth=0`); await p.waitForTimeout(400); }
     await p.screenshot({ path: path.join(out, `${tab}-${w}x${h}-${theme}.png`), timeout: 60000 });
     const m = await metrics(p);
     check(m.hs <= 1 && m.inner <= 1, `${tag} ${tab}: no horizontal overflow (page ${m.hs}, inside the sim ${m.inner})`);
@@ -78,11 +78,20 @@ console.log("\n== Scientific pictures (1366x768, light): screenshots to LOOK at 
     await p.click(T("bond-view-polarity")); await p.waitForTimeout(1400); await p.screenshot({ path: path.join(out, `sci-bond-${pair}-polarity.png`) }); await p.click(T("bond-view-bond")); await p.waitForTimeout(1200); await p.screenshot({ path: path.join(out, `sci-bond-${pair}-bond.png`) }); await p.click(T("bond-view-cloud")); await p.waitForTimeout(600);
   }
   await goTab(p, "molecule");
-  for (const id of ["h2", "hcl", "co2", "h2o", "bf3", "nh3", "ch4", "ch3cl", "ccl4", "so2"]) {
+  await p.click(T("mol-compare")); await p.click(T("mol-co2")); await p.click(T("mol-mode-overall")); await pose(p, 1); await p.selectOption(T("mol-compare-select"), "so2"); await pose(p, 1);
+  await p.screenshot({ path: path.join(out, "sci-mol-compare-co2-so2.png") }); check(/shape decides/i.test(await p.locator(T("caption")).innerText()), "compare CO2 / SO2: the caption says the shape decides"); await p.click(T("mol-compare"));
+  check(await p.locator(T("imf-link")).count() === 0, "CO2 (non-polar): no IMF link");
+  const ZERO = ["h2", "co2", "bf3", "ch4", "ccl4", "becl2", "sf6", "xef4", "trans-dce"];
+  for (const id of ["h2", "hcl", "co2", "h2o", "bf3", "nh3", "ch4", "ch3cl", "ccl4", "so2", "hf", "hbr", "ch2cl2", "chcl3", "pcl3", "becl2", "sf6", "xef4", "o3", "cis-dce", "trans-dce"]) {
     await p.click(T(`mol-${id}`)); await p.click(T("mol-mode-overall")); await pose(p, 1);
     await p.screenshot({ path: path.join(out, `sci-mol-${id}-overall.png`) });
-    const zero = await p.locator(T("net-zero-banner")).count(); const cancels = ["co2", "bf3", "ccl4"].includes(id);
-    check(cancels ? zero === 1 : zero === 0, `${id}: "Net dipole moment = 0" ${cancels ? "shown" : "not shown"}`);
+    const zero = await p.locator(T("net-zero-banner")).count(); const cancels = ZERO.includes(id);
+    check(cancels ? zero === 1 : zero === 0, `${id}: "Net dipole moment, μ = 0" ${cancels ? "shown" : "not shown"}`);
+    const polarB = await p.locator(T("net-polar-banner")).count(); const noArrow = ["h2", "ch4"].includes(id) || cancels; check(noArrow ? polarB === 0 : polarB === 1, `${id}: "Net dipole moment, μ ≠ 0" banner ${noArrow ? "not shown" : "shown"}`);
+    const vis = await p.evaluate(() => [...document.querySelectorAll(".pp-tag--dtag")].filter((e) => e.style.display !== "none").length); const nAct = { h2: 0, hcl: 0, hf: 0, hbr: 0, co2: 2, becl2: 2, h2o: 2, so2: 2, o3: 2, nh3: 3, bf3: 3, ch3cl: 0, ch4: 4, ccl4: 4, ch2cl2: 2, chcl3: 3, pcl3: 3, sf6: 6, xef4: 4, "cis-dce": 2, "trans-dce": 2 }[id]; check(vis === 2 * nAct, `${id}: ${vis} d-tags visible (bond arrows and their copies, expected ${2 * nAct})`);
+    const lab = p.locator(".pp-tag"); const n = await lab.count(); const boxes = []; for (let k = 0; k < n; k += 1) { const b = await lab.nth(k).boundingBox(); if (b) boxes.push(b); }
+    const st = await p.locator(T("pp-stage-molecule")).boundingBox(); const out0 = boxes.filter((b) => b.x < st.x - 2 || b.y < st.y - 2 || b.x + b.width > st.x + st.width + 2 || b.y + b.height > st.y + st.height + 2).length;
+    check(out0 === 0, `${id}: every label stays inside the stage (${out0} outside)`);
     if (["co2", "h2o", "bf3", "nh3"].includes(id)) { await p.click(T("mol-mode-bonds")); await p.waitForTimeout(1300); await p.screenshot({ path: path.join(out, `sci-mol-${id}-bonds.png`) }); await p.click(T("mol-mode-model")); await p.waitForTimeout(1300); await p.screenshot({ path: path.join(out, `sci-mol-${id}-model.png`) }); }
   }
   await ctx.close();

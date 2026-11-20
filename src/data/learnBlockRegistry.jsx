@@ -61,6 +61,7 @@ export const MOLECULE_PRESETS = {
 // working unchanged.
 import { SIMULATION_REGISTRY } from "./simulationRegistry.js";
 import BondingBlockOptions from "../engines/bonding-visualizer/teacher/BondingBlockOptions.jsx";
+import EquilibriumBlockOptions from "../engines/equilibrium-lab/teacher/EquilibriumBlockOptions.jsx";
 export { SIMULATION_REGISTRY };
 
 // Strips HTML tags for a safe plain-text preview — never renders HTML
@@ -319,6 +320,7 @@ export function BlockEditor({ blockType, content, onChange, pageId, blockId }) {
             {Object.entries(SIMULATION_REGISTRY).map(([id, s]) => <option key={id} value={id}>{s.label}</option>)}
           </select>
           {content.simulationId === "bonding-visualizer" && <BondingBlockOptions config={content.simulationConfig} onChange={(cfg) => set("simulationConfig", cfg)} />}
+          {content.simulationId === "equilibrium-lab" && <EquilibriumBlockOptions config={content.simulationConfig} onChange={(cfg) => set("simulationConfig", cfg)} />}
         </div>
       );
 

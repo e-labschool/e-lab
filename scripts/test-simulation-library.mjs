@@ -91,8 +91,8 @@ await test("every live catalogue entry is in simulationRegistry AND has an engin
   assert.deepEqual(live.map((e) => e.id).sort(), Object.keys(SIMULATION_COMPONENTS).sort());
   assert.equal(cat.getCatalogueEntry("mixture-separation-explorer")?.status, "live");
 });
-await test("registry key order unchanged (the historical engine order, now including the rebuilt mixture-separation-explorer + mole-lab + polarity-playground = 27)", () => {
-  assert.equal(Object.keys(SIMULATION_REGISTRY).length, 27);
+await test("registry key order unchanged (the historical engine order, now including the rebuilt mixture-separation-explorer + mole-lab + polarity-playground + equilibrium-lab = 28)", () => {
+  assert.equal(Object.keys(SIMULATION_REGISTRY).length, 28);
   assert.deepEqual(Object.keys(SIMULATION_REGISTRY).slice(0, 3), ["electron-configuration", "vsepr-explorer-3d", "explore-matter-and-states"]);
   assert.equal(Object.keys(SIMULATION_REGISTRY).at(-1), "spectroscopy-studio");
 });
@@ -134,7 +134,7 @@ await test("existing /interactives registry still intact and linked: every live 
     assert.ok(cat.SIMULATION_CATALOGUE.some((e) => e.resourceId === r.id), `live resource ${r.id} not linked from the catalogue`);
   }
   const covered = new Set(cat.SIMULATION_CATALOGUE.map((e) => e.id).concat(cat.SIMULATION_CATALOGUE.map((e) => e.resourceId)));
-  for (const r of all) if (r.status !== "live") assert.ok(covered.has(r.id) || ["mixture-separation-explorer", "ideal-gas-simulator", "molecular-geometry-explorer", "collision-theory-lab", "titration-lab", "spectroscopy-studio", "mass-spectrometer-simulator", "molecular-polarity-explorer"].includes(r.id), `${r.id} dropped`);
+  for (const r of all) if (r.status !== "live") assert.ok(covered.has(r.id) || ["mixture-separation-explorer", "ideal-gas-simulator", "molecular-geometry-explorer", "collision-theory-lab", "titration-lab", "spectroscopy-studio", "mass-spectrometer-simulator", "molecular-polarity-explorer", "equilibrium-simulator"].includes(r.id), `${r.id} dropped`);
 });
 
 console.log("Library model: search / sort / filter / storage");

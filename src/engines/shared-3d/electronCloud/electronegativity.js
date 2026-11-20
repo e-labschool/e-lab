@@ -12,11 +12,11 @@ import { NONPOLAR_MAX, SLIGHT_MAX, IONIC_MIN } from "../../../lib/lewis/polarity
 export const PAULING = Object.freeze({
   H: 2.20, Li: 0.98, Be: 1.57, B: 2.04, C: 2.55, N: 3.04, O: 3.44, F: 3.98,
   Na: 0.93, Mg: 1.31, Al: 1.61, Si: 1.90, P: 2.19, S: 2.58, Cl: 3.16,
-  K: 0.82, Ca: 1.00, Se: 2.55, Br: 2.96, I: 2.66,
+  K: 0.82, Ca: 1.00, Se: 2.55, Br: 2.96, I: 2.66, Xe: 2.60,
 });
 /** Real atoms offered in the Tug-of-War "Real Atom Mode" (their values are fixed: the UI offers no way to change them). */
-export const REAL_ATOMS = Object.freeze(["H", "C", "N", "O", "F", "Cl", "S", "Br"]);
-export const NAMES = Object.freeze({ H: "Hydrogen", C: "Carbon", N: "Nitrogen", O: "Oxygen", F: "Fluorine", Cl: "Chlorine", S: "Sulfur", Br: "Bromine", B: "Boron", I: "Iodine" });
+export const REAL_ATOMS = Object.freeze(["H", "C", "N", "O", "F", "Cl", "S", "Br", "I", "P", "Li", "Na", "Mg"]);
+export const NAMES = Object.freeze({ H: "Hydrogen", C: "Carbon", N: "Nitrogen", O: "Oxygen", F: "Fluorine", Cl: "Chlorine", S: "Sulfur", Br: "Bromine", B: "Boron", I: "Iodine", P: "Phosphorus", Li: "Lithium", Na: "Sodium", Mg: "Magnesium" });
 export const electronegativityOf = (el) => PAULING[el];
 export { NONPOLAR_MAX, SLIGHT_MAX, IONIC_MIN };
 /** Bond-dipole threshold of the IB convention: a bond with delta-EN below this is treated as non-polar (C-H, S-H ...). */

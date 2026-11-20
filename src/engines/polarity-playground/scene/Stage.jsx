@@ -20,27 +20,28 @@ export function useSimClock(reduced) {
   return clock;
 }
 
-function FitCamera({ width, height, tilt, orbit, home }) {
+function FitCamera({ width, height, tilt, orbit, home, center }) {
+  const cx = center?.[0] ?? 0; const cy = center?.[1] ?? 0;
   const { camera, size, invalidate } = useThree();
   useEffect(() => {
     const t = Math.tan((camera.fov * Math.PI) / 360); const asp = size.width / Math.max(1, size.height);
     const d = Math.max(height / 2 / t, width / 2 / (t * asp)) * 1.04;
     const y = Math.sin(tilt) * d; const z = Math.cos(tilt) * d;
-    camera.position.set(0, y, z); camera.lookAt(0, 0, 0); camera.near = 0.1; camera.far = d * 6; camera.updateProjectionMatrix();
-    if (orbit?.current) { orbit.current.target.set(0, 0, 0); orbit.current.minDistance = d * 0.45; orbit.current.maxDistance = d * 2.2; orbit.current.update(); }
-    home.current = [0, y, z]; invalidate();
-  }, [camera, size.width, size.height, width, height, tilt, orbit, home, invalidate]);
+    camera.position.set(cx, cy + y, z); camera.lookAt(cx, cy, 0); camera.near = 0.1; camera.far = d * 6; camera.updateProjectionMatrix();
+    if (orbit?.current) { orbit.current.target.set(cx, cy, 0); orbit.current.minDistance = d * 0.45; orbit.current.maxDistance = d * 2.2; orbit.current.update(); }
+    home.current = [cx, cy + y, z]; invalidate();
+  }, [camera, size.width, size.height, width, height, tilt, orbit, home, invalidate, cx, cy]);
   return null;
 }
 
-export default function Stage({ testId, ariaLabel, width = 12, height = 6, tilt = 0.06, orbit = false, reduced = false, fallback, children, onReset, resetKey = 0, className = "pp-stage" }) {
+export default function Stage({ testId, ariaLabel, width = 12, height = 6, tilt = 0.06, orbit = false, center, reduced = false, fallback, children, onReset, resetKey = 0, className = "pp-stage" }) {
   const controls = useRef(null); const home = useRef([0, 0, 10]);
   return (
     <GuardedFrame className={className} testId={testId} ariaLabel={ariaLabel} fallback={fallback} onReset={onReset}
       render={({ canvasKey, aa, camRef }) => (
         <Canvas key={`${canvasKey}-${resetKey}`} frameloop={reduced ? "demand" : "always"} dpr={[1, 2]} gl={{ antialias: aa, alpha: true, powerPreference: "default" }} camera={{ fov: 30, position: [0, 0, 12] }} style={{ position: "absolute", inset: 0 }}>
           <StudioLighting />
-          <FitCamera width={width} height={height} tilt={tilt} orbit={controls} home={home} />
+          <FitCamera width={width} height={height} tilt={tilt} orbit={controls} home={home} center={center} />
           {orbit && <OrbitControls ref={controls} makeDefault enablePan={false} enableDamping dampingFactor={0.12} rotateSpeed={0.8} />}
           <CameraKeyApi apiRef={camRef} />
           {children}

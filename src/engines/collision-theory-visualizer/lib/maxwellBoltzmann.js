@@ -3,6 +3,7 @@
 // f is a probability DENSITY (per kJ mol^-1); the area under it is exactly 1 for any T.
 // Fractions come from the EXACT integral (regularised upper incomplete gamma function Q(3/2, Ea/kT)),
 // never from a truncated numerical sum, so the fraction >= Ea is right at every temperature.
+import { niceStep } from "./rateMetrics.js";
 export const R_KJ = 0.008314462618; // kJ mol^-1 K^-1
 
 export const kT = (T) => R_KJ * T;
@@ -108,4 +109,24 @@ export function formatFraction(fr) {
 function toSup(n) {
   const m = { 0: "⁰", 1: "¹", 2: "²", 3: "³", 4: "⁴", 5: "⁵", 6: "⁶", 7: "⁷", 8: "⁸", 9: "⁹", "-": "⁻" };
   return String(n).split("").map((ch) => m[ch] ?? ch).join("");
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Axis for the energy graph. The curve itself is never rescaled or reshaped: only the axis limits adapt.
+//   x: up to about 6.5 kT (where the tail has fallen to about 1 % of the peak) rounded UP to a round number, so the peak and
+//      the long right-hand tail are both visible at every temperature, yet the curve still visibly moves, flattens and
+//      widens when T changes (the limit moves in coarse round steps, not continuously).
+//   y: about 12 % above the tallest curve shown (this one, and a pinned one if there is one), rounded up.
+//   Ea beyond the x range: `needsFull` is true and `full` (a larger x range reaching Ea) is offered as a separate option.
+export const TAIL_KT = 6.5;
+/** Plot limits for kinetic-energy curves at T (and, optionally, a pinned curve at pinnedT), with the thresholds eaList (kJ/mol). */
+export function mbAxis(T, { pinnedT = null, eaList = [], full = false } = {}) {
+  const Ts = pinnedT ? [T, pinnedT] : [T];
+  const base = niceStep(TAIL_KT * kT(Math.max(...Ts)));
+  const eaMax = Math.max(0, ...eaList);
+  const needsFull = eaMax > base * 0.97;
+  const xMax = full && needsFull ? niceStep(Math.max(base, eaMax * 1.15)) : base;
+  const yPeak = Math.max(...Ts.map((t) => peakDensity(t)));
+  const yMax = niceStep(yPeak * 1.12);
+  return { xMax, yMax, needsFull, baseXMax: base, full: !!(full && needsFull) };
 }

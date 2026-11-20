@@ -77,6 +77,14 @@ await test("real-atom mode hides the answer until the student predicts, then rev
   await click(T("another-pair")); assert.ok($(T("predict")), "a new pair asks for a new prediction");
 });
 
+await test("Real atoms: Li, Na, Mg, P, S, Br, I are offered with fixed Pauling values; the ΔEN guide marker moves with the pair", async () => {
+  await click(T("tug-mode-real")); const opts = $$(`${T("atom-a")} option`).map((o) => o.value); for (const el of ["Li", "Na", "Mg", "P", "S", "Br", "I"]) assert.ok(opts.includes(el), `${el} offered`);
+  await click(T("pick-b")); await tick(60); const m1 = Number($(T("en-scale-marker")).dataset.pct); await setSelect(T("atom-a"), "Na"); await setSelect(T("atom-b"), "Cl"); await click(T("pick-b")); await tick(60);
+  const m2 = Number($(T("en-scale-marker")).dataset.pct); assert.ok(m2 > m1, "Na–Cl is further along the scale than the first pair"); assert.match($(T("en-scale")).textContent, /rough guide/i);
+  assert.match(txt(T("atom-a-en")), /0\.93/); assert.match(txt(T("atom-b-en")), /3\.16/);
+  await setSelect(T("atom-a"), "P"); await setSelect(T("atom-b"), "H"); await click(T("pick-equal")); await tick(60); assert.ok(Number($(T("en-scale-marker")).dataset.pct) < 3, "P–H is at the non-polar end");
+});
+
 console.log("Tab 2: Inside a Covalent Bond");
 await click(T("tab-btn-bond"));
 await test("three views; HCl default polar; H2 shows no delta charges and no arrow; colour key defines the colours", async () => {
@@ -87,6 +95,11 @@ await test("three views; HCl default polar; H2 shows no delta charges and no arr
 });
 await test("the Electron Cloud view carries the required label; Play Animation and Reset are available; Compare with H2 exists", async () => {
   await click(T("bond-view-cloud")); assert.match(txt(T("model-note")), /Simplified electron-density model/); assert.ok($(T("play"))); assert.ok($(T("bond-reset"))); assert.ok($(T("compare")));
+});
+
+await test("Show the shared pair is an optional, labelled simplification; the ΔEN guide sits in the polarity card", async () => {
+  assert.ok($(T("show-pair"))); assert.ok(!$(T("show-pair")).checked, "off by default"); assert.ok($(T("en-scale")), "ΔEN guide"); await click(T("show-pair")); assert.match(txt(T("model-note")), /simplification of the shared pair/i);
+  await setSelect(T("pair-select"), "H-Cl"); const m = Number($(T("en-scale-marker")).dataset.pct); await setSelect(T("pair-select"), "H-H"); assert.ok(Number($(T("en-scale-marker")).dataset.pct) < m, "H–H sits left of H–Cl");
 });
 
 console.log("Tab 3: Molecular Polarity");
@@ -103,11 +116,38 @@ await test("ten molecules, three display modes, shape and polarity data per mole
 await test("the note says arrow lengths are relative and qualitative; no numeric dipole moment is quoted anywhere on the tab", () => {
   assert.match(txt(T("model-note")), /qualitative/i); const all = txt(T("tab-molecule")); assert.ok(!/\bdebye\b|\b\d+\.\d+\s?D\b/i.test(all), "no debye numbers");
 });
-await test("Resultant Dipole mode: the animation can be replayed; for a cancelling molecule 'Net dipole moment = 0' appears once it finishes", async () => {
+await test("Resultant Dipole mode: the animation can be replayed; for a cancelling molecule 'Net dipole moment, μ = 0' appears at step 6", async () => {
   await click(T("mol-co2")); await click(T("mol-mode-overall")); assert.ok(!$(T("play")).disabled); globalThis.__PP_SET_PROGRESS?.(1); await until(() => $(T("net-zero-banner")), 3000, "net zero banner");
-  assert.match(txt(T("net-zero-banner")), /Net dipole moment = 0/); assert.match(txt(T("caption")), /Net dipole moment = 0/);
-  await click(T("mol-h2o")); globalThis.__PP_SET_PROGRESS?.(1); await tick(80); assert.ok(!$(T("net-zero-banner")), "a polar molecule never shows the zero banner"); assert.match(txt(T("caption")), /do not cancel/i);
+  assert.match(txt(T("net-zero-banner")), /Net dipole moment, μ = 0/); assert.match(txt(T("caption")), /Net dipole moment, μ = 0/); assert.ok(!$(T("net-polar-banner")), "no 'μ ≠ 0' banner for a cancelling molecule");
+  await click(T("mol-h2o")); globalThis.__PP_SET_PROGRESS?.(1); await tick(80); assert.ok(!$(T("net-zero-banner")), "a polar molecule never shows the zero banner"); assert.match(txt(T("caption")), /do not cancel/i); assert.match(txt(T("net-polar-banner")), /Net dipole moment, μ ≠ 0 \(towards O\)/);
   await click(T("mol-mode-model")); assert.ok($(T("play")).disabled, "no vector animation in the model view");
+});
+
+await test("More molecules: the extras are grouped, selectable, correct, and the originals stay first", async () => {
+  const ids = ["hf", "hbr", "ch2cl2", "chcl3", "pcl3", "becl2", "sf6", "xef4", "o3", "cis-dce", "trans-dce"];
+  assert.ok(ids.every((id) => $(T(`mol-${id}`))), "all eleven extra chips"); assert.deepEqual($$("optgroup").map((g) => g.label), ["Core molecules", "More molecules"]);
+  assert.match(txt(T("mol-panel")), /More molecules/); const chips = $$('[data-testid^="mol-"]').map((e) => e.dataset.testid); assert.ok(chips.indexOf("mol-so2") < chips.indexOf("mol-hf"), "core first");
+  const polar = { hf: true, hbr: true, ch2cl2: true, chcl3: true, pcl3: true, becl2: false, sf6: false, xef4: false, o3: true, "cis-dce": true, "trans-dce": false };
+  for (const id of ids) { await click(T(`mol-${id}`)); assert.match(txt(T("data-polarity")), polar[id] ? /^Polar/ : /^Non-polar/, `${id} polarity`); assert.match(txt(T("data-mu")), polar[id] ? /μ ≠ 0/ : /μ = 0/); }
+  await click(T("mol-xef4")); assert.match(txt(T("level-note")), /HL \/ A level/); assert.match(txt(T("data-shape")), /Square planar/); await click(T("mol-sf6")); assert.match(txt(T("data-shape")), /Octahedral/);
+  await click(T("mol-o3")); assert.match(txt(T("o3-note")), /no ΔEN bond dipoles|qualitative/i);
+});
+await test("net dipole = 0 is stated for non-polar molecules with no polar bonds too (H2, CH4), and never for polar ones", async () => {
+  await click(T("mol-mode-overall"));
+  for (const id of ["h2", "ch4", "co2", "sf6", "trans-dce", "becl2"]) { await click(T(`mol-${id}`)); globalThis.__PP_SET_PROGRESS?.(1); await until(() => $(T("net-zero-banner")), 3000, `${id} banner`); }
+  for (const id of ["hf", "pcl3", "cis-dce"]) { await click(T(`mol-${id}`)); globalThis.__PP_SET_PROGRESS?.(1); await tick(80); assert.ok(!$(T("net-zero-banner")), `${id}: polar, no zero banner`); }
+});
+await test("polar molecules link to the IMF simulation; non-polar ones do not", async () => {
+  await click(T("mol-h2o")); const a = $(T("imf-link")); assert.ok(a, "link on water"); assert.equal(a.getAttribute("href"), "/simulation/intermolecular-forces-visualiser"); assert.equal(a.getAttribute("rel"), "noopener noreferrer");
+  await click(T("mol-co2")); assert.ok(!$(T("imf-link")), "none on CO2");
+});
+await test("Compare: a second molecule can be set beside the first; the caption says geometry decides", async () => {
+  await click(T("mol-co2")); await click(T("mol-compare")); assert.ok($(T("mol-compare-select"))); assert.match(txt(T("caption")), /CO₂.*SO₂|SO₂.*CO₂/); assert.match(txt(T("caption")), /shape decides/i);
+  assert.match(txt(T("caption")), /both have polar bonds/i); await setSelect(T("mol-compare-select"), "h2o"); assert.match(txt(T("caption")), /H₂O/); await click(T("mol-compare")); assert.ok(!$(T("mol-compare-select")));
+});
+await test("Simple wording: plain labels 'Is the molecule polar?' appear and the chemistry is unchanged", async () => {
+  await click(T("mol-h2o")); await click(T("pp-simple")); assert.match(txt(T("data-card")), /Is the molecule polar\?/); assert.match(txt(T("data-card")), /Is the bond polar\?/); assert.match(txt(T("data-polarity")), /Polar molecule/);
+  globalThis.__PP_SET_PROGRESS?.(1); await tick(80); assert.match(txt(T("caption")), /polar molecule/i); await click(T("pp-simple")); assert.match(txt(T("data-card")), /Molecular polarity/);
 });
 
 console.log("Tab 4: Polarity Challenge");
@@ -123,6 +163,20 @@ await test("five short questions, no timer, immediate feedback with reasoning, s
   }
   assert.ok($(T("done"))); assert.equal(txt(T("score")), `${right} / 5`); assert.match($(T("stars")).getAttribute("aria-label"), /of 3 stars/);
   await click(T("again")); assert.ok($(T("question")), "play again starts a new round"); assert.notEqual(txt(T("prompt")), round[0].prompt);
+});
+
+await test("Challenge: nothing is pre-selected, wrong answers give a red box and the right one turns green, a retry replays only the missed questions", async () => {
+  await click(T("pp-reset")); await tick(50); const round = Ch.buildRound(1);
+  assert.ok($$('[data-testid^="option-"]').every((b) => !b.className.includes("is-right") && !b.className.includes("is-wrong") && !b.hasAttribute("aria-pressed")), "no option highlighted before answering");
+  for (let i = 0; i < 5; i += 1) { const spec = round[i]; await click(T(`option-${spec.options.find((o) => o.id !== spec.right).id}`)); assert.ok($(T("feedback")).className.includes("is-no")); assert.ok($(T(`option-${spec.right}`)).className.includes("is-right"), "the right option is marked green"); await click(T("next")); }
+  assert.equal(txt(T("score")), "0 / 5"); assert.equal($$('[data-testid="review"] li').length, 5); assert.ok($(T("retry"))); assert.match(txt(T("retry")), /Retry the 5 I missed/);
+  await click(T("retry")); assert.match($(T("progress")).getAttribute("aria-label"), /Question 1 of 5/); assert.equal(txt(T("prompt")), round[0].prompt, "same questions again");
+  for (let i = 0; i < 5; i += 1) { await click(T(`option-${round[i].right}`)); assert.ok($(T("feedback")).className.includes("is-ok")); await click(T("next")); }
+  assert.equal(txt(T("score")), "5 / 5"); assert.ok(!$(T("retry")), "nothing left to retry"); assert.equal($(T("stars")).getAttribute("aria-label"), "3 of 3 stars");
+});
+await test("Challenge: the question types now include ranking, picking a molecule and the dipole direction, and rounds vary with the seed", () => {
+  const types = new Set(); for (let sd = 1; sd < 40; sd += 1) for (const q of Ch.buildRound(sd)) types.add(q.type); for (const t of ["rank", "pick", "direction", "en", "partial", "arrow", "polar", "cancel", "match"]) assert.ok(types.has(t), `type ${t}`);
+  const prompts = new Set(); for (let sd = 1; sd < 30; sd += 1) for (const q of Ch.buildRound(sd)) prompts.add(q.prompt); assert.ok(prompts.size >= 40, `pool size ${prompts.size}`);
 });
 
 console.log("Keyboard and controls");

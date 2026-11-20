@@ -2,14 +2,16 @@ import { useState } from "react";
 import { Pause, Play, RotateCcw } from "lucide-react";
 import Stage from "../scene/Stage.jsx";
 import BondScene from "../scene/BondScene.jsx";
-import { Card, Key, Pills, Row } from "./parts.jsx";
+import { Card, EnScale, Key, Pills, Row } from "./parts.jsx";
+import { WORDS } from "./wording.js";
 import useProgress from "./useProgress.js";
 import { BOND_PAIRS, describePair, pairById } from "../model/bondPairs.js";
 
 const VIEWS = [{ id: "bond", label: "Bond View" }, { id: "cloud", label: "Electron Cloud" }, { id: "polarity", label: "Bond Polarity" }];
 const TITLES = { bond: "Atom and Bond View", cloud: "Electron Cloud View", polarity: "Bond Polarity View" };
 
-export default function BondTab({ reduced }) {
+export default function BondTab({ reduced, simple = false }) {
+  const W = WORDS(simple); const [showPair, setShowPair] = useState(false);
   const [pairId, setPairId] = useState("H-Cl"); const [view, setView] = useState("cloud"); const [compare, setCompare] = useState(false);
   const pair = pairById(pairId); const info = describePair(pair);
   const anim = useProgress({ duration: 3, reduced, resetKey: `${pairId}` });
@@ -23,14 +25,15 @@ export default function BondTab({ reduced }) {
         <h4 className="pp-stagetitle" data-testid="view-title">{TITLES[view]}: {pair.label} <span>({sharing === "equal" ? "equal EN, symmetric" : "different EN, asymmetric"})</span></h4>
         <div className="pp-stagewrap">
           <Stage testId="pp-stage-bond" ariaLabel={sr} width={compare && !(pair.a === "H" && pair.b === "H") ? 14.5 : 9.6} height={6.2} tilt={0.05} reduced={reduced} fallback={sr}>
-            <BondScene pair={pair} view={view} progress={anim.p} reduced={reduced} compare={compare} />
+            <BondScene pair={pair} view={view} progress={anim.p} reduced={reduced} compare={compare} showPair={showPair} />
           </Stage>
-          <p className="pp-modelnote" data-testid="model-note">Simplified electron-density model: not to scale.</p>
+          <p className="pp-modelnote" data-testid="model-note">Simplified electron-density model: not to scale.{showPair ? " The two dots are a simplification of the shared pair, not real electron positions." : ""}</p>
         </div>
         <div className="pp-bar">
           <button type="button" className="pp-btn pp-btn--primary" onClick={anim.play} data-testid="play" aria-label="Play animation">{anim.playing ? <Pause size={15} aria-hidden="true" /> : <Play size={15} aria-hidden="true" />} Play Animation</button>
           <button type="button" className="pp-btn" onClick={anim.reset} data-testid="bond-reset"><RotateCcw size={15} aria-hidden="true" /> Reset</button>
           <label className="pp-check"><input type="checkbox" checked={compare} onChange={(e) => setCompare(e.target.checked)} data-testid="compare" /> Compare with H₂</label>
+          <label className="pp-check" title="Two dots as a simplification of the shared pair"><input type="checkbox" checked={showPair} onChange={(e) => setShowPair(e.target.checked)} data-testid="show-pair" /> Show the shared pair (simplified)</label>
         </div>
         <p className="pp-caption" aria-live="polite" data-testid="caption">{caption}</p>
       </Card>
@@ -41,7 +44,8 @@ export default function BondTab({ reduced }) {
         <Card title="Bond Polarity" testId="polarity-panel">
           <p className="pp-formula" data-testid="polarity-formula">{info.equal ? <>{pair.a} – {pair.b}: <b>no δ+ / δ−</b></> : <>{info.plus} <b className="pp-plus">δ+</b> <span className="pp-arrow" aria-label="dipole arrow with crossed tail on the delta-plus atom, head towards the delta-minus atom">+⟶</span> {info.minus} <b className="pp-minus">δ−</b></>}</p>
           <Row label="ΔEN" testId="delta-en">{info.dEN.toFixed(2)}</Row>
-          <p className="pp-pillnote" data-testid="bond-type">{info.equal ? "Non-polar covalent bond" : info.kind === "slightly polar" ? "Slightly polar covalent bond" : "Polar covalent bond"}</p>
+          <p className="pp-pillnote" data-testid="bond-type">{info.equal ? W.bondNon : info.kind === "slightly polar" ? W.bondSlight : W.bondPolar}</p>
+          <EnScale dEN={info.dEN} />
           <p className="pp-hint">{info.equal ? "Equal sharing: no bond dipole arrow." : "Bond dipole: crossed tail on δ+, head towards δ−."}</p>
         </Card>
         <Card title="Colour key"><Key /></Card>

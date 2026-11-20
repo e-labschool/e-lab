@@ -29,7 +29,7 @@ function Shell() {
   const rootRef = useRef(null); const size = useElementSize(rootRef); const layout = layoutClass(size.width);
   const reduced = useReducedMotion(); const dark = useIsDark();
   const [tab, setTab] = useSimulationSessionState("tab", "tug", (v) => !!VIEWS[v]);
-  const [nonce, setNonce] = useState(0);
+  const [nonce, setNonce] = useState(0); const [simple, setSimple] = useSimulationSessionState("simple", false, (v) => typeof v === "boolean");
   const View = VIEWS[tab];
   const go = (i, d) => { const n = TABS[(i + d + TABS.length) % TABS.length].id; setTab(n); requestAnimationFrame(() => document.getElementById(`pp-tab-${n}`)?.focus()); };
   return (
@@ -44,11 +44,12 @@ function Shell() {
             </button>); })}
         </nav>
         <div className="pp-actions">
+          <label className="pp-simple" title="Simple wording: plain words such as polar bond / polar molecule"><input type="checkbox" checked={!!simple} onChange={(e) => setSimple(e.target.checked)} data-testid="pp-simple" aria-label="Simple wording" /><span className="pp-simple-long">Simple wording</span><span className="pp-simple-short" aria-hidden="true">Aa</span></label>
           <button type="button" className="pp-iconbtn" onClick={() => setNonce((n) => n + 1)} data-testid="pp-reset" title="Reset this tab" aria-label="Reset this tab"><RotateCcw size={15} aria-hidden="true" /></button>
           <SimulationActions targetRef={frameRef} simulationId={simulationId} iconOnly />
         </div>
       </header>
-      <main className="pp-body"><View key={`${tab}-${nonce}`} reduced={reduced} /></main>
+      <main className="pp-body"><View key={`${tab}-${nonce}`} reduced={reduced} layout={layout} simple={simple} /></main>
     </div>
   );
 }

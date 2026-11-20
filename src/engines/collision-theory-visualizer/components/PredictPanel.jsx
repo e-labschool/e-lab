@@ -5,7 +5,7 @@ const tick = (ms = 20) => new Promise((r) => setTimeout(r, ms));
 
 /**
  * Predict-first panel (inside the shell's Predict popover). Choose an experiment, commit to a prediction, then reveal:
- * the reveal RUNS the engine before and after the change (steady supply, fixed seeds) and shows the measured rates.
+ * the reveal RUNS the engine before and after the change (fixed seeds) and shows the measured initial rates.
  */
 export default function PredictPanel({ onSetup, onApply, resetToken }) {
   const [id, setId] = useState(SCENARIOS[0].id);
@@ -22,7 +22,7 @@ export default function PredictPanel({ onSetup, onApply, resetToken }) {
     setBusy(true); setResult(null);
     await tick(30);
     const { base, changed } = scenarioConfigs(sc);
-    const opts = { reps: 3, duration: 50 };
+    const opts = { reps: 6, duration: 6 };
     const before = measureRate(base, opts);
     await tick(10);
     const after = measureRate(changed, opts);
@@ -61,7 +61,7 @@ export default function PredictPanel({ onSetup, onApply, resetToken }) {
       {result && (
         <div aria-live="polite" data-testid="predict-result" className="ct-result">
           <p><strong>{choice === result.outcome ? "Your prediction matches the measurement." : "Not quite."}</strong> The model shows: {label(result.outcome).toLowerCase()}.</p>
-          <p data-testid="predict-numbers">Measured: <b>{result.before.toFixed(2)}</b> {"→"} <b>{result.after.toFixed(2)}</b> reactions s{"⁻¹"} ({Number.isFinite(result.ratio) ? `×${result.ratio.toFixed(2)}` : "from zero"}) after changing {sc.changeText}. Mean of 3 seeded runs of 50 s each.</p>
+          <p data-testid="predict-numbers">Measured initial rate: <b>{result.before.toFixed(2)}</b> {"→"} <b>{result.after.toFixed(2)}</b> reactions s{"⁻¹"} ({Number.isFinite(result.ratio) ? `×${result.ratio.toFixed(2)}` : "from zero"}) after changing {sc.changeText}. Mean of 3 seeded runs of 50 s each.</p>
           <p>{sc.why}</p>
         </div>
       )}

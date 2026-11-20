@@ -94,6 +94,16 @@ const resources = [
     component: () => import("../engines/polarity-playground/PolarityPlayground.jsx"),
   },
   {
+    id: "equilibrium-lab",
+    title: "Equilibrium Lab — Dynamic Balance",
+    resourceType: "simulation",
+    categories: ["simulate","visualize","explore","teach"],
+    status: "live", // live | in-development | planned
+    description: "One simulation with three modes: an everyday two-cities, two-buses analogy, a chemical model of five reversible reactions with rates, K, Q and Le Chatelier controls, and a side-by-side comparison.",
+    conceptIds: ["dynamic-equilibrium","equilibrium-constant","le-chateliers-principle","equilibrium-calculations"],
+    component: () => import("../engines/equilibrium-lab/EquilibriumLab.jsx"),
+  },
+  {
     id: "atomic-structure-model",
     title: "Atomic Structure Model",
     resourceType: "interactive-model",
