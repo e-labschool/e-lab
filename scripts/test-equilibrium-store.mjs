@@ -63,6 +63,11 @@ await test("history stays bounded (decimated) during very long runs", () => {
   let s = go(createInitialState(), { type: "run/start" }); for (let i = 0; i < 400; i += 1) s = reduce(s, { type: "run/advance", dT: 5 });
   assert.ok(sc(s).ev.hist.t.length <= 1500); assert.deepEqual(checkInvariants(s), []);
 });
+await test("CHANGED: random fluctuations are OFF by default; ui/fluct toggles them; the toggle never changes the simulation itself", () => {
+  let s = createInitialState(); assert.equal(s.ui.fluct, false);
+  const a = go(s, { type: "run/start" }, { type: "run/advance", dT: 30 }); const b = go(s, { type: "ui/fluct", value: true }, { type: "run/start" }, { type: "run/advance", dT: 30 });
+  assert.equal(b.ui.fluct, true); assert.deepEqual(pop(a), pop(b), "same seed, same random run either way"); assert.equal(go(b, { type: "ui/fluct" }).ui.fluct, false);
+});
 await test("config: teacher initial mode and URL parameter are validated", () => {
   assert.equal(normalizeConfig({ initialMode: "chemical" }).initialMode, "chemical"); assert.equal(normalizeConfig({ initialMode: "Compare-Both" }).initialMode, "compare");
   assert.equal(normalizeConfig({ initialMode: "zzz" }).initialMode, "everyday"); assert.equal(normalizeConfig(null).initialMode, "everyday");

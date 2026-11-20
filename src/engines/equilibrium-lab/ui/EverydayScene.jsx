@@ -2,12 +2,14 @@ import { memo, useEffect, useMemo, useRef } from "react";
 import { everydaySnapshot } from "../model/everyday.js";
 import { fmt } from "../model/explain.js";
 
-// Two cities, two buses.  The scene READS the model (populations, cumulative transfer counters) and never writes it.
-// A bus departs when the model has produced transfer events it has not carried yet and carries ALL of them (so seating never
-// distorts the rate): the label shows the true number, only a few passenger heads are drawn (representative occupancy).
-// The model's transfers are instantaneous events: the station pictures and the counters always show the model's exact populations and
-// the buses are an illustration that follows those events (not a second source of truth).
+// Two cities, two buses.  The scene READS the model and never writes it.
+// CHANGED (owner feedback): by default the counters and figures show the EXPECTED populations (exact mean field, rounded to whole people),
+// which change smoothly and then stop at equilibrium; the random passenger populations are shown only with "Show random fluctuations".
+// Each bus trip carries a number fixed at departure = the current deterministic transfer rate x TRIP_UNITS (0.2) time units, rounded (and never
+// more than the origin city holds).  The number never changes during a trip, so no label flickers; at equilibrium both buses carry the same load.
 const TRIP_S = 1.9; const DWELL_S = 0.35; const HEADS = 5;
+export const TRIP_UNITS = 0.2;    // one bus trip carries 0.2 time units' worth of transfer (so a bus never looks like it carries a whole city)
+const MIN_LOAD = 0.5;             // below this rate (people per time unit) the bus stays parked
 const A_COLOR = "#0d9488"; const B_COLOR = "#7c3aed"; const FWD = "#2563eb"; const REV = "#ea580c";
 
 const geoFor = (compact, narrow) => {
@@ -40,12 +42,14 @@ function Bus({ id, color, label, facing, refEl, n, headsRef, shown }) {
   );
 }
 
-function EverydayScene({ ev, running, reduced, speed, layout = "wide", compact = false, simple = false }) {
+function EverydayScene({ ev, running, reduced, speed, layout = "wide", compact = false, simple = false, fluct = false }) {
   const narrow = layout === "narrow"; const g = geoFor(compact, narrow);
   const snap = useMemo(() => everydaySnapshot(ev.s), [ev.s]);
   const blueRef = useRef(null); const orangeRef = useRef(null); const blueHeads = useRef(null); const orangeHeads = useRef(null);
   const evRef = useRef(ev); evRef.current = ev;
-  const anim = useRef({ blue: { phase: "idle", p: 0, n: 0, boarded: 0 }, orange: { phase: "idle", p: 0, n: 0, boarded: 0 }, seen: -1 });
+  const shownA = fluct ? ev.s.A : snap.expA; const shownB = fluct ? ev.s.B : snap.expB;
+  const loadRef = useRef(null); loadRef.current = { rf: snap.rfDet, rr: snap.rrDet, A: shownA, B: shownB };
+  const anim = useRef({ blue: { phase: "idle", p: 0, n: 0 }, orange: { phase: "idle", p: 0, n: 0 }, seen: -1 });
   const setBus = (el, headsEl, x, y, n, show) => {
     if (!el) return; el.setAttribute("transform", `translate(${x.toFixed(1)} ${y})`); el.style.opacity = show ? "1" : "0";
     const bubble = el.querySelector("[data-bubble]"); if (bubble) { bubble.style.opacity = n > 0 ? "1" : "0"; const t = bubble.querySelector("text"); if (t) t.textContent = `${n} ${n === 1 ? "person" : "people"}`; }
@@ -59,12 +63,12 @@ function EverydayScene({ ev, running, reduced, speed, layout = "wide", compact =
       const G = gg(); const bx = G.roadL + 40; const rx = G.roadR - 40;
       setBus(blueRef.current, blueHeads.current, bx, G.laneF, 0, true); setBus(orangeRef.current, orangeHeads.current, rx, G.laneR, 0, true);
     };
-    const resync = () => { const s = evRef.current.s; a.blue = { phase: "idle", p: 0, n: 0, boarded: s.nF }; a.orange = { phase: "idle", p: 0, n: 0, boarded: s.nR }; park(); };
+    const resync = () => { a.blue = { phase: "idle", p: 0, n: 0 }; a.orange = { phase: "idle", p: 0, n: 0 }; park(); };
     if (reduced) { resync(); return undefined; }
     let raf = 0; let last = null; let cancelled = false;
-    const step = (bus, counter, dt, dir) => {
+    const step = (bus, rate, avail, dt, dir) => {
       const G = gg(); const x0 = dir > 0 ? G.roadL + 40 : G.roadR - 40; const x1 = dir > 0 ? G.roadR - 40 : G.roadL + 40;
-      if (bus.phase === "idle") { const pend = counter - bus.boarded; if (pend > 0) { bus.phase = "go"; bus.p = 0; bus.n = pend; bus.boarded = counter; } }
+      if (bus.phase === "idle") { const load = Math.min(Math.round(rate * TRIP_UNITS), avail); if (rate >= MIN_LOAD && load >= 1 && evRef.current.s.t > 0) { bus.phase = "go"; bus.p = 0; bus.n = load; } }
       else if (bus.phase === "go") { bus.p += dt / TRIP_S; if (bus.p >= 1) { bus.p = 1; bus.phase = "dwell"; bus.t = 0; } }
       else if (bus.phase === "dwell") { bus.t += dt; if (bus.t >= DWELL_S) { bus.phase = "idle"; bus.n = 0; bus.p = 0; } }
       const x = bus.phase === "idle" ? x0 : x0 + (x1 - x0) * smooth(bus.p);
@@ -73,12 +77,12 @@ function EverydayScene({ ev, running, reduced, speed, layout = "wide", compact =
     const frame = (now) => {
       if (cancelled) return;
       const s = evRef.current.s; const G = gg();
-      if (a.seen > s.t + 1e-9 || (s.t === 0 && (s.nF === 0 && s.nR === 0))) { resync(); }
+      if (a.seen > s.t + 1e-9 || s.t === 0) { resync(); }
       a.seen = s.t;
       const dt = last == null ? 0 : Math.min((now - last) / 1000, globalThis.__EQ_DT_MAX ?? 0.1) * speedRef.current;
       last = now;
       {
-        const rb = step(a.blue, s.nF, dt, +1); const ro = step(a.orange, s.nR, dt, -1);
+        const L = loadRef.current; const rb = step(a.blue, L.rf, L.A, dt, +1); const ro = step(a.orange, L.rr, L.B, dt, -1);
         setBus(blueRef.current, blueHeads.current, rb.x, G.laneF, rb.shownN, true); setBus(orangeRef.current, orangeHeads.current, ro.x, G.laneR, ro.shownN, true);
       }
       if (runRef.current) raf = requestAnimationFrame(frame);
@@ -90,13 +94,13 @@ function EverydayScene({ ev, running, reduced, speed, layout = "wide", compact =
     return () => { cancelled = true; runRef.current = false; cancelAnimationFrame(raf); };
   }, [running, reduced, g.W, g.laneF, g.laneR]);
 
-  const unit = unitFor(Math.max(ev.s.A, ev.s.B), g.cols * 4);
+  const unit = unitFor(Math.max(shownA, shownB), g.cols * 4);
   const figs = (n) => (n <= 0 ? 0 : Math.max(1, Math.round(n / unit)));
   const grid = (count, x0, color) => Array.from({ length: count }, (_, i) => { const c = i % g.cols; const r = Math.floor(i / g.cols); return <Person key={i} x={x0 + 22 + c * ((g.sw - 40) / g.cols) + 6} y={g.yS + 88 + r * 25} color={color} />; });
   const attained = ev.phase === "attained";
-  const label = `Two cities connected by a two-way road. City A has ${ev.s.A} people and City B has ${ev.s.B}. The blue bus carries people from A to B at ${fmt(snap.rfDet)} people per time unit; the orange bus carries people from B to A at ${fmt(snap.rrDet)}.`;
+  const label = `Two cities connected by a two-way road. City A has ${shownA} people and City B has ${shownB}. The blue bus carries people from A to B at ${fmt(snap.rfDet)} people per time unit; the orange bus carries people from B to A at ${fmt(snap.rrDet)}.`;
   return (
-    <div className={"eq-scene eq-scene--everyday" + (attained ? " is-eq" : "")} data-testid="everyday-scene" data-people-a={ev.s.A} data-people-b={ev.s.B}>
+    <div className={"eq-scene eq-scene--everyday" + (attained ? " is-eq" : "")} data-testid="everyday-scene" data-people-a={shownA} data-people-b={shownB} data-fluct={fluct ? "1" : "0"}>
       <svg viewBox={`0 0 ${g.W} ${g.H}`} role="img" aria-label={label} preserveAspectRatio="xMidYMid meet">
         <rect x="0" y="0" width={g.W} height={g.H} rx="16" className="eq-sceneBg" />
         {/* road */}
@@ -105,7 +109,7 @@ function EverydayScene({ ev, running, reduced, speed, layout = "wide", compact =
         <text x={g.roadL + 14} y={g.roadTop + 20} className="eq-lanelabel" fill={FWD}>A → B</text>
         <text x={g.roadR - 14} y={g.roadBottom - 10} textAnchor="end" className="eq-lanelabel" fill={REV}>B → A</text>
         {/* stations */}
-        {[{ x: g.xA, name: "City A", n: ev.s.A, c: A_COLOR, vis: ev.s.A, id: "a" }, { x: g.xB, name: "City B", n: ev.s.B, c: B_COLOR, vis: ev.s.B, id: "b" }].map((s) => (
+        {[{ x: g.xA, name: "City A", n: shownA, c: A_COLOR, vis: shownA, id: "a" }, { x: g.xB, name: "City B", n: shownB, c: B_COLOR, vis: shownB, id: "b" }].map((s) => (
           <g key={s.id} data-testid={`city-${s.id}`}>
             <rect x={s.x} y={g.yS} width={g.sw} height={g.hS} rx="14" className={"eq-station" + (attained ? " is-eq" : "")} stroke={s.c} />
             <rect x={s.x} y={g.yS} width={g.sw} height="60" rx="14" fill={s.c} opacity=".13" /><rect x={s.x} y={g.yS + 46} width={g.sw} height="14" fill={s.c} opacity=".13" />
@@ -114,7 +118,7 @@ function EverydayScene({ ev, running, reduced, speed, layout = "wide", compact =
             <text x={s.x + 14} y={g.yS + 49} className="eq-countlabel">people</text>
             {grid(figs(s.vis), s.x, s.c)}
           </g>))}
-        {unit > 1 && <text x={g.W / 2} y={g.H - 8} textAnchor="middle" className="eq-unit" data-testid="figure-unit">1 figure = {unit} people (counters show exact numbers)</text>}
+        {<text x={g.W / 2} y={g.H - 8} textAnchor="middle" className="eq-unit" data-testid="figure-unit">{unit > 1 ? `1 figure = ${unit} people · ` : ""}bus load = rate × {TRIP_UNITS} time units</text>}
         <Bus id="bus-forward" color={FWD} label="A→B" facing="right" refEl={blueRef} headsRef={blueHeads} n={0} shown />
         <Bus id="bus-reverse" color={REV} label="B→A" facing="left" refEl={orangeRef} headsRef={orangeHeads} n={0} shown />
         {/* live rates */}

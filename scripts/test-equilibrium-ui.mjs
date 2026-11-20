@@ -61,7 +61,26 @@ test("adding people to A through the button updates the counts and shows the dis
   const before = st().scenes.everyday.ev.s.A + st().scenes.everyday.ev.s.B; const b = document.querySelector('[data-testid="everyday-disturb"] button:not([disabled])'); assert.ok(b);
   const first = [...document.querySelectorAll('[data-testid="everyday-disturb"] button')].find((x) => /Add/i.test(x.textContent) && /A\b/.test(x.textContent)); await click(first || b);
   const after = st().scenes.everyday.ev.s.A + st().scenes.everyday.ev.s.B; assert.equal(after, before + 20); assert.match(text('[data-testid="notice"]'), /disturbed/i);
-  assert.equal(Number(text('[data-testid="count-a"]')), st().scenes.everyday.ev.s.A); assert.equal(Number(text('[data-testid="count-b"]')), st().scenes.everyday.ev.s.B);
+  // CHANGED: the counters show the smooth expected populations by default (they add up to the number of people)
+  const ca = Number(text('[data-testid="count-a"]')); const cb = Number(text('[data-testid="count-b"]')); assert.equal(ca + cb, after); assert.ok(ca > 0 && cb > 0);
+});
+test("CHANGED: smooth by default: counters are the expected populations, constant at equilibrium (checked 12 times), presets give 80/20, 50/50, 20/80; no flicker", async () => {
+  assert.equal(st().ui.fluct, false); assert.equal($('[data-testid="toggle-fluct"]').checked, false); assert.match(text('[data-testid="fluct-note"]'), /average is what stays constant/);
+  const buttons = [...document.querySelectorAll('[data-testid="preset-selector"] button')];
+  for (const [i, A] of [[0, 80], [1, 50], [2, 20]]) {
+    await click(buttons[i]); await click('[data-testid="run-reset"]'); globalThis.__EQ.dispatch({ type: "run/start" }); globalThis.__EQ.dispatch({ type: "run/advance", dT: 60 }); await wait();
+    const seen = new Set(); for (let k = 0; k < 12; k += 1) { globalThis.__EQ.dispatch({ type: "run/advance", dT: 0.37 }); await wait(10); seen.add(text('[data-testid="count-a"]') + "/" + text('[data-testid="count-b"]')); }
+    assert.deepEqual([...seen], [`${A}/${100 - A}`], `preset ${i}`);
+    assert.ok(st().scenes.everyday.ev.s.A !== undefined);
+  }
+  await click(buttons[0]);
+});
+test("CHANGED: Show random fluctuations: toggling it shows the random counts (which move) with a labelled note; toggling back restores the constant average", async () => {
+  await click('[data-testid="run-reset"]'); globalThis.__EQ.dispatch({ type: "run/start" }); globalThis.__EQ.dispatch({ type: "run/advance", dT: 40 }); await wait();
+  await click('[data-testid="toggle-fluct"]'); assert.equal(st().ui.fluct, true); assert.match(text('[data-testid="fluct-note"]'), /random/i); assert.match(text('[data-testid="fluct-note"]'), /±\d/);
+  const seen = new Set(); for (let k = 0; k < 40; k += 1) { globalThis.__EQ.dispatch({ type: "run/advance", dT: 0.5 }); await wait(5); const a = Number(text('[data-testid="count-a"]')); assert.equal(a + Number(text('[data-testid="count-b"]')), 100); seen.add(a); }
+  assert.ok(seen.size > 3, `random counts fluctuate (${seen.size} distinct values)`);
+  await click('[data-testid="toggle-fluct"]'); assert.equal(text('[data-testid="count-a"]'), "80");
 });
 test("presets: Towards A / Center / Towards B change the rate constants and K", async () => {
   const labels = [...document.querySelectorAll('[data-testid="preset-selector"] button')]; assert.equal(labels.length, 3);
@@ -101,6 +120,11 @@ test("Chemical disturbance buttons act: adding a species, raising temperature, d
 });
 test("Q and K are displayed with the direction sentence; rates are displayed", () => {
   assert.ok(text('[data-testid="q-value"]').length > 0); assert.ok(text('[data-testid="kc-value"]').length > 0); assert.ok(text('[data-testid="qk-text"]').length > 10); assert.ok(text('[data-testid="rf-value"]').length > 0); assert.ok(text('[data-testid="rr-value"]').length > 0);
+});
+test("CHANGED: Compare Both also shows the smooth counters, and the chemical particle counts in the species table are constant at equilibrium", async () => {
+  await click('[data-testid="mode-compare"]'); await click('[data-testid="run-reset"]'); globalThis.__EQ.dispatch({ type: "run/start" }); globalThis.__EQ.dispatch({ type: "run/advance", dT: 60 }); await wait(); assert.ok($('[data-testid="toggle-fluct"]')); assert.ok($('[data-testid="drawn-A"]'), "species table present");
+  const seen = new Set(); for (let k = 0; k < 10; k += 1) { globalThis.__EQ.dispatch({ type: "run/advance", dT: 0.41 }); await wait(10); seen.add([text('[data-testid="count-a"]'), text('[data-testid="drawn-A"]'), text('[data-testid="drawn-B"]')].join("|")); }
+  assert.equal(seen.size, 1, [...seen].join(" ; ")); await click('[data-testid="mode-chemical"]');
 });
 test("Compare Both shows both scenes together with a bridging statement and the analogy limits", async () => {
   await click('[data-testid="mode-compare"]'); assert.equal(st().mode, "compare");

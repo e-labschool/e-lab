@@ -1,6 +1,6 @@
 import { Pause, Play, RotateCcw, Repeat, StepForward, Minus, Plus, Thermometer, FlaskConical, Zap } from "lucide-react";
 import { MODES, MODE_LABELS, SPEEDS } from "../model/store.js";
-import { PRESET_IDS, PRESETS, ADD_STEP } from "../model/everyday.js";
+import { PRESET_IDS, PRESETS, ADD_STEP, everydaySnapshot, fluctuationSD } from "../model/everyday.js";
 import { REACTIONS, REACTION_IDS } from "../model/reactions.js";
 import { fmt } from "../model/explain.js";
 
@@ -48,14 +48,14 @@ export function PresetSelector({ scene, onPick, simple }) {
 }
 
 export function EverydayDisturb({ scene, onAction, simple }) {
-  const dis = !scene.started; const s = scene.ev.s;
+  const dis = !scene.started; const s = scene.ev.s; const x = everydaySnapshot(s);
   const btn = (key, { type, city, children, off }) => (<button key={key} type="button" className="eq-btn eq-btn--dist" disabled={dis || off} data-testid={`${type === "ev/add" ? "add" : "remove"}-${city}`} onClick={() => onAction({ type, city, n: ADD_STEP })}>{type === "ev/add" ? <Plus size={14} aria-hidden="true" /> : <Minus size={14} aria-hidden="true" />}<span>{children}</span></button>);
   return (
     <div className="eq-dist" role="group" aria-label="Disturb the equilibrium" data-testid="everyday-disturb">
       <span className="eq-label">{simple ? "Change the crowds" : "Disturb the equilibrium"} <small>({ADD_STEP} people per press)</small></span>
       <div className="eq-dist-grid">
-        {btn("aa", { type: "ev/add", city: "A", children: "Add People to A" })}{btn("ra", { type: "ev/remove", city: "A", off: s.A === 0, children: "Remove People from A" })}
-        {btn("ab", { type: "ev/add", city: "B", children: "Add People to B" })}{btn("rb", { type: "ev/remove", city: "B", off: s.B === 0, children: "Remove People from B" })}
+        {btn("aa", { type: "ev/add", city: "A", children: "Add People to A" })}{btn("ra", { type: "ev/remove", city: "A", off: x.expA === 0, children: "Remove People from A" })}
+        {btn("ab", { type: "ev/add", city: "B", children: "Add People to B" })}{btn("rb", { type: "ev/remove", city: "B", off: x.expB === 0, children: "Remove People from B" })}
       </div>
       {dis && <p className="eq-hint">Press Start to enable these buttons.</p>}
     </div>
@@ -111,6 +111,21 @@ export function ChemConditions({ scene, onAction, simple }) {
             <button type="button" className="eq-chip" disabled={dis || !ch.cat} data-testid="cat-remove" onClick={() => onAction({ type: "ch/cat", on: false })}>Remove catalyst</button></div></fieldset>)}
       {!c.temperature && !c.volume && <p className="eq-hint">{rx.aqueous ? "This is a solution: no gas-pressure controls, and temperature is not varied here. Concentration changes are the experiment." : null}</p>}
       {dis && <p className="eq-hint">Press Start to enable these controls.</p>}
+    </div>
+  );
+}
+
+/** CHANGED: optional random fluctuations (off by default).  The counters, figures and bus loads are smooth averages unless it is on. */
+export function FluctToggle({ on, onChange, ev, simple }) {
+  const sd = Math.max(1, Math.round(fluctuationSD(ev.s)));
+  return (
+    <div className="eq-fluct" data-testid="fluct-box">
+      <label className="eq-fluct-l"><input type="checkbox" checked={on} onChange={(e) => onChange(e.target.checked)} data-testid="toggle-fluct" /><span>Show random fluctuations</span></label>
+      <p className="eq-faint eq-fluct-note" data-testid="fluct-note">
+        {on
+          ? (simple ? `Random mode: each person leaves by chance, so the crowds wobble by about ±${sd} people. The average stays put.` : `Random mode: individual random departures make the counts fluctuate by about ±${sd} people (standard deviation) around the average. The graph and the equilibrium indicator still use the average rates.`)
+          : (simple ? "Real crowds wobble a little. Here you see the average, and the average is what stays constant." : "Real systems fluctuate slightly around the average; the average is what stays constant. The counters show that average.")}
+      </p>
     </div>
   );
 }

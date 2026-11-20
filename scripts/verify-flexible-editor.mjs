@@ -6,6 +6,9 @@
 // persistence writes), Content Overview search/filters/review mode, phone list,
 // the saved layout on the STUDENT lesson page and the TEACHER Question Builder paper preview at 1366x768 and 390x844
 // in light + dark, legacy lesson unchanged, console errors, horizontal overflow, clipped controls.
+// CHANGED: the DEFAULT editor is now the simple plain block list; the workspace checks below open it with ?editor=layout.
+// New "admin-plain" sessions check the default editor (list, no Classic/Canvas toggle, Add block menu, move/duplicate/delete,
+// layout data preserved on save) at 1366x768 and 390x844 in light and dark.
 // Honest limits: mocked network (not PostgREST/RLS/Storage); Chromium only (no Safari/Firefox); mouse events are
 // synthesised by Playwright (no real touch device); visual quality is judged from the saved screenshots by a human.
 import { chromium } from "/opt/node-tools/node_modules/playwright/index.mjs";
@@ -166,7 +169,7 @@ try {
   for (const theme of ["light", "dark"]) {
     // ---------------- docs screenshots (real captures of the two views) ----------------
     if (theme === "light") await session("admin", { w: 1366, h: 820, theme, name: "admin-docs" }, async ({ page, tag }) => {
-      await goto(page, "/admin/learn-content/lesson-flex", theme);
+      await goto(page, "/admin/learn-content/lesson-flex?editor=layout", theme); // CHANGED: the tile/canvas workspace is no longer the default; it is only reachable with ?editor=layout
       await page.waitForSelector('[data-block-card="fb1"]');
       await page.click('[data-block-card="fb3"] [data-testid="tile-body"]');
       await page.waitForTimeout(250);
@@ -183,7 +186,60 @@ try {
       check(fs.statSync(`${docs}11-editor-classic.png`).size > 20000 && fs.statSync(`${docs}12-editor-canvas.png`).size > 20000, `${tag}: saved docs/mockups/11-editor-classic.png and 12-editor-canvas.png`);
     }, layoutDb());
 
-    // ---------------- ADMIN: editing flow at desktop (Classic then Canvas) ----------------
+
+    // ---------------- CHANGED/NEW: the DEFAULT admin editor is the plain list ----------------
+    for (const [w, h] of [[1366, 768], [390, 844]]) {
+      await session("admin", { w, h, theme, name: "admin-plain" }, async ({ page, tag, shot, db }) => {
+        const layoutOf = () => Object.fromEntries(db.learn_blocks.filter((b) => b.page_id === "lesson-flex").map((b) => [b.id, JSON.stringify([b.content.layout ?? null, b.content.ui ?? null])]));
+        const before = layoutOf();
+        check(Object.values(before).some((v) => v !== "[null,null]"), `${tag}: fixture lesson really has layout data`);
+        await goto(page, "/admin/learn-content/lesson-flex", theme);
+        await page.waitForSelector('[data-testid="plain-block-list"] [data-plain-block="fb1"]');
+        const body = await page.innerText("body");
+        check(!/Classic|Canvas|Use the new editor|Snap|Overlap|Student preview width/.test(body), `${tag}: no Classic/Canvas toggle or workspace wording anywhere on the page`);
+        check(await page.locator('[data-testid="block-workspace"], [data-block-card], [aria-label="Arrangement view"], [data-testid="content-panel"]').count() === 0, `${tag}: no tiles, drawer or workspace in the DOM`);
+        check(await page.locator("[data-plain-block]").count() === 6, `${tag}: all 6 blocks listed as plain cards`);
+        const ids = await page.$$eval("[data-plain-block]", (e) => e.map((x) => x.dataset.plainBlock));
+        check(ids.join(",") === "fb1,fb2,fb3,fb4,fb5,fb6", `${tag}: stored order shown (${ids})`);
+        for (const label of ["Move up", "Move down", "Duplicate", "Delete", "Edit"]) check(await page.locator('[data-plain-block="fb2"]').getByRole("button", { name: label, exact: true }).count() === 1, `${tag}: card has a ${label} button`);
+        check(await page.getByRole("button", { name: "Save Draft" }).isVisible() && await page.getByRole("button", { name: "Publish" }).isVisible() && await page.getByRole("button", { name: "Preview as Student" }).isVisible(), `${tag}: Save Draft / Publish / Preview as Student visible`);
+        const bar = await rect(page, '[data-testid="action-bar"]');
+        check(bar.b <= h + 1 && bar.y > h - 200, `${tag}: action bar is stuck to the bottom of the screen (y ${Math.round(bar.y)}..${Math.round(bar.b)} of ${h})`);
+        await geometry(page, `${tag} list`);
+        await page.evaluate(() => document.querySelector('[data-testid="plain-block-list"]').scrollIntoView({ block: "start" })); await page.waitForTimeout(150);
+        await shot("0-list");
+        // expand + edit in place
+        await page.locator('[data-plain-block="fb1"]').getByRole("button", { name: "Edit", exact: true }).click();
+        await page.waitForSelector('[data-plain-block="fb1"] [contenteditable], [data-plain-block="fb1"] textarea, [data-plain-block="fb1"] input');
+        check(await page.locator('[data-plain-block="fb1"] [data-testid="block-tags-review"]').count() === 1, `${tag}: expanded card has the small Tags / review disclosure`);
+        await page.locator('[data-plain-block="fb1"] summary:has-text("Tags / review")').click();
+        await page.evaluate(() => document.querySelector('[data-plain-block="fb1"]').scrollIntoView({ block: "start" })); await page.waitForTimeout(150);
+        await shot("1-expanded");
+        await geometry(page, `${tag} expanded`);
+        await page.locator('[data-plain-block="fb1"]').getByRole("button", { name: "Close", exact: true }).click();
+        // add menu
+        await page.click('[data-testid="add-block"]'); await page.waitForSelector('[role="menu"]');
+        const m = await rect(page, '[role="menu"]');
+        check(m.x >= -1 && m.r <= w + 1, `${tag}: Add block menu fits on screen (${Math.round(m.x)}..${Math.round(m.r)})`);
+        await page.evaluate(() => document.querySelector('[data-testid="add-block"]').scrollIntoView({ block: "center" })); await page.waitForTimeout(150);
+        await shot("2-add-menu");
+        await page.keyboard.press("Escape").catch(() => {});
+        await page.click('[data-testid="add-block"]').catch(() => {});
+        // move down + save: layout data of every block must be byte-for-byte unchanged
+        await page.locator('[data-plain-block="fb1"]').getByRole("button", { name: "Move down", exact: true }).click();
+        await page.waitForTimeout(100);
+        check((await page.$$eval("[data-plain-block]", (e) => e.map((x) => x.dataset.plainBlock))).slice(0, 2).join(",") === "fb2,fb1", `${tag}: Move down reorders`);
+        await page.getByRole("button", { name: "Save Draft" }).click();
+        await page.waitForTimeout(900);
+        const after = layoutOf();
+        check(JSON.stringify(after) === JSON.stringify(before), `${tag}: after Save Draft every block's content.layout / content.ui is byte-for-byte unchanged`);
+        check(db.learn_blocks.filter((b) => b.page_id === "lesson-flex").sort((a, b) => a.position - b.position)[0].id === "fb2", `${tag}: new order was saved`);
+        await page.evaluate(() => window.scrollTo(0, 0)); await page.waitForTimeout(100);
+        await shot("3-top");
+      }, layoutDb());
+    }
+
+    // ---------------- ADMIN (?editor=layout, hidden workspace): editing flow at desktop (Classic then Canvas) ----------------
     await session("admin", { w: 1366, h: 900, theme, name: "admin-editor" }, async ({ page, tag, shot, db }) => {
       const spanOf = (id) => page.$eval(`[data-block-id="${id}"]`, (e) => Number(e.dataset.span));
       const tileRects = () => page.$$eval("[data-block-card]", (els) => els.map((e) => { const r = e.getBoundingClientRect(); return { id: e.dataset.blockCard, x: r.x, y: r.y, r: r.right, b: r.bottom }; }));
@@ -192,7 +248,7 @@ try {
         for (let i = 0; i < rs.length; i += 1) for (let j = i + 1; j < rs.length; j += 1) { const a = rs[i]; const b = rs[j]; if (a.x < b.r - 1 && b.x < a.r - 1 && a.y < b.b - 1 && b.y < a.b - 1) bad2 = `${a.id}/${b.id}`; }
         check(!bad2, `${tag}: ${label}: no two tiles overlap on screen ${bad2 ?? ""}`);
       };
-      await goto(page, "/admin/learn-content/lesson-flex", theme);
+      await goto(page, "/admin/learn-content/lesson-flex?editor=layout", theme); // CHANGED: the tile/canvas workspace is no longer the default; it is only reachable with ?editor=layout
       await page.waitForSelector('[data-testid="block-workspace"]');
       await page.waitForSelector('[data-block-card="fb1"]');
       check((await order(page)).join(",") === "fb1,fb2,fb3,fb4,fb5,fb6", `${tag}: all 6 existing blocks shown in order`);
@@ -408,7 +464,7 @@ try {
 
     // ---------------- ADMIN on a phone: simplified list, no overflow, nothing clipped ----------------
     await session("admin", { w: 390, h: 844, theme, name: "admin-editor-phone" }, async ({ page, tag, shot }) => {
-      await goto(page, "/admin/learn-content/lesson-flex", theme);
+      await goto(page, "/admin/learn-content/lesson-flex?editor=layout", theme); // CHANGED: the tile/canvas workspace is no longer the default; it is only reachable with ?editor=layout
       await page.waitForSelector('[data-testid="phone-list"]');
       await page.waitForSelector('[data-block-card="fb1"]');
       check(await page.locator('[data-testid="phone-list"] [data-block-card]').count() === 6, `${tag}: phone shows a simple linear list of 6 blocks`);

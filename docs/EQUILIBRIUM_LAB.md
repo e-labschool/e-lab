@@ -18,9 +18,11 @@ Source: `src/engines/equilibrium-lab/`.
 Two cities, 100 people start in A. Each person in A leaves at rate kf, each in B at rate kr, so the forward transfer rate is kf*A and the reverse rate is kr*B.
 
 - Passenger model: exact Gillespie SSA, seeded (mulberry32), with a stored next-event time so results do not depend on how time is chunked. When more than 4000 events are expected in one tick it switches to binomial tau-leaping.
-- Graph and indicator use the exact mean-field solution A(t) = Aeq + (A0 - Aeq) exp(-(kf+kr) t), Aeq = A0*kr/(kf+kr). The event rates drawn as "measured" are binned in 0.1-wide bins.
+- The graph and the indicator use the exact mean-field solution A(t) = Aeq + (A0 - Aeq) exp(-(kf+kr) t), Aeq = A0*kr/(kf+kr). The event rates drawn as "measured" are binned in 0.1-wide bins.
 - Presets: Towards A kf 0.25, kr 1.00 (80/20); Center 1/1 (50/50); Towards B 1.00/0.25 (20/80). At equilibrium 0.25 x 80 = 1.00 x 20 = 20 people per time unit.
-- Buses carry all pending departure events (label = true number, at most five figures drawn). Station figures stand for 1/2/5/10/20 people, with exact counters beside them.
+- CHANGED (owner feedback) Smooth display by default. The city counters and people figures show the expected populations: the exact mean-field A(t), rounded to whole people with B = N - A (`expectedPopulation`). They move monotonically and then stop changing, so the presets settle at exactly 80/20, 50/50 and 20/80 and the counters are constant at equilibrium. They do not depend on the random seed.
+- CHANGED Optional "Show random fluctuations" (off by default, with a one-line note that real systems fluctuate slightly about an average and the average is what stays constant). When on, the counters and figures show the seeded passenger model, with its typical spread (SD = sqrt(N p q), about 4 people at 80/20) stated in the note; the "random trips" curves and random population lines appear on the graphs. The graph, the indicator and the bus loads still use the average rates. The random model is always simulated underneath, so the toggle never changes the run.
+- CHANGED Bus loads are stable: a bus departs with a load fixed at departure, round(current deterministic rate x 0.2 time units), never more than the origin city holds, and the number never changes during the trip. At equilibrium both buses carry the same load (4 for Towards A). The scene states "bus load = rate x 0.2 time units". Buses are an illustration of the rate, not a count of individual events.
 - Add/remove 20 people in either city (cap 400 people in total). Controls are enabled only after Start.
 
 ## Chemical engine
@@ -35,7 +37,7 @@ Two cities, 100 people start in A. Each person in A leaves at rate kf, each in B
 
 ### Molecule picture
 
-Integer counts M_i + nu_i xi (xi = drawn extent) keep every drawn atom conserved. Reaction events are drawn at no more than 14 per second, plus exchange events at no more than 3 per second with odds rf:rr so that equilibrium visibly continues. They are an illustration of the engine's amounts and rates, not a molecular dynamics calculation: "not every collision reacts" is stated on screen.
+Integer counts M_i + nu_i xi (xi = drawn extent) keep every drawn atom conserved. Net change is drawn as single events (at most 14 per second). CHANGED: at equilibrium the dynamic exchange is drawn as simultaneous forward and reverse pairs (at most 3 pairs per second, gross rate min(rf, rr)), so molecules keep reacting in both directions while the drawn molecule counts stay constant; particles keep moving randomly. They are an illustration of the engine's amounts and rates, not a molecular dynamics calculation: "not every collision reacts" is stated on screen.
 
 ## Parameters and sources
 

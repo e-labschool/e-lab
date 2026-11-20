@@ -29,14 +29,18 @@ import { getSyllabusCodeOptions } from "../../../lib/learn-tree.js";
 import { filterBlocksForStudent } from "../../../lib/learnLevelAccess.js";
 import LearnBlocksLayout from "../../../components/learn/LearnBlocksLayout.jsx";
 import BlockWorkspace from "./editor/BlockWorkspace.jsx";
+import BlockTagsReview from "./BlockTagsReview.jsx";
+import { tilePreview } from "./editor/editorUtils.js";
 import * as BL from "../../../lib/blockLayout.js";
 import * as BC from "../../../lib/blockCanvas.js";
 import { runLayoutOp, applyDrop, blockLabel, snapshotLayouts, applySnapshot, diffForPersist, makePersisted, keepLayout, stripLayout, layoutKey, describeBlock } from "../../../lib/blockLayoutOps.js";
-import { extractMetaRow, setBlockMeta, normalizeMeta, normalizeCodes, markReviewed } from "../../../lib/learnMeta.js";
+import { extractMetaRow, getBlockMeta, setBlockMeta, normalizeMeta, normalizeCodes, markReviewed } from "../../../lib/learnMeta.js";
 import { makeTemplate, loadLibrary, saveLibrary } from "../../../lib/learnReuse.js";
 import { saveLessonMeta } from "../../../lib/learnReuseService.js";
 
 const inputCls = "w-full rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] px-3 py-2 text-sm text-[var(--color-ink)] focus:border-[var(--color-indigo)] focus:outline-none";
+// stable ref callback: scrolls the Add block menu into view once, when it opens
+const revealMenu = (el) => { el?.scrollIntoView?.({ block: "center", behavior: "smooth" }); };
 const labelCls = "mb-1 block text-xs font-medium text-[var(--color-ink-soft)]";
 
 export default function LessonEditor() {
@@ -90,7 +94,10 @@ export default function LessonEditor() {
   const layoutPending = useRef(false);
   const [live, setLive] = useState({ text: "", n: 0 });
   const [collapsedIds, setCollapsedIds] = useState(() => new Set());
-  const useClassic = ["classic", "list"].includes(searchParams.get("editor")); // the old plain list editor
+  // The simple vertical list of blocks is THE editor. The tile / canvas workspace (./editor/*) is kept on disk but is not
+  // linked from anywhere in the UI; it can only be opened by adding ?editor=layout to the URL (see docs/FLEXIBLE_EDITOR.md).
+  const showWorkspace = searchParams.get("editor") === "layout";
+  const useClassic = !showWorkspace;
   const focusBlockId = searchParams.get("block");
   const [viewPref, setViewPref] = useState(() => { try { return localStorage.getItem("elab:learn-editor-view") === "canvas" ? "canvas" : "classic"; } catch { return "classic"; } });
   const [editSection, setEditSection] = useState(null);
@@ -100,8 +107,18 @@ export default function LessonEditor() {
   const [library, setLibrary] = useState(() => loadLibrary());
   const canvasMode = blocks.length > 0 ? BC.isCanvas(blocks) : viewPref === "canvas";
   // arrangement-aware helpers (canvas lessons use blockCanvas, classic lessons use blockLayout)
-  const insertAfterAny = (list, row, afterId) => (BC.isCanvas(list) ? BC.insertAfter(list, row, afterId) : BL.insertAfter(list, row, afterId));
-  const removeAny = (list, id) => (BC.isCanvas(list) ? BC.removeBlock(list, id) : BL.removeBlock(list, id));
+  // The plain list only ever changes ORDER: it never rewrites another block's content.layout / content.ui. The workspace
+  // (?editor=layout) keeps using the layout-aware helpers.
+  const insertAfterAny = (list, row, afterId) => {
+    if (!showWorkspace) {
+      const base = { ...row, content: row.content && typeof row.content === "object" ? stripLayout(row.content) : {} };
+      const next = [...list]; const at = afterId ? next.findIndex((b) => b.id === afterId) : -1;
+      next.splice(at < 0 ? next.length : at + 1, 0, base);
+      return next;
+    }
+    return BC.isCanvas(list) ? BC.insertAfter(list, row, afterId) : BL.insertAfter(list, row, afterId);
+  };
+  const removeAny = (list, id) => (!showWorkspace ? list.filter((b) => b.id !== id) : BC.isCanvas(list) ? BC.removeBlock(list, id) : BL.removeBlock(list, id));
   const announce = (text) => setLive((p) => ({ text, n: p.n + 1 }));
 
   useEffect(() => { setAuthorDefaults(loadLearnAuthorDefaults(user?.id)); }, [user?.id]);
@@ -360,7 +377,7 @@ export default function LessonEditor() {
       return;
     }
     try {
-      const created = await createBlock(currentPageId, { blockType: block.block_type, content: block.content, position: blocksRef.current.length });
+      const created = await createBlock(currentPageId, { blockType: block.block_type, content: showWorkspace ? block.content : stripLayout(block.content), position: blocksRef.current.length });
       persistedAdd(created);
       pushHistory({ type: "add", block: created });
       commitBlocks(insertAfterAny(blocksRef.current, created, block.id));
@@ -425,6 +442,18 @@ export default function LessonEditor() {
     if (expandedBlockId === blockId) setExpandedBlockId(null);
     await deleteBlock(blockId);
     if (deleted) announce(`${blockLabel(deleted)} deleted. Undo is available.`);
+  }
+
+  // Plain list: swap with the neighbour. Only the order changes (content.layout / content.ui of every block stay as saved).
+  function handleMove(blockId, dir) {
+    const cur = blocksRef.current;
+    const i = cur.findIndex((b) => b.id === blockId);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= cur.length) return;
+    const next = [...cur]; [next[i], next[j]] = [next[j], next[i]];
+    pushHistory({ type: "reorder", beforeIds: cur.map((b) => b.id), afterIds: next.map((b) => b.id) });
+    commitBlocks(next);
+    announce(`${blockLabel(cur[i])} moved ${dir < 0 ? "up" : "down"}.`);
   }
 
   // ---- layout intents from the workspace ----
@@ -757,12 +786,6 @@ export default function LessonEditor() {
             <button type="button" onClick={() => { if (formDraftNotice === "restored" && serverFormRef.current) setForm(serverFormRef.current); if (user?.id) clearLearnDraft(user.id); setFormDraftNotice(null); }} className="font-semibold text-[var(--color-coral)]">{formDraftNotice === "restored" ? "Discard" : "Dismiss"}</button>
           </div>
         )}
-        {error && <p role="alert" className="mt-3 text-xs text-[var(--color-coral)]">{error}</p>}
-        <div className="mt-4 flex gap-2">
-          <Button variant="secondary" onClick={handleSaveDraft} disabled={saving}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Draft"}</Button>
-          <Button variant="secondary" onClick={() => { setPreviewPage(0); setPreviewing(true); }} disabled={!currentPageId}><Eye size={14} /> Preview as Student</Button>
-          <Button onClick={handlePublish} disabled={saving}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Publish"}</Button>
-        </div>
       </div>
 
       {/* Lesson tags (review / reuse) */}
@@ -787,10 +810,11 @@ export default function LessonEditor() {
         <div className="mt-6">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-sm font-semibold text-[var(--color-ink)]">Lesson Blocks</h2>
-            {useClassic && <div className="flex items-center gap-1.5">
-              <button type="button" onClick={handleUndo} disabled={!undoStack.current.length} title="Undo (Ctrl/Cmd+Z)" className="flex items-center gap-1 rounded-md border border-[var(--color-line)] px-2 py-1 text-xs text-[var(--color-ink-soft)] disabled:opacity-35"><Undo2 size={13}/> Undo</button>
-              <button type="button" onClick={handleRedo} disabled={!redoStack.current.length} title="Redo (Ctrl/Cmd+Shift+Z)" className="flex items-center gap-1 rounded-md border border-[var(--color-line)] px-2 py-1 text-xs text-[var(--color-ink-soft)] disabled:opacity-35"><Redo2 size={13}/> Redo</button>
-              <button type="button" onClick={() => { const q = new URLSearchParams(searchParams); q.delete("editor"); setSearchParams(q, { replace: true }); }} className="rounded-md border border-[var(--color-line)] px-2 py-1 text-xs text-[var(--color-ink-soft)]">Use the new editor</button>
+            {useClassic && <div className="flex flex-wrap items-center gap-1.5">
+              <button type="button" onClick={handleUndo} disabled={!undoStack.current.length} title="Undo (Ctrl/Cmd+Z)" className="flex min-h-9 items-center gap-1 rounded-md border border-[var(--color-line)] px-2.5 text-xs text-[var(--color-ink-soft)] disabled:opacity-35"><Undo2 size={13}/> Undo</button>
+              <button type="button" onClick={handleRedo} disabled={!redoStack.current.length} title="Redo (Ctrl/Cmd+Shift+Z)" className="flex min-h-9 items-center gap-1 rounded-md border border-[var(--color-line)] px-2.5 text-xs text-[var(--color-ink-soft)] disabled:opacity-35"><Redo2 size={13}/> Redo</button>
+              <button type="button" onClick={() => setShowDesignDefaults((v) => !v)} className="flex min-h-9 items-center gap-1 rounded-md border border-[var(--color-line)] px-2.5 text-xs text-[var(--color-ink-soft)]"><SlidersHorizontal size={13}/> Defaults for new blocks</button>
+              <button type="button" onClick={() => { flushLayoutRef.current?.(); if (user?.id) clearLearnDraft(user.id); navigate("/admin/learn-content/overview"); }} className="flex min-h-9 items-center gap-1 rounded-md border border-[var(--color-line)] px-2.5 text-xs text-[var(--color-ink-soft)]">Content overview</button>
             </div>}
           </div>
           {showDesignDefaults && <div className="mb-3 rounded-md border border-[var(--color-line)] bg-[var(--color-paper)] p-3">
@@ -839,52 +863,74 @@ export default function LessonEditor() {
               ]}
             />
           ) : (<>
-          <div className="space-y-2">
-            {blocks.map((block, i) => (
-              <div
+          {blocks.some((b) => b.content?.layout) && <p data-testid="layout-kept-note" className="mb-3 rounded-md bg-[var(--color-paper-raised)] px-3 py-2 text-xs text-[var(--color-ink-faint)]">This lesson has a saved column layout. Students still see it exactly as saved. Moving blocks here changes their order only.</p>}
+          {blocks.length === 0 && <p className="rounded-md border border-dashed border-[var(--color-line)] px-4 py-6 text-center text-sm text-[var(--color-ink-faint)]">No blocks yet. Use Add block to start.</p>}
+          <ul className="space-y-3" data-testid="plain-block-list">
+            {blocks.map((block, i) => {
+              const label = getLearnBlockDisplayLabel(block);
+              const open = expandedBlockId === block.id;
+              const pv = tilePreview(block, { checkCount: checkQuestions.length });
+              const meta = getBlockMeta(block);
+              const iconBtn = "flex h-9 w-9 items-center justify-center rounded-md text-[var(--color-ink-soft)] hover:bg-[var(--color-line)]/40 disabled:opacity-30 disabled:hover:bg-transparent";
+              return (
+              <li
                 key={block.id}
                 id={`learn-block-${block.id}`}
+                data-plain-block={block.id}
                 draggable={dragArmedId === block.id}
                 onDragEnd={() => setDragArmedId(null)}
                 onDragStart={(e) => handleDragStart(e, i)}
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={(e) => handleClassicDrop(e, i)}
-                className={`rounded-md border bg-[var(--color-paper-raised)] ${block.visible ? "border-[var(--color-line)]" : "border-dashed border-[var(--color-line)] opacity-60"}`}
+                className={`rounded-lg border bg-[var(--color-paper-raised)] ${block.visible ? "border-[var(--color-line)]" : "border-dashed border-[var(--color-line)] opacity-70"}`}
               >
-                <div className="flex items-center gap-2 border-b border-[var(--color-line)] px-3 py-2">
-                  <span onMouseDown={() => setDragArmedId(block.id)} onMouseUp={() => setDragArmedId(null)} onTouchStart={() => setDragArmedId(block.id)} title="Drag to reorder" className="cursor-grab"><GripVertical size={14} className="text-[var(--color-ink-faint)]" /></span>
-                  <span className="min-w-0 leading-tight">
-                    <span className="block text-xs font-semibold text-[var(--color-ink-soft)]">{getLearnBlockDisplayLabel(block).typeLabel}</span>
-                    {getLearnBlockDisplayLabel(block).preview && <span className="block truncate text-[11px] text-[var(--color-ink-faint)]">{getLearnBlockDisplayLabel(block).preview}</span>}
-                  </span>
-                  {block.block_type === "check_understanding" && <span className="rounded bg-[var(--color-indigo-soft)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-indigo)]">{checkQuestions.length} question{checkQuestions.length === 1 ? "" : "s"}</span>}
-                  {(block.content?.audience === "hl") && <span className="rounded bg-[var(--color-violet-soft)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-violet)]">HL only</span>}
-                  <div className="ml-auto flex items-center gap-1">
-                    <button type="button" onClick={() => setExpandedBlockId(expandedBlockId === block.id ? null : block.id)} className="rounded px-2 py-1 text-xs text-[var(--color-indigo)] hover:bg-[var(--color-indigo-soft)]">{expandedBlockId === block.id ? "Close" : "Edit"}</button>
-                    <button type="button" title="Duplicate" onClick={() => handleDuplicate(block)} className="rounded p-1.5 text-[var(--color-ink-faint)] hover:bg-[var(--color-line)]/40"><Copy size={13} /></button>
-                    <button type="button" title={block.visible ? "Hide" : "Show"} onClick={() => handleToggleVisible(block)} className="rounded p-1.5 text-[var(--color-ink-faint)] hover:bg-[var(--color-line)]/40">{block.visible ? <Eye size={13} /> : <EyeOff size={13} />}</button>
-                    <button type="button" title="Delete" onClick={() => handleDelete(block.id)} className="rounded p-1.5 text-[var(--color-coral)] hover:bg-[var(--color-coral-soft)]"><Trash2 size={13} /></button>
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2.5">
+                  <span onMouseDown={() => setDragArmedId(block.id)} onMouseUp={() => setDragArmedId(null)} title="Drag to reorder" className="hidden cursor-grab sm:block"><GripVertical size={14} className="text-[var(--color-ink-faint)]" /></span>
+                  <span className="rounded bg-[var(--color-indigo-soft)] px-2 py-0.5 text-xs font-semibold text-[var(--color-indigo)]">{label.typeLabel}</span>
+                  {!block.visible && <span className="rounded bg-[var(--color-line)]/40 px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-ink-soft)]">Hidden from students</span>}
+                  {block.content?.audience === "hl" && <span className="rounded bg-[var(--color-violet-soft)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-violet)]">HL only</span>}
+                  {meta.needsReview && <span className="rounded bg-[var(--color-amber-soft)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-amber)]">Needs review</span>}
+                  <div className="flex w-full items-center gap-0.5 sm:ml-auto sm:w-auto">
+                    <button type="button" onClick={() => setExpandedBlockId(open ? null : block.id)} aria-expanded={open} className="mr-auto min-h-9 sm:mr-1 rounded-md border border-[var(--color-line)] px-3 text-xs font-semibold text-[var(--color-indigo)] hover:bg-[var(--color-indigo-soft)]">{open ? "Close" : "Edit"}</button>
+                    <button type="button" title="Move up" aria-label="Move up" disabled={i === 0} onClick={() => handleMove(block.id, -1)} className={iconBtn}><ArrowUp size={15} /></button>
+                    <button type="button" title="Move down" aria-label="Move down" disabled={i === blocks.length - 1} onClick={() => handleMove(block.id, 1)} className={iconBtn}><ArrowDown size={15} /></button>
+                    <button type="button" title="Duplicate" aria-label="Duplicate" onClick={() => handleDuplicate(block)} className={iconBtn}><Copy size={15} /></button>
+                    <button type="button" title={block.visible ? "Hide from students" : "Show to students"} aria-label={block.visible ? "Hide from students" : "Show to students"} onClick={() => handleToggleVisible(block)} className={iconBtn}>{block.visible ? <Eye size={15} /> : <EyeOff size={15} />}</button>
+                    <button type="button" title="Delete" aria-label="Delete" onClick={() => handleDelete(block.id)} className={`${iconBtn} !text-[var(--color-coral)] hover:!bg-[var(--color-coral-soft)]`}><Trash2 size={15} /></button>
                   </div>
                 </div>
-                {expandedBlockId === block.id && (
-                  <div className="p-3">
-                    {renderBlockContentEditor(block)}
+                {!open && (pv.title || pv.text || pv.label || pv.thumb) && (
+                  <div className="flex items-start gap-3 border-t border-[var(--color-line)] px-3 py-2.5" data-testid="block-preview">
+                    {pv.thumb && <img src={pv.thumb} alt="" className="h-14 w-20 shrink-0 rounded border border-[var(--color-line)] object-cover" />}
+                    <div className="min-w-0 flex-1 text-xs text-[var(--color-ink-soft)]">
+                      {pv.title && pv.kind !== "text" && <p className="truncate font-semibold text-[var(--color-ink)]">{pv.title}</p>}
+                      {pv.kind === "text" && pv.text && <p className="line-clamp-3 whitespace-pre-line">{pv.text}</p>}
+                      {pv.kind !== "text" && pv.text && <p className="line-clamp-2">{pv.text}</p>}
+                      {pv.label && <p className="capitalize text-[var(--color-ink-faint)]">{pv.label}</p>}
+                    </div>
                   </div>
                 )}
-              </div>
-            ))}
-          </div>
+                {open && (
+                  <div className="border-t border-[var(--color-line)] p-3 sm:p-4">
+                    {renderBlockContentEditor(block)}
+                    <BlockTagsReview block={block} onMeta={handleBlockMeta} />
+                  </div>
+                )}
+              </li>
+              );
+            })}
+          </ul>
 
-          <div className="relative mt-3">
-            <Button variant="secondary" onClick={() => setShowPicker((v) => !v)}><Plus size={14} /> Add Block</Button>
+          <div className="relative mt-4">
+            <Button variant="secondary" data-testid="add-block" aria-haspopup="menu" aria-expanded={showPicker} onClick={() => setShowPicker((v) => !v)}><Plus size={14} /> Add block</Button>
             {showPicker && (
-              <div className="absolute z-10 mt-1 w-72 rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-3 shadow-lg">
+              <div role="menu" ref={revealMenu} className="absolute left-0 z-40 mt-1 max-h-[60vh] w-[min(20rem,calc(100vw-3rem))] overflow-y-auto rounded-md border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-3 shadow-lg">
                 {BLOCK_CATEGORIES.map((cat) => (
                   <div key={cat.id} className="mb-2 last:mb-0">
                     <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">{cat.label}</p>
                     <div className="grid grid-cols-2 gap-1">
                       {Object.entries(BLOCK_TYPES).filter(([, t]) => t.category === cat.id).map(([type, t]) => (
-                        <button key={type} type="button" onClick={() => handleAddBlock(type)} className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-xs text-[var(--color-ink-soft)] hover:bg-[var(--color-indigo-soft)] hover:text-[var(--color-indigo)]">
+                        <button key={type} type="button" role="menuitem" onClick={() => handleAddBlock(type)} className="flex min-h-9 items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-xs text-[var(--color-ink-soft)] hover:bg-[var(--color-indigo-soft)] hover:text-[var(--color-indigo)]">
                           <t.icon size={13} /> {t.label}
                         </button>
                       ))}
@@ -898,6 +944,16 @@ export default function LessonEditor() {
 
         </div>
       )}
+
+      {/* Sticky action bar */}
+      <div data-testid="action-bar" className="sticky bottom-0 z-30 -mx-6 mt-8 border-t border-[var(--color-line)] bg-[var(--color-paper)]/95 px-6 py-3 backdrop-blur">
+        {error && <p role="alert" className="mb-2 text-xs text-[var(--color-coral)]">{error}</p>}
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" variant="secondary" onClick={handleSaveDraft} disabled={saving}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Draft"}</Button>
+          <Button size="sm" variant="secondary" onClick={() => { setPreviewPage(0); setPreviewing(true); }} disabled={!currentPageId} aria-label="Preview as Student"><Eye size={14} /> <span>Preview<span className="hidden sm:inline"> as Student</span></span></Button>
+          <Button size="sm" onClick={handlePublish} disabled={saving}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Publish"}</Button>
+        </div>
+      </div>
     </div>
   );
 }

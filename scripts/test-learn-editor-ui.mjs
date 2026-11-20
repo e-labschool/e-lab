@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// CHANGED: the DEFAULT editor is now the simple plain block list (tests in the "plain list" section); the workspace tests mount ?editor=layout.
 // jsdom tests for the REAL Learn lesson editor (LessonEditor + BlockWorkspace: Classic + Canvas views, drawer, library, metadata) and the
 // Content Overview / Review mode:  node scripts/test-learn-editor-ui.mjs
 // Runs against an in-memory fake Supabase (scripts/learn-fake-supabase.mjs). Covers the keyboard path (Alt+Arrow, Alt+Shift+Arrow,
@@ -61,7 +62,10 @@ const blocks = () => [
   mkb("b5", 4, "simulation", { simulationId: "ideal-gas-simulation" }),
 ];
 let root, n = 0, fake;
-async function mount(entry = "/admin/learn-content/p1", data = {}) {
+// CHANGED: the tile / canvas workspace is no longer the default editor. Every pre-existing workspace test below mounts it
+// through the hidden URL parameter ?editor=layout. The default (no parameter) is the plain list, tested in the "plain list" section.
+const WS = "/admin/learn-content/p1?editor=layout";
+async function mount(entry = WS, data = {}) {
   fake = createLearnFake({ pages: [page], blocks: blocks(), ...data });
   globalThis.__rfSupabase = fake; globalThis.__rfAuth = { isConfigured: true, user: { id: "admin-1" }, profile: { role: "admin", level: "HL" } };
   errors.length = 0; sessionStorage.clear();
@@ -88,7 +92,7 @@ console.log("learn editor (jsdom)");
 
 await t("loads compact tiles in Classic view; nothing is written just by opening; a long text tile never contains the full text", async () => {
   const long = { id: "b6", page_id: "p1", position: 5, block_type: "rich_text", visible: true, content: { audience: "both", html: `<p>${"word ".repeat(300)}${LONG_TAIL}</p>` } };
-  await mount("/admin/learn-content/p1", { blocks: [...blocks(), long] });
+  await mount(WS, { blocks: [...blocks(), long] });
   assert.deepEqual(order(), ["b1", "b2", "b3", "b4", "b5", "b6"]);
   assert.equal($('[data-testid="block-workspace"]').dataset.view, "classic");
   assert.ok($('[data-testid="drop-end"]') && $('[data-testid="add-block"]') && $('[data-testid="more-menu"]'));
@@ -358,13 +362,136 @@ await t("phone: a simplified linear list with move up / move down buttons (Class
   } finally { dom.window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} }); }
 });
 
-await t("existing saved layouts (v1 rows) load and render in Classic; malformed layouts never break the editor; ?editor=list opens the plain list", async () => {
+await t("CHANGED (workspace via ?editor=layout): existing saved layouts (v1 rows) load and render in Classic; malformed layouts never break the editor; ?editor=list opens the plain list", async () => {
   const bs = blocks(); bs[1].content.layout = { v: 1, span: 5, row: "r-b2" }; bs[2].content.layout = { v: 1, span: 7, row: "r-b2" }; bs[3].content.layout = { span: "x", row: 5, junk: true }; bs[4].content.layout = "bad";
-  await mount("/admin/learn-content/p1", { blocks: bs });
+  await mount(WS, { blocks: bs });
   assert.equal($$('[data-row-size="2"] [data-block-id]').map((e) => e.dataset.blockId).join(), "b2,b3"); assert.equal(spanOf("b2"), 5);
   assert.deepEqual(errors, []);
   await unmount(); await mount("/admin/learn-content/p1?editor=list");
   assert.ok(!$('[data-testid="block-workspace"]')); assert.ok($("#learn-block-b1"));
+});
+
+
+console.log("plain list editor = the default (jsdom)");
+const PLAIN = "/admin/learn-content/p1";
+const plainIds = () => $$("[data-plain-block]").map((e) => e.dataset.plainBlock);
+const plainCard = (id) => $(`[data-plain-block="${id}"]`);
+const inCard = (id, label) => $$("button", plainCard(id)).find((b) => b.getAttribute("aria-label") === label || norm(b.textContent) === label);
+const layoutBlocks = () => {
+  const bs = blocks();
+  bs[0].content.meta = { guide: "2025", codes: ["S1.2.3"], needsReview: true };
+  bs[1].content.layout = { v: 1, span: 5, row: "r-b2", align: "center" }; bs[2].content.layout = { v: 1, span: 7, row: "r-b2", mobile: "first" };
+  bs[3].content.layout = { v: 2, span: 6, col: 7, gr: 4, rs: 3, align: "start", mobile: "default" }; bs[3].content.ui = { h: 6 };
+  bs[4].content.layout = { span: "x", row: 5, junk: true }; // malformed: must be carried along untouched too
+  return bs;
+};
+const keepKeys = (content) => JSON.stringify({ layout: content.layout ?? null, ui: content.ui ?? null, meta: content.meta ?? null });
+
+await t("NEW default editor is the plain list: no Classic/Canvas toggle, no tiles, drawer, workspace, snap/overlap or 'Use the new editor'; nothing is written on load", async () => {
+  await mount(PLAIN);
+  await until(() => $("[data-plain-block]"));
+  assert.deepEqual(plainIds(), ["b1", "b2", "b3", "b4", "b5"]);
+  const text = norm(document.body.textContent);
+  assert.ok(!/Classic|Canvas|Use the new editor|Snap|Overlap|Student preview width|Open the plain list editor/.test(text), "no workspace wording");
+  assert.ok(!$('[data-testid="block-workspace"]') && !$("[data-block-card]") && !$('[aria-label="Arrangement view"]') && !$('[data-testid="content-panel"]'));
+  assert.ok($('[data-testid="add-block"]') && btn("Save Draft") && btn("Publish") && btn("Preview as Student"));
+  for (const id of ["b1", "b3"]) for (const l of ["Edit", "Move up", "Move down", "Duplicate", "Delete"]) assert.ok(inCard(id, l), `${id} has ${l}`);
+  assert.ok($("[data-block-preview]", plainCard("b1")) || $('[data-testid="block-preview"]', plainCard("b1")), "collapsed card shows a preview");
+  await wait(FLUSH);
+  assert.equal(fake.log.filter((l) => l.table === "learn_blocks").length, 0, "no learn_blocks writes on load");
+  assert.deepEqual(errors, []);
+});
+
+await t("NEW plain list: Edit expands the existing block editor in place (Close collapses); the Tags / review disclosure is inside", async () => {
+  await mount(PLAIN);
+  await click(inCard("b1", "Edit")); await wait(40);
+  assert.ok($$("input,textarea,[contenteditable]", plainCard("b1")).length > 2, "real Rich Text editor inside the card");
+  assert.ok($('[data-testid="block-tags-review"]', plainCard("b1")));
+  assert.ok(!$('[data-testid="block-preview"]', plainCard("b1")), "preview replaced by the editor while open");
+  await click(inCard("b1", "Close")); assert.ok(!$('[data-testid="block-tags-review"]'));
+});
+
+await t("NEW plain list: Move up / Move down / Duplicate / Delete work, persist order, and Undo restores", async () => {
+  await mount(PLAIN);
+  await click(inCard("b1", "Move down")); assert.deepEqual(plainIds(), ["b2", "b1", "b3", "b4", "b5"]);
+  await click(inCard("b1", "Move up")); assert.deepEqual(plainIds(), ["b1", "b2", "b3", "b4", "b5"]);
+  assert.ok(inCard("b1", "Move up").disabled && inCard("b5", "Move down").disabled, "ends are disabled");
+  await click(inCard("b3", "Move up")); await click(inCard("b4", "Duplicate")); await wait(80);
+  assert.equal(plainIds().length, 6); assert.equal(plainIds()[4].startsWith("new-"), true, "copy sits right after its original"); assert.equal(plainIds()[3], "b4");
+  await click(inCard("b5", "Delete")); await wait(60);
+  assert.ok(!plainCard("b5"));
+  await wait(FLUSH);
+  assert.deepEqual(dbBlocks().map((b) => b.id).filter((i) => i !== "b5").slice(0, 4), ["b1", "b3", "b2", "b4"].slice(0, 4).map((x) => x), "order saved to position");
+  await click(btn("Undo")); await wait(120);
+  assert.ok(plainCard("b5") || $$("[data-plain-block]").length >= 5, "Undo brings the deleted block back");
+});
+
+await t("NEW plain list: Add block menu appends a new block (opened for editing); Check Your Understanding only once", async () => {
+  await mount(PLAIN);
+  await click($('[data-testid="add-block"]'));
+  const items = $$('[role="menuitem"]'); assert.ok(items.length >= 8, `menu lists block types (${items.length})`);
+  await click(items.find((b) => /Key Idea/.test(b.textContent))); await wait(80);
+  assert.equal(plainIds().length, 6); const last = plainIds().at(-1); assert.ok(last.startsWith("new-"));
+  assert.ok($$("input,textarea,[contenteditable]", plainCard(last)).length >= 1, "new block opens its editor");
+  const nb = dbBlocks().find((b) => b.id === last); assert.equal(nb.block_type, "key_idea"); assert.equal(nb.content.layout, undefined, "no layout invented for a plain add");
+});
+
+await t("NEW plain list: saving a lesson that has layout data preserves content.layout / content.ui / content.meta byte-for-byte (v1 rows, v2 canvas, malformed), through move + edit + duplicate + delete + add + Save Draft + Publish", async () => {
+  const bs = layoutBlocks();
+  await mount(PLAIN, { blocks: bs });
+  await until(() => $("[data-plain-block]"));
+  assert.ok($('[data-testid="layout-kept-note"]'), "a short note explains the kept layout");
+  const orig = new Map(blocks().map((b) => [b.id, null])); for (const b of bs) orig.set(b.id, keepKeys(b.content));
+  await click(inCard("b1", "Move down")); await click(inCard("b4", "Move up"));
+  await click(inCard("b2", "Edit")); await wait(30);
+  const sel = $("select", plainCard("b2")); Object.getOwnPropertyDescriptor(dom.window.HTMLSelectElement.prototype, "value").set.call(sel, "hl"); sel.dispatchEvent(new dom.window.Event("change", { bubbles: true })); await wait(40);
+  await click(inCard("b2", "Close"));
+  await click(inCard("b3", "Duplicate")); await wait(60);
+  await click(inCard("b5", "Delete")); await wait(40);
+  await click($('[data-testid="add-block"]')); await click($$('[role="menuitem"]').find((b) => /Definition/.test(b.textContent))); await wait(60);
+  await click(btn("Save Draft")); await wait(FLUSH + 200); await click(btn("Publish")); await wait(FLUSH + 200);
+  for (const id of ["b1", "b2", "b3", "b4"]) {
+    const row = fake.db.learn_blocks.find((b) => b.id === id); assert.ok(row, `${id} still saved`);
+    assert.equal(keepKeys(row.content), orig.get(id), `${id}: layout / ui / meta byte-for-byte unchanged`);
+  }
+  assert.equal(fake.db.learn_blocks.find((b) => b.id === "b2").content.audience, "hl", "the real edit was saved");
+  assert.equal(fake.db.learn_blocks.find((b) => b.id === "b2").content.url, "https://x/y.png", "other content untouched");
+  const copy = fake.db.learn_blocks.find((b) => b.id.startsWith("new-") && b.block_type === "rich_text");
+  assert.ok(copy && copy.content.layout === undefined && copy.content.ui === undefined, "a duplicate does not inherit a layout position");
+  assert.deepEqual(errors, [], "no errors during save / publish");
+  // never a layout-rewriting write: only content of blocks the author touched is written
+  const touched = new Set(fake.log.filter((l) => l.table === "learn_blocks" && l.op === "update" && l.payload?.content).map((l) => l.filters.find(([c]) => c === "id")?.[1]));
+  for (const id of touched) assert.ok(["b2", "b3"].includes(id) || id.startsWith("new-"), `unexpected content write to ${id}`);
+});
+
+await t("NEW plain list: a canvas (v2) lesson stays untouched by list edits and still opens in the plain list", async () => {
+  const bs = BC.toCanvas(blocks().map((b) => ({ ...b })));
+  await mount(PLAIN, { blocks: bs });
+  const before = new Map(bs.map((b) => [b.id, JSON.stringify(b.content)]));
+  await click(inCard("b2", "Move down")); await click(inCard("b5", "Move up")); await wait(FLUSH + 100);
+  assert.ok(!$('[data-testid="block-workspace"]'));
+  for (const b of dbBlocks()) assert.equal(JSON.stringify(b.content), before.get(b.id), `${b.id} content identical`);
+  assert.equal(dbBlocks().length, 5);
+});
+
+await t("NEW plain list: Tags / review inside a block persists to content.meta and shows a Needs review label on the card", async () => {
+  await mount(PLAIN);
+  await click(inCard("b1", "Edit")); await wait(30);
+  const box = $('[data-testid="block-tags-review"]', plainCard("b1")); box.open = true;
+  const setVal = (el, v) => { Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value").set.call(el, v); el.dispatchEvent(new dom.window.Event("input", { bubbles: true })); };
+  setVal($('input[placeholder="2025"]', box), "2025"); await wait(30);
+  await click($$('input[type="checkbox"]', box).find((c) => /Needs review/.test(c.parentElement.textContent))); await wait(40);
+  await click(inCard("b1", "Close")); await wait(60);
+  assert.match(plainCard("b1").textContent, /Needs review/);
+  const row = fake.db.learn_blocks.find((b) => b.id === "b1"); assert.equal(row.content.meta.guide, "2025"); assert.equal(row.content.meta.needsReview, true); assert.equal(row.content.html, "<p>Hello</p>");
+});
+
+await t("NEW plain list: Preview as Student still goes through the student renderer; the Content overview button is reachable", async () => {
+  await mount(PLAIN);
+  await click(btn("Preview as Student")); await wait(40);
+  assert.ok($(".mt-6.space-y-5"), "legacy markup for a legacy lesson"); assert.match(document.body.textContent, /Beside me/);
+  await click($$("button").find((b) => /Back to editor/.test(b.textContent)));
+  assert.ok(btn("Content overview"));
 });
 
 console.log("content overview / review (jsdom)");

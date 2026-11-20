@@ -80,6 +80,19 @@ export function changePeople(ev, city, n) {
 
 export const populationOf = (ev) => ev.A + ev.B;
 
+/**
+ * CHANGED: the DEFAULT (smooth) display.  The expected populations from the exact mean-field solution, rounded to whole people with
+ * B = N - A so the total is always N.  The mean field moves monotonically towards equilibrium, so these numbers change smoothly and
+ * then stop changing (50/50, 80/20, 20/80 for the presets) -- the time-averaged state that stays constant at dynamic equilibrium.
+ * The random passenger populations (ev.A, ev.B) are shown only when the student switches "Show random fluctuations" on.
+ */
+export function expectedPopulation(ev) {
+  const N = ev.A + ev.B; const d = detNow(ev); const A = Math.min(N, Math.max(0, Math.round(d.A)));
+  return { A, B: N - A };
+}
+/** Typical size (standard deviation, in people) of the random fluctuation about the average at equilibrium: sqrt(N p q). */
+export const fluctuationSD = (ev) => { const N = ev.A + ev.B; const pA = ev.kr / (ev.kf + ev.kr); return Math.sqrt(N * pA * (1 - pA)); };
+
 /** Everything the UI / graphs / tests read for one moment. */
 export function everydaySnapshot(ev) {
   const d = detNow(ev); const N = ev.A + ev.B; const Nd = d.A + d.B;
@@ -88,7 +101,7 @@ export function everydaySnapshot(ev) {
   let f = 0; let r = 0; for (const b of ev.bins) if (b.k > kFrom && b.k <= kNow) { f += b.f; r += b.r; }
   const Wm = ev.t > 0 ? Math.min(W, ev.t) : BIN; const status = equilibriumStatus(rfDet, rrDet);
   return {
-    A: ev.A, B: ev.B, N, kf: ev.kf, kr: ev.kr, K: ev.kf / ev.kr, detA: d.A, detB: d.B,
+    A: ev.A, B: ev.B, expA: expectedPopulation(ev).A, expB: expectedPopulation(ev).B, N, kf: ev.kf, kr: ev.kr, K: ev.kf / ev.kr, detA: d.A, detB: d.B,
     Aeq: (ev.kr * Nd) / (ev.kf + ev.kr), Beq: (ev.kf * Nd) / (ev.kf + ev.kr),
     rfDet, rrDet, rfInst: ev.kf * ev.A, rrInst: ev.kr * ev.B, rfMeas: f / Wm, rrMeas: r / Wm, window: Wm,
     ...status, position: positionLabel(ev.kf / ev.kr),

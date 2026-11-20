@@ -85,7 +85,7 @@ const visitKey = (kind, setup) => (kind === "chemical" ? setup.reactionId + (set
 export function createInitialState({ mode = "everyday", seed = DEFAULT_SEED } = {}) {
   return {
     version: STATE_VERSION, mode: MODES.includes(mode) ? mode : "everyday",
-    ui: { speed: 1, simple: false, showGraph: true, showExplanation: true, showPop: false },
+    ui: { speed: 1, simple: false, showGraph: true, showExplanation: true, showPop: false, fluct: false },
     scenes: { everyday: createScene("everyday", defaultSetup("everyday"), seed), chemical: createScene("chemical", defaultSetup("chemical"), seed + 1), compare: createScene("compare", defaultSetup("compare"), seed + 2) },
     last: ok("init"),
   };
@@ -262,8 +262,8 @@ export function reduce(state, action) {
       return { ...state, mode: action.mode, scenes: { ...state.scenes, [state.mode]: leaving }, last: ok(type) };
     }
     case "ui/speed": return SPEEDS.includes(action.speed) ? { ...state, ui: { ...state.ui, speed: action.speed }, last: ok(type) } : { ...state, last: no(type, "bad-speed", "Speed must be 0.5, 1 or 2.") };
-    case "ui/simple": case "ui/graph": case "ui/explanation": case "ui/pop": {
-      const key = { "ui/simple": "simple", "ui/graph": "showGraph", "ui/explanation": "showExplanation", "ui/pop": "showPop" }[type];
+    case "ui/simple": case "ui/graph": case "ui/explanation": case "ui/pop": case "ui/fluct": {
+      const key = { "ui/simple": "simple", "ui/graph": "showGraph", "ui/explanation": "showExplanation", "ui/pop": "showPop", "ui/fluct": "fluct" }[type];
       return { ...state, ui: { ...state.ui, [key]: action.value === undefined ? !state.ui[key] : !!action.value }, last: ok(type) };
     }
     case "run/start": {

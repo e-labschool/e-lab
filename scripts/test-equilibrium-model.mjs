@@ -323,5 +323,46 @@ await test("a disturbance is folded into the integer counts with the right numbe
   const snapped = V.snapVisual(V.createVisual(settle(C.createChem("haber"), 600)), settle(C.createChem("haber"), 600)); void snapped;
 });
 
+console.log("CHANGED: smooth (expected-population) display, random fluctuations optional");
+await test("CHANGED: smooth display: presets settle to EXACTLY 80/20, 50/50 and 20/80 and the counters then never change (0 change over 200 further ticks)", () => {
+  for (const [p, A, B] of [["towardsA", 80, 20], ["center", 50, 50], ["towardsB", 20, 80]]) {
+    let ev = E.createEveryday({ preset: p, seed: 4 }); let prev = E.expectedPopulation(ev); assert.deepEqual(prev, { A: 100, B: 0 });
+    let settledAt = null; let changesAfter = 0;
+    for (let i = 0; i < 4000; i += 1) {
+      ev = E.advanceEveryday(ev, 0.05); const x = E.expectedPopulation(ev); assert.equal(x.A + x.B, 100, "total constant");
+      if (x.A !== prev.A) { if (settledAt !== null) changesAfter += 1; settledAt = null; } if (settledAt === null && x.A === A && x.B === B) settledAt = ev.t; prev = x;
+    }
+    assert.ok(settledAt !== null && settledAt < 30, `${p}: settles to ${A}/${B} by t=${settledAt}`); assert.deepEqual(prev, { A, B }); assert.equal(changesAfter, 0, `${p}: counter changed after settling`);
+  }
+});
+await test("CHANGED: smooth counters move monotonically (no back-and-forth) from 100/0 to equilibrium, whatever the random seed", () => {
+  for (const seed of [1, 2, 3]) for (const p of ["towardsA", "center", "towardsB"]) {
+    let ev = E.createEveryday({ preset: p, seed }); let last = 100; for (let i = 0; i < 1500; i += 1) { ev = E.advanceEveryday(ev, 0.05); const a = E.expectedPopulation(ev).A; assert.ok(a <= last, `${p} seed ${seed}: A went up ${last} -> ${a}`); last = a; }
+  }
+});
+await test("CHANGED: the smooth display does not depend on the random seed at all (same numbers for any seed)", () => {
+  const run = (seed) => { let ev = E.createEveryday({ preset: "towardsA", seed }); const out = []; for (let i = 0; i < 100; i += 1) { ev = E.advanceEveryday(ev, 0.1); out.push(E.expectedPopulation(ev).A); } return out; };
+  assert.deepEqual(run(1), run(999));
+});
+await test("CHANGED: smooth display after a disturbance: +20 in A jumps the counter by 20, then settles to exactly 96/24 and stays", () => {
+  let ev = E.createEveryday({ preset: "towardsA", seed: 9 }); ev = E.advanceEveryday(ev, 40); assert.deepEqual(E.expectedPopulation(ev), { A: 80, B: 20 });
+  ev = E.changePeople(ev, "A", 20).ev; assert.deepEqual(E.expectedPopulation(ev), { A: 100, B: 20 }); let prev = null; for (let i = 0; i < 1000; i += 1) { ev = E.advanceEveryday(ev, 0.05); prev = E.expectedPopulation(ev); }
+  assert.deepEqual(prev, { A: 96, B: 24 }); const again = E.expectedPopulation(E.advanceEveryday(ev, 5)); assert.deepEqual(again, prev);
+});
+await test("CHANGED: stochastic mode still conserves people and fluctuates around the mean with the predicted spread (SD = sqrt(N p q))", () => {
+  let ev = E.createEveryday({ preset: "towardsA", seed: 77 }); ev = E.advanceEveryday(ev, 20); const xs = []; let distinct = new Set();
+  for (let i = 0; i < 30000; i += 1) { ev = E.advanceEveryday(ev, 0.05); assert.equal(ev.A + ev.B, 100); xs.push(ev.A); distinct.add(ev.A); }
+  const mean = xs.reduce((a, b) => a + b, 0) / xs.length; const sd = Math.sqrt(xs.reduce((a, b) => a + (b - mean) ** 2, 0) / xs.length);
+  near(mean, 80, 1.0, "mean"); near(sd, E.fluctuationSD(ev), 0.8, "SD"); near(E.fluctuationSD(ev), 4, 1e-9); assert.ok(distinct.size > 8, "the random counts really do fluctuate");
+  const smooth = new Set(); for (let i = 0; i < 200; i += 1) { ev = E.advanceEveryday(ev, 0.05); smooth.add(E.expectedPopulation(ev).A); } assert.equal(smooth.size, 1, "smooth counter constant while the random one moves");
+});
+await test("CHANGED: drawn molecule COUNTS are constant at equilibrium (A <=> B, N2O4, Haber, HI, Fe/SCN) while forward AND reverse events keep being drawn in pairs", () => {
+  for (const id of REACTION_IDS) {
+    const rx = REACTIONS[id]; const ch = settle(C.createChem(id), id === "fescn" ? 120 : 600); let v = V.snapVisual(V.createVisual(ch), ch); v = { ...v }; const c0 = JSON.stringify(V.visualCounts(v)); let f = 0; let r = 0; const snap = C.chemSnapshot(ch);
+    for (let i = 0; i < 3600; i += 1) { const o = V.stepVisual(v, ch, snap, 1 / 60, rx.playback); v = o.v; for (const e of o.events) { if (e.dir === "f") f += 1; else r += 1; } assert.equal(JSON.stringify(V.visualCounts(v)), c0, `${id}: counts changed at step ${i}`); }
+    assert.ok(f > 0 && f === r, `${id}: paired events f=${f} r=${r}`);
+  }
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

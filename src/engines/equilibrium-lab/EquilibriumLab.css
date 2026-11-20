@@ -212,3 +212,9 @@
 .eq-root[data-layout="narrow"] .eq-actions .eq-btn { min-width: 40px; padding: 2px 9px; }
 .eq-root[data-layout="narrow"] .eq-compare-top .eq-vesselbox { height: 240px; }
 @media (prefers-reduced-motion: reduce) { .eq-eqbadge { animation: none; } .eq-qkbar-dot, .eq-card-toggle svg { transition: none; } }
+
+/* CHANGED: optional random-fluctuation toggle under the city scene */
+.eq-fluct { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; padding: 6px 4px 0; }
+.eq-fluct-l { display: inline-flex; align-items: center; gap: 6px; font-weight: 650; font-size: 13px; cursor: pointer; min-height: 24px; }
+.eq-fluct-l input { width: 16px; height: 16px; accent-color: #6b4cf0; }
+.eq-fluct-note { margin: 0; font-size: 12px; flex: 1 1 260px; }

@@ -1,5 +1,11 @@
 # Flexible lesson editor, content review and reuse
 
+> **Current default editor: the simple plain block list.** Admin, Learn, lesson content shows one vertical list of blocks. Each block is a card with a type label and a short preview. **Edit** opens the normal block editor inside the card (with a small **Tags / review** section), and the card has **Move up, Move down, Duplicate, Hide, Delete**. **Add block** is at the end of the list, and a sticky bar at the bottom has **Save Draft, Preview as Student, Publish**. There is no Classic | Canvas toggle, no tiles, no drag-resize, no drawer and no layout controls on that screen.
+>
+> **The tile / canvas workspace described in section 3 is retained but hidden.** No button or menu in the UI leads to it. It only opens when `?editor=layout` is added to the lesson URL (for example `/admin/learn-content/<lesson id>?editor=layout`); `?editor=list` or `?editor=classic` go back to the plain list. Nothing was deleted: the layout model (`blockLayout.js`, `blockCanvas.js`, `blockLayoutOps.js`), the workspace components (`src/pages/admin/learn/editor/*`) and the student renderer are unchanged.
+>
+> **What the plain list does with layout data.** Lessons that already have `content.layout` / `content.ui` (set earlier in the workspace) keep it exactly as saved: the list only changes block **order** and **never rewrites** another block's `layout`, `ui` or `meta` (a test saves such a lesson and compares them byte-for-byte). Students still see the saved layout (the renderer is untouched). A new or duplicated block gets no layout. Because the list only changes order, moving a block in a lesson with a saved column layout does not move it on the student page; use `?editor=layout` for that. The **Block library** panel belongs to the workspace and is therefore only reachable through `?editor=layout`. Content overview, review mode, export / import and Duplicate as new guide version are unchanged (section 4).
+
 No database migration. No new table. Everything is stored inside JSON columns that already exist. Teacher-facing steps for guide updates: `docs/CONTENT_REUSE_GUIDE.md`.
 
 ## 1. One data model, two views
@@ -24,7 +30,9 @@ Editor only (Classic):   content.ui = { "h": 6 }     preview height in rows (1 r
 - Canvas: one CSS grid (`.lb-grid`). Each block gets `grid-column` from `col/span` and `grid-row` from the placements with empty row bands compacted, **natural height, full content** (the editor tile is only a preview). Below 640px the cells stack in reading order. `rs` only sizes the editor tile.
 - Teacher pages that reuse `LearnBlocksLayout` get the same behaviour.
 
-## 3. Editor
+## 3. Editor (the hidden workspace, `?editor=layout`)
+
+This section describes the workspace that is **not** the default any more (see the note at the top).
 
 - Slim toolbar: **Classic | Canvas**, **Add block** (menu: types, presets, block library), **Undo / Redo**, **Preview as student**, **More** (collapse all, library, snap, canvas overlap mode, preview width, search, lesson shortcuts).
 - Tiles are small rectangles: type icon, tag chips (codes, `v2025`, Review, HL), the first lines only (text is truncated to 220 characters in the DOM, CSS clamps to 3 lines and fades), thumbnail for image, simulation name, question count. Double-click or Enter opens the **drawer** with the unchanged block editors plus "Tags and review". The selected tile shows a mini toolbar: edit, duplicate, width presets, collapse, delete, and a More menu (hide, tags, library, review flag, move/size buttons).
@@ -33,7 +41,7 @@ Editor only (Classic):   content.ui = { "h": 6 }     preview height in rows (1 r
 - Keyboard (tile focused): Arrow = move (Classic: up/down reorder, left/right inside a row; Canvas: one column / row, followers pushed), Shift+Arrow = resize (Left/Right width, Up/Down height), Enter or F2 = edit, Delete = remove (Ctrl+Z restores), Space = collapse, Ctrl+Z / Ctrl+Y undo/redo. Alt+Arrow still works. Every change is announced in an `aria-live` region with the new position. The resize handles are keyboard focusable too.
 - Phones (<640px): a simple linear list with Move up / Move down buttons (Canvas reorders by re-flowing the grid, keeping widths).
 - Saving: layout and height writes are debounced (400 ms) and flushed before Save/Publish and on leaving. Undo/redo limit 100; content undo keeps the current layout.
-- `?editor=list` (or `classic`, the old URL) opens the plain list editor.
+- `?editor=layout` opens this workspace; without it (or with `?editor=list` / `classic`) the plain list opens.
 
 ## 4. Review and reuse (Admin, Learn Content, Content overview)
 
@@ -47,4 +55,4 @@ Question bank: the list has "Guide version" (existing `syllabus_version`) and "N
 
 ## 6. Tests
 
-`npm run test:flexible-editor` (part of `npm test`): classic model, canvas + reuse model (random operations, conversion round trips, export/import, duplicate), renderer + legacy identity, editor and overview (jsdom, keyboard, pointer events with stubbed geometry), question placement. `npm run verify:flexible-editor`: Chromium with Supabase mocked through `page.route`, 1366x768 / 390x844, light and dark; screenshots in `$TMPDIR/flexible-editor-shots`, plus `docs/mockups/11-editor-classic.png` and `12-editor-canvas.png`.
+`npm run test:flexible-editor` (part of `npm test`): classic model, canvas + reuse model (random operations, conversion round trips, export/import, duplicate), renderer + legacy identity, editor and overview (jsdom; CHANGED: the plain-list tests use the default URL, the workspace tests use `?editor=layout`; includes "default editor shows no Classic / Canvas toggle" and "saving a lesson with layout data keeps it byte-for-byte"), question placement. `npm run verify:flexible-editor`: Chromium with Supabase mocked through `page.route`, 1366x768 / 390x844, light and dark; screenshots in `$TMPDIR/flexible-editor-shots`, plus `docs/mockups/11-editor-classic.png` and `12-editor-canvas.png` (these two show the hidden workspace, not the default editor). CHANGED: the `admin-plain` sessions check the default list; the workspace sessions open `?editor=layout`.

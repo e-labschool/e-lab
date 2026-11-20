@@ -14,7 +14,7 @@ import { chemSnapshot } from "./model/chem.js";
 import { normalizeConfig, configFromSearch } from "./model/config.js";
 import { fmt } from "./model/explain.js";
 import { totalPressureBar } from "./model/chem.js";
-import { ModeSelector, RunControls, PresetSelector, EverydayDisturb, ReactionSelector, ChemConditions } from "./ui/Controls.jsx";
+import { ModeSelector, RunControls, PresetSelector, EverydayDisturb, ReactionSelector, ChemConditions, FluctToggle } from "./ui/Controls.jsx";
 import { EquilibriumIndicator, SpeciesTable, QKPanel, Guide, Explanation } from "./ui/Panels.jsx";
 import EverydayScene from "./ui/EverydayScene.jsx";
 import VesselCanvas from "./ui/VesselCanvas.jsx";
@@ -28,7 +28,7 @@ import "./EquilibriumLab.css";
 const FWD = "#2563eb"; const REV = "#ea580c";
 const SIM_UNITS = { ev: "time units", ch: "s" };
 
-function useSeries(tr, kind) {
+function useSeries(tr, kind, fluct = false) {
   const h = tr.hist; const rx = kind === "ch" ? REACTIONS[tr.s.rid] : null;
   return useMemo(() => {
     if (kind === "ev") {
@@ -36,12 +36,12 @@ function useSeries(tr, kind) {
         rates: [
           { key: "fwd", label: "A → B", color: FWD, dash: "", x: h.t, y: h.rfDet },
           { key: "rev", label: "B → A", color: REV, dash: "7 4", x: h.t, y: h.rrDet },
-          { key: "fwdM", label: "A → B (events)", color: "#60a5fa", dash: "2 3", x: h.t, y: h.rfMeas },
-          { key: "revM", label: "B → A (events)", color: "#fdba74", dash: "2 3", x: h.t, y: h.rrMeas },
+          ...(fluct ? [{ key: "fwdM", label: "A → B (random trips)", color: "#60a5fa", dash: "2 3", x: h.t, y: h.rfMeas }, { key: "revM", label: "B → A (random trips)", color: "#fdba74", dash: "2 3", x: h.t, y: h.rrMeas }] : []),
         ],
         pop: [
-          { key: "popA", label: "People in A", color: "#0d9488", dash: "", x: h.t, y: h.A },
-          { key: "popB", label: "People in B", color: "#7c3aed", dash: "7 4", x: h.t, y: h.B },
+          { key: "popA", label: "People in A (average)", color: "#0d9488", dash: "", x: h.t, y: h.detA },
+          { key: "popB", label: "People in B (average)", color: "#7c3aed", dash: "7 4", x: h.t, y: h.detB },
+          ...(fluct ? [{ key: "popAr", label: "A (random)", color: "#5eead4", dash: "2 3", x: h.t, y: h.A }, { key: "popBr", label: "B (random)", color: "#c4b5fd", dash: "2 3", x: h.t, y: h.B }] : []),
         ],
       };
     }
@@ -52,11 +52,11 @@ function useSeries(tr, kind) {
       ],
       conc: rx.species.map((s) => ({ key: s.id, label: s.formula, color: s.color, dash: s.dash, x: h.t, y: h.c[s.id] })),
     };
-  }, [h, kind, rx]);
+  }, [h, kind, rx, fluct]);
 }
 
 function GraphsEv({ tr, ui, hide, toggle, cmpOn, onPop, compact }) {
-  const S = useSeries(tr, "ev"); const b = tr.before;
+  const S = useSeries(tr, "ev", ui.fluct); const b = tr.before;
   const ghost = useMemo(() => (cmpOn && b ? [{ key: "fwd", y: b.rf, color: FWD, label: "Forward rate before the disturbance" }, { key: "rev", y: b.rr, color: REV, label: "Reverse rate before the disturbance" }] : []), [cmpOn, b]);
   const popGhost = useMemo(() => (cmpOn && b ? [{ key: "popA", y: b.A, color: "#0d9488", label: "A before" }, { key: "popB", y: b.B, color: "#7c3aed", label: "B before" }] : []), [cmpOn, b]);
   return (
@@ -127,6 +127,8 @@ function Shell({ config, standalone }) {
   const [hide, setHide] = useState({ rates: new Set(["fwdM", "revM"]), pop: new Set(), conc: new Set(), chemRates: new Set() });
   const toggle = useCallback((g, k) => setHide((h) => { const n = new Set(h[g]); if (n.has(k)) n.delete(k); else n.add(k); return { ...h, [g]: n }; }), []);
   const [cmpOn, setCmpOn] = useState(false);
+  // the random-trip curves are visible exactly when random fluctuations are switched on
+  useEffect(() => { setHide((h) => { const n = new Set(h.rates); for (const k of ["fwdM", "revM"]) { if (ui.fluct) n.delete(k); else n.add(k); } return { ...h, rates: n }; }); }, [ui.fluct]);
   const running = sc.status === "running"; const narrow = layout === "narrow";
   const evTr = sc.ev; const chTr = sc.ch;
   const main = mode === "chemical" ? "ch" : "ev";
@@ -147,7 +149,7 @@ function Shell({ config, standalone }) {
     body = (
       <div className="eq-grid">
         <div className="eq-col eq-col--main">
-          <section className="eq-card eq-stagecard"><EverydayScene ev={evTr} running={running} reduced={reduced} speed={ui.speed} layout={layout} simple={simple} /></section>
+          <section className="eq-card eq-stagecard"><EverydayScene ev={evTr} running={running} reduced={reduced} speed={ui.speed} layout={layout} simple={simple} fluct={ui.fluct} /><FluctToggle on={ui.fluct} onChange={(v) => dispatch({ type: "ui/fluct", value: v })} ev={evTr} simple={simple} /></section>
           <section className="eq-card eq-controls"><PresetSelector scene={sc} onPick={(p) => dispatch({ type: "setup/preset", preset: p })} simple={simple} />{runControls}</section>
           {guide}
         </div>
@@ -178,7 +180,7 @@ function Shell({ config, standalone }) {
     body = (
       <div className="eq-grid eq-grid--compare">
         <div className="eq-compare-top">
-          <section className="eq-card eq-cmp-left"><h3 className="eq-cmp-title"><i className="eq-dot eq-dot--a" /> Everyday analogy</h3><EverydayScene ev={evTr} running={running} reduced={reduced} speed={ui.speed} layout={narrow ? "narrow" : layout} compact simple={simple} /></section>
+          <section className="eq-card eq-cmp-left"><h3 className="eq-cmp-title"><i className="eq-dot eq-dot--a" /> Everyday analogy</h3><EverydayScene ev={evTr} running={running} reduced={reduced} speed={ui.speed} layout={narrow ? "narrow" : layout} compact simple={simple} fluct={ui.fluct} /><FluctToggle on={ui.fluct} onChange={(v) => dispatch({ type: "ui/fluct", value: v })} ev={evTr} simple={simple} /></section>
           <section className="eq-card eq-cmp-right"><h3 className="eq-cmp-title"><i className="eq-dot eq-dot--b" /> Chemical model: A ⇌ B</h3>
             <VesselCard scene={sc} running={running} reduced={reduced} dark={dark} simple={simple} /></section>
         </div>
@@ -188,7 +190,7 @@ function Shell({ config, standalone }) {
         </div>
         <div className="eq-compare-bot">
           {indicator}
-          {ui.showGraph && <ComparePair evTr={evTr} chTr={chTr} hide={hide} toggle={toggle} />}
+          {ui.showGraph && <ComparePair evTr={evTr} chTr={chTr} hide={hide} toggle={toggle} fluct={ui.fluct} />}
           <QKPanel tr={chTr} simple={simple} />
           {guide}
           {explanation}
@@ -213,8 +215,8 @@ function Shell({ config, standalone }) {
     </div>
   );
 }
-function ComparePair({ evTr, chTr, hide, toggle }) {
-  const evS = useSeriesRates(evTr, "ev"); const chS = useSeriesRates(chTr, "ch");
+function ComparePair({ evTr, chTr, hide, toggle, fluct }) {
+  const evS = useSeriesRates(evTr, "ev", fluct); const chS = useSeriesRates(chTr, "ch");
   return (
     <section className="eq-card eq-graphs eq-graphs--pair" data-testid="graph-card-compare">
       <Graph testId="rate-graph" title="Everyday: transfer rate" ariaLabel="Transfer rates of the two buses against time" series={evS} hidden={hide.rates} onToggle={(k) => toggle("rates", k)} xLabel="Time (time units)" yLabel="People per time unit" xMin={10} marks={evTr.marks} height={170} />
@@ -222,11 +224,11 @@ function ComparePair({ evTr, chTr, hide, toggle }) {
     </section>
   );
 }
-function useSeriesRates(tr, kind) {
+function useSeriesRates(tr, kind, fluct = false) {
   const h = tr.hist;
   return useMemo(() => (kind === "ev"
-    ? [{ key: "fwd", label: "A → B", color: FWD, dash: "", x: h.t, y: h.rfDet }, { key: "rev", label: "B → A", color: REV, dash: "7 4", x: h.t, y: h.rrDet }, { key: "fwdM", label: "A → B (events)", color: "#60a5fa", dash: "2 3", x: h.t, y: h.rfMeas }, { key: "revM", label: "B → A (events)", color: "#fdba74", dash: "2 3", x: h.t, y: h.rrMeas }]
-    : [{ key: "fwd", label: "Forward", color: FWD, dash: "", x: h.t, y: h.rf }, { key: "rev", label: "Reverse", color: REV, dash: "7 4", x: h.t, y: h.rr }]), [h, kind]);
+    ? [{ key: "fwd", label: "A → B", color: FWD, dash: "", x: h.t, y: h.rfDet }, { key: "rev", label: "B → A", color: REV, dash: "7 4", x: h.t, y: h.rrDet }, ...(fluct ? [{ key: "fwdM", label: "A → B (random trips)", color: "#60a5fa", dash: "2 3", x: h.t, y: h.rfMeas }, { key: "revM", label: "B → A (random trips)", color: "#fdba74", dash: "2 3", x: h.t, y: h.rrMeas }] : [])]
+    : [{ key: "fwd", label: "Forward", color: FWD, dash: "", x: h.t, y: h.rf }, { key: "rev", label: "Reverse", color: REV, dash: "7 4", x: h.t, y: h.rr }]), [h, kind, fluct]);
 }
 
 // Registered under the id "equilibrium-lab"; the title MUST equal the catalogue label (InteractiveFrame resolves "Open in New Tab" from it).

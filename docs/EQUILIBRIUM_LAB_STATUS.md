@@ -12,6 +12,7 @@ Verification levels: automated model, reducer and jsdom tests (`npm run test:equ
 | Generic mass-action engine, adaptive RK45, non-negative, atom conservation, Q vs K | Done |
 | van 't Hoff K(T), Arrhenius kf with kr = kf/K, catalyst lowers Ea both ways, ideal-gas volume | Done |
 | Everyday: two cities, two buses, presets 0.25/1.00, 1/1, 1.00/0.25, transfer-rate graph, indicator, optional population graph, four add/remove buttons with messages, buses follow events | Done (Visual for all three presets) |
+| CHANGED: smooth counters and figures by default (constant at equilibrium, exactly 80/20, 50/50, 20/80); optional "Show random fluctuations" (off by default, labelled, with typical spread); stable bus loads fixed per trip; molecule counts constant at equilibrium in Chemical and Compare Both | Done (model, reducer and UI tests; Visual and real-time sampling in verify: 0 counter changes, one stable label per bus) |
 | Chemical: five reactions with correct structures, vessel, concentration and rate graphs, K/Q panel, applicable Le Chatelier controls, non-locking learning stages | Done (Visual for all five) |
 | Compare Both and analogy-limits statement | Done (Visual) |
 | Start / Pause / Resume / Reset / Replay / Step Forward, speeds 0.5x 1x 2x, Show/Hide Graph, Show/Hide Explanation, Simple Wording | Done (UI test) |
@@ -24,7 +25,8 @@ Verification levels: automated model, reducer and jsdom tests (`npm run test:equ
 ## Known gaps and approximations
 
 - Absolute reaction speeds and Ea values are teaching values; only K and dH are sourced (docs/EQUILIBRIUM_LAB.md).
-- With the virtual-time hook (used for screenshots) many bus events accumulate at once, so bus labels can show large numbers; in real-time playback they stay small.
+- Bus loads follow the average rate, not individual random events, even when random fluctuations are on.
+- The random mode uses the same 100 people as the smooth mode, so its spread is about +/-4 people at 80/20; it is not reduced by a larger representative population.
 - At the smallest phone and 910x512 sizes the "Forward rate = Reverse rate" badge in the road area can touch the lane label and bus tag.
 - Graphs drawn after a very large virtual jump look stepped because few samples exist; real-time playback samples continuously.
 - Real GPU, touch hardware, Safari, Firefox and screen readers are untested.

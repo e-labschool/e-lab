@@ -2,8 +2,8 @@
 // whole molecules of each species are drawn and which reaction events to show, so that
 //   * every drawn event is stoichiometric (atom-conserving by construction: m_i = M_i + nu_i * xi),
 //   * the drawn net extent follows the engine's extent to within one event, and
-//   * at (near) equilibrium the picture keeps showing forward AND reverse events at a rate drawn from the engine's rates
-//     (dynamic equilibrium), with the forward : reverse odds equal to r_f : r_r.
+//   * at (near) equilibrium the picture keeps showing forward AND reverse events in simultaneous pairs (dynamic equilibrium) at a rate
+//     drawn from the engine's rates, while the drawn molecule COUNTS stay constant.
 // One drawn molecule stands for `unit` mol (reaction.run.unit).  Concentrations and graphs always come from the engine, never from here.
 import { REACTIONS } from "./reactions.js";
 import { amountsOf } from "./chem.js";
@@ -59,16 +59,21 @@ export function stepVisual(v, ch, snap, dtReal, simPerReal = 1) {
     const dir = dev >= 1 ? "f" : dev <= -1 ? "r" : null; if (!dir || !can(cur, dir)) break;
     cur = applyEvent(cur, dir, "track"); cur.credit -= 1; events.push({ dir, kind: "track" });
   }
-  // 2. dynamic-equilibrium exchange: gross events at a rate drawn from the engine's gross rate, odds r_f : r_r
+  // 2. dynamic-equilibrium exchange.  CHANGED: each exchange is a PAIR -- one forward and one reverse event drawn together -- so the
+  //    drawn molecule counts stay constant while molecules keep reacting in both directions.  The gross rate of cancelling pairs is
+  //    min(r_f, r_r) (the part of each direction that the net change does not account for); the net change itself is drawn in step 1.
   const gross = Math.min(snap.rf, snap.rr) * ch.V / v.unit;                       // events per engine second, each direction
-  const lam = Math.min(MAX_CHURN_PER_S, gross * simPerReal * 2) * dtReal;          // expected exchange events this tick
+  const lam = Math.min(MAX_CHURN_PER_S, gross * simPerReal * 2) * dtReal;          // expected exchange pairs this tick
   let left = lam;
   for (let guard = 0; guard < 8 && left > 0; guard += 1) {
     const r = nextOpen(cur.rng); cur.rng = r.seed;
     if (r.value > Math.min(1, left)) break;
     const r2 = nextOpen(cur.rng); cur.rng = r2.seed;
-    const dir = r2.value < snap.rf / (snap.rf + snap.rr) ? "f" : "r";
-    if (can(cur, dir)) { cur = applyEvent(cur, dir, "exchange"); events.push({ dir, kind: "exchange" }); }
+    const first = r2.value < 0.5 ? "f" : "r"; const second = first === "f" ? "r" : "f";
+    if (can(cur, first)) {
+      let t = applyEvent(cur, first, "exchange");
+      if (can(t, second)) { t = applyEvent(t, second, "exchange"); cur = t; events.push({ dir: first, kind: "exchange" }, { dir: second, kind: "exchange" }); }
+    }
     left -= 1;
   }
   void rx;

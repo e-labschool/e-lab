@@ -61,15 +61,28 @@ const settle = async (p, dT) => { await dispatch(p, { type: "run/advance", dT })
     await shot(p, `everyday-${preset}-1-start`);
     await dispatch(p, { type: "run/start" }); await dispatch(p, { type: "run/advance", dT: 2.5 }); await p.waitForTimeout(400); await shot(p, `everyday-${preset}-2-mid`);
     await settle(p, 40); await shot(p, `everyday-${preset}-3-equilibrium`);
-    const s = await state(p); const want = { towardsA: 80, center: 50, towardsB: 20 }[preset]; check(Math.abs(s.A - want) <= 12 && s.A + s.B === 100, `everyday ${preset}: ${s.A}/${s.B} near ${want}/${100 - want} and 100 people conserved`);
+    const want = { towardsA: 80, center: 50, towardsB: 20 }[preset];
     const lab = await p.textContent(T("eq-indicator")); check(/equilibrium/i.test(lab), `everyday ${preset}: indicator says equilibrium ("${lab.replace(/\s+/g, " ").slice(0, 60)}")`);
-    const dom = await p.evaluate(() => ({ a: Number(document.querySelector('[data-testid="count-a"]').textContent), b: Number(document.querySelector('[data-testid="count-b"]').textContent), st: globalThis.__EQ.getState().scenes.everyday.ev.s }));
-    check(dom.a === dom.st.A && dom.b === dom.st.B, `everyday ${preset}: scene counters match the model exactly (${dom.a}/${dom.b})`);
+    // CHANGED: smooth display -- exact expected counters that do not change between frames
+    const counts = () => p.evaluate(() => `${document.querySelector('[data-testid="count-a"]').textContent}/${document.querySelector('[data-testid="count-b"]').textContent}`);
+    const c1 = await counts(); await dispatch(p, { type: "run/advance", dT: 0.7 }); await p.waitForTimeout(300); const c2 = await counts(); await dispatch(p, { type: "run/advance", dT: 1.3 }); await p.waitForTimeout(300); const c3 = await counts();
+    check(c1 === `${want}/${100 - want}` && c1 === c2 && c2 === c3, `everyday ${preset}: counters exactly ${want}/${100 - want} and unchanged between frames (${c1}, ${c2}, ${c3})`);
+    if (preset === "center") { await shot(p, "everyday-center-4-equilibrium-frame2"); }
+    const ppl = await p.evaluate(() => document.querySelectorAll('[data-testid="city-a"] g[transform], [data-testid="city-b"] g[transform]').length); check(ppl > 0, `everyday ${preset}: people figures drawn (${ppl})`);
     if (preset === "towardsA") {
       await p.click(`${T("everyday-disturb")} button:nth-of-type(1)`); await p.waitForTimeout(500); await shot(p, "everyday-after-add-A");
-      const n = await state(p); check(n.A + n.B === 120, "adding people to A: 120 people in total"); check(/disturbed|readjust/i.test(await p.textContent(T("notice"))), "status message after the disturbance");
+      const n = await state(p); check(n.A + n.B === 120, "adding people to A: 120 people in total"); check(Number((await counts()).split("/")[0]) > 80, "adding people to A: the counter jumps up at once"); check(/disturbed|readjust/i.test(await p.textContent(T("notice"))), "status message after the disturbance");
     }
   }
+  // CHANGED: bus labels never flicker: while running in real time at equilibrium every label seen is one fixed number per bus
+  await p.click(T("mode-everyday")); await dispatch(p, { type: "run/reset" }); await dispatch(p, { type: "setup/preset", preset: "center" }); await dispatch(p, { type: "run/start" }); await dispatch(p, { type: "run/advance", dT: 40 });
+  const labels = await p.evaluate(async () => { const seen = { f: new Set(), r: new Set() }; const t0 = performance.now(); let frames = 0; let changes = 0; let prev = ""; while (performance.now() - t0 < 9000) { await new Promise((r) => setTimeout(r, 50)); frames += 1; for (const [k, id] of [["f", "bus-forward"], ["r", "bus-reverse"]]) { const el = document.querySelector(`[data-testid="${id}"] [data-bubble]`); if (el && el.style.opacity === "1") seen[k].add(el.textContent.trim()); } const cnt = document.querySelector('[data-testid="count-a"]').textContent; if (cnt !== prev && prev) changes += 1; prev = cnt; } return { f: [...seen.f], r: [...seen.r], frames, changes }; });
+  check(labels.f.length === 1 && labels.r.length === 1, `bus labels are one stable number per bus at equilibrium (forward ${JSON.stringify(labels.f)}, reverse ${JSON.stringify(labels.r)} over ${labels.frames} samples)`); check(labels.changes === 0, `city counter did not change once in ${labels.frames} real-time samples (${labels.changes} changes)`);
+  await shot(p, "everyday-center-5-realtime");
+  // random fluctuations toggle: counters move, the note says so
+  await dispatch(p, { type: "run/pause" }); await p.click(T("toggle-fluct")); await dispatch(p, { type: "run/resume" });
+  const vals = await p.evaluate(async () => { const s = new Set(); for (let i = 0; i < 60; i += 1) { globalThis.__EQ.dispatch({ type: "run/advance", dT: 0.5 }); await new Promise((r) => setTimeout(r, 20)); s.add(document.querySelector('[data-testid="count-a"]').textContent); } return [...s]; });
+  check(vals.length > 3, `random fluctuations ON: the counter does fluctuate (${vals.length} distinct values)`); await shot(p, "everyday-center-6-fluctuations-on"); await p.click(T("toggle-fluct"));
   // chemical
   await p.click(T("mode-chemical")); await p.waitForTimeout(500);
   for (const id of ["ab", "n2o4", "haber", "hi", "fescn"]) {
