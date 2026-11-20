@@ -52,7 +52,7 @@ export default function PredictPanel({ onSetup, onApply, resetToken }) {
       </fieldset>
       <div className="ct-predict-actions">
         <button type="button" className="sd-btn sd-btn--sm" onClick={() => onSetup(sc)} data-testid="predict-setup" title="Reset the vessel to this experiment's starting conditions and run 30 s of baseline">1. Set up baseline</button>
-        <button type="button" className="sd-btn sd-btn--sm" onClick={() => onApply(sc)} data-testid="predict-apply" title={`Change the vessel now: ${sc.changeText}. Watch the rate graph.`}>2. Apply the change</button>
+        <button type="button" className="sd-btn sd-btn--sm" onClick={() => onApply(sc)} data-testid="predict-apply" title={`Change the vessel now: ${sc.changeText}. Watch the concentration graph and the rate in the stats bar.`}>2. Apply the change</button>
         <button type="button" className="sd-btn sd-btn--sm sd-btn--primary" onClick={reveal} disabled={!choice || busy} data-testid="predict-reveal" title={choice ? "Run the model before and after the change" : "Choose a prediction first"}>
           {busy ? "Measuring…" : "3. Reveal and measure"}
         </button>

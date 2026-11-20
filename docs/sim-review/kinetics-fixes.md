@@ -97,3 +97,27 @@ Changed after the owner's two reference graphs (smooth cumulative curve to a pla
 - **Default particle numbers unchanged**: the default 40 + 40 vessel gives 34 to 38 reactions in 150 s over the seeds checked (test asserts 30 to 45), so the curves are well resolved. The 8-reaction curve in earlier screenshots was the small-vessel (n = 8) exhaustion check, not the default.
 - Tests: model 86 checks (new: PCHIP properties, default resolution, smooth Products curve, A/B/C history = engine counts, solid history, rate-curve end artefacts), UI 35 checks (new: selector order, equation states and synchronisation, per-species curves, Both markers and legend, solid-system views, Reset), changed expectations marked "[CHANGED]". `verify-kinetics.mjs` gained Reactants / Products / Both / species-selected screenshots and checks (`ct-*-g-reactants-full-run.png`, `-products-full-run`, `-both-full-run`, `-species-A`, `-species-C`).
 - Still imperfect: the real data are stepped (reactions come in bursts, e.g. a plateau around 32 then a further step), so the smooth curves show gentle shoulders rather than a textbook exponential; the Reactants view cannot show A and B apart in the mixed system because they are equal; the Rate-curve window at the live edge is still the most uncertain part.
+
+## Round 4: the graph is CONCENTRATION against time (owner decision)
+
+The owner decided that the Collision Theory graph must show the change in concentration with time, not the rate. This
+supersedes the Rate view of Rounds 3 and 3b.
+
+- **Rate view removed.** `rateCurve`, `curveArea`, the local-linear smoothing code, the rate-curve readout and note, the tangent on the
+  Products view, and the old tests / verify checks for them are deleted. `components/RateGraph.jsx` became
+  `components/ConcentrationGraph.jsx`. The stat chip "Rate (last 10 s)" stays: it comes from `engine.rateOver()`, not from the graph.
+- **Panel**: title "Concentration vs time" (short title "Graph" in the tight layout, tab label "Over time"). Selector
+  **Reactants | Products | Both**, default **Both** (purple A falling, green C rising, markers at the sample times, legend,
+  the curves cross). Reset returns to Both with no species chosen. The clickable equation (A, B, C, D, arrow, All) is unchanged
+  and stays in step with the selector.
+- **Axes**: x = Time / s. y = "Concentration (particles in the vessel)" (shortened to "Concentration (particles)" and "Particles" when
+  the plot is short). The vessel volume is fixed, so concentration is proportional to the number of particles; a visible note says
+  "Fixed volume: concentration is proportional to the number of particles." (hidden only in the tight 910x512 layout, where the
+  same sentence is in the graph's aria-label). No mol dm-3 numbers are invented.
+- **Data**: A, B (solid mode: unused sites, B), C and D come from the engine's counts (`history()`, `successTimes()`), joined by PCHIP
+  curves; the last point is the live count; Reset clears them. No bars. The reaction is still irreversible.
+- **Tests (marked CHANGED)**: model tests 87 (rate-curve tests replaced by product/reactant curve tests: smooth, monotone, ends on the
+  engine's counts, not a forced shape, Both-view curves conserve particles A + C = 40 over 14 seeds and cross; a source scan that no
+  rate-curve code remains); UI tests 35 (selector now Reactants | Products | Both, default Both, axis text, fixed-volume note,
+  exhaustion, Reset). `scripts/verify-kinetics.mjs`: 809 checks, 0 problems (3 sizes x light/dark), screenshots
+  `ct-<size>-<theme>-g-{both-full-run,reactants-full-run,products-full-run,species-A,species-C,both-exhausted,products-plateau}.png`.

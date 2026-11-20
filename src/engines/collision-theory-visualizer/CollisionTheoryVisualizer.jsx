@@ -14,7 +14,7 @@ import { draw } from "./render.js";
 import { useBox, useReducedMotion } from "./useBox.js";
 import { SPECIES } from "./theme.js";
 import MbGraph from "./components/MbGraph.jsx";
-import RateGraph from "./components/RateGraph.jsx";
+import ConcentrationGraph from "./components/ConcentrationGraph.jsx";
 import ReactionEquation from "./components/ReactionEquation.jsx";
 import ReactionProfile from "./components/ReactionProfile.jsx";
 import { CollisionViewer } from "./components/CollisionViewer.jsx";
@@ -78,7 +78,7 @@ function Workspace({ seedProp }) {
   const [repeatable, setRepeatable] = useState(false);
   const [graphShown, setGraphShown] = useState(true);
   const [fullRange, setFullRange] = useState(false);
-  const [rateView, setRateView] = useState("rate");
+  const [rateView, setRateView] = useState("both");
   const [species, setSpecies] = useState(null); // narrows the Reactants / Products view to one species (set from the equation)
   const [graphTab, setGraphTab] = useState("mb");
   const [pinnedCurve, setPinnedCurve] = useState(null);
@@ -166,7 +166,7 @@ function Workspace({ seedProp }) {
     const seed = repeatable ? fixedSeed.current : (Math.random() * 2 ** 32) >>> 0;
     engine.configure(cfg, seed);
     setParams(engine.p); setPlaying(!reduced); setSpeed(reduced ? "0.25" : "1"); setPauseOnReaction(false);
-    setPinnedCurve(null); setFullRange(false); setRateView("rate"); setSpecies(null); setGraphTab("mb"); setExplain({ key: "default", dir: 1 }); setNotices({});
+    setPinnedCurve(null); setFullRange(false); setRateView("both"); setSpecies(null); setGraphTab("mb"); setExplain({ key: "default", dir: 1 }); setNotices({});
     measRef.current.mkey = ""; measRef.current.measured = null;
     magRef.current = { ev: null, pinned: null, at: 0, token: 0 }; setMag({ ev: null, pinned: null, token: 0 });
     if (!keepPredict) setResetToken((n) => n + 1);
@@ -197,7 +197,7 @@ function Workspace({ seedProp }) {
     if (k === "all") { setRateView("both"); setSpecies(null); return; }
     const group = k === "A" || k === "B" ? "reactants" : "products";
     setRateView(group); setSpecies((cur) => (rateView === group && cur === k ? null : k));
-    setGraphTab("rate");
+    setGraphTab("conc");
   };
   const stepOnce = () => { for (let i = 0; i < 24; i++) engine.step(); publish(true); };
 
@@ -286,20 +286,21 @@ function Workspace({ seedProp }) {
       <DashPanel title="Energy distribution" ariaLabel="Maxwell-Boltzmann energy distribution" grow className="ct-g1" testId="mb-panel" data-hide={graphTab !== "mb" ? "true" : "false"}
         aside={
           <span className="ct-aside">
-            <span className="ct-gtabs"><MiniSwitch ariaLabel="Graph shown" testId="graph-tab" value={graphTab} onChange={setGraphTab} options={[{ id: "mb", label: "Energy" }, { id: "rate", label: "Over time" }]} /></span>
+            <span className="ct-gtabs"><MiniSwitch ariaLabel="Graph shown" testId="graph-tab" value={graphTab} onChange={setGraphTab} options={[{ id: "mb", label: "Energy" }, { id: "conc", label: "Over time" }]} /></span>
             {mbAx.needsFull && <button type="button" className="sd-btn sd-btn--sm" aria-pressed={fullRange} onClick={() => setFullRange((z) => !z)} data-testid="mb-full-range" title="Ea lies beyond the energy axis. Show the full range out to Ea (the curve is not changed)">{fullRange ? "Zoom to peak" : "Show full range"}</button>}
             <button type="button" className="sd-btn sd-btn--sm" onClick={() => setPinnedCurve(pinnedCurve ? null : { T: p.T, ea: p.ea })} aria-pressed={!!pinnedCurve} data-testid="mb-pin" title="Keep this curve (dashed) to compare with the next temperature">{pinnedCurve ? `Unpin ${pinnedCurve.T} K` : "Pin curve"}</button>
           </span>
         }>
         <MbGraph T={p.T} ea={p.ea} eaEff={eaEff} catalyst={p.catalyst} measured={measured} pinned={pinnedCurve} full={fullRange} />
       </DashPanel>
-      <DashPanel title={<><span className="ct-t-full">Rate of reaction</span><span className="ct-t-short">Graph</span></>} ariaLabel="Measured rate against time" grow className="ct-g2" testId="rate-panel" data-hide={graphTab !== "rate" ? "true" : "false"}
-        aside={<span className="ct-aside"><span className="ct-gtabs"><MiniSwitch ariaLabel="Graph shown" testId="graph-tab-2" value={graphTab} onChange={setGraphTab} options={[{ id: "mb", label: "Energy" }, { id: "rate", label: "Over time" }]} /></span><MiniSwitch ariaLabel="Graph type" testId="rate-view" value={rateView} onChange={chooseView} options={[
-          { id: "rate", label: "Rate", title: "Reaction rate against time" }, { id: "reactants", label: "Reactants", title: "Amount of A and of B left against time" },
-          { id: "products", label: "Products", title: "Products formed (cumulative); the rate is its gradient" }, { id: "both", label: "Both", title: "Reactant and product together" }]} /></span>}>
+      <DashPanel title={<><span className="ct-t-full">Concentration vs time</span><span className="ct-t-short">Graph</span></>} ariaLabel="Concentration against time" grow className="ct-g2" testId="conc-panel" data-hide={graphTab !== "conc" ? "true" : "false"}
+        aside={<span className="ct-aside"><span className="ct-gtabs"><MiniSwitch ariaLabel="Graph shown" testId="graph-tab-2" value={graphTab} onChange={setGraphTab} options={[{ id: "mb", label: "Energy" }, { id: "conc", label: "Over time" }]} /></span><MiniSwitch ariaLabel="Graph type" testId="conc-view" value={rateView} onChange={chooseView} options={[
+          { id: "reactants", label: "Reactants", title: "Concentration of A and of B against time" },
+          { id: "products", label: "Products", title: "Concentration of C and of D (formed so far) against time" }, { id: "both", label: "Both", title: "Reactant and product together" }]} /></span>}>
         <div className="ct-rate-wrap">
           <ReactionEquation view={rateView} species={species} onPick={pickSpecies} solid={solid} />
-          <RateGraph events={snap.events} tNow={snap.t} marks={snap.marks} view={rateView} species={species} left={snap.left} finished={snap.finished} hist={snap.hist} live={{ a: snap.nA, b: snap.nB }} solid={solid} />
+          <ConcentrationGraph events={snap.events} tNow={snap.t} marks={snap.marks} view={rateView} species={species} left={snap.left} finished={snap.finished} hist={snap.hist} live={{ a: snap.nA, b: snap.nB }} solid={solid} />
+          <p className="ct-conc-note" data-testid="conc-note">Fixed volume: concentration is proportional to the number of particles.</p>
         </div>
       </DashPanel>
     </>
@@ -325,7 +326,7 @@ function Workspace({ seedProp }) {
 
   const detail = (
     <div className="ct-detail">
-      <p><b>Rate</b> = successful collisions per second (simulated time). The graph shows it smoothed from the reactions that really happened in the vessel; it is the gradient of the products graph, and it is not a fixed curve: it falls here because A and B are being used up ({snap.succ} reactions so far, {snap.left} still possible). The number above is averaged over the last {RATE_WINDOW} s and is noisy because collisions are random (±{sigma.toFixed(2)} s{"⁻¹"} now).</p>
+      <p><b>Concentration against time.</b> The graph counts the particles really in the vessel (the engine&apos;s A, B, C and D). The vessel volume is fixed, so concentration is proportional to the number of particles. A and B fall and C and D rise as the reaction A + B → C + D goes one way only; the curves level off when the limiting reactant is used up ({snap.succ} reactions so far, {snap.left} still possible). <b>Rate</b> = successful collisions per second (simulated time), averaged over the last {RATE_WINDOW} s in the stats row; it is the gradient of the C curve, and it is noisy because collisions are random (±{sigma.toFixed(2)} s{"⁻¹"} now).</p>
       <p><b>Three different energies.</b> The curve is the kinetic energy of single molecules. A collision&apos;s <i>relative energy</i> along the line of centres is what is compared with Ea, and it also needs the reactive sites to face each other (here {stericPct} % of contacts). Collisions with enough energy: about e<sup>{"−"}Ea/RT</sup> = {formatFraction(snap.arrhenius)} (Arrhenius factor).</p>
       <p><b>Shaded area</b> = exact fraction of molecules whose kinetic energy is at least Ea (the readout under the graph): the molecules that could react. It is not the fraction of collisions that react, because collisions also need the right orientation and favour faster molecules. A catalyst leaves the curve alone and moves the Ea line left.</p>
           <ReactionProfile ea={p.ea} eaEff={eaEff} catalyst={p.catalyst} />

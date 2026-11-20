@@ -86,7 +86,7 @@ export class CollisionEngine {
     this.head = new Int16Array(GX * GY); this.next = new Int16Array(CAP);
     this.evBuf = new Float64Array(EV_CAP * EV_F); this.lastEv = new Float64Array(4 * EV_F);
     this.hT = new Float64Array(HIST_CAP); this.hSucc = new Float64Array(HIST_CAP); this.hColl = new Float64Array(HIST_CAP); this.hA = new Float64Array(HIST_CAP); this.hB = new Float64Array(HIST_CAP);
-    this.sT = new Float64Array(SUCC_CAP); // simulated time of every successful collision (the data behind the rate graph)
+    this.sT = new Float64Array(SUCC_CAP); // simulated time of every successful collision (the data behind the products curve and the live rate)
     this.marks = []; // {t, label}, bounded
     this.reset(this.seed);
   }

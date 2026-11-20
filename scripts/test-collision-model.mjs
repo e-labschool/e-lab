@@ -261,13 +261,13 @@ test("the mean rate falls as reactants are used up under UNCHANGED conditions (s
   for (let sd = 1; sd <= 8; sd++) { const e = new E.CollisionEngine({ seed: 100 + sd, params: { n: 40, T: 500, ea: 8, site: 240 } }); e.run(60); const t = e.successTimes(); for (let k = 0; k < 4; k++) w[k] += countIn(t, 15 * k, 15 * (k + 1)); }
   assert.ok(w[0] > w[1] && w[1] > w[2] && w[2] > w[3], `window totals ${w.join(" > ")}`);
 });
-test("the rate CURVE (from the events) is high at the start and low later, averaged over 8 seeds; it is built only from the events", () => {
+test("[CHANGED: was the rate CURVE; there is no rate graph now] the reaction events are dense early and sparse late, averaged over 8 seeds, so the C curve is steep at first and flattens", () => {
   let early = 0; let late = 0;
   for (let sd = 1; sd <= 8; sd++) {
-    const e = new E.CollisionEngine({ seed: 200 + sd, params: { n: 40, T: 500, ea: 8, site: 240 } }); e.run(80); const c = RM.rateCurve(e.successTimes(), e.t);
-    early += mean(Array.from(c.r.slice(0, 20))); late += mean(Array.from(c.r.slice(-30)));
+    const e = new E.CollisionEngine({ seed: 200 + sd, params: { n: 40, T: 500, ea: 8, site: 240 } }); e.run(80); const ev = e.successTimes();
+    early += RM.countUpTo(ev, 20); late += RM.countUpTo(ev, 80) - RM.countUpTo(ev, 60);
   }
-  assert.ok(early > 2.5 * late, `early ${(early / 8).toFixed(2)} vs late ${(late / 8).toFixed(2)} reactions/s`);
+  assert.ok(early > 2.5 * late, `reactions in 0-20 s ${(early / 8).toFixed(1)} vs 60-80 s ${(late / 8).toFixed(1)}`);
 });
 test("rate -> 0 when a LIMITING reactant is exhausted: 3 A and 9 B give exactly 3 reactions, 6 B are left over, and the rate stays 0", () => {
   const e = new E.CollisionEngine({ seed: 4, params: { n: 9, T: 700, ea: 5, site: 360 } });
@@ -275,7 +275,6 @@ test("rate -> 0 when a LIMITING reactant is exhausted: 3 A and 9 B give exactly 
   assert.deepEqual(e.speciesCounts(), [3, 9, 0, 0]); e.run(150);
   assert.equal(e.succ, 3); assert.deepEqual(e.speciesCounts(), [0, 6, 3, 3]); assert.equal(e.limitingLeft(), 0);
   const s0 = e.succ; e.run(60); assert.equal(e.succ, s0, "no product formed after A ran out"); assert.equal(e.rateOver(10), 0);
-  const c = RM.rateCurve(e.successTimes(), e.t); assert.ok(c.r[c.r.length - 1] < 0.02, `curve end ${c.r[c.r.length - 1]}`);
 });
 test("rate -> 0 and products stop when both reactants are used up (equal amounts); the Products series ends on a plateau", () => {
   const e = new E.CollisionEngine({ seed: 6, params: { n: 8, T: 700, ea: 5, site: 360 } }); e.run(300);
@@ -284,13 +283,13 @@ test("rate -> 0 and products stop when both reactants are used up (equal amounts
   const ps = RM.productCurve(e.successTimes(), e.t); assert.equal(ps.v[ps.v.length - 1], 8); assert.equal(ps.t[ps.t.length - 1], e.t); // [CHANGED] smooth PCHIP curve (was a polyline through the events)
   for (let i = 1; i < ps.v.length; i++) assert.ok(ps.v[i] >= ps.v[i - 1] - 1e-9 && ps.v[i] <= 8 + 1e-9 && ps.t[i] >= ps.t[i - 1], "never falls, never overshoots");
   const plateau = ps.v.filter((_, i) => ps.t[i] >= tLast + 40); assert.ok(plateau.length >= 2 && plateau.every((v) => Math.abs(v - 8) < 1e-9), "flat after the last reaction");
-  const c = RM.rateCurve(e.successTimes(), e.t); assert.ok(c.r[c.r.length - 1] < 0.02 && Math.max(...c.r) > 0.05);
+  assert.equal(e.rateOver(10), 0);
 });
 test("Reset restores the initial reactants and clears the graph data (events, history, marks, counters)", () => {
   const e = new E.CollisionEngine({ seed: 2, params: { n: 25, T: 600, ea: 6 } }); e.run(40); e.mark("x"); assert.ok(e.succ > 5);
   e.reset(2);
   assert.deepEqual(e.speciesCounts(), [25, 25, 0, 0]); assert.equal(e.succ, 0); assert.equal(e.successTimes().length, 0); assert.equal(e.histLen, 1); assert.equal(e.marks.length, 0); assert.equal(e.t, 0);
-  const s = SNAP.makeSnapshot(e); assert.equal(s.events.length, 0); assert.equal(s.nC, 0); assert.equal(Math.max(...RM.rateCurve(s.events, s.t).r), 0);
+  const s = SNAP.makeSnapshot(e); assert.equal(s.events.length, 0); assert.equal(s.nC, 0); assert.equal(RM.productCurve(s.events, s.t).v.every((v) => v === 0), true);
   e.configure({ n: 12 }, 3); assert.deepEqual(e.speciesCounts(), [12, 12, 0, 0]);
 });
 test("the Concentration slider only adds or removes the DIFFERENCE (it never tops reactants back up): after 10 reactions n 40 -> 41 gives 31 A", () => {
@@ -338,20 +337,24 @@ test("surface area (solid): the initial rate rises as the same mass is split int
   const v = [0, 1, 4].map(r); assert.ok(v[0] < v[1] && v[1] < v[2], `pieces ${v.map((x) => x.toFixed(2))}`);
 });
 
-console.log("== NEW: the rate graph data is the engine's data, and is not a forced shape ==");
-test("rateCurve is smooth, non-negative, and its area is close to the number of reactions (the events), at several times", () => {
+console.log("== NEW: the concentration graph data is the engine's data, and is not a forced shape ==");
+test("[CHANGED: was rateCurve] the C curve is smooth, monotone, never above the real count, and the D, A and B curves end on the engine's counts, at several times", () => {
   const e = new E.CollisionEngine({ seed: 12, params: { n: 40, T: 500, ea: 8 } });
   for (const T of [20, 40, 80, 120]) {
-    e.run(T - e.t); const ev = e.successTimes(); const c = RM.rateCurve(ev, e.t); assert.equal(c.r.length, 121);
-    assert.ok(c.r.every((v) => v >= 0 && Number.isFinite(v))); close(RM.curveArea(c), ev.length, Math.max(2, 0.2 * ev.length), `t=${T}`);
-    let big = 0; const mx = Math.max(...c.r); for (let i = 1; i < c.r.length; i++) big = Math.max(big, Math.abs(c.r[i] - c.r[i - 1]) / (mx || 1)); assert.ok(big < 0.3, `largest step between neighbouring points ${(100 * big).toFixed(1)} % of the peak`);
+    e.run(T - e.t); const ev = e.successTimes(); const [a, b] = e.speciesCounts(); const h = e.history();
+    const pc = RM.productCurve(ev, e.t); assert.equal(pc.v.length, 161); assert.equal(pc.v[160], ev.length);
+    const cc = RM.countCurves(h, e.t, { a, b, c: ev.length });
+    for (let i = 1; i < pc.v.length; i++) { assert.ok(pc.v[i] >= pc.v[i - 1] - 1e-9 && Number.isFinite(pc.v[i])); assert.ok(cc.ca[i] <= cc.ca[i - 1] + 1e-9 && cc.cb[i] <= cc.cb[i - 1] + 1e-9, "reactants never rise"); }
+    assert.equal(cc.ca[160], a); assert.equal(cc.cb[160], b);
+    let big = 0; for (let i = 1; i < pc.v.length; i++) big = Math.max(big, Math.abs(pc.v[i] - pc.v[i - 1])); assert.ok(big < 0.2 * 40, `largest step between neighbouring points ${big.toFixed(2)} particles`);
   }
 });
-test("rateCurve is NOT forced to fall: events that really speed up give a rising curve; evenly spaced events give a flat one; no events give zeros", () => {
-  const n = 60; const rising = Array.from({ length: n }, (_, i) => 60 * Math.sqrt((i + 1) / n)); // density proportional to t
-  const up = RM.rateCurve(rising, 60); assert.ok(up.r[100] > 2 * up.r[20], `[CHANGED: x2, the smoothing is wider] rising ${up.r[20].toFixed(2)} -> ${up.r[100].toFixed(2)}`);
-  const flat = RM.rateCurve(Array.from({ length: 60 }, (_, i) => i + 0.5), 60); const mid = Array.from(flat.r.slice(20, 100)); assert.ok(Math.max(...mid) / Math.min(...mid) < 1.15, "flat");
-  assert.equal(Math.max(...RM.rateCurve([], 30).r), 0); assert.equal(Math.max(...RM.rateCurve([], 0).r), 0);
+test("[CHANGED: was 'rateCurve is NOT forced to fall'] the product curve is NOT a fixed shape: events that speed up give a convex curve, evenly spaced events a straight line, no events zeros", () => {
+  const n = 60; const rising = Array.from({ length: n }, (_, i) => 60 * Math.sqrt((i + 1) / n)); // density proportional to t -> N ~ t^2
+  const up = RM.productCurve(rising, 60); const at = (c, t) => c.v[Math.round((t / 60) * 160)];
+  assert.ok(at(up, 30) < 0.4 * at(up, 60), `convex: N(30) ${at(up, 30).toFixed(1)} vs N(60) ${at(up, 60).toFixed(1)}`);
+  const flat = RM.productCurve(Array.from({ length: 60 }, (_, i) => i + 0.5), 60); assert.ok(Math.abs(at(flat, 30) - 30) < 1.5 && Math.abs(at(flat, 15) - 15) < 1.5, "straight line");
+  assert.equal(Math.max(...RM.productCurve([], 30).v), 0); assert.equal(Math.max(...RM.productCurve([], 0).v), 0);
 });
 test("graph data equals engine data: product series = cumulative reactions; last point = engine counts of C, D and succ; events are the engine's own times, ascending", () => {
   const e = new E.CollisionEngine({ seed: 14, params: { n: 40, T: 500, ea: 8 } }); e.run(55); const s = SNAP.makeSnapshot(e);
@@ -362,7 +365,7 @@ test("graph data equals engine data: product series = cumulative reactions; last
   assert.equal(s.nC, e.succ); close(s.rate, e.rateOver(10), 1e-12);
 });
 
-console.log("== NEW (round 3b): smooth Products curve, Reactants / Both curves, rate curve without end artefacts ==");
+console.log("== NEW (round 3b): smooth Products curve, Reactants / Both curves, Both curves conserve particles ==");
 test("PCHIP: passes through every sample, never overshoots, never falls for rising data, and flat data stays flat", () => {
   const xs = [0, 1, 2, 3, 4, 5]; const ys = [0, 6, 6, 7, 20, 20]; const f = RM.pchip(xs, ys);
   xs.forEach((x, i) => close(f(x), ys[i], 1e-12)); let prev = -1; for (let x = 0; x <= 5; x += 0.01) { const v = f(x); assert.ok(v >= prev - 1e-9 && v <= 20 + 1e-9 && v >= -1e-9); prev = v; }
@@ -392,16 +395,14 @@ test("solid system: Reactants curves are the solid's unused sites (falling by th
   assert.equal(h.a[0], 144); assert.equal(h.b[0], 20); for (let k = 0; k < h.t.length; k++) { assert.equal(h.a[k], 144 - h.succ[k]); assert.equal(h.b[k], 20 - h.succ[k]); }
   assert.equal(h.a[h.a.length - 1], 144 - Math.round(h.succ[h.succ.length - 1])); e.reset(5); const h2 = e.history(); assert.equal(h2.t.length, 1); assert.equal(h2.a[0], 144); assert.equal(h2.b[0], 20); assert.equal(h2.succ[0], 0);
 });
-test("[NEW] rate curve has no end artefacts: the start is not lower than the early peak, and once 80 % has reacted the plotted rate never rises by more than 2 % of its peak (14 seeds, default vessel)", () => {
-  let worstStart = 9; let worstRise = 0;
+test("[CHANGED: was 'rate curve has no end artefacts'] Both view data over 14 seeds (default vessel): A falls from 40 and C rises from 0 smoothly, A + C = 40 at every sample (units conserved), the curves cross, and no curve leaves 0..40", () => {
   for (let sd = 1; sd <= 14; sd++) {
-    const e = new E.CollisionEngine({ seed: sd, params: {} }); e.run(150); const ev = e.successTimes(); const c = RM.rateCurve(ev, e.t); const mx = Math.max(...c.r);
-    worstStart = Math.min(worstStart, c.r[0] / Math.max(...c.r.slice(0, 13)));
-    const t80 = ev[Math.floor(0.8 * ev.length) - 1]; let mn = Infinity; let rise = 0;
-    for (let i = 0; i < c.r.length; i++) if (c.t[i] >= t80) { mn = Math.min(mn, c.r[i]); rise = Math.max(rise, c.r[i] - mn); }
-    worstRise = Math.max(worstRise, rise / mx);
+    const e = new E.CollisionEngine({ seed: sd, params: {} }); e.run(150); const [a, b] = e.speciesCounts(); const cc = RM.countCurves(e.history(), e.t, { a, b, c: e.succ });
+    assert.equal(cc.a[0], 40); assert.equal(cc.c[0], 0); assert.equal(cc.ca[0], 40); assert.equal(cc.cc[0], 0);
+    for (let k = 0; k < cc.a.length; k++) assert.equal(cc.a[k] + cc.c[k], 40, `seed ${sd}: A + C at sample ${k}`);
+    for (let g = 0; g < cc.t.length; g++) assert.ok(cc.ca[g] >= -1e-9 && cc.ca[g] <= 40 + 1e-9 && cc.cc[g] >= -1e-9 && cc.cc[g] <= 40 + 1e-9, `seed ${sd}: curve leaves 0..40`);
+    let cross = false; for (let g = 0; g < cc.t.length; g++) if (cc.cc[g] >= cc.ca[g]) cross = true; assert.ok(cross, `seed ${sd}: the A and C curves cross`);
   }
-  assert.ok(worstStart >= 0.95, `start / early peak = ${worstStart.toFixed(3)}`); assert.ok(worstRise <= 0.02, `largest late rise ${(100 * worstRise).toFixed(2)} % of the peak`);
 });
 
 console.log("== NEW: Maxwell-Boltzmann distribution (3-D translational kinetic energy) ==");
@@ -468,13 +469,17 @@ console.log("== NEW: no vertical bars / histogram anywhere in either graph (sour
   const dir = "../src/engines/collision-theory-visualizer/";
   const strip = (src) => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\{\/\*[\s\S]*?\*\/\}/g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
   const read = (f) => strip(fs.readFileSync(new URL(dir + f, import.meta.url), "utf8"));
-  const files = ["components/RateGraph.jsx", "components/MbGraph.jsx", "CollisionTheoryVisualizer.jsx", "lib/rateMetrics.js", "lib/maxwellBoltzmann.js", "lib/collisionEngine.js", "lib/snapshot.js"];
-  test("RateGraph and MbGraph draw no <rect> except the clip rectangle, and no bars/hist/binning identifiers exist in the engine, metrics, graphs or page", () => {
+  const files = ["components/ConcentrationGraph.jsx", "components/MbGraph.jsx", "CollisionTheoryVisualizer.jsx", "lib/rateMetrics.js", "lib/maxwellBoltzmann.js", "lib/collisionEngine.js", "lib/snapshot.js"];
+  test("[NEW] no rate-curve code remains: rateCurve / curveArea are gone and the graph has no rate view", () => {
+    for (const f of ["components/ConcentrationGraph.jsx", "CollisionTheoryVisualizer.jsx", "lib/rateMetrics.js"]) assert.ok(!/rateCurve|curveArea|rate-line|id: "rate", label: "Rate"/.test(read(f)), `${f} still has rate-curve code`);
+    assert.ok(!fs.existsSync(new URL(dir + "components/RateGraph.jsx", import.meta.url)), "RateGraph.jsx is deleted");
+  });
+  test("ConcentrationGraph and MbGraph draw no <rect> except the clip rectangle, and no bars/hist/binning identifiers exist in the engine, metrics, graphs or page", () => {
     for (const f of files) {
       const src = read(f);
       assert.ok(!/histogram|HIST_BIN|binnedCounts|energyHistogram|showHist|histView|\bbars?\b|barEls|smoothedRate|ct-hist|steady|RESTORE_DELAY|Steady supply/i.test(src), `${f} still mentions an obsolete bar / histogram / steady-supply item`);
     }
-    for (const f of ["components/RateGraph.jsx", "components/MbGraph.jsx"]) {
+    for (const f of ["components/ConcentrationGraph.jsx", "components/MbGraph.jsx"]) {
       const src = read(f).replace(/<clipPath[\s\S]*?<\/clipPath>/g, ""); assert.ok(!/<rect\b/.test(src), `${f} draws a <rect>`); assert.ok(!/<path[^>]*d=\{bar/i.test(src));
     }
   });

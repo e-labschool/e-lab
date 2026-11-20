@@ -57,7 +57,7 @@ test("renders the dashboard: tabs, five conditions, vessel, magnifier, both grap
   await mount(React.createElement(Collision, { standalone: true }));
   assert.ok($('[data-testid="workspace"]')); assert.equal($$('[data-testid="system-tabs"] [role="radio"]').length, 2);
   for (const id of ["T", "n", "ea", "site"]) assert.ok($(`[data-testid="slider-${id}"]`), id);
-  assert.ok($('[data-testid="catalyst-switch"]')); assert.ok($('[data-testid="vessel-canvas"]')); assert.ok($('[data-testid="viewer"]')); assert.ok($('[data-testid="mb-svg"]')); assert.ok($('[data-testid="rate-svg"]'));
+  assert.ok($('[data-testid="catalyst-switch"]')); assert.ok($('[data-testid="vessel-canvas"]')); assert.ok($('[data-testid="viewer"]')); assert.ok($('[data-testid="mb-svg"]')); assert.ok($('[data-testid="conc-svg"]'));
   assert.equal($('[data-testid="slider-piece"]'), null, "surface-area slider only in the solid system");
   assert.equal(consoleErrors.length, 0, consoleErrors.join("\n"));
 });
@@ -65,7 +65,7 @@ test("accessible names: every slider has a label and a value text; the canvas an
   for (const s of $$('input[type="range"]')) { assert.ok(document.querySelector(`label[for="${s.id}"]`), s.id); assert.ok(s.getAttribute("aria-valuetext"), s.id); }
   assert.match($('[data-testid="vessel-canvas"]').getAttribute("aria-label"), /A, .* B, .* kelvin/);
   assert.match($('[data-testid="mb-svg"]').getAttribute("aria-label"), /Area under the curve is 1\.000/);
-  assert.ok($('[data-testid="rate-svg"]').getAttribute("aria-label"));
+  assert.ok($('[data-testid="conc-svg"]').getAttribute("aria-label"));
   assert.match(text('[data-testid="viewer-outcome"]') || "Waiting", /Reaction|No reaction|Waiting/);
 });
 test("the Maxwell-Boltzmann readout shows the EXACT fraction (and area 1.000) and links to the same T as the vessel", async () => {
@@ -175,8 +175,8 @@ test("Escape closes the popover and returns focus to its button", async () => {
 test("[CHANGED] graph controls: pin curve (the old 'Zoom tail' y-zoom is replaced by the full-range option, tested below); products view; hide/show graph", async () => {
   assert.equal($('[data-testid="mb-zoom"]'), null, "the old y-axis zoom control is gone");
   await click($('[data-testid="mb-pin"]')); assert.match($('[data-testid="mb-pin"]').textContent, /Unpin \d+ K/); await click($('[data-testid="mb-pin"]'));
-  await click($$('[data-testid="rate-view"] [role="radio"]')[2]); assert.match($('[data-testid="rate-svg"]').getAttribute("aria-label"), /C formed/);
-  await click($$('[data-testid="rate-view"] [role="radio"]')[0]);
+  await click($$('[data-testid="conc-view"] [role="radio"]')[1]); assert.match($('[data-testid="conc-svg"]').getAttribute("aria-label"), /C formed/);
+  await click($$('[data-testid="conc-view"] [role="radio"]')[2]);
   await click($('[data-testid="graph-toggle"]')); assert.equal($('[data-testid="graph-toggle"]').getAttribute("aria-pressed"), "false"); await click($('[data-testid="graph-toggle"]'));
 });
 test("reduced motion: starts paused-free but slow (quarter speed) and the magnifier shows its final frame at once", async () => {
@@ -203,9 +203,9 @@ test("NEW no vertical bars or histogram in EITHER graph (rate view, products vie
     assert.ok(svg, name); const rects = [...svg.querySelectorAll("rect")].filter((r) => !r.closest("clipPath")); assert.equal(rects.length, 0, `${name}: ${rects.length} <rect> bars`);
     assert.equal(svg.querySelectorAll("[data-testid*='bar'], [data-testid*='hist'], .ct-bar").length, 0, `${name}: bar markup`);
   };
-  noBars($('[data-testid="mb-svg"]'), "energy graph"); noBars($('[data-testid="rate-svg"]'), "rate view");
-  await click($$('[data-testid="rate-view"] [role="radio"]')[2]); noBars($('[data-testid="rate-svg"]'), "products view"); await click($$('[data-testid="rate-view"] [role="radio"]')[0]);
-  assert.equal($('[data-testid="rate-svg"]').querySelectorAll("path[data-testid='rate-line']").length, 1, "ONE continuous curve in the rate view");
+  noBars($('[data-testid="mb-svg"]'), "energy graph"); noBars($('[data-testid="conc-svg"]'), "Both view (default)");
+  await click($$('[data-testid="conc-view"] [role="radio"]')[1]); noBars($('[data-testid="conc-svg"]'), "products view"); await click($$('[data-testid="conc-view"] [role="radio"]')[0]); noBars($('[data-testid="conc-svg"]'), "reactants view"); await click($$('[data-testid="conc-view"] [role="radio"]')[2]);
+  assert.equal($('[data-testid="conc-svg"]').querySelectorAll("path[data-testid^='curve-']").length, 2, "[CHANGED: was ONE rate curve] the Both view draws two continuous curves (reactant and product)"); assert.equal($('[data-testid="conc-svg"]').querySelectorAll("[data-testid='rate-line']").length, 0, "no rate curve exists");
   await click($('[data-testid="settings"]')); const panel = text('[data-testid="settings-panel"]'); assert.ok(!/histogram|Bars|vessel energies|Steady supply/i.test(panel), `settings still mention a removed control: ${panel.slice(0, 200)}`);
   assert.equal($('[data-testid="set-hist"]'), null); assert.equal($('[data-testid="set-steady"]'), null); await click($('[data-testid="settings"]'));
   assert.ok(!/histogram/i.test($('[data-testid="workspace"]').innerHTML), "no 'histogram' anywhere in the page");
@@ -243,7 +243,7 @@ test("NEW Ea outside the displayed range: a clearly labelled full-range option r
   assert.equal(text('[data-testid="mb-area"]'), "1.000"); assert.equal($('[data-testid="mb-graph"]').dataset.ymax, String(MB.mbAxis(300, { eaList: [45] }).yMax), "y scale unchanged: the curve keeps its shape");
   await click($('[data-testid="mb-full-range"]')); assert.equal($('[data-testid="mb-graph"]').dataset.full, "0"); await setRange("ea", 10); assert.equal($('[data-testid="mb-full-range"]'), null);
 });
-test("NEW irreversible reaction on screen: counts of A, B fall; C, D rise equal to the reactions; products never revert; rate graph and products graph use the engine's data", async () => {
+test("NEW irreversible reaction on screen: counts of A, B fall; C, D rise equal to the reactions; products never revert; concentration graph uses the engine's data", async () => {
   await click($('[data-testid="reset"]'), 80); await setRange("T", 600); await setRange("ea", 6); await setRange("site", 360);
   await click($('[data-testid="play-pause"]')); // pause the loop; drive the engine by hand
   const count = (k) => Number(text(`[data-testid="count-${k}"]`)); let lastC = 0; let lastA = 40;
@@ -251,77 +251,76 @@ test("NEW irreversible reaction on screen: counts of A, B fall; C, D rise equal 
     eng().run(8); await wait(260);
     const [a, b, c, d] = eng().speciesCounts(); assert.deepEqual([count("A"), count("B"), count("C"), count("D")], [a, b, c, d], "vessel key shows the engine's counts");
     assert.ok(c >= lastC && a <= lastA && a + b + c + d === 80 && c === eng().succ && d === eng().succ, `step ${k}: ${a},${b},${c},${d}`); lastC = c; lastA = a;
-    assert.equal(Number($('[data-testid="rate-svg"]').dataset.total), eng().succ, "graph total = engine total"); assert.equal(Number($('[data-testid="vessel-canvas"]').dataset.succ), eng().succ);
+    assert.equal(Number($('[data-testid="conc-svg"]').dataset.total), eng().succ, "graph total = engine total"); assert.equal(Number($('[data-testid="vessel-canvas"]').dataset.succ), eng().succ);
   }
   assert.ok(eng().succ > 20, `reactions ${eng().succ}`);
-  await click($$('[data-testid="rate-view"] [role="radio"]')[2]); await wait(260); assert.equal(Number($('[data-testid="curve-C"]').dataset.final), eng().succ, "products graph ends at the engine's product count");
-  assert.match($('[data-testid="rate-svg"]').getAttribute("aria-label"), /C formed/); await click($$('[data-testid="rate-view"] [role="radio"]')[0]);
+  await click($$('[data-testid="conc-view"] [role="radio"]')[1]); await wait(260); assert.equal(Number($('[data-testid="curve-C"]').dataset.final), eng().succ, "products graph ends at the engine's product count");
+  assert.match($('[data-testid="conc-svg"]').getAttribute("aria-label"), /C formed/); await click($$('[data-testid="conc-view"] [role="radio"]')[2]);
 });
-test("NEW rate graph: one smooth curve from the real events; high at the start, near zero later; the live rate falls; the 'reactions s⁻¹' axis; reactant exhaustion is stated and the products graph plateaus", async () => {
+test("[CHANGED: was 'NEW rate graph'] concentration graph: Both view falls/rises from the engine's counts; axes say concentration and time; reactant exhaustion is stated; the live rate chip still falls to 0; the Products curve plateaus", async () => {
   await click($('[data-testid="reset"]'), 80); await click($('[data-testid="play-pause"]')); // pause first: the Concentration slider only adds/removes the difference, so nothing may react before n is set
   await setRange("T", 700); await setRange("ea", 5); await setRange("site", 360); await setRange("n", 6); eng().run(400); await wait(300);
-  assert.equal(eng().succ, 6); assert.equal(eng().limitingLeft(), 0); assert.equal($('[data-testid="rate-svg"]').dataset.finished, "1"); assert.ok($('[data-testid="rate-finished-note"]')); assert.match(text('[data-testid="rate-finished-note"]'), /rate = 0/);
-  const end = Number($('[data-testid="rate-line"]').dataset.final); assert.ok(end < 0.05, `rate at the end ${end}`);
-  assert.match(text('[data-testid="rate-panel"]'), /Reaction rate \/ reactions s⁻¹|Rate \/ (reactions )?s⁻¹/); assert.match(text('[data-testid="rate-panel"]'), /Time \/ s/);
-  const P = pts($('[data-testid="rate-line"]').getAttribute("d")); assert.ok(P.length >= 100, "a dense continuous line, not bars or stems");
-  const top = Math.min(...P.map((q) => q[1])); const i = P.findIndex((q) => q[1] === top); assert.ok(i < P.length / 3, "highest early on"); assert.ok(P[P.length - 1][1] > top + 0.8 * (Math.max(...P.map((q) => q[1])) - top), "and low (near zero) at the end");
-  for (let i = 0; i < 30 && !/0\.00 s⁻¹/.test(text('[data-testid="live-rate"]')); i++) await wait(100); assert.match(text('[data-testid="live-rate"]'), /0\.00 s⁻¹/, "the live rate readout shows 0.00 s⁻¹ once everything has reacted");
-  await click($$('[data-testid="rate-view"] [role="radio"]')[2]); await wait(260);
-  const Q = pts($('[data-testid="curve-C"]').getAttribute("d")); assert.equal($('[data-testid="curve-C"]').dataset.final, "6"); for (let k = 1; k < Q.length; k++) assert.ok(Q[k][1] <= Q[k - 1][1] + 1e-6 && Q[k][0] >= Q[k - 1][0] - 1e-6, `cumulative products only rise (point ${k}: ${Q[k - 1]} -> ${Q[k]})`);
+  assert.equal(eng().succ, 6); assert.equal(eng().limitingLeft(), 0); assert.equal($('[data-testid="conc-svg"]').dataset.finished, "1"); assert.ok($('[data-testid="graph-finished-note"]')); assert.match(text('[data-testid="graph-finished-note"]'), /limiting reactant used up/);
+  assert.equal($('[data-testid="curve-A"]').dataset.final, "0", "A has fallen to 0"); assert.equal($('[data-testid="curve-C"]').dataset.final, "6", "C has risen to 6");
+  assert.match(text('[data-testid="conc-panel"]'), /Concentration \(particles/); assert.match(text('[data-testid="conc-panel"]'), /Time \/ s/); assert.match(text('[data-testid="conc-note"]'), /Fixed volume: concentration is proportional to the number of particles/);
+  assert.ok(!/mol/i.test(text('[data-testid="conc-svg"]')), "no invented mol dm-3 numbers"); assert.equal($('[data-testid="conc-svg"]').querySelectorAll("[data-testid='rate-line']").length, 0);
+  const A = pts($('[data-testid="curve-A"]').getAttribute("d")); assert.ok(A.length >= 100, "a dense continuous line, not bars or stems"); for (let k = 1; k < A.length; k++) assert.ok(A[k][1] >= A[k - 1][1] - 1e-6, "the reactant curve never rises");
+  for (let i = 0; i < 30 && !/0\.00 s⁻¹/.test(text('[data-testid="live-rate"]')); i++) await wait(100); assert.match(text('[data-testid="live-rate"]'), /0\.00 s⁻¹/, "the live rate chip (not tied to the graph) shows 0.00 s⁻¹ once everything has reacted");
+  await click($$('[data-testid="conc-view"] [role="radio"]')[1]); await wait(260);
+  const Q = pts($('[data-testid="curve-C"]').getAttribute("d")); assert.equal($('[data-testid="curve-C"]').dataset.final, "6"); for (let k = 1; k < Q.length; k++) assert.ok(Q[k][1] <= Q[k - 1][1] + 0.15 && Q[k][0] >= Q[k - 1][0] - 1e-6, `cumulative products only rise (0.15 px tolerance for a render in mid-update) (point ${k}: ${Q[k - 1]} -> ${Q[k]})`);
   assert.ok(Math.abs(Q[Q.length - 1][1] - Q[Q.length - 2][1]) < 1e-6, "flat at the end: plateau"); assert.ok($('[data-testid="products-max"]'));
-  assert.match(text('[data-testid="rate-panel"]'), /all 6 formed: reactant used up/); await click($$('[data-testid="rate-view"] [role="radio"]')[0]);
+  assert.match(text('[data-testid="conc-panel"]'), /all 6 formed: reactant used up/); await click($$('[data-testid="conc-view"] [role="radio"]')[2]);
 });
-test("NEW Reset restores the initial reactants and clears the rate and product graphs; the mixed and solid systems both start from their full reactants", async () => {
+test("NEW Reset restores the initial reactants and clears the concentration graph; the mixed and solid systems both start from their full reactants", async () => {
   await click($('[data-testid="reset"]'), 120);
   const k = (id) => Number(text(`[data-testid="count-${id}"]`)); assert.ok(eng().t < 2); // the run restarted from the full 40 + 40 (a reaction or two may already have happened in the 120 ms)
   assert.ok(k("A") + k("C") === 40 && k("B") + k("D") === 40 && k("C") === k("D") && k("C") <= 4, `${k("A")},${k("B")},${k("C")},${k("D")}`); assert.equal(eng().unitsTotal(), 80);
-  assert.ok(Number($('[data-testid="rate-svg"]').dataset.total) <= 4); assert.ok(eng().t < 3 && eng().succ <= 8, "the run restarted (a few early reactions at most)");
+  assert.ok(Number($('[data-testid="conc-svg"]').dataset.total) <= 4); assert.ok(eng().t < 3 && eng().succ <= 8, "the run restarted (a few early reactions at most)");
   await click($('[data-testid="system-tabs"] [role="radio"]:nth-child(2)')); await wait(200); assert.equal(Number(text('[data-testid="count-A"]')) + Number(text('[data-testid="count-C"]')), 144, "solid: 144 sites, unused + used up"); assert.equal(Number(text('[data-testid="count-B"]')) + Number(text('[data-testid="count-D"]')), 40);
   await click($('[data-testid="play-pause"]')); eng().run(0); await setRange("T", 700); await setRange("ea", 5); eng().run(60); await wait(260);
   const [a, b, c, d] = eng().speciesCounts(); assert.ok(c > 3 && a + c === 144 && b + d === 40 && text('[data-testid="count-C"]') === String(c), `solid ${a},${b},${c},${d}`);
   await click($('[data-testid="reset"]'), 120); assert.ok(eng().t < 2 && eng().p.system === "mixed" && Number(text('[data-testid="count-A"]')) + Number(text('[data-testid="count-C"]')) === 40, "Reset returns to the default A + B vessel with the full 40 + 40 (a reaction or two may already have happened)"); await click($('[data-testid="system-tabs"] [role="radio"]:nth-child(1)')); await wait(100);
   assert.ok(Number(text('[data-testid="count-A"]')) + Number(text('[data-testid="count-C"]')) === 40);
 });
-test("NEW the rate graph responds to the conditions (the engine does): raising T increases the number of reactions in the same time; 'Next reaction', speeds and Step still work", async () => {
+test("NEW the reaction responds to the conditions (the engine does): raising T increases the number of reactions in the same time; 'Next reaction', speeds and Step still work", async () => {
   const runFor = async (T) => { await click($('[data-testid="reset"]'), 60); await setRange("T", T); await setRange("ea", 10); await click($('[data-testid="play-pause"]')); eng().run(6); await wait(260); return eng().succ; };
   const lo = await runFor(300); const hi = await runFor(650); assert.ok(hi > lo + 3, `${lo} reactions at 300 K, ${hi} at 650 K in the same 6 s`);
   assert.equal($$('[data-testid="speed"] [role="radio"]').length, 4); await click($('[data-testid="reset"]'), 60);
 });
 
-test("NEW selector Rate | Reactants | Products | Both and the reaction equation A + B → C + D share one state; species buttons have aria-pressed; every view is curves only (no bars)", async () => {
+test("[CHANGED: Rate view removed, Both is the default] selector Reactants | Products | Both and the reaction equation A + B → C + D share one state; species buttons have aria-pressed; every view is curves only (no bars)", async () => {
   await click($('[data-testid="reset"]'), 80); await click($('[data-testid="play-pause"]')); eng().run(90); await wait(300);
-  const names = $$('[data-testid="rate-view"] [role="radio"]').map((r) => r.textContent.trim()); assert.deepEqual(names, ["Rate", "Reactants", "Products", "Both"]);
+  const names = $$('[data-testid="conc-view"] [role="radio"]').map((r) => r.textContent.trim()); assert.deepEqual(names, ["Reactants", "Products", "Both"], "[CHANGED] no Rate option");
   const eq = $('[data-testid="equation"]'); assert.ok(eq); assert.match(eq.getAttribute("aria-label"), /A \+ B → C \+ D/); assert.equal(eq.textContent, "A+B→C+DAll");
-  const on = () => ["A", "B", "C", "D"].filter((k) => $(`[data-testid="eq-${k}"]`).getAttribute("aria-pressed") === "true").join(""); const view = () => $('[data-testid="rate-plot"]').dataset.view; const cur = () => $$('[data-testid="rate-svg"] path[data-testid^="curve-"]').map((p) => p.dataset.testid.slice(6)).join("");
-  const radio = async (i) => click($$('[data-testid="rate-view"] [role="radio"]')[i]); const checked = () => $$('[data-testid="rate-view"] [role="radio"]').findIndex((r) => r.getAttribute("aria-checked") === "true");
-  assert.equal(view(), "rate"); assert.equal(on(), "", "Rate view: no species selected");
-  await radio(1); assert.equal(view(), "reactants"); assert.equal(cur(), "AB"); assert.equal(on(), "AB", "Reactants view: A and B selected"); await wait(50);
-  await click($('[data-testid="eq-A"]')); assert.equal(view(), "reactants"); assert.equal(cur(), "A"); assert.equal(on(), "A"); assert.equal(checked(), 1, "selector shows Reactants");
+  const on = () => ["A", "B", "C", "D"].filter((k) => $(`[data-testid="eq-${k}"]`).getAttribute("aria-pressed") === "true").join(""); const view = () => $('[data-testid="conc-plot"]').dataset.view; const cur = () => $$('[data-testid="conc-svg"] path[data-testid^="curve-"]').map((p) => p.dataset.testid.slice(6)).join("");
+  const radio = async (i) => click($$('[data-testid="conc-view"] [role="radio"]')[i]); const checked = () => $$('[data-testid="conc-view"] [role="radio"]').findIndex((r) => r.getAttribute("aria-checked") === "true");
+  assert.equal(view(), "both", "[CHANGED] Both is the default view"); assert.equal(on(), "", "Both view: no single species selected"); assert.equal($('[data-testid="eq-all"]').getAttribute("aria-pressed"), "true"); assert.equal(checked(), 2); assert.equal(cur(), "AC");
+  await radio(0); assert.equal(view(), "reactants"); assert.equal(cur(), "AB"); assert.equal(on(), "AB", "Reactants view: A and B selected"); await wait(50);
+  await click($('[data-testid="eq-A"]')); assert.equal(view(), "reactants"); assert.equal(cur(), "A"); assert.equal(on(), "A"); assert.equal(checked(), 0, "selector shows Reactants");
   assert.equal(Number($('[data-testid="curve-A"]').dataset.final), eng().speciesCounts()[0], "A curve ends at the engine's A count");
   await click($('[data-testid="eq-B"]')); assert.equal(cur(), "B"); assert.equal(on(), "B"); assert.equal(Number($('[data-testid="curve-B"]').dataset.final), eng().speciesCounts()[1]);
   await click($('[data-testid="eq-B"]')); assert.equal(cur(), "AB", "clicking the selected species again shows both reactants");
-  await click($('[data-testid="eq-C"]')); assert.equal(view(), "products"); assert.equal(cur(), "C"); assert.equal(on(), "C"); assert.equal(checked(), 2); assert.equal(Number($('[data-testid="curve-C"]').dataset.final), eng().succ);
+  await click($('[data-testid="eq-C"]')); assert.equal(view(), "products"); assert.equal(cur(), "C"); assert.equal(on(), "C"); assert.equal(checked(), 1); assert.equal(Number($('[data-testid="curve-C"]').dataset.final), eng().succ);
   await click($('[data-testid="eq-D"]')); assert.equal(cur(), "D"); assert.equal(on(), "D"); assert.equal(Number($('[data-testid="curve-D"]').dataset.final), eng().succ);
-  await click($('[data-testid="eq-arrow"]')); assert.equal(view(), "both"); assert.equal(on(), ""); assert.equal($('[data-testid="eq-arrow"]').getAttribute("aria-pressed"), "true"); assert.equal($('[data-testid="eq-all"]').getAttribute("aria-pressed"), "true"); assert.equal(checked(), 3, "selector shows Both");
+  await click($('[data-testid="eq-arrow"]')); assert.equal(view(), "both"); assert.equal(on(), ""); assert.equal($('[data-testid="eq-arrow"]').getAttribute("aria-pressed"), "true"); assert.equal($('[data-testid="eq-all"]').getAttribute("aria-pressed"), "true"); assert.equal(checked(), 2, "selector shows Both");
   assert.equal(cur(), "AC"); const sa = Number($('[data-testid="curve-A"]').dataset.final); const sc = Number($('[data-testid="curve-C"]').dataset.final); assert.equal(sa + sc, 40, "A left + C formed = the 40 started with"); assert.ok(sc > 15, `reacted ${sc}`);
   assert.equal($$('[data-testid="sample-dot"]').length, 2 * 37, "markers at the 37 sample times, for both curves"); assert.ok($('[data-testid="graph-legend"]')); assert.match(text('[data-testid="graph-legend"]'), /A left.*C formed/);
-  for (const i of [0, 1, 2, 3]) { await radio(i); assert.equal($$('[data-testid="rate-svg"] rect').filter((r) => !r.closest("clipPath") && r.getAttribute("data-testid") !== "x").length, 0, `view ${i}: no <rect> bars`); assert.equal(on().length === 0 || i !== 0, true); }
-  await radio(3); assert.equal(on(), "", "selector Both leaves no single species"); await click($('[data-testid="eq-all"]')); assert.equal(view(), "both");
-  await radio(1); assert.equal(on(), "AB", "using the selector clears a single-species choice"); await click($('[data-testid="eq-C"]')); await radio(2); assert.equal(on(), "CD");
+  for (const i of [0, 1, 2]) { await radio(i); assert.equal($$('[data-testid="conc-svg"] rect').filter((r) => !r.closest("clipPath") && r.getAttribute("data-testid") !== "x").length, 0, `view ${i}: no <rect> bars`); }
+  await radio(2); assert.equal(on(), "", "selector Both leaves no single species"); await click($('[data-testid="eq-all"]')); assert.equal(view(), "both");
+  await radio(0); assert.equal(on(), "AB", "using the selector clears a single-species choice"); await click($('[data-testid="eq-C"]')); await radio(1); assert.equal(on(), "CD");
   assert.ok(Math.abs(Number($('[data-testid="curve-C"]').dataset.final) - eng().succ) < 1e-9);
   assert.ok($$('[data-testid="equation"] button').every((b) => b.tagName === "BUTTON" && b.hasAttribute("aria-pressed") && (b.getAttribute("aria-label") || b.textContent.trim())), "native buttons, keyboard operable, with names and a pressed state");
-  await radio(0);
+  await radio(2);
 });
-test("NEW Both view in the solid system uses B and D; Reactants view shows the solid's unused sites (A) and B; Reset returns to the Rate view, clears the species choice and the curves", async () => {
+test("NEW Both view in the solid system uses B and D; Reactants view shows the solid's unused sites (A) and B; Reset returns to the Both view, clears the species choice and the curves", async () => {
   await click($('[data-testid="system-tabs"] [role="radio"]:nth-child(2)')); await wait(100); await click($('[data-testid="play-pause"]')); await setRange("T", 700); await setRange("ea", 5); await setRange("site", 360);
   eng().run(80); await wait(300);
-  await click($$('[data-testid="rate-view"] [role="radio"]')[1]); assert.equal($$('[data-testid="rate-svg"] path[data-testid^="curve-"]').length, 2); const A = Number($('[data-testid="curve-A"]').dataset.final); const B = Number($('[data-testid="curve-B"]').dataset.final);
+  await click($$('[data-testid="conc-view"] [role="radio"]')[0]); assert.equal($$('[data-testid="conc-svg"] path[data-testid^="curve-"]').length, 2); const A = Number($('[data-testid="curve-A"]').dataset.final); const B = Number($('[data-testid="curve-B"]').dataset.final);
   assert.equal(A, eng().speciesCounts()[0]); assert.equal(B, eng().speciesCounts()[1]); assert.ok(A < 144 && A > 100);
-  await click($$('[data-testid="rate-view"] [role="radio"]')[3]); assert.match(text('[data-testid="graph-legend"]'), /B left.*D formed/); assert.equal(Number($('[data-testid="curve-B"]').dataset.final) + Number($('[data-testid="curve-D"]').dataset.final), 40);
-  await click($('[data-testid="eq-C"]')); assert.equal($('[data-testid="rate-plot"]').dataset.species, "C");
-  await click($('[data-testid="reset"]'), 120); assert.equal($('[data-testid="rate-plot"]').dataset.view, "rate"); assert.equal($('[data-testid="rate-plot"]').dataset.species, ""); assert.equal($('[data-testid="eq-C"]').getAttribute("aria-pressed"), "false");
-  await click($$('[data-testid="rate-view"] [role="radio"]')[3]); assert.ok(eng().t < 2); const sa = Number($('[data-testid="curve-A"]').dataset.final); const sc = Number($('[data-testid="curve-C"]').dataset.final); assert.ok(sa + sc === 40 && sc <= 4, `after Reset A ${sa}, C ${sc}`);
-  await click($$('[data-testid="rate-view"] [role="radio"]')[0]);
+  await click($$('[data-testid="conc-view"] [role="radio"]')[2]); assert.match(text('[data-testid="graph-legend"]'), /B left.*D formed/); assert.equal(Number($('[data-testid="curve-B"]').dataset.final) + Number($('[data-testid="curve-D"]').dataset.final), 40);
+  await click($('[data-testid="eq-C"]')); assert.equal($('[data-testid="conc-plot"]').dataset.species, "C");
+  await click($('[data-testid="reset"]'), 120); assert.equal($('[data-testid="conc-plot"]').dataset.view, "both"); assert.equal($('[data-testid="conc-plot"]').dataset.species, ""); assert.equal($('[data-testid="eq-C"]').getAttribute("aria-pressed"), "false");
+  await click($$('[data-testid="conc-view"] [role="radio"]')[2]); assert.ok(eng().t < 2); const sa = Number($('[data-testid="curve-A"]').dataset.final); const sc = Number($('[data-testid="curve-C"]').dataset.final); assert.ok(sa + sc === 40 && sc <= 4, `after Reset A ${sa}, C ${sc}`);
 });
 
 console.log("== Chocolate Wrapping ==");

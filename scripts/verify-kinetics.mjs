@@ -189,60 +189,59 @@ async function collisionPass(W, H, theme) {
   await ctx.close();
 }
 
-// ---- round 3: graphs (rate curve after a full run, products plateau, Maxwell-Boltzmann curve) -------------------------------
+// ---- round 3: graphs (concentration curves after a full run, products plateau, Maxwell-Boltzmann curve) -------------------------------
 const pathPts = (d) => d.split(/(?=[ML])/).map((q) => q.slice(1).split(",").map(Number));
-async function showTab(p, which) { // which: "mb" | "rate"; only the tight-wide layout shows one graph at a time, via the switch in the visible panel
+async function showTab(p, which) { // which: "mb" | "conc"; only the tight-wide layout shows one graph at a time, via the switch in the visible panel
   for (const id of ["graph-tab", "graph-tab-2"]) {
     const sw = p.locator(T(id)).first();
     if (await sw.isVisible().catch(() => false)) { await p.locator(`${T(id)} [role=radio]:nth-child(${which === "mb" ? 1 : 2})`).first().click(); await sleep(250); return; }
   }
 }
 async function noBars(p, size, where) {
-  const r = await p.evaluate(() => ["rate-svg", "mb-svg"].map((id) => { const svg = document.querySelector(`[data-testid="${id}"]`); return svg ? [...svg.querySelectorAll("rect")].filter((x) => !x.closest("clipPath")).length : -1; }));
+  const r = await p.evaluate(() => ["conc-svg", "mb-svg"].map((id) => { const svg = document.querySelector(`[data-testid="${id}"]`); return svg ? [...svg.querySelectorAll("rect")].filter((x) => !x.closest("clipPath")).length : -1; }));
   check(r[0] === 0 && r[1] === 0, `${size}: ${where}: no bars in the graphs (rect elements outside clip paths: rate ${r[0]}, energy ${r[1]})`);
 }
 async function graphChecks(p, W, H, theme, size) {
   const shot = async (name, id) => { await sleep(350); await p.locator(T(id)).screenshot({ path: `${out}/ct-${W}x${H}-${theme}-g-${name}.png` }); };
   const reset = async () => { await p.click(T("reset")); await sleep(150); await p.click(T("play-pause")); await sleep(80); }; // reset, then pause so the engine can be driven by hand
-  // 1. default reaction run to the end: smooth falling rate curve
+  // 1. default reaction run to the end: smooth A (falling) and C (rising) concentration curves
   await reset(); await eng(p, "e.run(150)"); await sleep(400);
   const st = await eng(p, "return {succ: e.succ, c: e.countSpecies(2), d: e.countSpecies(3), a: e.countSpecies(0), b: e.countSpecies(1), units: e.unitsTotal(), left: e.limitingLeft()}");
   check(st.succ > 28 && st.c === st.succ && st.d === st.succ && st.units === 80 && st.a === 40 - st.succ, `${size}: after 150 s ${st.succ} of 40 reacted, A+B+C+D = ${st.units}`);
-  await showTab(p, "rate"); await noBars(p, size, "rate view");
-  const rl = await p.evaluate(() => { const l = document.querySelector('[data-testid="rate-line"]'); return { d: l.getAttribute("d"), total: Number(document.querySelector('[data-testid="rate-svg"]').dataset.total) }; });
-  check(rl.total === st.succ, `${size}: rate graph is built from the engine's ${st.succ} reactions (graph has ${rl.total})`);
-  const P = pathPts(rl.d); const ys = P.map((q) => q[1]); const top = Math.min(...ys); const bottom = Math.max(...ys);
-  check(P.length >= 100, `${size}: the rate curve is one dense continuous line (${P.length} points)`); check(ys.indexOf(top) < P.length / 3, `${size}: the rate is highest early on`);
-  check(ys[ys.length - 1] > top + 0.7 * (bottom - top), `${size}: the rate is far lower at the end than at the start`);
-  let jag = 0; for (let k = 2; k < ys.length; k++) { const a = ys[k - 1] - ys[k - 2]; const b = ys[k] - ys[k - 1]; if (a * b < 0 && Math.abs(a) + Math.abs(b) > 0.12 * (bottom - top)) jag++; } check(jag <= 2, `${size}: the rate curve has no ECG-like spikes (${jag} large reversals)`);
-  check((await p.locator(`${T("rate-panel")} text`, { hasText: /reactions s⁻¹|Rate \/ s⁻¹/ }).count()) >= 1 && (await p.locator(`${T("rate-panel")} text`, { hasText: "Time / s" }).count()) === 1, `${size}: axes labelled Time / s and reaction rate / reactions s⁻¹`);
-  await shot("rate-full-run", "rate-panel");
-  // the other views after the same full run: Reactants, Products, Both, and single species chosen from the equation
-  const view = async (n) => { await p.click(`${T("rate-view")} [role=radio]:nth-child(${n})`); await sleep(350); };
-  await view(2); await noBars(p, size, "reactants view"); check((await p.locator("[data-testid^=curve-]").count()) === 2, `${size}: reactants view draws A and B`);
-  check((await p.locator(`${T("rate-svg")} path[data-testid=curve-A]`).getAttribute("data-final")) === String(st.a), `${size}: the A curve ends at the engine's A count (${st.a})`); await shot("reactants-full-run", "rate-panel");
-  await view(3); await noBars(p, size, "products view (full run)"); check((await p.locator(`${T("rate-svg")} path[data-testid=curve-C]`).getAttribute("data-final")) === String(st.succ), `${size}: the C curve ends at the engine's count (${st.succ})`);
+  await showTab(p, "conc"); await noBars(p, size, "both view (default)");
+  const view = async (n) => { await p.click(`${T("conc-view")} [role=radio]:nth-child(${n})`); await sleep(350); }; // 1 Reactants, 2 Products, 3 Both
+  check((await p.locator(`${T("conc-view")} [role=radio]`).allTextContents()).join("|") === "Reactants|Products|Both" && (await p.locator(`${T("conc-view")} [aria-checked=true]`).textContent()).trim() === "Both", `${size}: the selector is Reactants | Products | Both (no Rate) and Both is the default`);
+  check((await p.locator(T("rate-line")).count()) === 0 && /concentration against simulated time/.test(await p.getAttribute(T("conc-svg"), "aria-label")), `${size}: no rate curve exists; the graph describes itself as concentration against time`);
+  const lab = await p.locator(`${T("conc-panel")} svg text`).allTextContents();
+  check(lab.some((t) => /^Concentration \(particles|^Particles$/.test(t)) && lab.includes("Time / s") && !lab.some((t) => /mol|Rate/.test(t)), `${size}: axes labelled Time / s and concentration in particles (no mol dm-3, no rate axis): ${lab.filter((t) => /Conc|Part|Time/.test(t)).join(" / ")}`);
+  check((await p.locator(T("conc-note")).count()) === 1, `${size}: the fixed-volume note is present (${(await p.locator(T("conc-note")).isVisible()) ? "visible" : "hidden in the tight layout, kept in the graph's aria-label"})`);
+  check((await p.locator(T("sample-dot")).count()) === 74 && (await p.locator(T("graph-legend")).count()) === 1, `${size}: both view has markers at the sample times and a legend`);
+  { const A = pathPts(await p.getAttribute("[data-testid=curve-A]", "d")); const C = pathPts(await p.getAttribute("[data-testid=curve-C]", "d"));
+    check(A.length >= 100 && A.every((q, k) => k === 0 || q[1] >= A[k - 1][1] - 1e-6) && C.every((q, k) => k === 0 || q[1] <= C[k - 1][1] + 1e-6), `${size}: A falls smoothly and C rises smoothly (${A.length} points each)`);
+    check(A[0][1] < C[0][1] && A[A.length - 1][1] > C[C.length - 1][1], `${size}: the A and C curves cross (A starts above C and ends below it)`); }
+  { const a = Number(await p.getAttribute("[data-testid=curve-A]", "data-final")); const c = Number(await p.getAttribute("[data-testid=curve-C]", "data-final")); check(a + c === 40 && c > 28 && a === st.a, `${size}: both view: A ${a} + C ${c} = 40, equal to the engine's counts`); }
+  await shot("both-full-run", "conc-panel");
+  await view(1); await noBars(p, size, "reactants view"); check((await p.locator("[data-testid^=curve-]").count()) === 2, `${size}: reactants view draws A and B`);
+  check((await p.locator(`${T("conc-svg")} path[data-testid=curve-A]`).getAttribute("data-final")) === String(st.a), `${size}: the A curve ends at the engine's A count (${st.a})`); await shot("reactants-full-run", "conc-panel");
+  await view(2); await noBars(p, size, "products view (full run)"); check((await p.locator(`${T("conc-svg")} path[data-testid=curve-C]`).getAttribute("data-final")) === String(st.succ), `${size}: the C curve ends at the engine's count (${st.succ})`);
   { const d = await p.getAttribute("[data-testid=curve-C]", "d"); const Q = pathPts(d); check(Q.length >= 100 && Q.every((q, k) => k === 0 || q[1] <= Q[k - 1][1] + 1e-6), `${size}: the products curve is smooth (${Q.length} points) and never falls`); }
-  await shot("products-full-run", "rate-panel");
-  await view(4); await noBars(p, size, "both view"); check((await p.locator(T("sample-dot")).count()) === 74 && (await p.locator(T("graph-legend")).count()) === 1, `${size}: both view has markers at the sample times and a legend`);
-  { const a = Number(await p.getAttribute("[data-testid=curve-A]", "data-final")); const c = Number(await p.getAttribute("[data-testid=curve-C]", "data-final")); check(a + c === 40 && c > 28, `${size}: both view: A ${a} + C ${c} = 40`); }
-  await shot("both-full-run", "rate-panel");
-  await p.click(T("eq-A")); await sleep(300); check((await p.getAttribute(T("eq-A"), "aria-pressed")) === "true" && (await p.getAttribute(T("eq-B"), "aria-pressed")) === "false" && (await p.locator("[data-testid^=curve-]").count()) === 1 && (await p.locator(`${T("rate-view")} [aria-checked=true]`).textContent()).trim() === "Reactants", `${size}: clicking A in the equation selects the A curve and the Reactants view`);
-  await shot("species-A", "rate-panel"); await p.click(T("eq-C")); await sleep(300); check((await p.getAttribute(T("eq-C"), "aria-pressed")) === "true" && (await p.locator(`${T("rate-view")} [aria-checked=true]`).textContent()).trim() === "Products" && (await p.locator("[data-testid^=curve-]").count()) === 1, `${size}: clicking C selects the C curve and the Products view`);
-  await shot("species-C", "rate-panel"); await p.click(T("eq-arrow")); await sleep(250); check((await p.locator(`${T("rate-view")} [aria-checked=true]`).textContent()).trim() === "Both", `${size}: the arrow shows Both`);
+  await shot("products-full-run", "conc-panel");
+  await view(3);
+  await p.click(T("eq-A")); await sleep(300); check((await p.getAttribute(T("eq-A"), "aria-pressed")) === "true" && (await p.getAttribute(T("eq-B"), "aria-pressed")) === "false" && (await p.locator("[data-testid^=curve-]").count()) === 1 && (await p.locator(`${T("conc-view")} [aria-checked=true]`).textContent()).trim() === "Reactants", `${size}: clicking A in the equation selects the A curve and the Reactants view`);
+  await shot("species-A", "conc-panel"); await p.click(T("eq-C")); await sleep(300); check((await p.getAttribute(T("eq-C"), "aria-pressed")) === "true" && (await p.locator(`${T("conc-view")} [aria-checked=true]`).textContent()).trim() === "Products" && (await p.locator("[data-testid^=curve-]").count()) === 1, `${size}: clicking C selects the C curve and the Products view`);
+  await shot("species-C", "conc-panel"); await p.click(T("eq-arrow")); await sleep(250); check((await p.locator(`${T("conc-view")} [aria-checked=true]`).textContent()).trim() === "Both", `${size}: the arrow shows Both`);
   await p.focus(T("eq-A")); await p.keyboard.press("Shift+Tab"); await p.keyboard.press("Tab"); { const ring = await p.evaluate(() => { const cs = getComputedStyle(document.activeElement); return parseFloat(cs.outlineWidth) >= 2 && cs.outlineStyle !== "none"; }); check(ring, `${size}: a species button shows a focus ring`); }
-  await view(1);
   // 2. a small vessel run to exhaustion: rate 0, products plateau
   await p.click(T("reset")); await p.click(T("play-pause")); await sleep(60); await setRange(p, "n", 8); await setRange(p, "T", 700); await setRange(p, "ea", 6); await setRange(p, "site", 360); // paused first: the Concentration slider only adds/removes the difference, so no reaction may happen before it is set
-  await showTab(p, "rate"); await eng(p, "e.run(400)"); await sleep(400);
+  await showTab(p, "conc"); await eng(p, "e.run(400)"); await sleep(400);
   const ex = await eng(p, "return {succ: e.succ, left: e.limitingLeft(), r: e.rateOver(10)}"); check(ex.succ === 8 && ex.left === 0 && ex.r === 0, `${size}: limiting reactant used up: ${ex.succ} reactions, rate ${ex.r}`);
-  check((await p.getAttribute(T("rate-svg"), "data-finished")) === "1" && (await p.locator(T("rate-finished-note")).count()) === 1, `${size}: the graph says the limiting reactant is used up`);
-  check(Number(await p.getAttribute(T("rate-line"), "data-final")) < 0.05, `${size}: the plotted rate has fallen to about 0`); await shot("rate-exhausted", "rate-panel");
-  await p.click(`${T("rate-view")} [role=radio]:nth-child(3)`); await sleep(300); await noBars(p, size, "products view");
+  check((await p.getAttribute(T("conc-svg"), "data-finished")) === "1" && (await p.locator(T("graph-finished-note")).count()) === 1, `${size}: the graph says the limiting reactant is used up`);
+  check((await p.getAttribute("[data-testid=curve-A]", "data-final")) === "0" && (await p.getAttribute("[data-testid=curve-C]", "data-final")) === "8", `${size}: Both view: A has fallen to 0 and C risen to 8`); await shot("both-exhausted", "conc-panel");
+  await p.click(`${T("conc-view")} [role=radio]:nth-child(2)`); await sleep(300); await noBars(p, size, "products view");
   const pr = await p.evaluate(() => { const l = document.querySelector('[data-testid="curve-C"]'); return { d: l.getAttribute("d"), fin: Number(l.dataset.final) }; }); const Q = pathPts(pr.d);
   check(pr.fin === 8 && Math.abs(Q[Q.length - 1][1] - Q[Q.length - 2][1]) < 0.01, `${size}: products graph ends at ${pr.fin} on a flat plateau`);
-  check(Q.every((q, k) => k === 0 || (q[1] <= Q[k - 1][1] + 1e-6 && q[0] >= Q[k - 1][0] - 1e-6)), `${size}: the products curve never falls`); await shot("products-plateau", "rate-panel");
-  await p.click(`${T("rate-view")} [role=radio]:nth-child(1)`);
+  check(Q.every((q, k) => k === 0 || (q[1] <= Q[k - 1][1] + 1e-6 && q[0] >= Q[k - 1][0] - 1e-6)), `${size}: the products curve never falls`); await shot("products-plateau", "conc-panel");
+  await p.click(`${T("conc-view")} [role=radio]:nth-child(3)`);
   // 3. Maxwell-Boltzmann curve at several T, Ea inside / outside the range, catalyst
   await p.click(T("reset")); await sleep(150); await showTab(p, "mb"); await noBars(p, size, "energy graph");
   for (const [Tk, ea, name] of [[300, 10, "300K"], [400, 10, "400K"], [600, 10, "600K"]]) {

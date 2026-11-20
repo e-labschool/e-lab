@@ -28,9 +28,9 @@
 .ct-g2 { flex: 1 1 0; }
 .ct-aside { display: inline-flex; gap: 4px; flex: 0 0 auto; }
 .ct-mb { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-.ct-mb-plot, .ct-rate-plot { flex: 1 1 0; min-height: 0; min-width: 0; position: relative; }
-.ct-rate-plot { height: 100%; }
-.ct-mb-plot svg, .ct-rate-plot svg { position: absolute; inset: 0; }
+.ct-mb-plot, .ct-conc-plot { flex: 1 1 0; min-height: 0; min-width: 0; position: relative; }
+.ct-conc-plot { height: 100%; }
+.ct-mb-plot svg, .ct-conc-plot svg { position: absolute; inset: 0; }
 .ct-mb-read { display: flex; flex-wrap: wrap; gap: 2px 12px; margin: 2px 0 0; font-size: 12px; flex: 0 0 auto; }
 .ct-mb-read div { display: flex; gap: 5px; align-items: baseline; }
 .ct-mb-read dt { color: var(--sd-muted); }
@@ -81,7 +81,7 @@
 .sd-root[data-layout="stacked"] .ct-chamber-panel { flex: 0 0 auto; }
 .sd-root[data-layout="stacked"] .sd-main[data-graph="shown"] .sd-col--graph { height: auto; }
 .sd-root[data-layout="stacked"] .ct-mb-plot { min-height: 230px; }
-.sd-root[data-layout="stacked"] .ct-rate-plot { min-height: 190px; }
+.sd-root[data-layout="stacked"] .ct-conc-plot { min-height: 190px; }
 .sd-root[data-layout="stacked"] .ct-g1, .sd-root[data-layout="stacked"] .ct-g2 { height: auto; flex: 0 0 auto; }
 .sd-root[data-layout="stacked"] .ct-mb { height: auto; }
 .sd-root[data-layout="stacked"] .ct-g1 .sd-panel-body, .sd-root[data-layout="stacked"] .ct-g2 .sd-panel-body { flex: 0 0 auto; overflow: visible; }
@@ -104,6 +104,8 @@
 
 /* reaction equation (selects the species shown in the graph) */
 .ct-rate-wrap { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.ct-conc-note { flex: 0 0 auto; margin: 0; padding: 0 4px 1px; font-size: 11px; line-height: 1.25; color: var(--sd-muted, #5b6b85); }
+.sd-root[data-density="tight"] .ct-conc-note { display: none; }
 .ct-eq { padding: 3px 4px 3px 5px; display: flex; align-items: center; flex-wrap: wrap; gap: 4px; flex: 0 0 auto; margin: 0 0 2px; font-size: 13px; font-weight: 700; color: var(--sd-ink); }
 .ct-eq button { min-height: 26px; min-width: 28px; padding: 0 8px; border: 2px solid var(--sp, #4a5a82); border-radius: 999px; background: #fff; color: #1e2a44; font-size: 13px; font-weight: 800; cursor: pointer; }
 .ct-eq button[aria-pressed="true"] { background: var(--sp, #1d4ed8); color: #fff; box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--sp, #1d4ed8); }

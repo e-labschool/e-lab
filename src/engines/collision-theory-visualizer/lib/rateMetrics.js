@@ -1,73 +1,11 @@
-// Pure helpers for the rate display.
+// Pure helpers for the concentration-against-time graph (and the live rate readout).
 //
-// The simulation records the simulated time of EVERY successful collision (engine.successTimes()). Everything below is
-// computed from those real events; nothing is a fitted or hard-coded curve and nothing forces the curve to fall.
-//   * rateCurve:      smooth reaction rate (reactions s^-1) against time = the gradient of the cumulative reaction count,
-//                     estimated as a Gaussian-weighted LOCAL-LINEAR slope (it behaves at both ends of the run, unlike a plain
-//                     moving average, and it is smooth because the weights are).
-//   * productSeries:  cumulative number of reactions (= C formed = D formed) against time.
+// The simulation records the simulated time of EVERY successful collision (engine.successTimes()) and, at regular
+// intervals, the number of A and B particles (engine.history()). Everything below is computed from those real data;
+// nothing is a fitted or hard-coded curve. The vessel volume is fixed, so concentration is proportional to particle count.
+//   * productCurve / countCurves: smooth monotone (PCHIP) curves of C, D, A and B particles against time.
 
-export const RATE_WINDOW = 10; // seconds averaged for the live "Rate (last 10 s)" readout
-
-const K_NEIGHBOURS = 20; // the smoothing window around each point is widened until about this many (mirrored) events fall inside
-const H_MIN = 2; const H_MAX = 30; // s: narrowest and widest Gaussian sigma
-
-/** Distance from `tg` to its k-th nearest value of the ascending array `a`, or Infinity if there are fewer than k values. */
-function kthNearest(a, tg, k) {
-  const n = a.length; if (n < k) return Infinity;
-  let lo = 0; let hi = n; while (lo < hi) { const m = (lo + hi) >> 1; if (a[m] < tg) lo = m + 1; else hi = m; }
-  let l = lo - 1; let r = lo; let d = 0;
-  for (let c = 0; c < k; c++) {
-    const dl = l >= 0 ? tg - a[l] : Infinity; const dr = r < n ? a[r] - tg : Infinity;
-    if (dl <= dr) { d = dl; l--; } else { d = dr; r++; }
-  }
-  return d;
-}
-
-/**
- * Smooth reaction-rate curve from the successful-collision times.
- *
- * rate(t) = gradient of the cumulative reaction count N(t), estimated as the slope of a Gaussian-weighted local straight-line
- * fit to N around t (local-linear derivative). Why this estimator:
- *  - Start and live end: a local straight-line fit has no built-in fade-out at the ends of the data, so there is no blurred hump
- *    before the first collisions and the last point is the recent rate (a plain moving average or kernel density would be biased there).
- *  - Width: adaptive. It is widened until about 20 mirrored events (about 10 real ones; the events are mirrored about t = 0 only to
- *    measure how crowded the start is) fall inside, between 2 s and 30 s. A busy early stage is resolved sharply; the thin late stage
- *    (a few random reactions) is averaged over a long time instead of showing a bump for every reaction.
- * Only the events decide the shape; nothing is fitted to a model, forced to fall or hard-coded.
- * @param {ArrayLike<number>} times  ascending times of the successful collisions (s)
- * @param {number} tNow              current simulated time (s)
- * @param {number} [points]          number of curve points
- * @returns {{t: Float64Array, r: Float64Array, h: Float64Array}} t (s), r (reactions per second), h = smoothing sigma at each point (s)
- */
-export function rateCurve(times, tNow, points = 121) {
-  const t = new Float64Array(points); const r = new Float64Array(points); const hs = new Float64Array(points);
-  if (!(tNow > 0)) return { t, r, h: hs };
-  const n = times.length; const aug = new Float64Array(2 * n);
-  for (let i = 0; i < n; i++) { aug[i] = -times[n - 1 - i]; aug[n + i] = times[i]; } // ascending: mirrored copy, then the real times
-  const dt = Math.max(0.1, tNow / 800); const M = Math.floor(tNow / dt) + 1;
-  const N = new Float64Array(M); let k = 0; // cumulative count from the events
-  for (let j = 0; j < M; j++) { const s = j * dt; while (k < n && times[k] <= s) k++; N[j] = k; }
-  for (let g = 0; g < points; g++) {
-    const tg = (tNow * g) / (points - 1); t[g] = tg;
-    const h = Math.min(H_MAX, Math.max(H_MIN, kthNearest(aug, tg, K_NEIGHBOURS) / 1.5)); hs[g] = h;
-    const reach = 4 * h; const j0 = Math.max(0, Math.ceil((tg - reach) / dt)); const j1 = Math.min(M - 1, Math.floor((tg + reach) / dt));
-    let sw = 0; let sx = 0; let sy = 0; let sxx = 0; let sxy = 0;
-    for (let j = j0; j <= j1; j++) {
-      const d = j * dt - tg; const w = Math.exp((-0.5 * d * d) / (h * h));
-      sw += w; sx += w * d; sy += w * N[j]; sxx += w * d * d; sxy += w * d * N[j];
-    }
-    const den = sw * sxx - sx * sx;
-    r[g] = den > 1e-12 ? Math.max(0, (sw * sxy - sx * sy) / den) : 0;
-  }
-  return { t, r, h: hs };
-}
-
-/** Area under the rate curve (reactions): should be close to the number of events counted. */
-export function curveArea(c) {
-  let a = 0; for (let i = 1; i < c.t.length; i++) a += 0.5 * (c.r[i] + c.r[i - 1]) * (c.t[i] - c.t[i - 1]);
-  return a;
-}
+export const RATE_WINDOW = 10; // seconds averaged for the live "Rate (last 10 s)" stat chip (independent of the graph)
 
 /** Cumulative reactions N(t) at time t, counted from the event times (ascending). */
 export function countUpTo(times, t) { let lo = 0; let hi = times.length; while (lo < hi) { const m = (lo + hi) >> 1; if (times[m] <= t) lo = m + 1; else hi = m; } return lo; }
